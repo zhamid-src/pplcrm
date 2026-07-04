@@ -3,9 +3,14 @@ import { UpdateListType } from '../../../../../../../libs/common/src';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 
 @Component({
   selector: 'pc-lists-grid',
@@ -49,24 +54,24 @@ export class ListsGridComponent implements OnDestroy {
     });
   }
 
-  protected col = [
+  protected col: ColDef[] = [
     { field: 'name', headerName: 'List Name', editable: true },
     { field: 'description', headerName: 'Description', editable: true },
     {
       field: 'object',
       headerName: 'Target Object',
-      valueFormatter: (p: any) => {
+      valueFormatter: (p: CellParams) => {
         const val = p?.value;
         if (val === 'people') return 'People';
         if (val === 'households') return 'Households';
-        return val ?? '—';
+        return (val as string | undefined) ?? '—';
       },
     },
     {
       field: 'is_dynamic',
       headerName: 'List Type',
-      cellRenderer: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
+      cellRenderer: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
         return isDynamic
           ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
           : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
@@ -75,22 +80,22 @@ export class ListsGridComponent implements OnDestroy {
     {
       field: 'list_size',
       headerName: 'Size',
-      valueFormatter: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
+      valueFormatter: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
         if (isDynamic === true || isDynamic === 'true' || isDynamic === 1) {
           return 'N/A';
         }
-        return p?.value ?? 0;
+        return (p?.value as number | undefined) ?? 0;
       },
     },
     {
       field: 'last_refreshed_at',
       headerName: 'Last Refreshed',
-      valueFormatter: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
+      valueFormatter: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
         if (!isDynamic) return '—';
         if (!p?.value) return 'Never';
-        const date = new Date(p.value);
+        const date = new Date(p.value as string | number | Date);
         if (isNaN(date.getTime())) return 'Never';
         return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
       },
@@ -98,11 +103,11 @@ export class ListsGridComponent implements OnDestroy {
     {
       field: 'refresh_action',
       headerName: 'Refresh',
-      cellRenderer: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
+      cellRenderer: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
         if (!isDynamic) return '—';
-        const status = p?.data?.status;
-        const isLocallyRefreshing = this.refreshingIds.has(p?.data?.id);
+        const status = p?.data?.['status'];
+        const isLocallyRefreshing = this.refreshingIds.has(String(p?.data?.['id'] ?? ''));
         if (status === 'refreshing' || isLocallyRefreshing) {
           return `
             <div class="flex items-center justify-center h-full w-full">
@@ -120,10 +125,10 @@ export class ListsGridComponent implements OnDestroy {
           </div>
         `;
       },
-      onCellClicked: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
-        const id = p?.data?.id;
-        const isRefreshing = p?.data?.status === 'refreshing' || this.refreshingIds.has(id);
+      onCellClicked: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        const id = String(p?.data?.['id'] ?? '');
+        const isRefreshing = p?.data?.['status'] === 'refreshing' || this.refreshingIds.has(id);
         if (isDynamic && !isRefreshing) {
           void this.refreshList(id, p);
         }
@@ -132,9 +137,9 @@ export class ListsGridComponent implements OnDestroy {
     {
       field: 'updated_at',
       headerName: 'Last Updated',
-      valueFormatter: (p: any) => {
+      valueFormatter: (p: CellParams) => {
         if (!p?.value) return '—';
-        const date = new Date(p.value);
+        const date = new Date(p.value as string | number | Date);
         if (isNaN(date.getTime())) return '—';
         return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
       },
@@ -146,20 +151,32 @@ export class ListsGridComponent implements OnDestroy {
 
   private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
-  private async refreshList(id: string, cellParams: any) {
+  private async refreshList(id: string, cellParams: CellParams) {
     try {
       this.refreshingIds.add(id);
       // Re-render the cell immediately to show the loading spinner.
-      cellParams?.api?.refreshCells({ rowNodes: [cellParams.node], columns: ['refresh_action'], force: true });
+      this.refreshCellIfPossible(cellParams);
 
       this.alerts.showSuccess('Refresh job scheduled in background');
       await this.listsSvc.refreshList(id);
       this.pollRefreshStatus(id);
     } catch (e) {
       this.refreshingIds.delete(id);
-      cellParams?.api?.refreshCells({ rowNodes: [cellParams.node], columns: ['refresh_action'], force: true });
+      this.refreshCellIfPossible(cellParams);
       this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
     }
+  }
+
+  /** Best-effort refresh of a single grid cell, if the underlying table API supports it. */
+  private refreshCellIfPossible(cellParams: unknown): void {
+    if (!isRecord(cellParams)) return;
+    const api = cellParams['api'];
+    if (!isRecord(api) || typeof api['refreshCells'] !== 'function') return;
+    (api['refreshCells'] as (opts: unknown) => void)({
+      rowNodes: [cellParams['node']],
+      columns: ['refresh_action'],
+      force: true,
+    });
   }
 
   private pollRefreshStatus(id: string) {
@@ -174,11 +191,11 @@ export class ListsGridComponent implements OnDestroy {
   private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
     try {
       const list = await this.listsSvc.getById(id);
-      if ((list as any)?.status !== 'refreshing') {
+      if (isRecord(list) && list['status'] !== 'refreshing') {
         clearInterval(interval);
         this.pollIntervals.delete(id);
         this.refreshingIds.delete(id);
-        if ((list as any)?.status === 'failed') {
+        if (isRecord(list) && list['status'] === 'failed') {
           this.alerts.showError('List refresh failed in background');
         } else {
           this.alerts.showSuccess('List refreshed successfully');

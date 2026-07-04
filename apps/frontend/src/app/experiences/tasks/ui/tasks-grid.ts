@@ -4,6 +4,8 @@ import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { UserService } from '@frontend/services/user.service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
@@ -71,53 +73,53 @@ export class TasksGrid implements OnInit {
   // Fields we will accept from CSV for future import support
   protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
 
-  protected col = [
+  protected col: ColDef[] = [
     { field: 'id', headerName: 'ID' },
     {
       field: 'assigned_to',
       headerName: 'Assigned To',
       editable: true,
-      valueGetter: (p: any) => this.assignedToValueGetter(p),
-      valueFormatter: (p: any) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: any) => this.renderAssignedCell(p.data?.assigned_to),
+      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
+      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
+      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
       cellEditorParams: () => ({
         values: [null, ...this.userIds],
         labels: [this.unassignedLabel, ...this.userLabels],
       }),
-      valueSetter: (p: any) => this.assignToValueSetter(p),
+      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
     },
     { field: 'name', headerName: 'Task', editable: true },
     {
       field: 'status',
       headerName: 'Status',
       editable: true,
-      cellRenderer: (p: any) => this.renderStatusBadge(p.value),
+      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
       cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
-      valueSetter: (p: any) => this.statusValueSetter(p),
+      valueSetter: (p: CellParams) => this.statusValueSetter(p),
     },
     {
       field: 'priority',
       headerName: 'Priority',
       editable: true,
-      cellRenderer: (p: any) => this.renderPriorityBadge(p.value),
+      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
       cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
-      valueSetter: (p: any) => this.priorityValueSetter(p),
+      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
     },
     {
       field: 'due_at',
       headerName: 'Due',
       editable: true,
-      valueGetter: (p: any) => this.toDateOnly(p.data?.due_at ?? p.value),
-      valueSetter: (p: any) => this.dueAtValueSetter(p),
-      valueFormatter: (p: any) => this.formatDate(p.value),
-      cellClass: (p: any) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
+      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
+      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value),
+      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
     },
     {
       field: 'createdby_id',
       headerName: 'Created By',
       editable: false,
-      valueFormatter: (p: any) => this.userNameForId(p.value),
-      cellRenderer: (p: any) => this.renderCreatedByCell(p.data?.createdby_id),
+      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
+      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
       // Provide filter options using known user labels
       cellEditorParams: () => ({ values: this.userLabels }),
     },
@@ -135,7 +137,7 @@ export class TasksGrid implements OnInit {
     try {
       const users = await this.userService.getUsers();
       this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.usersAvatarById = new Map(users.map((u) => [String(u.id), (u as any).avatar_url ?? null]));
+      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
       this.userIds = users.map((u) => String(u.id));
       this.userLabels = users.map((u) => `${u.first_name}`);
     } catch {
@@ -204,55 +206,59 @@ export class TasksGrid implements OnInit {
     this.importerOpen.set(true);
   }
 
-  private assignToValueSetter(p: any) {
+  private assignToValueSetter(p: CellParams) {
     const val =
       p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
         ? null
         : String(p.newValue);
-    if ((p.data as Record<string, any>)['assigned_to'] !== val) {
-      (p.data as Record<string, any>)['assigned_to'] = val;
+    const data = p.data;
+    if (!data) return false;
+    if (data['assigned_to'] !== val) {
+      data['assigned_to'] = val;
       return true;
     }
     return false;
   }
 
-  private assignedToValueFormatter(p: any) {
+  private assignedToValueFormatter(p: CellParams) {
     const v = p.value;
     if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
     return this.usersById.get(String(v)) ?? String(v ?? '');
   }
 
-  private assignedToValueGetter(p: any) {
-    const id = p.data?.assigned_to ?? p.value;
+  private assignedToValueGetter(p: CellParams) {
+    const id = p.data?.['assigned_to'] ?? p.value;
     if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
     return String(id);
   }
 
-  private dueAtValueSetter(p: any) {
-    const val: string = p.newValue || p.value || '';
+  private dueAtValueSetter(p: CellParams) {
+    const val = String(p.newValue || p.value || '');
     // ensure only YYYY-MM-DD is stored
     const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    if ((p.data as Record<string, any>)['due_at'] !== dateOnly) {
-      (p.data as Record<string, any>)['due_at'] = dateOnly;
+    const data = p.data;
+    if (!data) return false;
+    if (data['due_at'] !== dateOnly) {
+      data['due_at'] = dateOnly;
       return true;
     }
     return false;
   }
 
-  private formatDate(value: any) {
+  private formatDate(value: unknown) {
     if (!value) return '';
     const d = new Date(this.toDateOnly(value));
     if (isNaN(d.getTime())) return '';
     return d.toLocaleDateString();
   }
 
-  private isOverdue(row: any): boolean {
+  private isOverdue(row: GridRow | undefined): boolean {
     if (!row) return false;
 
-    const status = String(row.status ?? '').toLowerCase();
+    const status = String(row['status'] ?? '').toLowerCase();
     if (status === 'done' || status === 'canceled') return false;
 
-    const due = this.toDateOnly(row.due_at);
+    const due = this.toDateOnly(row['due_at']);
     if (!due) return false;
 
     const today = this.toDateOnly(new Date());
@@ -280,16 +286,18 @@ export class TasksGrid implements OnInit {
     return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
   }
 
-  private priorityValueSetter(p: any) {
-    const v = this.parsePriorityLabel(p.newValue);
-    if ((p.data as Record<string, any>)['priority'] !== v) {
-      (p.data as Record<string, any>)['priority'] = v;
+  private priorityValueSetter(p: CellParams) {
+    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['priority'] !== v) {
+      data['priority'] = v;
       return true;
     }
     return false;
   }
 
-  private renderAssignedCell(value: string | null | undefined) {
+  private renderAssignedCell(value: unknown) {
     const v = value == null ? '' : String(value);
     const isUnassigned = !v || v === this.unassignedLabel;
     const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
@@ -333,7 +341,7 @@ export class TasksGrid implements OnInit {
     `;
   }
 
-  private renderCreatedByCell(value: string | null | undefined) {
+  private renderCreatedByCell(value: unknown) {
     const label = value == null ? '' : String(value);
     if (!label) {
       return `<span class="text-base-content/30">—</span>`;
@@ -375,7 +383,7 @@ export class TasksGrid implements OnInit {
     `;
   }
 
-  private renderPriorityBadge(value: string | null | undefined) {
+  private renderPriorityBadge(value: unknown) {
     if (!value) return '';
     const v = String(value);
     const cls =
@@ -384,7 +392,7 @@ export class TasksGrid implements OnInit {
     return `<span class="badge ${cls} badge-sm">${label}</span>`;
   }
 
-  private renderStatusBadge(value: string | null | undefined) {
+  private renderStatusBadge(value: unknown) {
     if (!value) return '';
     const v = String(value);
     const cls =
@@ -401,18 +409,20 @@ export class TasksGrid implements OnInit {
     return `<span class="badge ${cls} badge-sm">${label}</span>`;
   }
 
-  private statusValueSetter(p: any) {
-    const v = this.parseStatusLabel(p.newValue);
-    if ((p.data as Record<string, any>)['status'] !== v) {
-      (p.data as Record<string, any>)['status'] = v;
+  private statusValueSetter(p: CellParams) {
+    const v = this.parseStatusLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['status'] !== v) {
+      data['status'] = v;
       return true;
     }
     return false;
   }
 
-  private toDateOnly(v: any): string {
+  private toDateOnly(v: unknown): string {
     if (!v) return '';
-    const str = typeof v === 'string' ? v : new Date(v).toISOString();
+    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
     return str.length > 10 ? str.slice(0, 10) : str;
   }
 
@@ -424,7 +434,7 @@ export class TasksGrid implements OnInit {
       .join(' ');
   }
 
-  private userNameForId(id: string | number | null | undefined) {
+  private userNameForId(id: unknown) {
     if (id === null || id === undefined || id === '') return '';
     const key = String(id);
     return this.usersById.get(key) ?? '';

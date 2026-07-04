@@ -1,5 +1,6 @@
 import { Component, viewChild } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
 
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -49,42 +50,42 @@ export class NewslettersGridComponent {
     minimumFractionDigits: 0,
   });
 
-  protected col = [
+  protected col: ColDef[] = [
     { field: 'name', headerName: 'Newsletter name' },
     {
       field: 'status',
       headerName: 'Status',
-      valueFormatter: (p: any) => this.formatStatus(p.value ?? p.data?.status),
+      valueFormatter: (p: CellParams) => this.formatStatus(p.value ?? p.data?.['status']),
     },
     {
       field: 'updated_at',
       headerName: 'Last updated at',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
     },
     {
       field: 'delivered_count',
       headerName: 'Delivered',
-      valueFormatter: (p: any) => this.formatCount(p.value ?? p.data?.delivered_count),
+      valueFormatter: (p: CellParams) => this.formatCount(p.value ?? p.data?.['delivered_count']),
     },
     {
       field: 'total_recipients',
       headerName: 'Recipients',
-      valueFormatter: (p: any) => this.formatCount(p.value ?? p.data?.total_recipients),
+      valueFormatter: (p: CellParams) => this.formatCount(p.value ?? p.data?.['total_recipients']),
     },
     {
       field: 'open_rate',
       headerName: 'Open rate',
-      valueFormatter: (p: any) => this.formatPercent(p.value ?? p.data?.open_rate),
+      valueFormatter: (p: CellParams) => this.formatPercent(p.value ?? p.data?.['open_rate']),
     },
     {
       field: 'click_rate',
       headerName: 'Click rate',
-      valueFormatter: (p: any) => this.formatPercent(p.value ?? p.data?.click_rate),
+      valueFormatter: (p: CellParams) => this.formatPercent(p.value ?? p.data?.['click_rate']),
     },
     {
       field: 'send_date',
       headerName: 'Send date',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.send_date),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['send_date']),
     },
   ];
 

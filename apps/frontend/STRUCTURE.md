@@ -1731,122 +1731,6 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.ts
-
-```typescript
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
-import { TitleCasePipe } from '@angular/common';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { DonationsService } from '../../../services/api/donations-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-@Component({
-  selector: 'pc-pledges-grid',
-  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, SpinOnClickDirective],
-  templateUrl: './pledges-grid.html',
-})
-export class PledgesGridComponent implements OnInit {
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly pledges = signal<any[]>([]);
-  protected readonly _loading = createLoadingGate();
-  protected readonly cancelling = signal<string | null>(null);
-
-  protected readonly activePledgeCount = computed(() => this.pledges().filter((p) => p.status === 'active').length);
-
-  protected readonly totalMonthlyCommitted = computed(
-    () =>
-      this.pledges()
-        .filter((p) => p.status === 'active')
-        .reduce((sum: number, p: any) => sum + Number(p.monthly_amount || 0), 0) / 100,
-  );
-
-  ngOnInit() {
-    void this.load();
-  }
-
-  protected refresh() {
-    void this.load();
-  }
-
-  protected async cancelPledge(pledge: any) {
-    const name =
-      [pledge.person_first_name, pledge.person_last_name].filter(Boolean).join(' ') ||
-      pledge.person_email ||
-      'this donor';
-    const confirmed = await this.dialogs.confirm({
-      title: `Cancel pledge for ${name}?`,
-      message: `This will stop the $${this.formatCurrency(pledge.monthly_amount)}/month recurring donation immediately. This cannot be undone.`,
-      confirmText: 'Cancel Pledge',
-      cancelText: 'Keep Pledge',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-
-    this.cancelling.set(String(pledge.id));
-    try {
-      await this.donationsSvc.cancelPledge(String(pledge.id));
-      this.alertSvc.showSuccess('Pledge cancelled successfully.');
-      await this.load();
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel pledge.');
-    } finally {
-      this.cancelling.set(null);
-    }
-  }
-
-  protected formatCurrency(amountCents: number | null | undefined): string {
-    if (amountCents == null) return '$0.00';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
-  }
-
-  protected formatDate(dateStr: string | null | undefined): string {
-    if (!dateStr) return '—';
-    try {
-      return new Date(dateStr).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return '';
-    }
-  }
-
-  protected toStr(val: any): string {
-    return String(val);
-  }
-
-  protected statusBadgeClass(status: string): string {
-    const map: Record<string, string> = {
-      active: 'badge-success',
-      past_due: 'badge-warning',
-      cancelled: 'badge-ghost',
-      unpaid: 'badge-error',
-    };
-    return map[status] ?? 'badge-neutral';
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const data = await this.donationsSvc.listPledges();
-      this.pledges.set(data || []);
-    } catch {
-      this.alertSvc.showError('Failed to load pledges. Please try again.');
-    } finally {
-      end();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/duplicates/duplicate-selection.html
 
 ```html
@@ -2650,271 +2534,6 @@ function toNum(n: unknown): number | undefined {
   if (typeof n === 'string') return Number(n) || 0;
   if (typeof n === 'number') return n;
   return undefined;
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
-
-```typescript
-import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
-import { Router } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { EmailStatus } from '../../../../../../../../libs/common/src';
-
-import { EmailsService } from '../emails-service';
-import { EmailActionsStore } from './email-actions.store';
-import { EmailCacheStore } from './email-cache.store';
-import { EmailFoldersStore } from './email-folders.store';
-import { type EmailId, EmailStateStore } from './email-state.store';
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Service()
-export class EmailsStore {
-  // ----------------- Lazy per-email fallback -----------------
-  //  private readonly _checked = new Set<string>();
-  private readonly router = inject(Router);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly actions = inject(EmailActionsStore);
-  private readonly cache = inject(EmailCacheStore);
-  private readonly emailSvc = inject(EmailsService);
-
-  private readonly _isSyncing = signal(false);
-  public readonly isSyncing = this._isSyncing.asReadonly();
-
-  /*
-  private readonly ensureHasAttachmentOnOpen = effect(() => {
-    const id = this.currentSelectedEmailId();
-    if (!id) return;
-
-    // Skip if already known or in-flight
-    if (this.state.hasAttachment(id)() !== undefined) return;
-    if (this._checked.has(id)) return;
-    this._checked.add(id);
-
-    // Ask backend for this one email
-    this.emailSvc
-      .hasAttachment(id)
-      .then((has) => {
-        this.state.setHasAttachment(id, !!has);
-      })
-      .catch(() => {
-        // leave as undefined on error; next open can retry
-        this._checked.delete(id);
-      });
-  });
-  */
-  private readonly folders = inject(EmailFoldersStore);
-  private readonly state = inject(EmailStateStore);
-
-  public readonly allFolders = this.folders.allFolders;
-
-  public readonly currentSelectedEmail = this.state.currentSelectedEmail;
-
-  public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
-
-  public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
-
-  public readonly hasMore = this.folders.hasMore;
-  public readonly isLoadingMore = this.folders.isLoadingMore;
-
-  public readonly emailsInSelectedFolder = computed(() => {
-    const fid = this.folders.currentSelectedFolderId();
-    if (!fid) return [] as EmailType[];
-    return this.state.emailsInFolderWithFlags(fid)();
-  });
-  public readonly emailsLoading = this.folders.isLoading;
-
-  // ----------------- Cache computed factories -----------------
-  public readonly getEmailBodyById = this.cache.getEmailBodyById;
-  public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
-  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
-
-  public readonly isBodyExpanded = this.state.isBodyExpanded;
-
-  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
-
-  constructor() {
-    effect(() => {
-      // The effect tracks this because it's OUTSIDE untracked()
-      const targetId = this.debouncedSelectedEmailId.value();
-
-      if (targetId) {
-        // Run the email lookup and update INSIDE untracked()
-        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
-        untracked(() => {
-          const emailObj = this.state.readEmail(targetId);
-
-          if (emailObj && !emailObj.is_read) {
-            void this.actions.toggleEmailReadStatus(targetId, true);
-          }
-        });
-      }
-    });
-  }
-
-  // ----------------- Mutations (actions) -----------------
-  public addComment(emailId: EmailId, authorId: string, commentText: string) {
-    return this.actions.addComment(emailId, authorId, commentText);
-  }
-
-  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
-    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
-  }
-
-  public deleteComment(emailId: EmailId, commentId: string | number) {
-    return this.actions.deleteComment(emailId, commentId);
-  }
-
-  public deleteEmail(emailId: EmailId) {
-    return this.actions.deleteEmail(emailId);
-  }
-
-  // ----------------- Loads -----------------
-  public loadAllFolders() {
-    return this.folders.loadAllFolders();
-  }
-
-  public loadAllFoldersWithCounts() {
-    return this.folders.loadAllFoldersWithCounts();
-  }
-
-  public loadEmailBody(emailId: EmailId) {
-    return this.cache.loadEmailBody(emailId);
-  }
-
-  public loadEmailWithHeaders(emailId: EmailId) {
-    return this.cache.loadEmailWithHeaders(emailId);
-  }
-
-  public refreshEmailHeader(emailId: EmailId) {
-    return this.cache.refreshEmailHeader(emailId);
-  }
-
-  public loadEmailActivities(emailId: EmailId) {
-    return this.cache.loadEmailActivities(emailId);
-  }
-
-  public async loadEmailsForFolder(folderId: EmailId) {
-    const rows = await this.folders.loadEmailsForFolder(String(folderId));
-
-    // Prefer IDs from the response; fallback to state if needed
-    const ids =
-      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
-      this.state.emailIdsByFolderId()[String(folderId)] ||
-      [];
-
-    if (!ids.length) return rows;
-
-    try {
-      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
-
-      const merged: Record<string, boolean> = {};
-      for (const id of ids) {
-        const key = String(id); // <- normalize the key
-        merged[key] = !!partial[key];
-      }
-      this.state.setManyHasAttachment(merged);
-    } catch {
-      // ignore failures; UI can lazily resolve per-email elsewhere
-    }
-
-    return rows;
-  }
-
-  public refreshFolderCounts() {
-    return this.folders.refreshFolderCounts();
-  }
-
-  public restoreFromTrash(emailId: EmailId) {
-    return this.actions.restoreFromTrash(emailId);
-  }
-
-  public selectEmail(email: EmailType | { id: EmailId } | null): void {
-    this.state.selectEmail(email);
-  }
-
-  public selectFolder(folder: EmailFolderType | null): void {
-    this.folders.selectFolder(folder);
-  }
-
-  public toggleBodyExpanded(): void {
-    this.state.toggleBodyExpanded();
-  }
-
-  public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
-    return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
-  }
-
-  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
-    return this.actions.toggleEmailReadStatus(emailId, isRead);
-  }
-
-  public moveToFolder(emailId: EmailId, folderId: string) {
-    return this.actions.moveToFolder(emailId, folderId);
-  }
-
-  public loadNextPage() {
-    return this.folders.loadNextPage();
-  }
-
-  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
-    return this.actions.updateEmailStatus(emailId, status);
-  }
-
-  // ----------------- Syncing -----------------
-  public async syncEmails() {
-    this._isSyncing.set(true);
-    try {
-      const result = await this.emailSvc.syncEmails();
-
-      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
-      let attempts = 0;
-      while (attempts < 100) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const active = await this.emailSvc.isAnySyncing();
-        if (!active) {
-          break;
-        }
-        attempts++;
-      }
-
-      // Reload current folder emails and counts
-      const currentFolderId = this.currentSelectedFolderId();
-      if (currentFolderId) {
-        await this.loadEmailsForFolder(currentFolderId);
-      }
-      await this.refreshFolderCounts();
-      this.alerts.showSuccess('Sync complete!');
-      return result;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (
-        msg.includes('No email accounts connected') ||
-        msg.includes('No Microsoft account connected') ||
-        msg.includes('No Google account connected') ||
-        msg.includes('Token refresh failed')
-      ) {
-        const confirmed = await this.dialogs.confirm({
-          title: 'Email Account Connection Required',
-          message:
-            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
-          variant: 'warning',
-          confirmText: 'Go to Settings',
-          cancelText: 'Cancel',
-        });
-        if (confirmed) {
-          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
-        }
-      } else {
-        this.alerts.showError(`Sync failed: ${msg}`);
-      }
-      throw e;
-    } finally {
-      this._isSyncing.set(false);
-    }
-  }
 }
 ```
 
@@ -5755,460 +5374,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
   </main>
 </div>
 }
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
-
-```typescript
-import { CUSTOM_ELEMENTS_SCHEMA, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Tags } from '@experiences/tags/ui/tags';
-import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
-import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
-import { NewslettersService } from '../services/newsletters-service';
-
-@Component({
-  selector: 'pc-newsletter-add',
-  imports: [ReactiveFormsModule, Icon, Tags, TagItem, VisualNewsletterEditorComponent],
-  templateUrl: './newsletter-add.html',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
-})
-export class NewsletterAddComponent implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly audienceEstimateSeed = signal(0);
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
-  private readonly fb = inject(FormBuilder);
-  private readonly listsSvc = inject(ListsService);
-  private readonly newslettersSvc = inject(NewslettersService);
-  private readonly requiresScheduleDate = computed(() => {
-    const timing = this.regularForm.get('timingMode')?.value;
-    if (timing !== 'schedule') return false;
-    const date = this.regularForm.get('scheduledDate')?.value;
-    const time = this.regularForm.get('scheduledTime')?.value;
-    return !date || !time;
-  });
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly tagsSvc = inject(TagsService);
-
-  protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
-  protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
-  protected readonly currentStep = signal<StepIndex>(1);
-  protected readonly estimatedAudienceCount = computed(() => this.computeEstimatedAudience());
-  protected readonly excludeListIds = signal<string[]>([]);
-  protected readonly excludeTagsList = signal<string[]>([]);
-  protected readonly includeListIds = signal<string[]>([]);
-  protected readonly includeTagsList = signal<string[]>([]);
-  protected readonly loadingLists = signal<boolean>(false);
-  protected readonly loadingTags = signal<boolean>(false);
-  protected readonly mode = signal<CreationMode>('options');
-  protected readonly regularForm = this.fb.group({
-    subject: ['', [Validators.required]],
-    previewText: [''],
-    fromName: ['', [Validators.required]],
-    fromAddress: ['', [Validators.required, Validators.email]],
-    htmlContent: [''],
-    plainTextContent: [''],
-    includeLists: [[] as string[]],
-    includeTags: [[] as string[]],
-    excludeLists: [[] as string[]],
-    excludeTags: [[] as string[]],
-    timingMode: ['now'],
-    scheduledDate: [''],
-    scheduledTime: [''],
-  });
-  protected readonly showDatePicker = signal(false);
-  protected readonly selectedTemplate = signal<'welcome' | 'product' | 'newsletter' | 'empty'>('welcome');
-  protected readonly steps = ['Template', 'Design', 'Audience & Summary', 'Timing'] as const;
-
-  public ngOnInit(): void {
-    this.syncListSignalsFromForm();
-    this.syncTagSignalsFromForm();
-    void this.loadLists();
-    void this.loadTags();
-  }
-
-  protected close(): void {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected handleBack(): void {
-    const step = this.currentStep();
-    if (step === 1) {
-      this.switchToOptions();
-    } else {
-      this.currentStep.set((step - 1) as StepIndex);
-    }
-  }
-
-  protected handleExcludeListSelect(event: Event): void {
-    const select = event.target as HTMLSelectElement | null;
-    if (!select) return;
-    const value = select.value;
-    if (!value) return;
-    const current = new Set(this.excludeListIds());
-    if (!current.has(value)) {
-      current.add(value);
-      const arr = Array.from(current);
-      this.excludeListIds.set(arr);
-      this.updateExcludeListsControl(arr);
-      this.refreshAudienceEstimate();
-    }
-    select.value = '';
-  }
-
-  protected handleExcludeTagsChange(tags: string[]): void {
-    const next = Array.isArray(tags) ? [...tags] : [];
-    this.excludeTagsList.set(next);
-    const control = this.regularForm.get('excludeTags') as FormControl<string[]> | null;
-    control?.setValue(next);
-    control?.markAsDirty();
-    this.refreshAudienceEstimate();
-  }
-
-  protected handleIncludeListSelect(event: Event): void {
-    const select = event.target as HTMLSelectElement | null;
-    if (!select) return;
-    const value = select.value;
-    if (!value) return;
-    const current = new Set(this.includeListIds());
-    if (!current.has(value)) {
-      current.add(value);
-      const arr = Array.from(current);
-      this.includeListIds.set(arr);
-      this.updateIncludeListsControl(arr);
-      this.refreshAudienceEstimate();
-    }
-    select.value = '';
-  }
-
-  protected handleIncludeTagsChange(tags: string[]): void {
-    const next = Array.isArray(tags) ? [...tags] : [];
-    this.includeTagsList.set(next);
-    const control = this.regularForm.get('includeTags') as FormControl<string[]> | null;
-    control?.setValue(next);
-    control?.markAsDirty();
-    this.refreshAudienceEstimate();
-  }
-
-  protected handleNext(): void {
-    const step = this.currentStep();
-
-    if (step === 3) {
-      this.markSummaryTouched();
-      if (
-        this.regularForm.get('subject')?.invalid ||
-        this.regularForm.get('fromName')?.invalid ||
-        this.regularForm.get('fromAddress')?.invalid
-      ) {
-        return;
-      }
-    }
-
-    if (step === 4) return;
-    this.currentStep.set((step + 1) as StepIndex);
-  }
-
-  protected isInvalid(controlName: string): boolean {
-    const control = this.regularForm.get(controlName);
-    if (!control) return false;
-    return control.invalid && (control.dirty || control.touched);
-  }
-
-  protected listName(id: string): string {
-    const match = this.availableLists().find((list) => list.id === id);
-    return match?.name ?? 'List';
-  }
-
-  protected onScheduledDateChange(event: any): void {
-    const value = this.normalizeCalendarValue(event) ?? '';
-    const control = this.regularForm.get('scheduledDate') as FormControl<string> | null;
-    if (control) {
-      control.setValue(value);
-      control.markAsDirty();
-      control.markAsTouched();
-    }
-    this.refreshAudienceEstimate();
-    this.showDatePicker.set(false);
-  }
-
-  protected removeExcludeList(listId: string): void {
-    const next = this.excludeListIds().filter((id) => id !== listId);
-    this.excludeListIds.set(next);
-    this.updateExcludeListsControl(next);
-    this.refreshAudienceEstimate();
-  }
-
-  protected removeIncludeList(listId: string): void {
-    const next = this.includeListIds().filter((id) => id !== listId);
-    this.includeListIds.set(next);
-    this.updateIncludeListsControl(next);
-    this.refreshAudienceEstimate();
-  }
-
-  protected scheduledDateDisplay(): string {
-    const value = this.scheduledDateValue();
-    if (!value) return 'Select a date';
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? value : this.dateFormatter.format(parsed);
-  }
-
-  protected scheduledDateValue(): string {
-    const control = this.regularForm.get('scheduledDate');
-    const value = control?.value;
-    return typeof value === 'string' ? value : value ? String(value) : '';
-  }
-
-  protected selectAutomated(): void {
-    this.mode.set('automated');
-  }
-
-  protected selectRegular(): void {
-    this.mode.set('regular');
-    this.currentStep.set(1);
-    this.syncListSignalsFromForm();
-    this.syncTagSignalsFromForm();
-    this.selectTemplate('welcome');
-  }
-
-  protected selectTemplate(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): void {
-    this.selectedTemplate.set(preset);
-    const html = compileTemplateHtml(preset);
-    const text = compileTemplatePlainText(preset);
-    this.regularForm.get('htmlContent')?.setValue(html);
-    this.regularForm.get('plainTextContent')?.setValue(text);
-  }
-
-  protected goToStep(targetStep: number): void {
-    if (targetStep < this.currentStep()) {
-      this.currentStep.set(targetStep as StepIndex);
-    }
-  }
-
-  protected async sendRegular(): Promise<void> {
-    this.markSummaryTouched();
-
-    if (this.requiresScheduleDate()) {
-      this.regularForm.get('scheduledDate')?.markAsTouched();
-      this.regularForm.get('scheduledTime')?.markAsTouched();
-      if (this.requiresScheduleDate()) {
-        return;
-      }
-    }
-
-    if (this.regularForm.invalid) {
-      return;
-    }
-
-    const raw = this.regularForm.getRawValue();
-    const { scheduledDate, scheduledTime, ...rest } = raw;
-    const scheduledAt =
-      rest.timingMode === 'schedule' && scheduledDate && scheduledTime
-        ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
-        : null;
-
-    // Compile audience description
-    const includeListsDesc = rest.includeLists?.map((id) => this.listName(id)).join(', ');
-    const includeTagsDesc = rest.includeTags?.join(', ');
-    const excludeListsDesc = rest.excludeLists?.map((id) => this.listName(id)).join(', ');
-    const excludeTagsDesc = rest.excludeTags?.join(', ');
-
-    let audienceDesc = '';
-    if (includeListsDesc || includeTagsDesc) {
-      audienceDesc += `Targeting lists: [${includeListsDesc || 'None'}], tags: [${includeTagsDesc || 'None'}]`;
-    }
-    if (excludeListsDesc || excludeTagsDesc) {
-      audienceDesc += ` (Excluding lists: [${excludeListsDesc || 'None'}], tags: [${excludeTagsDesc || 'None'}])`;
-    }
-    if (!audienceDesc) {
-      audienceDesc = 'No target audience configured.';
-    }
-
-    const payload = {
-      name: rest.subject || 'Unnamed Newsletter',
-      status: rest.timingMode === 'schedule' ? ('scheduled' as const) : ('draft' as const),
-      subject: rest.subject,
-      preview_text: rest.previewText,
-      audience_description: audienceDesc,
-      target_lists: JSON.stringify({ include: rest.includeLists || [], exclude: rest.excludeLists || [] }),
-      segments: JSON.stringify({ include: rest.includeTags || [], exclude: rest.excludeTags || [] }),
-      html_content: rest.htmlContent,
-      plain_text_content: rest.plainTextContent,
-      send_date: scheduledAt ? new Date(scheduledAt) : null,
-      total_recipients: this.estimatedAudienceCount(),
-    };
-
-    try {
-      const created = await this.newslettersSvc.add(payload);
-
-      if (rest.timingMode === 'now' && created?.['id']) {
-        await this.newslettersSvc.send(created['id']);
-        this.alertSvc.showSuccess('Newsletter sent successfully!');
-      } else {
-        this.alertSvc.showSuccess(
-          rest.timingMode === 'schedule' ? 'Newsletter scheduled successfully.' : 'Newsletter draft saved.',
-        );
-      }
-      this.close();
-    } catch (err) {
-      console.error('Failed to save or send newsletter', err);
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to save or send newsletter.');
-    }
-  }
-
-  protected switchToOptions(): void {
-    this.mode.set('options');
-    this.currentStep.set(1);
-  }
-
-  protected timingNeedsDate(): boolean {
-    return this.requiresScheduleDate();
-  }
-
-  protected toggleDatePicker(): void {
-    this.showDatePicker.update((open) => !open);
-  }
-
-  private computeEstimatedAudience(): number {
-    this.audienceEstimateSeed();
-
-    const listSizeMap = new Map<string, number>();
-    for (const list of this.availableLists()) {
-      listSizeMap.set(list.id, Number(list.size) || 0);
-    }
-
-    const includeListTotal = this.includeListIds().reduce((sum, id) => sum + (listSizeMap.get(id) ?? 0), 0);
-    const excludeListTotal = this.excludeListIds().reduce((sum, id) => sum + (listSizeMap.get(id) ?? 0), 0);
-
-    const tagUsageMap = new Map<string, number>();
-    for (const tag of this.availableTags()) {
-      tagUsageMap.set(tag.name.toLowerCase(), Number(tag.usage) || 0);
-    }
-
-    const includeTagTotal = this.includeTagsList().reduce(
-      (sum, name) => sum + (tagUsageMap.get(name.toLowerCase()) ?? 0),
-      0,
-    );
-    const excludeTagTotal = this.excludeTagsList().reduce(
-      (sum, name) => sum + (tagUsageMap.get(name.toLowerCase()) ?? 0),
-      0,
-    );
-
-    const estimate = includeListTotal + includeTagTotal - excludeListTotal - excludeTagTotal;
-    return estimate > 0 ? Math.round(estimate) : 0;
-  }
-
-  private async loadLists(): Promise<void> {
-    this.loadingLists.set(true);
-    try {
-      const result = await this.listsSvc.getAll({ limit: 100, startRow: 0 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows
-          .filter((row: any) => row?.id && row?.name)
-          .map((row: any) => ({
-            id: String(row.id),
-            name: String(row.name),
-            size: Number(row.list_size ?? row.people_count ?? row.household_count ?? row.member_count ?? 0) || 0,
-          })),
-      );
-      this.syncListSignalsFromForm();
-    } catch (err) {
-      console.error('Failed to load lists for newsletters', err);
-      this.alertSvc.showError('We could not load lists. Try again later.');
-    } finally {
-      this.loadingLists.set(false);
-    }
-  }
-
-  private async loadTags(): Promise<void> {
-    this.loadingTags.set(true);
-    try {
-      const result = await this.tagsSvc.getAll({ limit: 100, startRow: 0 });
-      const rows = Array.isArray((result as any)?.rows) ? (result as any).rows : [];
-      this.availableTags.set(
-        rows
-          .filter((row: any) => row?.id && row?.name)
-          .map((row: any) => ({
-            id: String(row.id),
-            name: String(row.name),
-            usage: Number(row.use_count_people ?? 0) + Number(row.use_count_households ?? 0),
-          })),
-      );
-      this.refreshAudienceEstimate();
-    } catch (err) {
-      console.error('Failed to load tags for newsletters', err);
-      this.alertSvc.showError('We could not load tags. Try again later.');
-    } finally {
-      this.loadingTags.set(false);
-    }
-  }
-
-  private markSummaryTouched(): void {
-    this.regularForm.get('subject')?.markAsTouched();
-    this.regularForm.get('fromName')?.markAsTouched();
-    this.regularForm.get('fromAddress')?.markAsTouched();
-  }
-
-  private normalizeCalendarValue(event: any): string | null {
-    const raw =
-      (event?.detail != null && typeof event.detail === 'string' && event.detail) ||
-      (event?.detail?.value != null && event.detail.value) ||
-      (event?.target?.value != null && event.target.value) ||
-      (event?.value != null && event.value) ||
-      (typeof event === 'string' ? event : null);
-
-    if (!raw) return null;
-    const text = String(raw).trim();
-    if (!text) return null;
-    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
-    const parsed = new Date(text);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
-  }
-
-  private refreshAudienceEstimate(): void {
-    this.audienceEstimateSeed.update((value) => value + 1);
-  }
-
-  private syncListSignalsFromForm(): void {
-    const include = (this.regularForm.get('includeLists') as FormControl<string[]> | null)?.value ?? [];
-    const exclude = (this.regularForm.get('excludeLists') as FormControl<string[]> | null)?.value ?? [];
-    this.includeListIds.set([...include]);
-    this.excludeListIds.set([...exclude]);
-    this.refreshAudienceEstimate();
-  }
-
-  private syncTagSignalsFromForm(): void {
-    const include = (this.regularForm.get('includeTags') as FormControl<string[]> | null)?.value ?? [];
-    const exclude = (this.regularForm.get('excludeTags') as FormControl<string[]> | null)?.value ?? [];
-    this.includeTagsList.set([...include]);
-    this.excludeTagsList.set([...exclude]);
-    this.refreshAudienceEstimate();
-  }
-
-  private updateExcludeListsControl(next: string[]): void {
-    const control = this.regularForm.get('excludeLists') as FormControl<string[]> | null;
-    control?.setValue(next);
-    control?.markAsDirty();
-  }
-
-  private updateIncludeListsControl(next: string[]): void {
-    const control = this.regularForm.get('includeLists') as FormControl<string[]> | null;
-    control?.setValue(next);
-    control?.markAsDirty();
-  }
-}
-
-type CreationMode = 'options' | 'regular' | 'automated';
-
-type StepIndex = 1 | 2 | 3 | 4;
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
@@ -9488,169 +8653,6 @@ export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
   </button>
   }
 </div>
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/account/account-settings.ts
-
-```typescript
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { Icon } from '@icons/icon';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { AuthService } from '../../../auth/auth-service';
-
-export interface TenantAccountStatus {
-  deletion_scheduled_at: Date | null;
-  suspended_at: Date | null;
-  paused_at: Date | null;
-}
-
-@Component({
-  selector: 'pc-account-settings',
-  imports: [DatePipe, Icon],
-  templateUrl: './account-settings.html',
-})
-export class AccountSettingsComponent extends TRPCService<any> implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly dialog = inject(ConfirmDialogService);
-  private readonly auth = inject(AuthService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly actionPending = signal(false);
-  protected readonly status = signal<TenantAccountStatus | null>(null);
-
-  ngOnInit(): void {
-    void this.loadStatus();
-  }
-
-  protected async loadStatus() {
-    const end = this._loading.begin();
-    try {
-      const data = await this.api.auth.getTenantAccountStatus.query();
-      this.status.set({
-        deletion_scheduled_at: data.deletion_scheduled_at ? new Date(data.deletion_scheduled_at) : null,
-        suspended_at: data.suspended_at ? new Date(data.suspended_at) : null,
-        paused_at: data.paused_at ? new Date(data.paused_at) : null,
-      });
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load account status.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async pauseAccount() {
-    const confirmed = await this.dialog.confirm({
-      title: 'Pause Account',
-      message:
-        'Are you sure you want to pause your account? Your data will be preserved and billing paused, but all users will lose access until the account is reactivated.',
-      variant: 'warning',
-      confirmText: 'Pause',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    this.actionPending.set(true);
-    try {
-      await this.api.auth.pauseTenant.mutate();
-      await this.auth.signOut();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to pause account.');
-      this.actionPending.set(false);
-    }
-  }
-
-  protected async resumeAccount() {
-    const confirmed = await this.dialog.confirm({
-      title: 'Reactivate Account',
-      message: 'Reactivate your account? All users will regain access immediately.',
-      variant: 'success',
-      confirmText: 'Reactivate',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-
-    this.actionPending.set(true);
-    try {
-      await this.api.auth.resumeTenant.mutate();
-      await this.loadStatus();
-      this.alerts.showSuccess('Account reactivated. Welcome back!');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to reactivate account.');
-    } finally {
-      this.actionPending.set(false);
-    }
-  }
-
-  protected async deleteAccount() {
-    // First confirmation — make scope crystal clear
-    const firstConfirm = await this.dialog.confirm({
-      title: 'Delete Entire Organization?',
-      message:
-        'This will permanently delete your entire organization — all users, contacts, emails, campaigns, imports, and every other piece of data. ' +
-        'Every user in this account will lose access immediately.\n\n' +
-        'If you only want to remove a single user, go to the Users page instead.',
-      variant: 'danger',
-      confirmText: 'Yes, delete the entire organization',
-      cancelText: 'Cancel',
-    });
-    if (!firstConfirm) return;
-
-    // Second confirmation — require typing "DELETE"
-    const typed = await this.dialog.prompt({
-      title: 'Type DELETE to confirm',
-      message:
-        'This cannot be undone. Your account will be queued for deletion and all users will be signed out immediately. ' +
-        'You will have 24 hours to cancel via the link sent to your email.\n\nType DELETE to proceed.',
-      variant: 'danger',
-      inputPlaceholder: 'DELETE',
-      confirmText: 'Schedule Deletion',
-      cancelText: 'Cancel',
-    });
-    if (!typed || typed.trim() !== 'DELETE') {
-      if (typed !== null) {
-        this.alerts.showError('You must type DELETE exactly to confirm. Account deletion was cancelled.');
-      }
-      return;
-    }
-
-    this.actionPending.set(true);
-    try {
-      await this.api.auth.scheduleTenantDeletion.mutate();
-      // All sessions are wiped server-side — sign out locally and redirect to login
-      await this.auth.signOut();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to schedule account deletion.');
-      this.actionPending.set(false);
-    }
-  }
-
-  protected async cancelDeletion() {
-    const confirmed = await this.dialog.confirm({
-      title: 'Cancel Account Deletion',
-      message: 'Cancel the scheduled deletion? Your account and all data will remain intact.',
-      variant: 'info',
-      confirmText: 'Cancel Deletion',
-      cancelText: 'Go Back',
-    });
-    if (!confirmed) return;
-
-    this.actionPending.set(true);
-    try {
-      await this.api.auth.cancelTenantDeletion.mutate();
-      await this.loadStatus();
-      this.alerts.showSuccess('Account deletion cancelled. Your data is safe.');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel deletion.');
-    } finally {
-      this.actionPending.set(false);
-    }
-  }
 }
 ```
 
@@ -13272,212 +12274,6 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-@Component({
-  selector: 'pc-user-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    StatusBadge,
-    ProfileCard,
-    DetailRow,
-    DetailItem,
-    SystemMetadata,
-    PcCard,
-  ],
-  templateUrl: './user-view.html',
-})
-export class UserViewComponent {
-  readonly id = input.required<string>();
-
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly userService = inject(UserService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-
-  protected readonly avatarUrl = computed(() => {
-    const user = this.detail();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly activityCards = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    return [
-      {
-        key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        asOf: null,
-      },
-      {
-        key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        asOf: s.contacts_added.last_created_at,
-      },
-      {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        asOf: s.files_exported.last_activity_at,
-      },
-    ];
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
-        }
-        void this.load();
-      });
-    });
-  }
-
-  protected editUser() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteUser() {
-    if (!this.id()) return;
-    if (String(this.id()) === String(this.currentUserId())) {
-      this.alerts.showError('You cannot delete yourself.');
-      return;
-    }
-    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
-      this.alerts.showError('Admins cannot delete owner accounts.');
-      return;
-    }
-
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
-      }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      end();
-    }
-  }
-
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      const d = typeof date === 'string' ? new Date(date) : date;
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(d);
-    } catch {
-      return date.toString();
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.stats.set(user.stats);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/workflows/services/workflows-service.ts
 
 ```typescript
@@ -15898,467 +14694,6 @@ export const loginGuard: CanActivateFn = () =>
   inject(AuthService).getUser() ? inject(Router).navigateByUrl('/summary') : true;
 ```
 
-## File: apps/frontend/src/app/auth/new-password-page/new-password-page.ts
-
-```typescript
-import { DecimalPipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormField, form, minLength, required, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
-
-@Component({
-  selector: 'pc-new-password',
-  imports: [DecimalPipe, FormField, RouterLink, AuthLayoutComponent, Icon],
-  templateUrl: './new-password-page.html',
-})
-export class NewPasswordPage implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-
-  private _loading = createLoadingGate();
-
-  private code: string | null = null;
-
-  protected readonly error = signal(false);
-  protected readonly isLoading = this._loading.visible;
-
-  protected passwordBreachNumber = passwordBreachNumber;
-  protected passwordInBreach = passwordInBreach;
-
-  protected success: string | undefined;
-
-  protected readonly payload = signal({
-    password: '',
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    required(p.password);
-    minLength(p.password, 8);
-  });
-
-  public get password() {
-    return this.form.password();
-  }
-
-  public ngOnInit() {
-    const code = this.route.snapshot.queryParamMap.get('code');
-
-    if (!code) {
-      this.error.set(true);
-      return;
-    }
-
-    this.code = code;
-  }
-
-  public async submit(event?: Event) {
-    event?.preventDefault();
-
-    // force validation messages to appear
-    this.form().markAsTouched();
-
-    if (!this.form().valid) {
-      this.alertSvc.showError('Please check the password.');
-      return;
-    }
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const passwordVal = this.payload().password;
-          await this.authService.resetPassword({
-            code: this.code || '',
-            password: passwordVal,
-          });
-
-          this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
-          void this.router.navigateByUrl('signin');
-        } catch (err) {
-          // Catch backend/network rejections properly
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : 'Failed to reset password. Please try again.',
-          );
-          this.error.set(true);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        this.alertSvc.showError('Please check the password.');
-      },
-    });
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/reset-password-page/reset-password-page.ts
-
-```typescript
-import { Component, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { form, submit, required, email, FormField } from '@angular/forms/signals';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Alerts } from '@uxcommon/components/alerts/alerts';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-@Component({
-  selector: 'pc-reset-password',
-  imports: [FormField, Alerts],
-  templateUrl: './reset-password-page.html',
-})
-export class ResetPasswordPage {
-  private _loading = createLoadingGate();
-  private alertSvc = inject(AlertService);
-  private authService = inject(AuthService);
-  private router = inject(Router);
-
-  protected readonly isLoading = this._loading.visible;
-
-  protected emailSent = signal(false);
-
-  protected success: string | undefined;
-
-  protected readonly payload = signal({
-    email: '',
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-  });
-
-  public get email() {
-    return this.form.email();
-  }
-
-  public async submit(event?: Event) {
-    event?.preventDefault();
-
-    const rawEmail = this.payload().email;
-    const emailVal = rawEmail.trim().toLowerCase();
-
-    if (rawEmail !== emailVal) {
-      this.form.email().value.set(emailVal);
-    }
-
-    // force validation messages to appear
-    this.form().markAsTouched();
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          await this.authService.sendPasswordResetEmail({ email: emailVal });
-          this.alertSvc.showSuccess(
-            "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
-          );
-          this.emailSent.set(true);
-          void this.router.navigateByUrl('signin');
-        } catch (err) {
-          this.alertSvc.showError(err instanceof Error && err.message ? err.message : String(err));
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        this.alertSvc.showError('Please check the email address and try again.');
-      },
-    });
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/resume-account-page/resume-account-page.ts
-
-```typescript
-import { Component, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { Icon } from '@icons/icon';
-import { AuthLayoutComponent } from '../auth-layout';
-import { TRPCService } from '../../services/api/trpc-service';
-import { AuthService } from '../auth-service';
-
-@Component({
-  selector: 'pc-resume-account-page',
-  imports: [AuthLayoutComponent, Icon, DatePipe],
-  templateUrl: './resume-account-page.html',
-})
-export class ResumeAccountPage extends TRPCService<any> {
-  protected readonly auth = inject(AuthService);
-
-  protected readonly actionPending = signal(false);
-  protected readonly errorMessage = signal('');
-
-  protected readonly loggedInUser = this.auth.getUserSignal();
-
-  protected get canResume(): boolean {
-    const role = this.loggedInUser()?.role;
-    return role === 'admin' || role === 'owner';
-  }
-
-  protected get pausedDate(): Date | null {
-    const d = this.loggedInUser()?.tenant_paused_at;
-    return d ? new Date(d) : null;
-  }
-
-  protected async resumeAccount() {
-    this.actionPending.set(true);
-    this.errorMessage.set('');
-    try {
-      await this.api.auth.resumeTenant.mutate();
-      await this.auth.getCurrentUser();
-      void this.router.navigate(['/']);
-    } catch (err) {
-      this.errorMessage.set(
-        err instanceof Error && err.message ? err.message : 'Failed to reactivate account. Please try again.',
-      );
-    } finally {
-      this.actionPending.set(false);
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/signup-page/signup-page.ts
-
-```typescript
-import { DecimalPipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
-import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUser, signUpInputType } from '../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
-
-@Component({
-  selector: 'pc-signup',
-  imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
-  templateUrl: './signup-page.html',
-})
-export class SignUpPage {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly router = inject(Router);
-
-  private _loading = createLoadingGate();
-
-  protected readonly signUpData = signal({
-    organization: '',
-    email: '',
-    password: '',
-    first_name: '',
-    middle_names: '',
-    last_name: '',
-    terms: '',
-  });
-
-  public readonly form = form(this.signUpData, (p) => {
-    required(p.organization);
-    required(p.email);
-    email(p.email);
-    required(p.password);
-    minLength(p.password, 8);
-    required(p.first_name);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  protected passwordBreachNumber = passwordBreachNumber;
-  protected passwordInBreach = passwordInBreach;
-
-  public get email() {
-    return this.form.email();
-  }
-
-  public get firstName() {
-    return this.form.first_name();
-  }
-
-  public get organization() {
-    return this.form.organization();
-  }
-
-  public get password() {
-    return this.form.password();
-  }
-
-  public async join(event?: Event) {
-    event?.preventDefault();
-    this.form().markAsTouched();
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const data = await this.authService.signUp(this.signUpData() as signUpInputType);
-          const user = data as IAuthUser;
-          if (user) {
-            await this.router.navigate(['/signin'], {
-              queryParams: { verificationPending: 'true', email: user.email },
-            });
-          } else {
-            this.alertSvc.showError('Unable to complete signup.');
-          }
-        } catch (err) {
-          this.alertSvc.showError(err instanceof Error ? err.message : 'Signup failed.');
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        this.alertSvc.showError('Please enter all information before continuing.');
-      },
-    });
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.ts
-
-```typescript
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from '../auth-service';
-
-@Component({
-  selector: 'pc-verify-email',
-  imports: [RouterLink, AuthLayoutComponent, Icon],
-  templateUrl: './verify-email-page.html',
-})
-export class VerifyEmailPage implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly auth = inject(AuthService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
-  protected readonly errorMessage = signal<string>('');
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    const code = this.route.snapshot.queryParamMap.get('code');
-
-    if (!code) {
-      this.status.set('error');
-      this.errorMessage.set('Invalid or missing verification code.');
-      return;
-    }
-
-    const end = this._loading.begin();
-    this.status.set('idle');
-
-    try {
-      const result = await this.auth.verifyEmail({ code });
-      if (result && result.success) {
-        this.status.set('success');
-      } else {
-        this.status.set('error');
-        this.errorMessage.set('Verification failed. The link may be invalid.');
-      }
-    } catch (err) {
-      this.status.set('error');
-      this.errorMessage.set(
-        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during verification.',
-      );
-    } finally {
-      end();
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/verify-sender-email-page/verify-sender-email-page.ts
-
-```typescript
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { SettingsService } from '../../experiences/settings/services/settings-service';
-
-@Component({
-  selector: 'pc-verify-sender-email',
-  imports: [RouterLink, AuthLayoutComponent, Icon],
-  templateUrl: './verify-sender-email-page.html',
-})
-export class VerifySenderEmailPage implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly settingsSvc = inject(SettingsService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
-  protected readonly errorMessage = signal<string>('');
-  protected readonly verifiedEmail = signal<string>('');
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    const token = this.route.snapshot.queryParamMap.get('token');
-
-    if (!token) {
-      this.status.set('error');
-      this.errorMessage.set('Invalid or missing verification token.');
-      return;
-    }
-
-    const end = this._loading.begin();
-    this.status.set('idle');
-
-    try {
-      const result = await this.settingsSvc.verifySenderEmail(token);
-      if (result && result.success) {
-        this.status.set('success');
-        this.verifiedEmail.set(result.email || '');
-      } else {
-        this.status.set('error');
-        this.errorMessage.set('Verification failed. The token may be invalid.');
-      }
-    } catch (err) {
-      this.status.set('error');
-      this.errorMessage.set(
-        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during verification.',
-      );
-    } finally {
-      end();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/auth/auth-guard.ts
 
 ```typescript
@@ -16698,160 +15033,6 @@ export class RecordActivities {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
-
-```typescript
-import { Component, signal, inject, viewChild } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { CompaniesService } from '../services/companies-service';
-
-@Component({
-  selector: 'pc-companies-grid',
-  imports: [DataGrid, CsvImportComponent],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Companies"
-        i18n-title
-        description="Manage corporate contacts, associate people with companies, and track organization profiles."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="false"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        (importCSV)="openImportDialog()"
-        plusIcon="add-company"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Companies from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    />
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: CompaniesService },
-    provideDataGridConfig({ messages: { exportEntity: 'companies', exportFileName: 'companies-export.csv' } }),
-  ],
-})
-export class CompaniesGrid {
-  private readonly companiesService = inject(CompaniesService);
-  private readonly grid = viewChild<DataGrid<'companies', any>>('grid');
-
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected readonly mappableFields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'];
-  protected readonly importerOpen = signal(false);
-  protected readonly importSummary = signal<CsvImportSummary | null>(null);
-
-  protected col = [
-    { field: 'name', headerName: 'Company Name', editable: true },
-    { field: 'website', headerName: 'Website', editable: true },
-    { field: 'industry', headerName: 'Industry', editable: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'phone', headerName: 'Phone', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'created_at',
-      headerName: 'Created',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
-    },
-  ];
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      name: 'name',
-      companyname: 'name',
-      description: 'description',
-      desc: 'description',
-      website: 'website',
-      web: 'website',
-      email: 'email',
-      phone: 'phone',
-      tel: 'phone',
-      telephone: 'phone',
-      industry: 'industry',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  };
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.companiesService.import(rows, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
 
 ```html
@@ -16943,182 +15124,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   </div>
   }
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
-
-```typescript
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInCompany } from './people-in-company';
-import { CompaniesService } from '../services/companies-service';
-import { UserService } from '../../../services/user.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-
-@Component({
-  selector: 'pc-company-view',
-  imports: [
-    RouterModule,
-    PeopleInCompany,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-  ],
-  templateUrl: './company-view.html',
-})
-export class CompanyView {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly company = signal<any | null>(null);
-  protected readonly employeeCount = signal(0);
-
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly companyTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
-  ]);
-
-  protected readonly initials = computed(() => {
-    const name = this.company()?.name || '';
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w: string) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly isEnriched = computed(() => {
-    const rawJson = this.company()?.json;
-    if (!rawJson) return false;
-
-    let json = null;
-
-    try {
-      json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
-    } catch {
-      return false;
-    }
-    return !!json.google_enriched;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load company details (triggers Google enrichment job on backend)
-      const data = await this.companiesSvc.getById(id);
-      this.company.set(data);
-
-      // 2. Load employee count via dedicated count endpoint (no row data fetched)
-      const count = await this.personsSvc.countByCompanyId(id);
-      this.employeeCount.set(count);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load company details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editCompany() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id());
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
@@ -17473,6 +15478,122 @@ export class DonationsGridComponent implements OnInit {
       this.donations.set(data || []);
     } catch (_err) {
       this.alertSvc.showError('Failed to load donations. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.ts
+
+```typescript
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+import { TitleCasePipe } from '@angular/common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { DonationsService } from '../../../services/api/donations-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+@Component({
+  selector: 'pc-pledges-grid',
+  imports: [RouterLink, RouterLinkActive, TitleCasePipe, Icon, SpinOnClickDirective],
+  templateUrl: './pledges-grid.html',
+})
+export class PledgesGridComponent implements OnInit {
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly pledges = signal<any[]>([]);
+  protected readonly _loading = createLoadingGate();
+  protected readonly cancelling = signal<string | null>(null);
+
+  protected readonly activePledgeCount = computed(() => this.pledges().filter((p) => p.status === 'active').length);
+
+  protected readonly totalMonthlyCommitted = computed(
+    () =>
+      this.pledges()
+        .filter((p) => p.status === 'active')
+        .reduce((sum: number, p: any) => sum + Number(p.monthly_amount || 0), 0) / 100,
+  );
+
+  ngOnInit() {
+    void this.load();
+  }
+
+  protected refresh() {
+    void this.load();
+  }
+
+  protected async cancelPledge(pledge: any) {
+    const name =
+      [pledge.person_first_name, pledge.person_last_name].filter(Boolean).join(' ') ||
+      pledge.person_email ||
+      'this donor';
+    const confirmed = await this.dialogs.confirm({
+      title: `Cancel pledge for ${name}?`,
+      message: `This will stop the $${this.formatCurrency(pledge.monthly_amount)}/month recurring donation immediately. This cannot be undone.`,
+      confirmText: 'Cancel Pledge',
+      cancelText: 'Keep Pledge',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    this.cancelling.set(String(pledge.id));
+    try {
+      await this.donationsSvc.cancelPledge(String(pledge.id));
+      this.alertSvc.showSuccess('Pledge cancelled successfully.');
+      await this.load();
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel pledge.');
+    } finally {
+      this.cancelling.set(null);
+    }
+  }
+
+  protected formatCurrency(amountCents: number | null | undefined): string {
+    if (amountCents == null) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
+  }
+
+  protected formatDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return '—';
+    try {
+      return new Date(dateStr).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  protected toStr(val: any): string {
+    return String(val);
+  }
+
+  protected statusBadgeClass(status: string): string {
+    const map: Record<string, string> = {
+      active: 'badge-success',
+      past_due: 'badge-warning',
+      cancelled: 'badge-ghost',
+      unpaid: 'badge-error',
+    };
+    return map[status] ?? 'badge-neutral';
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const data = await this.donationsSvc.listPledges();
+      this.pledges.set(data || []);
+    } catch {
+      this.alertSvc.showError('Failed to load pledges. Please try again.');
     } finally {
       end();
     }
@@ -18203,6 +16324,271 @@ function toNum(n: unknown): number {
   if (typeof n === 'string') return Number(n) || 0;
   if (typeof n === 'number') return n;
   return 0;
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
+
+```typescript
+import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
+import { Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { EmailStatus } from '../../../../../../../../libs/common/src';
+
+import { EmailsService } from '../emails-service';
+import { EmailActionsStore } from './email-actions.store';
+import { EmailCacheStore } from './email-cache.store';
+import { EmailFoldersStore } from './email-folders.store';
+import { type EmailId, EmailStateStore } from './email-state.store';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Service()
+export class EmailsStore {
+  // ----------------- Lazy per-email fallback -----------------
+  //  private readonly _checked = new Set<string>();
+  private readonly router = inject(Router);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly actions = inject(EmailActionsStore);
+  private readonly cache = inject(EmailCacheStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  private readonly _isSyncing = signal(false);
+  public readonly isSyncing = this._isSyncing.asReadonly();
+
+  /*
+  private readonly ensureHasAttachmentOnOpen = effect(() => {
+    const id = this.currentSelectedEmailId();
+    if (!id) return;
+
+    // Skip if already known or in-flight
+    if (this.state.hasAttachment(id)() !== undefined) return;
+    if (this._checked.has(id)) return;
+    this._checked.add(id);
+
+    // Ask backend for this one email
+    this.emailSvc
+      .hasAttachment(id)
+      .then((has) => {
+        this.state.setHasAttachment(id, !!has);
+      })
+      .catch(() => {
+        // leave as undefined on error; next open can retry
+        this._checked.delete(id);
+      });
+  });
+  */
+  private readonly folders = inject(EmailFoldersStore);
+  private readonly state = inject(EmailStateStore);
+
+  public readonly allFolders = this.folders.allFolders;
+
+  public readonly currentSelectedEmail = this.state.currentSelectedEmail;
+
+  public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
+
+  public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
+
+  public readonly hasMore = this.folders.hasMore;
+  public readonly isLoadingMore = this.folders.isLoadingMore;
+
+  public readonly emailsInSelectedFolder = computed(() => {
+    const fid = this.folders.currentSelectedFolderId();
+    if (!fid) return [] as EmailType[];
+    return this.state.emailsInFolderWithFlags(fid)();
+  });
+  public readonly emailsLoading = this.folders.isLoading;
+
+  // ----------------- Cache computed factories -----------------
+  public readonly getEmailBodyById = this.cache.getEmailBodyById;
+  public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
+  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
+
+  public readonly isBodyExpanded = this.state.isBodyExpanded;
+
+  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
+
+  constructor() {
+    effect(() => {
+      // The effect tracks this because it's OUTSIDE untracked()
+      const targetId = this.debouncedSelectedEmailId.value();
+
+      if (targetId) {
+        // Run the email lookup and update INSIDE untracked()
+        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
+        untracked(() => {
+          const emailObj = this.state.readEmail(targetId);
+
+          if (emailObj && !emailObj.is_read) {
+            void this.actions.toggleEmailReadStatus(targetId, true);
+          }
+        });
+      }
+    });
+  }
+
+  // ----------------- Mutations (actions) -----------------
+  public addComment(emailId: EmailId, authorId: string, commentText: string) {
+    return this.actions.addComment(emailId, authorId, commentText);
+  }
+
+  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
+    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
+  }
+
+  public deleteComment(emailId: EmailId, commentId: string | number) {
+    return this.actions.deleteComment(emailId, commentId);
+  }
+
+  public deleteEmail(emailId: EmailId) {
+    return this.actions.deleteEmail(emailId);
+  }
+
+  // ----------------- Loads -----------------
+  public loadAllFolders() {
+    return this.folders.loadAllFolders();
+  }
+
+  public loadAllFoldersWithCounts() {
+    return this.folders.loadAllFoldersWithCounts();
+  }
+
+  public loadEmailBody(emailId: EmailId) {
+    return this.cache.loadEmailBody(emailId);
+  }
+
+  public loadEmailWithHeaders(emailId: EmailId) {
+    return this.cache.loadEmailWithHeaders(emailId);
+  }
+
+  public refreshEmailHeader(emailId: EmailId) {
+    return this.cache.refreshEmailHeader(emailId);
+  }
+
+  public loadEmailActivities(emailId: EmailId) {
+    return this.cache.loadEmailActivities(emailId);
+  }
+
+  public async loadEmailsForFolder(folderId: EmailId) {
+    const rows = await this.folders.loadEmailsForFolder(String(folderId));
+
+    // Prefer IDs from the response; fallback to state if needed
+    const ids =
+      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
+      this.state.emailIdsByFolderId()[String(folderId)] ||
+      [];
+
+    if (!ids.length) return rows;
+
+    try {
+      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
+
+      const merged: Record<string, boolean> = {};
+      for (const id of ids) {
+        const key = String(id); // <- normalize the key
+        merged[key] = !!partial[key];
+      }
+      this.state.setManyHasAttachment(merged);
+    } catch {
+      // ignore failures; UI can lazily resolve per-email elsewhere
+    }
+
+    return rows;
+  }
+
+  public refreshFolderCounts() {
+    return this.folders.refreshFolderCounts();
+  }
+
+  public restoreFromTrash(emailId: EmailId) {
+    return this.actions.restoreFromTrash(emailId);
+  }
+
+  public selectEmail(email: EmailType | { id: EmailId } | null): void {
+    this.state.selectEmail(email);
+  }
+
+  public selectFolder(folder: EmailFolderType | null): void {
+    this.folders.selectFolder(folder);
+  }
+
+  public toggleBodyExpanded(): void {
+    this.state.toggleBodyExpanded();
+  }
+
+  public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
+    return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
+  }
+
+  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
+    return this.actions.toggleEmailReadStatus(emailId, isRead);
+  }
+
+  public moveToFolder(emailId: EmailId, folderId: string) {
+    return this.actions.moveToFolder(emailId, folderId);
+  }
+
+  public loadNextPage() {
+    return this.folders.loadNextPage();
+  }
+
+  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
+    return this.actions.updateEmailStatus(emailId, status);
+  }
+
+  // ----------------- Syncing -----------------
+  public async syncEmails() {
+    this._isSyncing.set(true);
+    try {
+      const result = await this.emailSvc.syncEmails();
+
+      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
+      let attempts = 0;
+      while (attempts < 100) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const active = await this.emailSvc.isAnySyncing();
+        if (!active) {
+          break;
+        }
+        attempts++;
+      }
+
+      // Reload current folder emails and counts
+      const currentFolderId = this.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+      await this.refreshFolderCounts();
+      this.alerts.showSuccess('Sync complete!');
+      return result;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (
+        msg.includes('No email accounts connected') ||
+        msg.includes('No Microsoft account connected') ||
+        msg.includes('No Google account connected') ||
+        msg.includes('Token refresh failed')
+      ) {
+        const confirmed = await this.dialogs.confirm({
+          title: 'Email Account Connection Required',
+          message:
+            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
+          variant: 'warning',
+          confirmText: 'Go to Settings',
+          cancelText: 'Cancel',
+        });
+        if (confirmed) {
+          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
+        }
+      } else {
+        this.alerts.showError(`Sync failed: ${msg}`);
+      }
+      throw e;
+    } finally {
+      this._isSyncing.set(false);
+    }
+  }
 }
 ```
 
@@ -20318,180 +18704,6 @@ export class EmailCreateTaskDialog {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
-
-```typescript
-import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-
-import type { ImportListItem } from '../../../../../../../libs/common/src';
-
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ImportsService } from '../services/imports-service';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-@Component({
-  selector: 'pc-imports-page',
-  imports: [FormsModule, Icon, SpinOnClickDirective],
-  templateUrl: './imports-page.html',
-})
-export class ImportsPage {
-  private readonly destroyRef = inject(DestroyRef);
-  private readonly alerts = inject(AlertService);
-  private readonly imports = inject(ImportsService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  private isLoadActive = false;
-  protected readonly deleting = signal(false);
-  protected readonly items = signal<ImportListItem[]>([]);
-  protected readonly itemCount = computed(() => this.items().length);
-  protected readonly pendingDelete = signal<ImportListItem | null>(null);
-  protected readonly deletePeople = signal(false);
-  protected readonly deleteHouseholds = signal(false);
-  protected readonly deleteCompanies = signal(false);
-  protected readonly deleteTasks = signal(false);
-  protected readonly error = signal<string | null>(null);
-
-  private pollInterval: any;
-
-  constructor() {
-    void this.load();
-
-    // Reset checkbox when dialog closes
-    effect(() => {
-      const item = this.pendingDelete();
-      if (!item) {
-        this.deletePeople.set(false);
-        this.deleteHouseholds.set(false);
-        this.deleteCompanies.set(false);
-        this.deleteTasks.set(false);
-      }
-    });
-
-    this.startPolling();
-
-    this.destroyRef.onDestroy(() => {
-      this.imports.abort();
-      this.stopPolling();
-    });
-  }
-
-  private startPolling() {
-    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
-  }
-
-  private async pollStep(): Promise<void> {
-    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
-    if (hasActiveJobs) {
-      try {
-        const list = await this.imports.list();
-        this.items.set(list ?? []);
-      } catch (err) {
-        console.error('Failed to poll imports status:', err);
-      }
-    }
-  }
-
-  private stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
-  }
-
-  protected formatDate(value: Date) {
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(value instanceof Date ? value : new Date(value));
-    } catch {
-      return value ? String(value) : '—';
-    }
-  }
-
-  protected openDeleteDialog(item: ImportListItem, dialog: HTMLDialogElement) {
-    if (this.deleting()) return;
-    this.pendingDelete.set(item);
-    dialog.showModal();
-  }
-
-  protected closeDeleteDialog(dialog: HTMLDialogElement) {
-    if (!dialog.open) return;
-    dialog.close();
-    this.pendingDelete.set(null);
-  }
-
-  protected async confirmDelete(dialog: HTMLDialogElement) {
-    const item = this.pendingDelete();
-    if (!item || this.deleting()) return;
-
-    this.deleting.set(true);
-    try {
-      await this.imports.delete(item.id, {
-        deletePeople: this.deletePeople(),
-        deleteHouseholds: this.deleteHouseholds(),
-        deleteCompanies: this.deleteCompanies(),
-        deleteTasks: this.deleteTasks(),
-      });
-      this.alerts.showSuccess('Import deleted');
-      await this.load();
-      this.closeDeleteDialog(dialog);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to delete import';
-      this.alerts.showError(message);
-    } finally {
-      this.deleting.set(false);
-    }
-  }
-
-  protected async refresh() {
-    await this.load();
-  }
-
-  private async load() {
-    if (this.isLoadActive) return;
-    this.isLoadActive = true;
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const list = await this.imports.list();
-      this.items.set(list ?? []);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load imports';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.isLoadActive = false;
-      end();
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/lists/services/lists-service.ts
 
 ```typescript
@@ -20830,6 +19042,460 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
   </form>
   }
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
+
+```typescript
+import { CUSTOM_ELEMENTS_SCHEMA, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormBuilder, FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { Tags } from '@experiences/tags/ui/tags';
+import { VisualNewsletterEditorComponent } from './visual-newsletter-editor';
+import { compileTemplateHtml, compileTemplatePlainText } from './newsletter-templates';
+import { NewslettersService } from '../services/newsletters-service';
+
+@Component({
+  selector: 'pc-newsletter-add',
+  imports: [ReactiveFormsModule, Icon, Tags, TagItem, VisualNewsletterEditorComponent],
+  templateUrl: './newsletter-add.html',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+export class NewsletterAddComponent implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly audienceEstimateSeed = signal(0);
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });
+  private readonly fb = inject(FormBuilder);
+  private readonly listsSvc = inject(ListsService);
+  private readonly newslettersSvc = inject(NewslettersService);
+  private readonly requiresScheduleDate = computed(() => {
+    const timing = this.regularForm.get('timingMode')?.value;
+    if (timing !== 'schedule') return false;
+    const date = this.regularForm.get('scheduledDate')?.value;
+    const time = this.regularForm.get('scheduledTime')?.value;
+    return !date || !time;
+  });
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly tagsSvc = inject(TagsService);
+
+  protected readonly availableLists = signal<Array<{ id: string; name: string; size: number }>>([]);
+  protected readonly availableTags = signal<Array<{ id: string; name: string; usage: number }>>([]);
+  protected readonly currentStep = signal<StepIndex>(1);
+  protected readonly estimatedAudienceCount = computed(() => this.computeEstimatedAudience());
+  protected readonly excludeListIds = signal<string[]>([]);
+  protected readonly excludeTagsList = signal<string[]>([]);
+  protected readonly includeListIds = signal<string[]>([]);
+  protected readonly includeTagsList = signal<string[]>([]);
+  protected readonly loadingLists = signal<boolean>(false);
+  protected readonly loadingTags = signal<boolean>(false);
+  protected readonly mode = signal<CreationMode>('options');
+  protected readonly regularForm = this.fb.group({
+    subject: ['', [Validators.required]],
+    previewText: [''],
+    fromName: ['', [Validators.required]],
+    fromAddress: ['', [Validators.required, Validators.email]],
+    htmlContent: [''],
+    plainTextContent: [''],
+    includeLists: [[] as string[]],
+    includeTags: [[] as string[]],
+    excludeLists: [[] as string[]],
+    excludeTags: [[] as string[]],
+    timingMode: ['now'],
+    scheduledDate: [''],
+    scheduledTime: [''],
+  });
+  protected readonly showDatePicker = signal(false);
+  protected readonly selectedTemplate = signal<'welcome' | 'product' | 'newsletter' | 'empty'>('welcome');
+  protected readonly steps = ['Template', 'Design', 'Audience & Summary', 'Timing'] as const;
+
+  public ngOnInit(): void {
+    this.syncListSignalsFromForm();
+    this.syncTagSignalsFromForm();
+    void this.loadLists();
+    void this.loadTags();
+  }
+
+  protected close(): void {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected handleBack(): void {
+    const step = this.currentStep();
+    if (step === 1) {
+      this.switchToOptions();
+    } else {
+      this.currentStep.set((step - 1) as StepIndex);
+    }
+  }
+
+  protected handleExcludeListSelect(event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    if (!select) return;
+    const value = select.value;
+    if (!value) return;
+    const current = new Set(this.excludeListIds());
+    if (!current.has(value)) {
+      current.add(value);
+      const arr = Array.from(current);
+      this.excludeListIds.set(arr);
+      this.updateExcludeListsControl(arr);
+      this.refreshAudienceEstimate();
+    }
+    select.value = '';
+  }
+
+  protected handleExcludeTagsChange(tags: string[]): void {
+    const next = Array.isArray(tags) ? [...tags] : [];
+    this.excludeTagsList.set(next);
+    const control = this.regularForm.get('excludeTags') as FormControl<string[]> | null;
+    control?.setValue(next);
+    control?.markAsDirty();
+    this.refreshAudienceEstimate();
+  }
+
+  protected handleIncludeListSelect(event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    if (!select) return;
+    const value = select.value;
+    if (!value) return;
+    const current = new Set(this.includeListIds());
+    if (!current.has(value)) {
+      current.add(value);
+      const arr = Array.from(current);
+      this.includeListIds.set(arr);
+      this.updateIncludeListsControl(arr);
+      this.refreshAudienceEstimate();
+    }
+    select.value = '';
+  }
+
+  protected handleIncludeTagsChange(tags: string[]): void {
+    const next = Array.isArray(tags) ? [...tags] : [];
+    this.includeTagsList.set(next);
+    const control = this.regularForm.get('includeTags') as FormControl<string[]> | null;
+    control?.setValue(next);
+    control?.markAsDirty();
+    this.refreshAudienceEstimate();
+  }
+
+  protected handleNext(): void {
+    const step = this.currentStep();
+
+    if (step === 3) {
+      this.markSummaryTouched();
+      if (
+        this.regularForm.get('subject')?.invalid ||
+        this.regularForm.get('fromName')?.invalid ||
+        this.regularForm.get('fromAddress')?.invalid
+      ) {
+        return;
+      }
+    }
+
+    if (step === 4) return;
+    this.currentStep.set((step + 1) as StepIndex);
+  }
+
+  protected isInvalid(controlName: string): boolean {
+    const control = this.regularForm.get(controlName);
+    if (!control) return false;
+    return control.invalid && (control.dirty || control.touched);
+  }
+
+  protected listName(id: string): string {
+    const match = this.availableLists().find((list) => list.id === id);
+    return match?.name ?? 'List';
+  }
+
+  protected onScheduledDateChange(event: any): void {
+    const value = this.normalizeCalendarValue(event) ?? '';
+    const control = this.regularForm.get('scheduledDate') as FormControl<string> | null;
+    if (control) {
+      control.setValue(value);
+      control.markAsDirty();
+      control.markAsTouched();
+    }
+    this.refreshAudienceEstimate();
+    this.showDatePicker.set(false);
+  }
+
+  protected removeExcludeList(listId: string): void {
+    const next = this.excludeListIds().filter((id) => id !== listId);
+    this.excludeListIds.set(next);
+    this.updateExcludeListsControl(next);
+    this.refreshAudienceEstimate();
+  }
+
+  protected removeIncludeList(listId: string): void {
+    const next = this.includeListIds().filter((id) => id !== listId);
+    this.includeListIds.set(next);
+    this.updateIncludeListsControl(next);
+    this.refreshAudienceEstimate();
+  }
+
+  protected scheduledDateDisplay(): string {
+    const value = this.scheduledDateValue();
+    if (!value) return 'Select a date';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : this.dateFormatter.format(parsed);
+  }
+
+  protected scheduledDateValue(): string {
+    const control = this.regularForm.get('scheduledDate');
+    const value = control?.value;
+    return typeof value === 'string' ? value : value ? String(value) : '';
+  }
+
+  protected selectAutomated(): void {
+    this.mode.set('automated');
+  }
+
+  protected selectRegular(): void {
+    this.mode.set('regular');
+    this.currentStep.set(1);
+    this.syncListSignalsFromForm();
+    this.syncTagSignalsFromForm();
+    this.selectTemplate('welcome');
+  }
+
+  protected selectTemplate(preset: 'welcome' | 'product' | 'newsletter' | 'empty'): void {
+    this.selectedTemplate.set(preset);
+    const html = compileTemplateHtml(preset);
+    const text = compileTemplatePlainText(preset);
+    this.regularForm.get('htmlContent')?.setValue(html);
+    this.regularForm.get('plainTextContent')?.setValue(text);
+  }
+
+  protected goToStep(targetStep: number): void {
+    if (targetStep < this.currentStep()) {
+      this.currentStep.set(targetStep as StepIndex);
+    }
+  }
+
+  protected async sendRegular(): Promise<void> {
+    this.markSummaryTouched();
+
+    if (this.requiresScheduleDate()) {
+      this.regularForm.get('scheduledDate')?.markAsTouched();
+      this.regularForm.get('scheduledTime')?.markAsTouched();
+      if (this.requiresScheduleDate()) {
+        return;
+      }
+    }
+
+    if (this.regularForm.invalid) {
+      return;
+    }
+
+    const raw = this.regularForm.getRawValue();
+    const { scheduledDate, scheduledTime, ...rest } = raw;
+    const scheduledAt =
+      rest.timingMode === 'schedule' && scheduledDate && scheduledTime
+        ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
+        : null;
+
+    // Compile audience description
+    const includeListsDesc = rest.includeLists?.map((id) => this.listName(id)).join(', ');
+    const includeTagsDesc = rest.includeTags?.join(', ');
+    const excludeListsDesc = rest.excludeLists?.map((id) => this.listName(id)).join(', ');
+    const excludeTagsDesc = rest.excludeTags?.join(', ');
+
+    let audienceDesc = '';
+    if (includeListsDesc || includeTagsDesc) {
+      audienceDesc += `Targeting lists: [${includeListsDesc || 'None'}], tags: [${includeTagsDesc || 'None'}]`;
+    }
+    if (excludeListsDesc || excludeTagsDesc) {
+      audienceDesc += ` (Excluding lists: [${excludeListsDesc || 'None'}], tags: [${excludeTagsDesc || 'None'}])`;
+    }
+    if (!audienceDesc) {
+      audienceDesc = 'No target audience configured.';
+    }
+
+    const payload = {
+      name: rest.subject || 'Unnamed Newsletter',
+      status: rest.timingMode === 'schedule' ? ('scheduled' as const) : ('draft' as const),
+      subject: rest.subject,
+      preview_text: rest.previewText,
+      audience_description: audienceDesc,
+      target_lists: JSON.stringify({ include: rest.includeLists || [], exclude: rest.excludeLists || [] }),
+      segments: JSON.stringify({ include: rest.includeTags || [], exclude: rest.excludeTags || [] }),
+      html_content: rest.htmlContent,
+      plain_text_content: rest.plainTextContent,
+      send_date: scheduledAt ? new Date(scheduledAt) : null,
+      total_recipients: this.estimatedAudienceCount(),
+    };
+
+    try {
+      const created = await this.newslettersSvc.add(payload);
+
+      if (rest.timingMode === 'now' && created?.['id']) {
+        await this.newslettersSvc.send(created['id']);
+        this.alertSvc.showSuccess('Newsletter sent successfully!');
+      } else {
+        this.alertSvc.showSuccess(
+          rest.timingMode === 'schedule' ? 'Newsletter scheduled successfully.' : 'Newsletter draft saved.',
+        );
+      }
+      this.close();
+    } catch (err) {
+      console.error('Failed to save or send newsletter', err);
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to save or send newsletter.');
+    }
+  }
+
+  protected switchToOptions(): void {
+    this.mode.set('options');
+    this.currentStep.set(1);
+  }
+
+  protected timingNeedsDate(): boolean {
+    return this.requiresScheduleDate();
+  }
+
+  protected toggleDatePicker(): void {
+    this.showDatePicker.update((open) => !open);
+  }
+
+  private computeEstimatedAudience(): number {
+    this.audienceEstimateSeed();
+
+    const listSizeMap = new Map<string, number>();
+    for (const list of this.availableLists()) {
+      listSizeMap.set(list.id, Number(list.size) || 0);
+    }
+
+    const includeListTotal = this.includeListIds().reduce((sum, id) => sum + (listSizeMap.get(id) ?? 0), 0);
+    const excludeListTotal = this.excludeListIds().reduce((sum, id) => sum + (listSizeMap.get(id) ?? 0), 0);
+
+    const tagUsageMap = new Map<string, number>();
+    for (const tag of this.availableTags()) {
+      tagUsageMap.set(tag.name.toLowerCase(), Number(tag.usage) || 0);
+    }
+
+    const includeTagTotal = this.includeTagsList().reduce(
+      (sum, name) => sum + (tagUsageMap.get(name.toLowerCase()) ?? 0),
+      0,
+    );
+    const excludeTagTotal = this.excludeTagsList().reduce(
+      (sum, name) => sum + (tagUsageMap.get(name.toLowerCase()) ?? 0),
+      0,
+    );
+
+    const estimate = includeListTotal + includeTagTotal - excludeListTotal - excludeTagTotal;
+    return estimate > 0 ? Math.round(estimate) : 0;
+  }
+
+  private async loadLists(): Promise<void> {
+    this.loadingLists.set(true);
+    try {
+      const result = await this.listsSvc.getAll({ limit: 100, startRow: 0 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows
+          .filter((row: any) => row?.id && row?.name)
+          .map((row: any) => ({
+            id: String(row.id),
+            name: String(row.name),
+            size: Number(row.list_size ?? row.people_count ?? row.household_count ?? row.member_count ?? 0) || 0,
+          })),
+      );
+      this.syncListSignalsFromForm();
+    } catch (err) {
+      console.error('Failed to load lists for newsletters', err);
+      this.alertSvc.showError('We could not load lists. Try again later.');
+    } finally {
+      this.loadingLists.set(false);
+    }
+  }
+
+  private async loadTags(): Promise<void> {
+    this.loadingTags.set(true);
+    try {
+      const result = await this.tagsSvc.getAll({ limit: 100, startRow: 0 });
+      const rows = Array.isArray((result as any)?.rows) ? (result as any).rows : [];
+      this.availableTags.set(
+        rows
+          .filter((row: any) => row?.id && row?.name)
+          .map((row: any) => ({
+            id: String(row.id),
+            name: String(row.name),
+            usage: Number(row.use_count_people ?? 0) + Number(row.use_count_households ?? 0),
+          })),
+      );
+      this.refreshAudienceEstimate();
+    } catch (err) {
+      console.error('Failed to load tags for newsletters', err);
+      this.alertSvc.showError('We could not load tags. Try again later.');
+    } finally {
+      this.loadingTags.set(false);
+    }
+  }
+
+  private markSummaryTouched(): void {
+    this.regularForm.get('subject')?.markAsTouched();
+    this.regularForm.get('fromName')?.markAsTouched();
+    this.regularForm.get('fromAddress')?.markAsTouched();
+  }
+
+  private normalizeCalendarValue(event: any): string | null {
+    const raw =
+      (event?.detail != null && typeof event.detail === 'string' && event.detail) ||
+      (event?.detail?.value != null && event.detail.value) ||
+      (event?.target?.value != null && event.target.value) ||
+      (event?.value != null && event.value) ||
+      (typeof event === 'string' ? event : null);
+
+    if (!raw) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  private refreshAudienceEstimate(): void {
+    this.audienceEstimateSeed.update((value) => value + 1);
+  }
+
+  private syncListSignalsFromForm(): void {
+    const include = (this.regularForm.get('includeLists') as FormControl<string[]> | null)?.value ?? [];
+    const exclude = (this.regularForm.get('excludeLists') as FormControl<string[]> | null)?.value ?? [];
+    this.includeListIds.set([...include]);
+    this.excludeListIds.set([...exclude]);
+    this.refreshAudienceEstimate();
+  }
+
+  private syncTagSignalsFromForm(): void {
+    const include = (this.regularForm.get('includeTags') as FormControl<string[]> | null)?.value ?? [];
+    const exclude = (this.regularForm.get('excludeTags') as FormControl<string[]> | null)?.value ?? [];
+    this.includeTagsList.set([...include]);
+    this.excludeTagsList.set([...exclude]);
+    this.refreshAudienceEstimate();
+  }
+
+  private updateExcludeListsControl(next: string[]): void {
+    const control = this.regularForm.get('excludeLists') as FormControl<string[]> | null;
+    control?.setValue(next);
+    control?.markAsDirty();
+  }
+
+  private updateIncludeListsControl(next: string[]): void {
+    const control = this.regularForm.get('includeLists') as FormControl<string[]> | null;
+    control?.setValue(next);
+    control?.markAsDirty();
+  }
+}
+
+type CreationMode = 'options' | 'regular' | 'automated';
+
+type StepIndex = 1 | 2 | 3 | 4;
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.html
@@ -22137,582 +20803,165 @@ export class PeopleInHousehold {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/profile/profile-page.ts
+## File: apps/frontend/src/app/experiences/settings/account/account-settings.ts
 
 ```typescript
-import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled, FormField } from '@angular/forms/signals';
-import { FormsModule } from '@angular/forms';
-import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-
-@Component({
-  selector: 'pc-profile-page',
-  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, DetailItem],
-  templateUrl: './profile-page.html',
-})
-export class ProfilePage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly uploadingAvatar = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-  protected readonly avatarUrl = signal<string | null>(null);
-
-  // Profile picture cropping state
-  protected readonly cropImageSrc = signal<string | null>(null);
-  protected readonly cropZoom = signal<number>(1.0);
-  protected readonly cropX = signal<number>(0);
-  protected readonly cropY = signal<number>(0);
-  protected readonly displayWidth = signal<number>(0);
-  protected readonly displayHeight = signal<number>(0);
-
-  private cropFileName = '';
-  private isDragging = false;
-  private startX = 0;
-  private startY = 0;
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    mention_in_comment: true,
-    task_assigned: true,
-    task_due: true,
-    person_assigned: true,
-    export_ready: true,
-    import_summary: true,
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.email, () => this.isViewer() || this.saving());
-    disabled(p.first_name, () => this.isViewer() || this.saving());
-    disabled(p.last_name, () => this.isViewer() || this.saving());
-    disabled(p.mention_in_comment, () => this.isViewer() || this.saving());
-    disabled(p.task_assigned, () => this.isViewer() || this.saving());
-    disabled(p.task_due, () => this.isViewer() || this.saving());
-    disabled(p.person_assigned, () => this.isViewer() || this.saving());
-    disabled(p.export_ready, () => this.isViewer() || this.saving());
-    disabled(p.import_summary, () => this.isViewer() || this.saving());
-  });
-
-  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly initials = computed(() => {
-    const first = this.payload().first_name?.trim();
-    const last = this.payload().last_name?.trim();
-    if (first && last) {
-      return (first[0]! + last[0]!).toUpperCase();
-    }
-    if (first) {
-      return first[0]!.toUpperCase();
-    }
-    const emailStr = this.payload().email?.trim();
-    if (emailStr) {
-      return emailStr[0]!.toUpperCase();
-    }
-    return '?';
-  });
-
-  protected readonly activityCards = computed(() => {
-    const s = this.stats();
-    if (!s) return [];
-    return [
-      {
-        key: 'emails',
-        title: 'Emails Assigned',
-        value: s.emails_assigned.total,
-        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
-        icon: 'envelope' as const,
-        asOf: null,
-      },
-      {
-        key: 'contacts',
-        title: 'Contacts Added',
-        value: s.contacts_added.total,
-        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
-        icon: 'users' as const,
-        asOf: s.contacts_added.last_created_at,
-      },
-      {
-        key: 'imports',
-        title: 'Files Imported',
-        value: s.files_imported.count,
-        subtitle: `${s.files_imported.total_rows} people imported`,
-        icon: 'arrow-down-tray' as const,
-        asOf: s.files_imported.last_activity_at,
-      },
-      {
-        key: 'exports',
-        title: 'Files Exported',
-        value: s.files_exported.count,
-        subtitle: `${s.files_exported.total_rows} rows exported`,
-        icon: 'arrow-up-tray' as const,
-        asOf: s.files_exported.last_activity_at,
-      },
-    ];
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  protected async save(event?: Event) {
-    if (event) {
-      event.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    const user = this.detail();
-    if (!user) return;
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.userService.updateUserProfile(user.id, payload);
-      this.alerts.showSuccess('Profile updated successfully');
-      await this.load();
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async cancelEmailChange() {
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.auth.cancelEmailChange();
-      this.alerts.showSuccess('Email change canceled and reverted');
-      await this.load();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to cancel email change';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected formatAsOf(date: Date | null): string {
-    if (!date) return '—';
-    try {
-      return new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(new Date(date));
-    } catch {
-      return date.toString();
-    }
-  }
-
-  protected onAvatarFileChange(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    this.cropFileName = file.name;
-    input.value = '';
-
-    // Read the file as a DataURL to display in the crop modal
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const img = new Image();
-      img.onload = () => {
-        const containerSize = 256;
-        const minDimension = Math.min(img.width, img.height);
-        const displayScale = containerSize / minDimension;
-
-        this.displayWidth.set(img.width * displayScale);
-        this.displayHeight.set(img.height * displayScale);
-        this.cropImageSrc.set(imgUrl);
-        this.cropZoom.set(1.0);
-        this.cropX.set(0);
-        this.cropY.set(0);
-      };
-      img.src = imgUrl;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  protected cancelCrop() {
-    this.cropImageSrc.set(null);
-  }
-
-  protected onCropDragStart(event: MouseEvent) {
-    event.preventDefault();
-    this.isDragging = true;
-    this.startX = event.clientX - this.cropX();
-    this.startY = event.clientY - this.cropY();
-  }
-
-  protected onCropDragMove(event: MouseEvent) {
-    if (!this.isDragging) return;
-    this.cropX.set(event.clientX - this.startX);
-    this.cropY.set(event.clientY - this.startY);
-  }
-
-  protected onCropDragEnd() {
-    this.isDragging = false;
-  }
-
-  protected getCropTransformStyle() {
-    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
-  }
-
-  protected async cropAndUpload() {
-    const imgUrl = this.cropImageSrc();
-    if (!imgUrl) return;
-
-    this.cropImageSrc.set(null);
-    this.uploadingAvatar.set(true);
-
-    try {
-      const img = new Image();
-      img.src = imgUrl;
-      await new Promise((resolve) => (img.onload = resolve));
-
-      const canvas = document.createElement('canvas');
-      canvas.width = 128;
-      canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Could not get canvas context');
-
-      const containerSize = 256;
-      const targetSize = 128;
-
-      // Real scale factor between loaded image dimensions and container dimensions
-      const minDimension = Math.min(img.width, img.height);
-      const displayScale = containerSize / minDimension;
-
-      const w = img.width * displayScale;
-      const h = img.height * displayScale;
-
-      ctx.clearRect(0, 0, targetSize, targetSize);
-
-      ctx.save();
-      ctx.translate(targetSize / 2, targetSize / 2);
-      ctx.scale(targetSize / containerSize, targetSize / containerSize);
-      ctx.translate(this.cropX(), this.cropY());
-      ctx.scale(this.cropZoom(), this.cropZoom());
-      ctx.drawImage(img, -w / 2, -h / 2, w, h);
-      ctx.restore();
-
-      // Convert canvas to WebP blob (gives optimal compression and small file size)
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
-      if (!blob) throw new Error('Failed to create WebP image blob');
-
-      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
-      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
-      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
-
-      const data = await this.auth.uploadAvatar(webpFile);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
-      this.alerts.showSuccess('Profile picture updated successfully');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  protected async removeAvatar() {
-    this.uploadingAvatar.set(true);
-    try {
-      await this.auth.deleteAvatar();
-      this.avatarUrl.set(null);
-      this.alerts.showSuccess('Profile picture removed');
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
-    } finally {
-      this.uploadingAvatar.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      // First ensure we have/refresh current user
-      const currentUser = await this.auth.getCurrentUser();
-      if (!currentUser) {
-        throw new Error('Not logged in');
-      }
-
-      const user = await this.userService.getProfileById(currentUser.id);
-      this.detail.set(user);
-      this.stats.set(user.stats as any);
-      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load profile';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    const prefs = user.notification_preferences || {
-      mention_in_comment: true,
-      task_assigned: true,
-      task_due: true,
-      person_assigned: true,
-      export_ready: true,
-      import_summary: true,
-    };
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-      mention_in_comment: prefs.mention_in_comment ?? true,
-      task_assigned: prefs.task_assigned ?? true,
-      task_due: prefs.task_due ?? true,
-      person_assigned: prefs.person_assigned ?? true,
-      export_ready: prefs.export_ready ?? true,
-      import_summary: prefs.import_summary ?? true,
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-      notification_preferences: {
-        mention_in_comment: raw.mention_in_comment,
-        task_assigned: raw.task_assigned,
-        task_due: raw.task_due,
-        person_assigned: raw.person_assigned,
-        export_ready: raw.export_ready,
-        import_summary: raw.import_summary,
-      },
-    } as UpdateAuthUserType;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.ts
-
-```typescript
+import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
 import { Icon } from '@icons/icon';
 import { TRPCService } from '../../../services/api/trpc-service';
+import { AuthService } from '../../../auth/auth-service';
 
-export interface BillingDetailsSnapshot {
-  plan: string;
-  status: string;
-  endsAt: Date | null;
-  stripeCustomerId: string | null;
-  stripeSubscriptionId: string | null;
-  hasActiveSubscription: boolean;
-  isMockMode: boolean;
+export interface TenantAccountStatus {
+  deletion_scheduled_at: Date | null;
+  suspended_at: Date | null;
+  paused_at: Date | null;
 }
 
 @Component({
-  selector: 'pc-billing-settings',
+  selector: 'pc-account-settings',
   imports: [DatePipe, Icon],
-  templateUrl: './billing-settings.html',
+  templateUrl: './account-settings.html',
 })
-export class BillingSettingsComponent extends TRPCService<any> implements OnInit {
+export class AccountSettingsComponent extends TRPCService<any> implements OnInit {
   private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly dialog = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
   protected readonly actionPending = signal(false);
-  protected readonly details = signal<BillingDetailsSnapshot | null>(null);
+  protected readonly status = signal<TenantAccountStatus | null>(null);
 
   ngOnInit(): void {
-    void this.initBilling();
+    void this.loadStatus();
   }
 
-  private async initBilling() {
-    await this.loadBilling();
-
-    // Listen to query params for mock successes or redirect callbacks
-    this.route.queryParams
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((params) => void this.handleQueryParams(params));
-  }
-
-  protected async loadBilling() {
+  protected async loadStatus() {
     const end = this._loading.begin();
     try {
-      const data = await this.api.billing.getDetails.query();
-      this.details.set(data);
+      const data = await this.api.auth.getTenantAccountStatus.query();
+      this.status.set({
+        deletion_scheduled_at: data.deletion_scheduled_at ? new Date(data.deletion_scheduled_at) : null,
+        suspended_at: data.suspended_at ? new Date(data.suspended_at) : null,
+        paused_at: data.paused_at ? new Date(data.paused_at) : null,
+      });
     } catch (err) {
-      console.error(err);
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load account status.');
     } finally {
       end();
     }
   }
 
-  private async handleQueryParams(params: Record<string, string>): Promise<void> {
-    if (params['mock_checkout_success'] && params['plan']) {
-      const plan = params['plan'] as 'grassroots' | 'representative';
-      await this.handleMockActivation(plan);
-    } else if (params['checkout_success']) {
-      this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
-      this.clearQueryParams();
-    } else if (params['mock_portal_success']) {
-      this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
-      this.clearQueryParams();
-    }
-  }
-
-  protected async subscribe(plan: 'grassroots' | 'representative') {
-    this.actionPending.set(true);
-    try {
-      const res = await this.api.billing.createCheckout.mutate({ plan });
-      if (res?.url) {
-        window.location.href = res.url;
-      } else {
-        throw new Error('No redirect URL returned from billing engine.');
-      }
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Checkout failed. Please try again.');
-      this.actionPending.set(false);
-    }
-  }
-
-  protected async openPortal() {
-    this.actionPending.set(true);
-    try {
-      const res = await this.api.billing.createPortal.mutate();
-      if (res?.url) {
-        window.location.href = res.url;
-      } else {
-        throw new Error('No redirect URL returned from billing portal.');
-      }
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not open billing portal.');
-      this.actionPending.set(false);
-    }
-  }
-
-  private async handleMockActivation(plan: 'grassroots' | 'representative') {
-    const end = this._loading.begin();
-    try {
-      await this.api.billing.activateMockPlan.mutate({ plan });
-      this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
-      await this.loadBilling();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Mock plan activation failed.');
-    } finally {
-      end();
-      this.clearQueryParams();
-    }
-  }
-
-  protected async cancelMock() {
-    const end = this._loading.begin();
-    try {
-      await this.api.billing.cancelMockPlan.mutate();
-      this.alerts.showSuccess('Mock subscription has been canceled.');
-      await this.loadBilling();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel mock plan.');
-    } finally {
-      end();
-    }
-  }
-
-  private clearQueryParams() {
-    void this.router.navigate([], {
-      relativeTo: this.route,
-      queryParams: {
-        mock_checkout_success: null,
-        plan: null,
-        checkout_success: null,
-        mock_portal_success: null,
-      },
-      queryParamsHandling: 'merge',
+  protected async pauseAccount() {
+    const confirmed = await this.dialog.confirm({
+      title: 'Pause Account',
+      message:
+        'Are you sure you want to pause your account? Your data will be preserved and billing paused, but all users will lose access until the account is reactivated.',
+      variant: 'warning',
+      confirmText: 'Pause',
+      cancelText: 'Cancel',
     });
+    if (!confirmed) return;
+
+    this.actionPending.set(true);
+    try {
+      await this.api.auth.pauseTenant.mutate();
+      await this.auth.signOut();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to pause account.');
+      this.actionPending.set(false);
+    }
+  }
+
+  protected async resumeAccount() {
+    const confirmed = await this.dialog.confirm({
+      title: 'Reactivate Account',
+      message: 'Reactivate your account? All users will regain access immediately.',
+      variant: 'success',
+      confirmText: 'Reactivate',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+
+    this.actionPending.set(true);
+    try {
+      await this.api.auth.resumeTenant.mutate();
+      await this.loadStatus();
+      this.alerts.showSuccess('Account reactivated. Welcome back!');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to reactivate account.');
+    } finally {
+      this.actionPending.set(false);
+    }
+  }
+
+  protected async deleteAccount() {
+    // First confirmation — make scope crystal clear
+    const firstConfirm = await this.dialog.confirm({
+      title: 'Delete Entire Organization?',
+      message:
+        'This will permanently delete your entire organization — all users, contacts, emails, campaigns, imports, and every other piece of data. ' +
+        'Every user in this account will lose access immediately.\n\n' +
+        'If you only want to remove a single user, go to the Users page instead.',
+      variant: 'danger',
+      confirmText: 'Yes, delete the entire organization',
+      cancelText: 'Cancel',
+    });
+    if (!firstConfirm) return;
+
+    // Second confirmation — require typing "DELETE"
+    const typed = await this.dialog.prompt({
+      title: 'Type DELETE to confirm',
+      message:
+        'This cannot be undone. Your account will be queued for deletion and all users will be signed out immediately. ' +
+        'You will have 24 hours to cancel via the link sent to your email.\n\nType DELETE to proceed.',
+      variant: 'danger',
+      inputPlaceholder: 'DELETE',
+      confirmText: 'Schedule Deletion',
+      cancelText: 'Cancel',
+    });
+    if (!typed || typed.trim() !== 'DELETE') {
+      if (typed !== null) {
+        this.alerts.showError('You must type DELETE exactly to confirm. Account deletion was cancelled.');
+      }
+      return;
+    }
+
+    this.actionPending.set(true);
+    try {
+      await this.api.auth.scheduleTenantDeletion.mutate();
+      // All sessions are wiped server-side — sign out locally and redirect to login
+      await this.auth.signOut();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to schedule account deletion.');
+      this.actionPending.set(false);
+    }
+  }
+
+  protected async cancelDeletion() {
+    const confirmed = await this.dialog.confirm({
+      title: 'Cancel Account Deletion',
+      message: 'Cancel the scheduled deletion? Your account and all data will remain intact.',
+      variant: 'info',
+      confirmText: 'Cancel Deletion',
+      cancelText: 'Go Back',
+    });
+    if (!confirmed) return;
+
+    this.actionPending.set(true);
+    try {
+      await this.api.auth.cancelTenantDeletion.mutate();
+      await this.loadStatus();
+      this.alerts.showSuccess('Account deletion cancelled. Your data is safe.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel deletion.');
+    } finally {
+      this.actionPending.set(false);
+    }
   }
 }
 ```
@@ -22809,132 +21058,6 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
   </ul>
   }
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.ts
-
-```typescript
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { Icon } from '@icons/icon';
-import { AuthService } from '../../../auth/auth-service';
-
-interface PasskeyRow {
-  id: string;
-  friendly_name: string | null;
-  device_type: string;
-  backed_up: boolean;
-  created_at: Date;
-  editingName: boolean;
-  pendingName: string;
-}
-
-@Component({
-  selector: 'pc-passkey-settings',
-  imports: [DatePipe, Icon],
-  templateUrl: './passkey-settings.html',
-})
-export class PasskeySettingsComponent implements OnInit {
-  private readonly authService = inject(AuthService);
-  private readonly alerts = inject(AlertService);
-  private readonly dialog = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly adding = signal(false);
-  protected readonly passkeys = signal<PasskeyRow[]>([]);
-
-  ngOnInit(): void {
-    void this.loadPasskeys();
-  }
-
-  protected async loadPasskeys() {
-    const end = this._loading.begin();
-    try {
-      const rows = (await this.authService.listPasskeys()) as any[];
-      this.passkeys.set(
-        rows.map((r) => ({
-          id: String(r.id),
-          friendly_name: r.friendly_name ?? null,
-          device_type: r.device_type,
-          backed_up: r.backed_up,
-          created_at: new Date(r.created_at),
-          editingName: false,
-          pendingName: r.friendly_name ?? '',
-        })),
-      );
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load passkeys.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async addPasskey() {
-    this.adding.set(true);
-    try {
-      const result = await this.authService.registerPasskey();
-      if (result.verified) {
-        this.alerts.showSuccess('Passkey registered successfully.');
-        await this.loadPasskeys();
-      }
-    } catch (err) {
-      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
-        this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to register passkey.');
-      }
-    } finally {
-      this.adding.set(false);
-    }
-  }
-
-  protected async deletePasskey(passkey: PasskeyRow) {
-    const confirmed = await this.dialog.confirm({
-      title: 'Remove Passkey',
-      message: `Remove "${passkey.friendly_name || 'this passkey'}"? You will no longer be able to sign in with it.`,
-      variant: 'danger',
-      confirmText: 'Remove',
-      cancelText: 'Cancel',
-    });
-    if (!confirmed) return;
-    try {
-      await this.authService.deletePasskey(passkey.id);
-      this.alerts.showSuccess('Passkey removed.');
-      this.passkeys.update((list) => list.filter((p) => p.id !== passkey.id));
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove passkey.');
-    }
-  }
-
-  protected startEditName(passkey: PasskeyRow) {
-    this.passkeys.update((list) =>
-      list.map((p) => (p.id === passkey.id ? { ...p, editingName: true, pendingName: p.friendly_name ?? '' } : p)),
-    );
-  }
-
-  protected cancelEditName(passkey: PasskeyRow) {
-    this.passkeys.update((list) => list.map((p) => (p.id === passkey.id ? { ...p, editingName: false } : p)));
-  }
-
-  protected updatePendingName(passkey: PasskeyRow, value: string) {
-    this.passkeys.update((list) => list.map((p) => (p.id === passkey.id ? { ...p, pendingName: value } : p)));
-  }
-
-  protected async savePasskeyName(passkey: PasskeyRow) {
-    const name = passkey.pendingName.trim();
-    if (!name) return;
-    try {
-      await this.authService.updatePasskeyName(passkey.id, name);
-      this.passkeys.update((list) =>
-        list.map((p) => (p.id === passkey.id ? { ...p, friendly_name: name, editingName: false } : p)),
-      );
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to rename passkey.');
-    }
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
@@ -25096,6 +23219,85 @@ export class TagPaletteService {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tags/ui/tags-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { getAllOptionsType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+class TagsOnlyService extends TagsService {
+  public override getAll(options?: getAllOptionsType) {
+    return this.getAllWithCounts({ ...(options ?? {}), type: 'tag' } as getAllOptionsType);
+  }
+}
+
+@Component({
+  selector: 'pc-tags-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Tags"
+        i18n-title
+        description="Manage custom categorization tags used across people, households."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [allowFilter]="false"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-label"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    TagsOnlyService,
+    { provide: AbstractAPIService, useExisting: TagsOnlyService },
+    provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
+  ],
+})
+export class TagsGridComponent {
+  protected col = [
+    {
+      field: 'name',
+      headerName: 'Tag Name',
+      editable: true,
+      valueFormatter: (p: any) => (p.value ? p.value.charAt(0).toUpperCase() + p.value.slice(1) : ''),
+    },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'color',
+      headerName: 'Colour',
+      editable: true,
+      cellDataType: 'color',
+      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
+    },
+    { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
+    { field: 'use_count_people', headerName: 'People' },
+    { field: 'use_count_households', headerName: 'Households' },
+  ];
+
+  protected renderColorCell(raw: unknown): string {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
+      return '<span class="text-xs text-neutral">None</span>';
+    }
+    const color = v.toLowerCase();
+
+    return `
+    <span class="inline-block h-4 w-8 rounded border shadow-sm"
+          style="background-color:${color}; border-color:${color}"
+          title="${color}"></span>
+  `;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.html
 
 ```html
@@ -25368,213 +23570,6 @@ export class TagPaletteService {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import type { IAuthUser } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { UserService } from '../../../services/user.service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import { TeamsService } from '../services/teams-service';
-
-@Component({
-  selector: 'pc-team-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    StatusBadge,
-    ProfileCard,
-    DetailRow,
-  ],
-  templateUrl: './team-view.html',
-})
-export class TeamViewComponent {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly teamsSvc = inject(TeamsService);
-  private readonly tasksSvc = inject(TasksService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly team = signal<any>(null);
-  protected readonly teamTasks = signal<any[]>([]);
-  protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly teamTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
-    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
-    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
-  ]);
-
-  protected readonly captainName = computed(() => {
-    const captainId = this.team()?.team_captain_id;
-    if (!captainId) return '—';
-    const match = this.volunteers().find((v: any) => v.id === captainId);
-    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
-  });
-
-  protected readonly leadName = computed(() => {
-    const leadId = this.team()?.team_lead_user_id;
-    if (!leadId) return '—';
-    const match = this.users().find((u) => String(u.id) === String(leadId));
-    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
-  });
-
-  protected readonly activeTasksCount = computed(() => {
-    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load team detail
-      const data = await this.teamsSvc.getById(id);
-      this.team.set(data);
-
-      // 2. Load associated tasks
-      const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: id } },
-      } as any);
-      this.teamTasks.set(res?.rows ?? []);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load team details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editTeam() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteTeam() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Team',
-      message: 'Are you sure you want to delete this team? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.teamsSvc.delete(this.id());
-      this.teamsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Team deleted');
-      await this.router.navigate(['/teams']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete team';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.team()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.team()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-
-  protected getPriorityType(priority: string | null | undefined): any {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'error';
-      case 'high':
-        return 'warning';
-      case 'medium':
-        return 'info';
-      default:
-        return 'ghost';
-    }
-  }
-
-  protected getStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'done':
-        return 'success';
-      case 'in_progress':
-        return 'info';
-      case 'blocked':
-        return 'error';
-      case 'canceled':
-        return 'neutral';
-      default:
-        return 'ghost';
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.ts
 
 ```typescript
@@ -25716,6 +23711,212 @@ export class TeamsGridComponent {
     </form>
   </pc-card>
 </section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { IAuthUserDetail, IUserStatsSnapshot } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+
+@Component({
+  selector: 'pc-user-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    StatusBadge,
+    ProfileCard,
+    DetailRow,
+    DetailItem,
+    SystemMetadata,
+    PcCard,
+  ],
+  templateUrl: './user-view.html',
+})
+export class UserViewComponent {
+  readonly id = input.required<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly userService = inject(UserService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+
+  protected readonly avatarUrl = computed(() => {
+    const user = this.detail();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  protected readonly currentUserId = computed(() => this.auth.getUser()?.id);
+  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly activityCards = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
+    return [
+      {
+        key: 'emails',
+        title: 'Emails Assigned',
+        value: s.emails_assigned.total,
+        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
+        asOf: null,
+      },
+      {
+        key: 'contacts',
+        title: 'Contacts Added',
+        value: s.contacts_added.total,
+        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
+        asOf: s.contacts_added.last_created_at,
+      },
+      {
+        key: 'imports',
+        title: 'Files Imported',
+        value: s.files_imported.count,
+        subtitle: `${s.files_imported.total_rows} people imported`,
+        asOf: s.files_imported.last_activity_at,
+      },
+      {
+        key: 'exports',
+        title: 'Files Exported',
+        value: s.files_exported.count,
+        subtitle: `${s.files_exported.total_rows} rows exported`,
+        asOf: s.files_exported.last_activity_at,
+      },
+    ];
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
+        }
+        void this.load();
+      });
+    });
+  }
+
+  protected editUser() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteUser() {
+    if (!this.id()) return;
+    if (String(this.id()) === String(this.currentUserId())) {
+      this.alerts.showError('You cannot delete yourself.');
+      return;
+    }
+    if (this.currentUserRole() === 'admin' && this.isOwnerBeingEdited()) {
+      this.alerts.showError('Admins cannot delete owner accounts.');
+      return;
+    }
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      const success = await this.users.delete(this.id());
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
+    } finally {
+      end();
+    }
+  }
+
+  protected formatAsOf(date: Date | null): string {
+    if (!date) return '—';
+    try {
+      const d = typeof date === 'string' ? new Date(date) : date;
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(d);
+    } catch {
+      return date.toString();
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const user = await this.users.getById(this.id());
+      this.detail.set(user);
+      this.stats.set(user.stats);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -29569,111 +27770,233 @@ export default defineConfig(() => ({
 }));
 ```
 
-## File: apps/frontend/src/app/auth/cancel-deletion-page/cancel-deletion-page.ts
+## File: apps/frontend/src/app/auth/new-password-page/new-password-page.ts
 
 ```typescript
-import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
+import { DecimalPipe } from '@angular/common';
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { FormField, form, minLength, required, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+
+@Component({
+  selector: 'pc-new-password',
+  imports: [DecimalPipe, FormField, RouterLink, AuthLayoutComponent, Icon],
+  templateUrl: './new-password-page.html',
+})
+export class NewPasswordPage implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  private _loading = createLoadingGate();
+
+  private code: string | null = null;
+
+  protected readonly error = signal(false);
+  protected readonly isLoading = this._loading.visible;
+
+  protected passwordBreachNumber = passwordBreachNumber;
+  protected passwordInBreach = passwordInBreach;
+
+  protected success: string | undefined;
+
+  protected readonly payload = signal({
+    password: '',
+  });
+
+  public readonly form = form(this.payload, (p) => {
+    required(p.password);
+    minLength(p.password, 8);
+  });
+
+  public get password() {
+    return this.form.password();
+  }
+
+  public ngOnInit() {
+    const code = this.route.snapshot.queryParamMap.get('code');
+
+    if (!code) {
+      this.error.set(true);
+      return;
+    }
+
+    this.code = code;
+  }
+
+  public async submit(event?: Event) {
+    event?.preventDefault();
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    if (!this.form().valid) {
+      this.alertSvc.showError('Please check the password.');
+      return;
+    }
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const passwordVal = this.payload().password;
+          await this.authService.resetPassword({
+            code: this.code || '',
+            password: passwordVal,
+          });
+
+          this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
+          void this.router.navigateByUrl('signin');
+        } catch (err) {
+          // Catch backend/network rejections properly
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : 'Failed to reset password. Please try again.',
+          );
+          this.error.set(true);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please check the password.');
+      },
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/reset-password-page/reset-password-page.ts
+
+```typescript
+import { Component, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { form, submit, required, email, FormField } from '@angular/forms/signals';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Alerts } from '@uxcommon/components/alerts/alerts';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+@Component({
+  selector: 'pc-reset-password',
+  imports: [FormField, Alerts],
+  templateUrl: './reset-password-page.html',
+})
+export class ResetPasswordPage {
+  private _loading = createLoadingGate();
+  private alertSvc = inject(AlertService);
+  private authService = inject(AuthService);
+  private router = inject(Router);
+
+  protected readonly isLoading = this._loading.visible;
+
+  protected emailSent = signal(false);
+
+  protected success: string | undefined;
+
+  protected readonly payload = signal({
+    email: '',
+  });
+
+  public readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+  });
+
+  public get email() {
+    return this.form.email();
+  }
+
+  public async submit(event?: Event) {
+    event?.preventDefault();
+
+    const rawEmail = this.payload().email;
+    const emailVal = rawEmail.trim().toLowerCase();
+
+    if (rawEmail !== emailVal) {
+      this.form.email().value.set(emailVal);
+    }
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          await this.authService.sendPasswordResetEmail({ email: emailVal });
+          this.alertSvc.showSuccess(
+            "Password reset email sent. Please check your email in a minute or two (don't forget to check the spam folder).",
+          );
+          this.emailSent.set(true);
+          void this.router.navigateByUrl('signin');
+        } catch (err) {
+          this.alertSvc.showError(err instanceof Error && err.message ? err.message : String(err));
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please check the email address and try again.');
+      },
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/resume-account-page/resume-account-page.ts
+
+```typescript
+import { Component, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Icon } from '@icons/icon';
 import { AuthLayoutComponent } from '../auth-layout';
 import { TRPCService } from '../../services/api/trpc-service';
 import { AuthService } from '../auth-service';
 
 @Component({
-  selector: 'pc-cancel-deletion-page',
-  imports: [RouterLink, AuthLayoutComponent, Icon, DatePipe],
-  templateUrl: './cancel-deletion-page.html',
+  selector: 'pc-resume-account-page',
+  imports: [AuthLayoutComponent, Icon, DatePipe],
+  templateUrl: './resume-account-page.html',
 })
-export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDestroy {
-  private readonly route = inject(ActivatedRoute);
+export class ResumeAccountPage extends TRPCService<any> {
   protected readonly auth = inject(AuthService);
 
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
-  protected readonly errorMessage = signal('');
   protected readonly actionPending = signal(false);
+  protected readonly errorMessage = signal('');
 
-  // Authenticated flow: user is logged in with a pending deletion
   protected readonly loggedInUser = this.auth.getUserSignal();
-  protected get canCancel(): boolean {
+
+  protected get canResume(): boolean {
     const role = this.loggedInUser()?.role;
     return role === 'admin' || role === 'owner';
   }
-  protected get deletionDate(): Date | null {
-    const d = this.loggedInUser()?.tenant_deletion_scheduled_at;
+
+  protected get pausedDate(): Date | null {
+    const d = this.loggedInUser()?.tenant_paused_at;
     return d ? new Date(d) : null;
   }
 
-  // Token flow: arrived via email link (not logged in)
-  private tenantId: string | null = null;
-  private token: string | null = null;
-  protected readonly isTokenFlow = signal(false);
-  private sessionPollInterval: ReturnType<typeof setInterval> | null = null;
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    this.tenantId = this.route.snapshot.queryParamMap.get('tid');
-    this.token = this.route.snapshot.queryParamMap.get('token');
-
-    if (this.tenantId && this.token) {
-      // Email link flow — process immediately
-      this.isTokenFlow.set(true);
-      await this.cancelViaToken();
-    } else if (this.auth.getUser()) {
-      // Logged-in flow — poll every 5s so if the account is deleted while on this
-      // page the session clears and the user is redirected to sign-in automatically
-      this.sessionPollInterval = setInterval(() => void this.pollSession(), 5000);
-    }
-  }
-
-  public ngOnDestroy() {
-    if (this.sessionPollInterval) {
-      clearInterval(this.sessionPollInterval);
-    }
-  }
-
-  private async pollSession(): Promise<void> {
-    const user = await this.auth.getCurrentUser().catch(() => null);
-    if (!user) {
-      await this.auth.signOut();
-    }
-  }
-
-  private async cancelViaToken() {
-    const end = this._loading.begin();
-    try {
-      await this.api.auth.cancelTenantDeletionByToken.mutate({ tenantId: this.tenantId!, token: this.token! });
-      this.status.set('success');
-      // Refresh so authGuard doesn't re-redirect on subsequent navigation
-      await this.auth.getCurrentUser().catch(() => null);
-    } catch (err) {
-      this.status.set('error');
-      this.errorMessage.set(
-        err instanceof Error && err.message
-          ? err.message
-          : 'This link is invalid or the deletion window has already passed.',
-      );
-    } finally {
-      end();
-    }
-  }
-
-  protected async cancelViaAuth() {
+  protected async resumeAccount() {
     this.actionPending.set(true);
+    this.errorMessage.set('');
     try {
-      await this.api.auth.cancelTenantDeletion.mutate();
-      // Refresh user so guard clears and we can navigate
+      await this.api.auth.resumeTenant.mutate();
       await this.auth.getCurrentUser();
       void this.router.navigate(['/']);
     } catch (err) {
       this.errorMessage.set(
-        err instanceof Error && err.message ? err.message : 'Failed to cancel deletion. Please try again.',
+        err instanceof Error && err.message ? err.message : 'Failed to reactivate account. Please try again.',
       );
     } finally {
       this.actionPending.set(false);
@@ -29682,25 +28005,125 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
 }
 ```
 
-## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.ts
+## File: apps/frontend/src/app/auth/signup-page/signup-page.ts
+
+```typescript
+import { DecimalPipe } from '@angular/common';
+import { Component, inject, signal } from '@angular/core';
+import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { IAuthUser, signUpInputType } from '../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+
+@Component({
+  selector: 'pc-signup',
+  imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
+  templateUrl: './signup-page.html',
+})
+export class SignUpPage {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
+
+  private _loading = createLoadingGate();
+
+  protected readonly signUpData = signal({
+    organization: '',
+    email: '',
+    password: '',
+    first_name: '',
+    middle_names: '',
+    last_name: '',
+    terms: '',
+  });
+
+  public readonly form = form(this.signUpData, (p) => {
+    required(p.organization);
+    required(p.email);
+    email(p.email);
+    required(p.password);
+    minLength(p.password, 8);
+    required(p.first_name);
+  });
+
+  protected isLoading = this._loading.visible;
+
+  protected passwordBreachNumber = passwordBreachNumber;
+  protected passwordInBreach = passwordInBreach;
+
+  public get email() {
+    return this.form.email();
+  }
+
+  public get firstName() {
+    return this.form.first_name();
+  }
+
+  public get organization() {
+    return this.form.organization();
+  }
+
+  public get password() {
+    return this.form.password();
+  }
+
+  public async join(event?: Event) {
+    event?.preventDefault();
+    this.form().markAsTouched();
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const data = await this.authService.signUp(this.signUpData() as signUpInputType);
+          const user = data as IAuthUser;
+          if (user) {
+            await this.router.navigate(['/signin'], {
+              queryParams: { verificationPending: 'true', email: user.email },
+            });
+          } else {
+            this.alertSvc.showError('Unable to complete signup.');
+          }
+        } catch (err) {
+          this.alertSvc.showError(err instanceof Error ? err.message : 'Signup failed.');
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please enter all information before continuing.');
+      },
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.ts
 
 ```typescript
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
 import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { ConfirmSubscriptionService } from './confirm-subscription-service';
+import { AuthService } from '../auth-service';
 
 @Component({
-  selector: 'pc-confirm-subscription',
-  imports: [AuthLayoutComponent, Icon],
-  templateUrl: './confirm-subscription-page.html',
+  selector: 'pc-verify-email',
+  imports: [RouterLink, AuthLayoutComponent, Icon],
+  templateUrl: './verify-email-page.html',
 })
-export class ConfirmSubscriptionPage implements OnInit {
+export class VerifyEmailPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
-  private readonly confirmSvc = inject(ConfirmSubscriptionService);
+  private readonly auth = inject(AuthService);
 
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
@@ -29713,11 +28136,11 @@ export class ConfirmSubscriptionPage implements OnInit {
   }
 
   private async loadOnInit(): Promise<void> {
-    const token = this.route.snapshot.queryParamMap.get('token');
+    const code = this.route.snapshot.queryParamMap.get('code');
 
-    if (!token) {
+    if (!code) {
       this.status.set('error');
-      this.errorMessage.set('Invalid or missing confirmation token.');
+      this.errorMessage.set('Invalid or missing verification code.');
       return;
     }
 
@@ -29725,17 +28148,81 @@ export class ConfirmSubscriptionPage implements OnInit {
     this.status.set('idle');
 
     try {
-      const result = await this.confirmSvc.confirmSubscription(token);
+      const result = await this.auth.verifyEmail({ code });
       if (result && result.success) {
         this.status.set('success');
       } else {
         this.status.set('error');
-        this.errorMessage.set('Confirmation failed. The link may be invalid or expired.');
+        this.errorMessage.set('Verification failed. The link may be invalid.');
       }
     } catch (err) {
       this.status.set('error');
       this.errorMessage.set(
-        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during confirmation.',
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during verification.',
+      );
+    } finally {
+      end();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/verify-sender-email-page/verify-sender-email-page.ts
+
+```typescript
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { SettingsService } from '../../experiences/settings/services/settings-service';
+
+@Component({
+  selector: 'pc-verify-sender-email',
+  imports: [RouterLink, AuthLayoutComponent, Icon],
+  templateUrl: './verify-sender-email-page.html',
+})
+export class VerifySenderEmailPage implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly settingsSvc = inject(SettingsService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
+  protected readonly errorMessage = signal<string>('');
+  protected readonly verifiedEmail = signal<string>('');
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    const token = this.route.snapshot.queryParamMap.get('token');
+
+    if (!token) {
+      this.status.set('error');
+      this.errorMessage.set('Invalid or missing verification token.');
+      return;
+    }
+
+    const end = this._loading.begin();
+    this.status.set('idle');
+
+    try {
+      const result = await this.settingsSvc.verifySenderEmail(token);
+      if (result && result.success) {
+        this.status.set('success');
+        this.verifiedEmail.set(result.email || '');
+      } else {
+        this.status.set('error');
+        this.errorMessage.set('Verification failed. The token may be invalid.');
+      }
+    } catch (err) {
+      this.status.set('error');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during verification.',
       );
     } finally {
       end();
@@ -29785,510 +28272,333 @@ export function passwordInBreach(control: unknown) {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.ts
+## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
 
 ```typescript
-import { Component, inject, signal, OnInit, linkedSignal, resource, computed, effect } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { ActivityService } from '../services/activity.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { UserService } from '../../../services/user.service';
-import { IAuthUser } from '../../../../../../../libs/common/src';
+import { Component, signal, inject, viewChild } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { CompaniesService } from '../services/companies-service';
 
 @Component({
-  selector: 'pc-activity-feed',
-  imports: [DatePipe, RouterLink, Icon],
-  templateUrl: './activity-feed.html',
-  styles: [
-    `
-      :host {
-        display: block;
-        min-height: 100%;
-      }
-    `,
+  selector: 'pc-companies-grid',
+  imports: [DataGrid, CsvImportComponent],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Companies"
+        i18n-title
+        description="Manage corporate contacts, associate people with companies, and track organization profiles."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="false"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        (importCSV)="openImportDialog()"
+        plusIcon="add-company"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Companies from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: CompaniesService },
+    provideDataGridConfig({ messages: { exportEntity: 'companies', exportFileName: 'companies-export.csv' } }),
   ],
 })
-export class ActivityFeed implements OnInit {
-  private readonly activitySvc = inject(ActivityService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
+export class CompaniesGrid {
+  private readonly companiesService = inject(CompaniesService);
+  private readonly grid = viewChild<DataGrid<'companies', any>>('grid');
 
-  protected readonly isLoadingExport = signal(false);
-
-  protected readonly selectedUser = signal<string>('');
-  protected readonly selectedEntity = signal<string>('');
-  protected readonly selectedActivity = signal<string>('');
-  protected readonly searchStr = signal<string>('');
-  protected readonly users = signal<IAuthUser[]>([]);
-
-  private readonly pageSize = 25;
-
-  private readonly refreshTrigger = signal(0);
-
-  protected readonly filterState = computed(() => ({
-    user: this.selectedUser(),
-    entity: this.selectedEntity(),
-    activity: this.selectedActivity(),
-    refresh: this.refreshTrigger(),
-  }));
-
-  protected readonly activities = linkedSignal({
-    source: this.filterState,
-    computation: () => [] as any[], // Automatically resets to [] when filterState changes
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
   });
 
-  protected readonly hasMore = linkedSignal({
-    source: this.filterState,
-    computation: () => false, // Automatically resets to false when filterState changes
-  });
+  protected readonly mappableFields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'];
+  protected readonly importerOpen = signal(false);
+  protected readonly importSummary = signal<CsvImportSummary | null>(null);
 
-  protected readonly currentOffset = linkedSignal({
-    source: () => ({
-      source: this.filterState,
-      user: this.selectedUser(),
-      entity: this.selectedEntity(),
-      activity: this.selectedActivity(),
-      refresh: this.refreshTrigger(),
-    }),
-    computation: () => 0,
-  });
-
-  protected readonly activitiesResource = resource({
-    params: () => ({
-      offset: this.currentOffset(),
-      user: this.selectedUser(),
-      entity: this.selectedEntity(),
-      activity: this.selectedActivity(),
-    }),
-    loader: async ({ params }) => {
-      return (await this.activitySvc.getFeed({
-        startRow: params.offset,
-        endRow: params.offset + this.pageSize,
-        userId: params.user || undefined,
-        entity: params.entity || undefined,
-        activity: params.activity || undefined,
-      })) as any;
+  protected col = [
+    { field: 'name', headerName: 'Company Name', editable: true },
+    { field: 'website', headerName: 'Website', editable: true },
+    { field: 'industry', headerName: 'Industry', editable: true },
+    { field: 'email', headerName: 'Email', editable: true },
+    { field: 'phone', headerName: 'Phone', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'created_at',
+      headerName: 'Created',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
     },
+  ];
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      name: 'name',
+      companyname: 'name',
+      description: 'description',
+      desc: 'description',
+      website: 'website',
+      web: 'website',
+      email: 'email',
+      phone: 'phone',
+      tel: 'phone',
+      telephone: 'phone',
+      industry: 'industry',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  };
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await this.companiesService.import(rows, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInCompany } from './people-in-company';
+import { CompaniesService } from '../services/companies-service';
+import { UserService } from '../../../services/user.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+
+@Component({
+  selector: 'pc-company-view',
+  imports: [
+    RouterModule,
+    PeopleInCompany,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+  ],
+  templateUrl: './company-view.html',
+})
+export class CompanyView {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly company = signal<any | null>(null);
+  protected readonly employeeCount = signal(0);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly companyTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
+
+  protected readonly initials = computed(() => {
+    const name = this.company()?.name || '';
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w: string) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
   });
 
-  protected readonly isLoading = computed(() => this.activitiesResource.isLoading());
+  protected readonly isEnriched = computed(() => {
+    const rawJson = this.company()?.json;
+    if (!rawJson) return false;
+
+    let json = null;
+
+    try {
+      json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+    } catch {
+      return false;
+    }
+    return !!json.google_enriched;
+  });
 
   constructor() {
     effect(() => {
-      const res = this.activitiesResource.value() as any;
-      if (res) {
-        const newRows = res.rows || [];
-        if (this.currentOffset() === 0) {
-          this.activities.set(newRows);
-        } else {
-          this.activities.update((curr) => {
-            const existingIds = new Set(curr.map((r: any) => r.id));
-            const filteredNew = newRows.filter((r: any) => !existingIds.has(r.id));
-            return [...curr, ...filteredNew];
-          });
-        }
-        this.hasMore.set(newRows.length === this.pageSize);
-      }
-    });
-
-    effect(() => {
-      const err = this.activitiesResource.error();
-      if (err) {
-        this.alertSvc.showError('Failed to fetch activity logs');
-      }
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
-  public ngOnInit() {
-    void this.loadUsers();
-  }
-
-  private async loadUsers() {
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
     try {
-      const u = await this.userService.getUsers();
-      this.users.set(u || []);
+      // 1. Load company details (triggers Google enrichment job on backend)
+      const data = await this.companiesSvc.getById(id);
+      this.company.set(data);
+
+      // 2. Load employee count via dedicated count endpoint (no row data fetched)
+      const count = await this.personsSvc.countByCompanyId(id);
+      this.employeeCount.set(count);
     } catch (err) {
-      console.error('Failed to load users for filter', err);
-    }
-  }
-
-  protected refreshFeed() {
-    this.refreshTrigger.update((n) => n + 1);
-  }
-
-  protected loadMore() {
-    this.currentOffset.update((c) => c + this.pageSize);
-  }
-
-  protected async exportFeed() {
-    this.isLoadingExport.set(true);
-    try {
-      const res = await this.activitySvc.exportCsv({
-        options: {
-          userId: this.selectedUser() || undefined,
-          entity: this.selectedEntity() || undefined,
-          activity: this.selectedActivity() || undefined,
-        },
-        fileName: `activity-feed-${new Date().toISOString().slice(0, 10)}.csv`,
-      });
-
-      if (res && res.status === 'processing') {
-        this.alertSvc.showSuccess(
-          'Activity feed export has been queued. You will receive an email once it is complete.',
-        );
-      } else if (res && res.csv) {
-        const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = res.fileName || 'activity-feed-export.csv';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        this.alertSvc.showSuccess('Activity feed exported successfully');
-      } else {
-        this.alertSvc.showError('No activity data to export');
-      }
-    } catch (err) {
-      console.error('Failed to export activity feed', err);
-      this.alertSvc.showError('Failed to export activity feed');
+      this.alertSvc.showError('Failed to load company details: ' + String(err));
     } finally {
-      this.isLoadingExport.set(false);
+      end();
+      this.initialized.set(true);
     }
   }
 
-  protected getUserInitials(act: any): string {
-    const fn = act.first_name || '';
-    const ln = act.last_name || '';
-    return `${fn.charAt(0)}${ln.charAt(0)}`.toUpperCase() || '?';
+  protected editCompany() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
-  protected getActivityIcon(activity: string): PcIconNameType {
-    switch (activity) {
-      case 'create':
-        return 'plus';
-      case 'update':
-        return 'pencil-square';
-      case 'delete':
-        return 'trash';
-      case 'merge':
-        return 'merge';
-      case 'import':
-        return 'arrow-up-tray';
-      case 'export':
-        return 'arrow-down-tray';
-      case 'assign':
-        return 'user-plus';
-      case 'unassign':
-        return 'user-circle';
-      case 'close':
-        return 'check-circle';
-      case 'reopen':
-        return 'arrow-path';
-      default:
-        return 'information-circle';
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id());
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
     }
   }
 
-  protected getActivityClass(activity: string): string {
-    switch (activity) {
-      case 'create':
-        return 'border-success text-success';
-      case 'update':
-        return 'border-info text-info';
-      case 'delete':
-        return 'border-error text-error';
-      case 'merge':
-        return 'border-warning text-warning';
-      case 'import':
-        return 'border-secondary text-secondary';
-      case 'export':
-        return 'border-primary text-primary';
-      case 'assign':
-        return 'border-accent text-accent';
-      case 'unassign':
-        return 'border-base-content/40 text-base-content/60';
-      case 'close':
-        return 'border-success text-success';
-      case 'reopen':
-        return 'border-warning text-warning';
-      default:
-        return 'border-base-content/40 text-base-content/60';
-    }
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
   }
 
-  private formatValue(val: any): string {
-    if (val === null || val === undefined || val === '') return 'none';
-    if (typeof val === 'boolean') return val ? 'yes' : 'no';
-    if (typeof val === 'object') return JSON.stringify(val);
-    const str = String(val);
-    if (str.length > 40) {
-      return `"${str.substring(0, 40)}..."`;
-    }
-    return `"${str}"`;
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
   }
+}
 
-  protected getActivityPrefix(act: any): string {
-    const meta = act.metadata ?? {};
-    const ent = act.entity ?? 'record';
-
-    switch (act.activity) {
-      case 'create':
-        if (act.activity === 'submission') return ' submitted ';
-        return ' created a new ';
-      case 'delete':
-        return ' deleted ';
-      case 'merge':
-        return ' merged duplicate ';
-      case 'import':
-        return ' imported ';
-      case 'export':
-        return ' exported ';
-      case 'assign':
-        return ' assigned ';
-      case 'unassign':
-        return ' unassigned ';
-      case 'close':
-        return ' closed ';
-      case 'reopen':
-        return ' reopened ';
-      case 'submission':
-        return ' submitted ';
-      case 'signup':
-        return ' signed up for ';
-      case 'send':
-        return ' sent ';
-      case 'update': {
-        if (meta['action'] === 'add_comment') {
-          return ' added a comment to ';
-        }
-        if (meta['action'] === 'add_subtask') {
-          return ` added subtask "${meta['subtask_name']}" to `;
-        }
-        if (meta['action'] === 'toggle_subtask') {
-          return ` ${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on `;
-        }
-        if (meta['action'] === 'add_attachment') {
-          return ` attached file "${meta['filename']}" to `;
-        }
-        if (meta['action'] === 'change_due_date') {
-          if (meta['due_at']) {
-            const parts = String(meta['due_at']).split('-');
-            let formattedDate = String(meta['due_at']);
-            if (parts.length === 3) {
-              const year = parseInt(parts[0]!, 10);
-              const month = parseInt(parts[1]!, 10) - 1;
-              const day = parseInt(parts[2]!, 10);
-              const dateVal = new Date(year, month, day);
-              formattedDate = dateVal.toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              });
-            }
-            return ` changed the due date to ${formattedDate} on `;
-          }
-          return ' removed the due date on ';
-        }
-        if (meta['action'] === 'attach_tag' || meta['action'] === 'attach_issue') {
-          return ` attached tag "${meta['name']}" to `;
-        }
-        if (meta['action'] === 'detach_tag' || meta['action'] === 'detach_issue') {
-          return ` detached tag "${meta['name']}" from `;
-        }
-        if (meta['action'] === 'status_update') {
-          return ' updated the status of ';
-        }
-
-        // Household address check
-        const entLower = ent.toLowerCase();
-        if (entLower === 'households' || entLower === 'household') {
-          const addressFields = [
-            'apt',
-            'street_num',
-            'street1',
-            'street2',
-            'city',
-            'state',
-            'zip',
-            'country',
-            'formatted_address',
-          ];
-          if (meta.changes && Object.keys(meta.changes).some((k) => addressFields.includes(k))) {
-            return ' updated the address of ';
-          }
-        }
-        return ' updated ';
-      }
-      default:
-        return ` performed ${act.activity} on `;
-    }
-  }
-
-  protected getEntityLabelText(act: any): string {
-    const entLower = (act.entity ?? '').toLowerCase();
-    const meta = act.metadata ?? {};
-    if (entLower === 'email' || entLower === 'emails') {
-      return 'email';
-    }
-
-    let typePrefix = '';
-    if (entLower === 'persons' || entLower === 'person' || entLower === 'people') typePrefix = 'person ';
-    else if (entLower === 'households' || entLower === 'household') typePrefix = 'household ';
-    else if (entLower === 'companies' || entLower === 'company') typePrefix = 'company ';
-    else if (entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived') typePrefix = 'task ';
-    else if (entLower === 'teams' || entLower === 'team') typePrefix = 'team ';
-    else if (entLower === 'tags' || entLower === 'tag') typePrefix = 'tag ';
-    else if (entLower === 'web_forms' || entLower === 'web_form' || entLower === 'forms' || entLower === 'form')
-      typePrefix = 'form ';
-    else if (entLower === 'volunteer_events' || entLower === 'volunteer_event') typePrefix = 'volunteer event ';
-    else if (entLower === 'volunteer_shifts' || entLower === 'volunteer_shift') typePrefix = 'volunteer shift ';
-    else if (entLower === 'newsletters' || entLower === 'newsletter') typePrefix = 'newsletter ';
-
-    let label = '';
-    if (meta.entity_label) {
-      label = meta.entity_label;
-    } else if (entLower === 'persons' || entLower === 'person' || entLower === 'people') {
-      const name =
-        meta.person_name ||
-        meta.name ||
-        (act.first_name && act.last_name ? `${act.first_name} ${act.last_name}` : null);
-      label = name || 'person #' + (act.entity_id || meta.id);
-    } else if (entLower === 'households' || entLower === 'household') {
-      label = meta.household_name || meta.address || 'household #' + (act.entity_id || meta.id);
-    } else if (entLower === 'companies' || entLower === 'company') {
-      label = meta.company_name || meta.name || 'company #' + (act.entity_id || meta.id);
-    } else if (entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived') {
-      label = meta.task_name || meta.name || 'task #' + (act.entity_id || meta.id);
-    } else if (entLower === 'volunteer_events' || entLower === 'volunteer_event') {
-      label = meta.event_name || meta.name || 'event #' + (act.entity_id || meta.id);
-    } else if (entLower === 'teams' || entLower === 'team') {
-      label = meta.team_name || meta.name || 'team #' + (act.entity_id || meta.id);
-    } else if (entLower === 'tags' || entLower === 'tag') {
-      label = meta.tag_name || meta.name || 'tag #' + (act.entity_id || meta.id);
-    } else {
-      label = meta.name || meta.subject || meta.title || meta.task_name || '#' + (act.entity_id || meta.id);
-    }
-
-    const normLabel = label.trim().toLowerCase();
-    const normPrefix = typePrefix.trim().toLowerCase();
-
-    if (normPrefix && normLabel.startsWith(normPrefix)) {
-      return label;
-    }
-    if (normPrefix === 'volunteer event' && normLabel.startsWith('event')) {
-      return 'volunteer ' + label;
-    }
-    return `${typePrefix}${label}`;
-  }
-
-  protected getActivitySuffix(act: any): string {
-    const meta = act.metadata ?? {};
-    if (act.activity === 'assign') {
-      const assignee = meta['assigned_to_name'] ?? meta['person_name'] ?? 'someone';
-      return ` to ${assignee}`;
-    }
-    if (act.activity === 'update' && meta.changes) {
-      const parts: string[] = [];
-      const keys = Object.keys(meta.changes);
-      if (keys.length > 0) {
-        for (const key of keys) {
-          const change = meta.changes[key];
-          const fieldName = key.replace(/_/g, ' ');
-          const fromVal = this.formatValue(change.from);
-          const toVal = this.formatValue(change.to);
-          parts.push(`${fieldName} from ${fromVal} to ${toVal}`);
-        }
-        return ` (changed ${parts.join(', ')})`;
-      }
-    }
-    return '';
-  }
-
-  protected getEntityLink(act: any): { path: string; params?: Record<string, string>; label?: string } | null {
-    const metadata = act.metadata ?? {};
-    const id = act.entity_id || metadata.id || metadata.event_id;
-    if (!id) return null;
-
-    const entity = act.entity?.toLowerCase();
-    switch (entity) {
-      case 'email':
-      case 'emails':
-        // Deep-link to inbox and pre-select the email
-        return { path: '/inbox', params: { email: id }, label: undefined };
-      case 'person':
-      case 'persons':
-      case 'contact':
-      case 'contacts':
-        return { path: `/people/${id}`, label: undefined };
-      case 'household':
-      case 'households':
-        return { path: `/households/${id}`, label: undefined };
-      case 'task':
-      case 'tasks':
-      case 'tasks_archived':
-        return { path: `/tasks/${id}`, label: undefined };
-      case 'volunteer_events':
-      case 'volunteer_event':
-      case 'volunteer_shifts':
-      case 'volunteer_shift': {
-        const eventId = metadata.event_id || id;
-        return { path: `/events/${eventId}`, label: undefined };
-      }
-      case 'newsletter':
-      case 'newsletters':
-        return { path: `/newsletters/${id}`, label: undefined };
-      case 'web_forms':
-      case 'web_form':
-      case 'form':
-      case 'forms':
-        return { path: `/forms/${id}`, label: undefined };
-      case 'company':
-      case 'companies':
-        return { path: `/companies/${id}`, label: undefined };
-      case 'team':
-      case 'teams':
-        return { path: `/teams/${id}`, label: undefined };
-      case 'user':
-      case 'users':
-        return { path: `/users/${id}`, label: undefined };
-      default:
-        return null;
-    }
-  }
-
-  protected onUserChange(event: Event) {
-    const val = (event.target as HTMLSelectElement).value;
-    this.selectedUser.set(val);
-    this.refreshFeed();
-  }
-
-  protected onEntityChange(event: Event) {
-    const val = (event.target as HTMLSelectElement).value;
-    this.selectedEntity.set(val);
-    this.refreshFeed();
-  }
-
-  protected onActivityChange(event: Event) {
-    const val = (event.target as HTMLSelectElement).value;
-    this.selectedActivity.set(val);
-    this.refreshFeed();
-  }
-
-  protected hasActiveFilters(): boolean {
-    return !!(this.selectedUser() || this.selectedEntity() || this.selectedActivity());
-  }
-
-  protected clearFilters() {
-    this.selectedUser.set('');
-    this.selectedEntity.set('');
-    this.selectedActivity.set('');
-    this.refreshFeed();
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -31490,306 +29800,6 @@ export class EmailBody {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-view.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
-import { EventsFrontendService } from '../services/events-frontend-service';
-import { EventsService } from '../../../services/api/events-service';
-import { PersonsService } from '../../persons/services/persons-service';
-
-@Component({
-  selector: 'pc-event-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    FormsModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
-    PcCard,
-  ],
-  templateUrl: './event-view.html',
-  providers: [EventsService],
-})
-export class EventViewComponent {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly eventsFrontendSvc = inject(EventsFrontendService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly event = signal<any | null>(null);
-  protected readonly ticketTypes = signal<any[]>([]);
-  protected readonly registrations = signal<any[]>([]);
-
-  // Person search for adding registrations
-  protected readonly personSearch = signal('');
-  protected readonly personSearchResults = signal<any[]>([]);
-  protected readonly selectedPersonId = signal<string | null>(null);
-  protected readonly selectedTicketTypeId = signal<string | null>(null);
-  protected readonly addingRegistration = signal(false);
-  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
-
-  protected activeTab = signal<string>('attendees');
-
-  protected readonly eventTabs = computed<PcTabOption[]>(() => [
-    {
-      id: 'attendees',
-      label: `Attendees (${this.registrations().filter((r) => r.status !== 'cancelled').length})`,
-      icon: 'user-group',
-    },
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-  ]);
-
-  protected readonly eventPassed = computed(() => {
-    const end = this.event()?.end_time;
-    if (!end) return false;
-    return new Date(end) < new Date();
-  });
-
-  protected readonly activeCount = computed(() => this.registrations().filter((r) => r.status !== 'cancelled').length);
-
-  protected readonly attendedCount = computed(() => this.registrations().filter((r) => r.status === 'attended').length);
-
-  protected readonly publicUrl = computed(() => {
-    const slug = this.event()?.slug;
-    if (!slug) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
-  });
-
-  protected readonly remainingCapacity = computed(() => {
-    const ev = this.event();
-    if (!ev || ev.capacity === null || ev.capacity === undefined) return 'Unlimited';
-    return Math.max(0, ev.capacity - this.activeCount());
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      const [eventData, ticketData, regData] = await Promise.all([
-        this.eventsFrontendSvc.getById(id),
-        this.eventsSvc.getTicketTypes(id),
-        this.eventsSvc.getRegistrations(id),
-      ]);
-      this.event.set(eventData);
-      this.ticketTypes.set(ticketData || []);
-      this.registrations.set(regData || []);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected copyPublicUrl() {
-    const url = this.publicUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Public RSVP link copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected editEvent() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteEvent() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event Page',
-      message: 'Are you sure you want to delete this event? All registrations will also be deleted.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.eventsFrontendSvc.delete(this.id());
-      this.eventsFrontendSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Event deleted');
-      await this.router.navigate(['/events/pages']);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
-    } finally {
-      end();
-    }
-  }
-
-  // Person search
-  protected async onPersonSearch(query: string) {
-    this.personSearch.set(query);
-    this.selectedPersonId.set(null);
-    if (!query.trim()) {
-      this.personSearchResults.set([]);
-      return;
-    }
-    try {
-      const res = await this.personsSvc.getAll({ searchStr: query.toLowerCase().trim(), startRow: 0, endRow: 10 });
-      this.personSearchResults.set(res?.rows || []);
-    } catch {
-      this.personSearchResults.set([]);
-    }
-  }
-
-  protected selectPerson(person: any) {
-    this.selectedPersonId.set(String(person.id));
-    this.personSearch.set(`${person.first_name} ${person.last_name}`.trim());
-    this.personSearchResults.set([]);
-  }
-
-  protected async addRegistration() {
-    const personId = this.selectedPersonId();
-    if (!personId) {
-      this.alertSvc.showError('Please select a person to register.');
-      return;
-    }
-    this.addingRegistration.set(true);
-    try {
-      await this.eventsSvc.addRegistration({
-        event_id: this.id(),
-        person_id: personId,
-        ticket_type_id: this.selectedTicketTypeId() || null,
-      });
-      this.alertSvc.showSuccess('Registration added');
-      this.personSearch.set('');
-      this.selectedPersonId.set(null);
-      this.selectedTicketTypeId.set(null);
-      this.personSearchResults.set([]);
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
-    } finally {
-      this.addingRegistration.set(false);
-    }
-  }
-
-  protected async checkIn(reg: any) {
-    try {
-      await this.eventsSvc.checkIn(String(reg.id));
-      this.alertSvc.showSuccess(`${reg.first_name} checked in`);
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
-    }
-  }
-
-  protected async updateStatus(reg: any, status: string) {
-    try {
-      await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
-    }
-  }
-
-  protected async deleteRegistration(reg: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Registration',
-      message: `Remove ${reg.first_name} ${reg.last_name} from this event?`,
-      variant: 'danger',
-      confirmText: 'Remove',
-    });
-    if (!confirmed) return;
-    try {
-      await this.eventsSvc.deleteRegistration(String(reg.id));
-      this.alertSvc.showSuccess('Registration removed');
-      const regs = await this.eventsSvc.getRegistrations(this.id());
-      this.registrations.set(regs || []);
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
-    }
-  }
-
-  protected exportCsv() {
-    const regs = this.registrations().filter((r) => r.status !== 'cancelled');
-    const headers = ['First Name', 'Last Name', 'Email', 'Mobile', 'Ticket Type', 'Price', 'Status', 'Checked In At'];
-    const rows = regs.map((r) => [
-      r.first_name ?? '',
-      r.last_name ?? '',
-      r.email ?? '',
-      r.mobile ?? '',
-      r.ticket_type_name ?? '',
-      r.ticket_price_cents != null ? `$${(r.ticket_price_cents / 100).toFixed(2)}` : 'Free',
-      r.status ?? '',
-      r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : '',
-    ]);
-
-    const csv = [headers, ...rows]
-      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${this.event()?.slug || 'event'}-attendees.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  protected getStatusType(status: string | null | undefined): any {
-    switch (String(status || '').toLowerCase()) {
-      case 'attended':
-        return 'success';
-      case 'registered':
-        return 'warning';
-      case 'no_show':
-        return 'error';
-      case 'cancelled':
-        return 'neutral';
-      default:
-        return 'ghost';
-    }
-  }
-
-  protected ticketTypeLabel(id: string | null): string {
-    if (!id) return '';
-    const t = this.ticketTypes().find((tt) => tt.id === id);
-    return t ? t.name : '';
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/exports/ui/exports-page.ts
 
 ```typescript
@@ -31893,863 +29903,6 @@ export class ExportsPage extends TRPCService<any> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/form-editor.ts
-
-```typescript
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AddWebFormObj } from '../../../../../../../libs/common/src';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { FormsService } from '../services/forms-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Tags } from '@experiences/tags/ui/tags';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Icon } from '@icons/icon';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { environment } from '../../../../environments/environment';
-
-@Component({
-  selector: 'pc-form-editor',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard, FieldsSelector],
-  templateUrl: './form-editor.html',
-})
-export class FormEditorComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly settingsSvc = inject(SettingsService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly isInitialized = signal(false);
-  protected readonly saving = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly isNew = signal(true);
-  protected readonly formId = signal<string | null>(null);
-
-  protected readonly hasStripeKey = computed(() => {
-    const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
-    return !!key.trim();
-  });
-
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly selectedLists = signal<string[]>([]);
-  protected readonly selectedTags = signal<string[]>([]);
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-
-  private isEnabled(field: string): boolean {
-    const list = this.selectedFields();
-    return list.includes(field) || list.includes(`${field}:required`);
-  }
-
-  private isRequired(field: string): boolean {
-    const list = this.selectedFields();
-    return list.includes(`${field}:required`);
-  }
-
-  protected readonly showFirstName = computed(() => this.isEnabled('first_name'));
-  protected readonly isFirstNameRequired = computed(() => this.isRequired('first_name'));
-
-  protected readonly showLastName = computed(() => this.isEnabled('last_name'));
-  protected readonly isLastNameRequired = computed(() => this.isRequired('last_name'));
-
-  protected readonly showMobile = computed(() => this.isEnabled('mobile'));
-  protected readonly isMobileRequired = computed(() => this.isRequired('mobile'));
-
-  protected readonly showNotes = computed(() => this.isEnabled('notes'));
-  protected readonly isNotesRequired = computed(() => this.isRequired('notes'));
-
-  protected readonly showStreet1 = computed(() => this.isEnabled('street1'));
-  protected readonly isStreet1Required = computed(() => this.isRequired('street1'));
-
-  protected readonly showCity = computed(() => this.isEnabled('city'));
-  protected readonly isCityRequired = computed(() => this.isRequired('city'));
-
-  protected readonly showState = computed(() => this.isEnabled('state'));
-  protected readonly isStateRequired = computed(() => this.isRequired('state'));
-
-  protected readonly showZip = computed(() => this.isEnabled('zip'));
-  protected readonly isZipRequired = computed(() => this.isRequired('zip'));
-
-  protected readonly showCountry = computed(() => this.isEnabled('country'));
-  protected readonly isCountryRequired = computed(() => this.isRequired('country'));
-
-  protected toggleField(field: string): void {
-    const current = this.selectedFields();
-    const isCurrentlyEnabled = current.includes(field) || current.includes(`${field}:required`);
-
-    if (isCurrentlyEnabled) {
-      this.selectedFields.set(current.filter((f) => f !== field && f !== `${field}:required`));
-    } else {
-      this.selectedFields.set([...current, field]);
-    }
-  }
-
-  protected toggleRequired(field: string): void {
-    const current = this.selectedFields();
-    const hasOptional = current.includes(field);
-    const hasRequired = current.includes(`${field}:required`);
-
-    if (hasOptional) {
-      this.selectedFields.set([...current.filter((f) => f !== field), `${field}:required`]);
-    } else if (hasRequired) {
-      this.selectedFields.set([...current.filter((f) => f !== `${field}:required`), field]);
-    }
-  }
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    redirect_url: '',
-    status: 'active' as 'active' | 'archived',
-    send_confirmation: true,
-    send_alert: true,
-    form_type: 'standard' as 'standard' | 'donation' | 'recurring_donation',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddWebFormObj);
-  });
-
-  protected readonly isDonationForm = computed(() => this.payload().form_type === 'donation');
-
-  protected readonly embedSnippet = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, ''); // Use configured backend URL
-    const fields = this.selectedFields();
-
-    const isEnabled = (name: string): boolean => {
-      if (this.isDonationForm()) {
-        const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-        if (alwaysEnabled.includes(name)) return true;
-      }
-      return fields.includes(name) || fields.includes(`${name}:required`);
-    };
-
-    const isRequired = (name: string): boolean => {
-      if (this.isDonationForm()) {
-        const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-        if (alwaysRequired.includes(name)) return true;
-      }
-      return fields.includes(`${name}:required`);
-    };
-
-    if (this.isDonationForm()) {
-      return `<!-- PeopleCRM Embeddable Donation Form -->
-<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <!-- Visually hidden honeypot field to prevent spam bots -->
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
-    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
-    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
-    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
-    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-      <option value="CA">Canada</option>
-      <option value="US">United States</option>
-      <option value="GB">United Kingdom</option>
-      <option value="AU">Australia</option>
-    </select>
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province of Residence *</label>
-    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
-    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${
-    isEnabled('mobile')
-      ? `
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
-    <input type="text" name="mobile" placeholder="Phone Number" ${isRequired('mobile') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    isEnabled('notes')
-      ? `
-
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
-    <textarea name="notes" placeholder="How can we help?" ${isRequired('notes') ? 'required' : ''} rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>`
-      : ''
-  }
-
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Next</button>
-  <p style="font-size: 11px; color: #666; margin-top: 8px; text-align: center;">Submitting will validate eligibility and redirect you to Stripe for secure payment.</p>
-</form>`;
-    }
-
-    return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <!-- Visually hidden honeypot field to prevent spam bots -->
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-${
-  isEnabled('first_name')
-    ? `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isRequired('first_name') ? ' *' : ''}</label>
-    <input type="text" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-    : ''
-}${
-      isEnabled('last_name')
-        ? `
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isRequired('last_name') ? ' *' : ''}</label>
-    <input type="text" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-        : ''
-    }
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${
-    isEnabled('mobile')
-      ? `
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
-    <input type="text" name="mobile" placeholder="Phone Number" ${isRequired('mobile') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    isEnabled('street1')
-      ? `
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address${isRequired('street1') ? ' *' : ''}</label>
-    <input type="text" name="street1" placeholder="E.g. 123 Main St" ${isRequired('street1') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    isEnabled('city')
-      ? `
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City${isRequired('city') ? ' *' : ''}</label>
-    <input type="text" name="city" placeholder="E.g. Toronto" ${isRequired('city') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    isEnabled('country')
-      ? `
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country${isRequired('country') ? ' *' : ''}</label>
-    <select name="country" ${isRequired('country') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-      <option value="CA">Canada</option>
-      <option value="US">United States</option>
-      <option value="GB">United Kingdom</option>
-      <option value="AU">Australia</option>
-    </select>
-  </div>`
-      : ''
-  }${
-    isEnabled('state')
-      ? `
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province${isRequired('state') ? ' *' : ''}</label>
-    <input type="text" name="state" placeholder="E.g. ON or NY" ${isRequired('state') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    isEnabled('zip')
-      ? `
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label>
-    <input type="text" name="zip" placeholder="E.g. M5V 2T6" ${isRequired('zip') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    isEnabled('notes')
-      ? `
-
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
-    <textarea name="notes" placeholder="How can we help?" ${isRequired('notes') ? 'required' : ''} rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>`
-      : ''
-  }
-
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Subscribe</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
-  });
-
-  public ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (id && id !== 'add') {
-      this.isNew.set(false);
-      this.formId.set(id);
-    }
-    void this.loadLists();
-    void this.settingsSvc.load();
-  }
-
-  protected listName(id: string): string {
-    const match = this.availableLists().find((list) => list.id === id);
-    return match?.name ?? 'List';
-  }
-
-  protected handleListSelect(event: Event): void {
-    const select = event.target as HTMLSelectElement | null;
-    if (!select) return;
-    const value = select.value;
-    if (!value) return;
-    const current = new Set(this.selectedLists());
-    if (!current.has(value)) {
-      current.add(value);
-      this.selectedLists.set(Array.from(current));
-    }
-    select.value = '';
-  }
-
-  protected removeList(listId: string): void {
-    this.selectedLists.set(this.selectedLists().filter((id) => id !== listId));
-  }
-
-  protected handleTagsChange(tags: string[]): void {
-    this.selectedTags.set(Array.isArray(tags) ? [...tags] : []);
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected copyUrl(): void {
-    const url = this.formUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Form landing page URL copied!'),
-      () => this.alertSvc.showError('Failed to copy URL.'),
-    );
-  }
-
-  protected async deleteForm() {
-    const id = this.formId();
-    if (!id) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Web Form',
-      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      await this.formsSvc.delete(id);
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Web form deleted');
-      await this.router.navigate(['/forms']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete web form';
-      this.alertSvc.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      this.alertSvc.showError('Please check your inputs.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    await submit(this.form, {
-      action: async () => {
-        const values = this.payload();
-
-        try {
-          if (this.isNew()) {
-            const payload = {
-              name: values.name?.trim() ?? '',
-              description: values.description?.trim() || null,
-              redirect_url: values.redirect_url?.trim() || null,
-              target_tags: this.selectedTags().length ? this.selectedTags() : null,
-              target_lists: this.selectedLists().length ? this.selectedLists() : null,
-              status: values.status,
-              fields: this.selectedFields(),
-              send_confirmation: !!values.send_confirmation,
-              send_alert: !!values.send_alert,
-              form_type: values.form_type,
-            };
-            const result = (await this.formsSvc.add(payload)) as { id: string };
-            this.alertSvc.showSuccess('Form created successfully!');
-            void this.router.navigate(['/forms', result.id]);
-          } else {
-            const id = this.formId()!;
-            const payload = {
-              name: values.name?.trim() ?? '',
-              description: values.description?.trim() || null,
-              redirect_url: values.redirect_url?.trim() || null,
-              target_tags: this.selectedTags().length ? this.selectedTags() : null,
-              target_lists: this.selectedLists().length ? this.selectedLists() : null,
-              status: values.status,
-              fields: this.selectedFields(),
-              send_confirmation: !!values.send_confirmation,
-              send_alert: !!values.send_alert,
-            };
-            await this.formsSvc.update(id, payload);
-            this.alertSvc.showSuccess('Form updated successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.router.navigate(['/forms', id]);
-            }
-          }
-        } catch (err) {
-          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving the form.';
-          this.error.set(msg);
-          this.alertSvc.showError(msg);
-        } finally {
-          this.saving.set(false);
-        }
-        return null;
-      },
-    });
-  }
-
-  private async loadLists(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-      if (!this.isNew()) {
-        await this.loadFormDetails();
-      }
-    } catch (err) {
-      console.error('Failed to load lists', err);
-    } finally {
-      this.isInitialized.set(true);
-      end();
-    }
-  }
-
-  private async loadFormDetails(): Promise<void> {
-    const id = this.formId();
-    if (!id) return;
-    const end = this._loading.begin();
-    try {
-      const form = (await this.formsSvc.getById(id)) as any;
-      if (form) {
-        this.payload.set({
-          name: form.name ?? '',
-          description: form.description ?? '',
-          redirect_url: form.redirect_url ?? '',
-          status: (form.status as 'active' | 'archived') ?? 'active',
-          send_confirmation: form.send_confirmation !== false,
-          send_alert: form.send_alert !== false,
-          form_type: (form.form_type as 'standard' | 'donation' | 'recurring_donation') ?? 'standard',
-        });
-        this.form().reset();
-        this.selectedTags.set(Array.isArray(form.target_tags) ? form.target_tags : []);
-        this.selectedLists.set(Array.isArray(form.target_lists) ? form.target_lists : []);
-
-        // Load fields configuration
-        if (form.fields) {
-          const fields = Array.isArray(form.fields) ? form.fields : JSON.parse(form.fields);
-          this.selectedFields.set(fields);
-        } else {
-          this.selectedFields.set(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load form details', err);
-      this.error.set('Failed to load form details.');
-    } finally {
-      end();
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
-
-```typescript
-import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
-import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { FormsService } from '../services/forms-service';
-import { ListsService } from '../../lists/services/lists-service';
-import { UserService } from '../../../services/user.service';
-import type { IAuthUser } from '@common';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
-
-@Component({
-  selector: 'pc-form-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailRow,
-  ],
-  templateUrl: './form-view.html',
-})
-export class FormViewComponent {
-  private readonly alertSvc = inject(AlertService);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  readonly id = input.required<string>();
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly formRecord = signal<any | null>(null);
-  protected readonly submissionsCount = signal(0);
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private readonly router = inject(Router);
-  private usersById = new Map<string, IAuthUser>();
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly formTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
-    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
-  ]);
-
-  protected readonly selectedFields = computed(() => {
-    const record = this.formRecord();
-    if (!record) return [];
-    if (record.fields) {
-      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-    }
-    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-  });
-
-  protected readonly fieldsCount = computed(() => {
-    const fields = this.selectedFields();
-    // Email is always required and present
-    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
-    return standardFieldsCount + 1;
-  });
-
-  protected readonly targetListsNames = computed(() => {
-    const record = this.formRecord();
-    if (!record || !record.target_lists) return [];
-    const listIds: string[] = Array.isArray(record.target_lists)
-      ? record.target_lists
-      : JSON.parse(record.target_lists || '[]');
-
-    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
-  });
-
-  protected readonly embedSnippet = computed(() => {
-    const record = this.formRecord();
-    if (!record || !this.id()) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const fields = this.selectedFields();
-    const isDonation = record.form_type === 'donation';
-    const isRecurring = record.form_type === 'recurring_donation';
-    const isAnyDonation = isDonation || isRecurring;
-
-    const addressFields = isAnyDonation
-      ? `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
-      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-    <div>
-      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
-      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    </div>
-  </div>`
-      : '';
-
-    const amountField = isDonation
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
-    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : isRecurring
-        ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-        : '';
-
-    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
-
-    return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-${
-  fields.includes('first_name') || isAnyDonation
-    ? `  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-    : ''
-}${
-      fields.includes('last_name') || isAnyDonation
-        ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
-    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-        : ''
-    }
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${
-    !isAnyDonation && fields.includes('mobile')
-      ? `\n  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
-    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`
-      : ''
-  }${
-    !isAnyDonation && fields.includes('notes')
-      ? `\n  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
-    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
-  </div>`
-      : ''
-  }${addressFields}${amountField}
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    if (!this.id()) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load Form details
-      const record = await this.formsSvc.getById(id);
-      this.formRecord.set(record);
-
-      // 2. Load available Lists to resolve list names
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-
-      // 3. Load submissions count
-      const subCount = await this.formsSvc.getSubmissionsCount(id);
-      this.submissionsCount.set(subCount);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load form details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editForm() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteForm() {
-    if (!this.id()) return;
-    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Web Form',
-      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.formsSvc.delete(this.id());
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Web form deleted');
-      await this.router.navigate([backRoute]);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete web form';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected getCreatedAt(): Date | null {
-    const date = this.formRecord()?.created_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUpdatedAt(): Date | null {
-    const date = this.formRecord()?.updated_at;
-    return date ? new Date(date) : null;
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-grid.ts
 
 ```typescript
@@ -32802,228 +29955,128 @@ export class FormsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
+## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
 
 ```typescript
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AddWebFormObj } from '../../../../../../../libs/common/src';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { FormsService } from '@experiences/forms/services/forms-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Tags } from '@experiences/tags/ui/tags';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { environment } from '../../../../environments/environment';
+
+import type { ImportListItem } from '../../../../../../../libs/common/src';
+
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ImportsService } from '../services/imports-service';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
 @Component({
-  selector: 'pc-fundraising-form',
-  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
-  templateUrl: './fundraising-form.html',
+  selector: 'pc-imports-page',
+  imports: [FormsModule, Icon, SpinOnClickDirective],
+  templateUrl: './imports-page.html',
 })
-export class FundraisingFormComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly settingsSvc = inject(SettingsService);
+export class ImportsPage {
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly alerts = inject(AlertService);
+  private readonly imports = inject(ImportsService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
-  protected readonly isInitialized = signal(false);
-  protected readonly saving = signal(false);
+  private isLoadActive = false;
+  protected readonly deleting = signal(false);
+  protected readonly items = signal<ImportListItem[]>([]);
+  protected readonly itemCount = computed(() => this.items().length);
+  protected readonly pendingDelete = signal<ImportListItem | null>(null);
+  protected readonly deletePeople = signal(false);
+  protected readonly deleteHouseholds = signal(false);
+  protected readonly deleteCompanies = signal(false);
+  protected readonly deleteTasks = signal(false);
   protected readonly error = signal<string | null>(null);
-  protected readonly isNew = signal(true);
-  protected readonly formId = signal<string | null>(null);
 
-  protected setType(type: 'donation' | 'recurring_donation') {
-    this.payload.update((p) => ({ ...p, form_type: type }));
-  }
+  private pollInterval: any;
 
-  protected readonly hasStripeKey = computed(() => {
-    const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
-    return !!key.trim();
-  });
+  constructor() {
+    void this.load();
 
-  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
-  protected readonly selectedLists = signal<string[]>([]);
-  protected readonly selectedTags = signal<string[]>([]);
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    redirect_url: '',
-    status: 'active' as 'active' | 'archived',
-    send_confirmation: true,
-    send_alert: true,
-    form_type: 'donation' as 'donation' | 'recurring_donation',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddWebFormObj);
-  });
-
-  protected readonly isRecurring = computed(() => this.payload().form_type === 'recurring_donation');
-
-  protected readonly embedSnippet = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
-    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
-    const recurring = this.isRecurring();
-
-    const amountField = recurring
-      ? `
-  <div style="margin-bottom: 16px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
-    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
-  </div>`
-      : `
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
-    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>`;
-
-    const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
-
-    return `<!-- PeopleCRM Embeddable Donation Form -->
-<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
-  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
-    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
-    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
-    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
-    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
-    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
-    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
-      <option value="CA">Canada</option>
-      <option value="US">United States</option>
-      <option value="GB">United Kingdom</option>
-      <option value="AU">Australia</option>
-    </select>
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
-    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>
-
-  <div style="margin-bottom: 12px;">
-    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
-    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
-  </div>${amountField}
-
-  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
-</form>`;
-  });
-
-  protected readonly formUrl = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
-  });
-
-  public ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id');
-    if (id && id !== 'add') {
-      this.isNew.set(false);
-      this.formId.set(id);
-    }
-    void this.loadLists();
-    void this.settingsSvc.load();
-  }
-
-  protected listName(id: string): string {
-    const match = this.availableLists().find((list) => list.id === id);
-    return match?.name ?? 'List';
-  }
-
-  protected handleListSelect(event: Event): void {
-    const select = event.target as HTMLSelectElement | null;
-    if (!select) return;
-    const value = select.value;
-    if (!value) return;
-    const current = new Set(this.selectedLists());
-    if (!current.has(value)) {
-      current.add(value);
-      this.selectedLists.set(Array.from(current));
-    }
-    select.value = '';
-  }
-
-  protected removeList(listId: string): void {
-    this.selectedLists.set(this.selectedLists().filter((id) => id !== listId));
-  }
-
-  protected handleTagsChange(tags: string[]): void {
-    this.selectedTags.set(Array.isArray(tags) ? [...tags] : []);
-  }
-
-  protected copySnippet(): void {
-    const code = this.embedSnippet();
-    if (!code) return;
-    navigator.clipboard.writeText(code).then(
-      () => this.alertSvc.showSuccess('Donation page snippet copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
-
-  protected copyUrl(): void {
-    const url = this.formUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Donation page URL copied!'),
-      () => this.alertSvc.showError('Failed to copy URL.'),
-    );
-  }
-
-  protected async deleteForm() {
-    const id = this.formId();
-    if (!id) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Donation Page',
-      message: 'Are you sure you want to delete this donation page? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
+    // Reset checkbox when dialog closes
+    effect(() => {
+      const item = this.pendingDelete();
+      if (!item) {
+        this.deletePeople.set(false);
+        this.deleteHouseholds.set(false);
+        this.deleteCompanies.set(false);
+        this.deleteTasks.set(false);
+      }
     });
-    if (!confirmed) return;
-    this.saving.set(true);
+
+    this.startPolling();
+
+    this.destroyRef.onDestroy(() => {
+      this.imports.abort();
+      this.stopPolling();
+    });
+  }
+
+  private startPolling() {
+    this.pollInterval = setInterval(() => void this.pollStep(), 4000);
+  }
+
+  private async pollStep(): Promise<void> {
+    const hasActiveJobs = this.items().some((item) => item.status === 'pending' || item.status === 'processing');
+    if (hasActiveJobs) {
+      try {
+        const list = await this.imports.list();
+        this.items.set(list ?? []);
+      } catch (err) {
+        console.error('Failed to poll imports status:', err);
+      }
+    }
+  }
+
+  private stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+  }
+
+  protected formatDate(value: Date) {
     try {
-      await this.formsSvc.delete(id);
-      this.formsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Donation page deleted');
-      await this.router.navigate(['/donation-pages']);
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(value instanceof Date ? value : new Date(value));
+    } catch {
+      return value ? String(value) : '—';
+    }
+  }
+
+  protected openDeleteDialog(item: ImportListItem, dialog: HTMLDialogElement) {
+    if (this.deleting()) return;
+    this.pendingDelete.set(item);
+    dialog.showModal();
+  }
+
+  protected closeDeleteDialog(dialog: HTMLDialogElement) {
+    if (!dialog.open) return;
+    dialog.close();
+    this.pendingDelete.set(null);
+  }
+
+  protected async confirmDelete(dialog: HTMLDialogElement) {
+    const item = this.pendingDelete();
+    if (!item || this.deleting()) return;
+
+    this.deleting.set(true);
+    try {
+      await this.imports.delete(item.id, {
+        deletePeople: this.deletePeople(),
+        deleteHouseholds: this.deleteHouseholds(),
+        deleteCompanies: this.deleteCompanies(),
+        deleteTasks: this.deleteTasks(),
+      });
+      this.alerts.showSuccess('Import deleted');
+      await this.load();
+      this.closeDeleteDialog(dialog);
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -33033,131 +30086,39 @@ export class FundraisingFormComponent implements OnInit {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Unable to delete donation page';
-      this.alertSvc.showError(message);
+            : 'Failed to delete import';
+      this.alerts.showError(message);
     } finally {
-      this.saving.set(false);
+      this.deleting.set(false);
     }
   }
 
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
+  protected async refresh() {
+    await this.load();
+  }
 
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      this.alertSvc.showError('Please check your inputs.');
-      return;
-    }
-
-    this.saving.set(true);
+  private async load() {
+    if (this.isLoadActive) return;
+    this.isLoadActive = true;
+    const end = this._loading.begin();
     this.error.set(null);
-
-    await submit(this.form, {
-      action: async () => {
-        const values = this.payload();
-
-        try {
-          if (this.isNew()) {
-            const payload = {
-              name: values.name?.trim() ?? '',
-              description: values.description?.trim() || null,
-              redirect_url: values.redirect_url?.trim() || null,
-              target_tags: this.selectedTags().length ? this.selectedTags() : null,
-              target_lists: this.selectedLists().length ? this.selectedLists() : null,
-              status: values.status,
-              fields: this.selectedFields(),
-              send_confirmation: !!values.send_confirmation,
-              send_alert: !!values.send_alert,
-              form_type: values.form_type,
-            };
-            const result = (await this.formsSvc.add(payload)) as { id: string };
-            this.alertSvc.showSuccess('Donation page created successfully!');
-            void this.router.navigate(['/donation-pages', result.id]);
-          } else {
-            const id = this.formId()!;
-            const payload = {
-              name: values.name?.trim() ?? '',
-              description: values.description?.trim() || null,
-              redirect_url: values.redirect_url?.trim() || null,
-              target_tags: this.selectedTags().length ? this.selectedTags() : null,
-              target_lists: this.selectedLists().length ? this.selectedLists() : null,
-              status: values.status,
-              fields: this.selectedFields(),
-              send_confirmation: !!values.send_confirmation,
-              send_alert: !!values.send_alert,
-            };
-            await this.formsSvc.update(id, payload);
-            this.alertSvc.showSuccess('Donation page updated successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.router.navigate(['/donation-pages', id]);
-            }
-          }
-        } catch (err) {
-          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
-          this.error.set(msg);
-          this.alertSvc.showError(msg);
-        } finally {
-          this.saving.set(false);
-        }
-        return null;
-      },
-    });
-  }
-
-  private async loadLists(): Promise<void> {
-    const end = this._loading.begin();
     try {
-      const result = await this.listsSvc.getAll({ limit: 100 });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      this.availableLists.set(
-        rows.map((row: any) => ({
-          id: String(row.id),
-          name: String(row.name),
-        })),
-      );
-      if (!this.isNew()) {
-        await this.loadPageDetails();
-      }
+      const list = await this.imports.list();
+      this.items.set(list ?? []);
     } catch (err) {
-      console.error('Failed to load lists', err);
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load imports';
+      this.error.set(message);
+      this.alerts.showError(message);
     } finally {
-      this.isInitialized.set(true);
-      end();
-    }
-  }
-
-  private async loadPageDetails(): Promise<void> {
-    const id = this.formId();
-    if (!id) return;
-    const end = this._loading.begin();
-    try {
-      const record = (await this.formsSvc.getById(id)) as any;
-      if (record) {
-        this.payload.set({
-          name: record.name ?? '',
-          description: record.description ?? '',
-          redirect_url: record.redirect_url ?? '',
-          status: (record.status as 'active' | 'archived') ?? 'active',
-          send_confirmation: record.send_confirmation !== false,
-          send_alert: record.send_alert !== false,
-          form_type: (record.form_type as 'donation' | 'recurring_donation') ?? 'donation',
-        });
-        this.form().reset();
-        this.selectedTags.set(Array.isArray(record.target_tags) ? record.target_tags : []);
-        this.selectedLists.set(Array.isArray(record.target_lists) ? record.target_lists : []);
-        if (record.fields) {
-          const fields = Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
-          this.selectedFields.set(fields);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load page details', err);
-      this.error.set('Failed to load page details.');
-    } finally {
+      this.isLoadActive = false;
       end();
     }
   }
@@ -33627,819 +30588,173 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
 export type DATA_TYPE = 'persons' | 'households';
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/add-connection-drawer.ts
+## File: apps/frontend/src/app/experiences/profile/profile-page.ts
 
 ```typescript
-import { Component, inject, input, output, signal, computed } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { PersonsService } from '../services/persons-service';
-import { RELATION_TYPES, RELATION_TYPE_LABELS } from '../../../../../../../libs/common/src';
-import type { AddConnectionType } from '../../../../../../../libs/common/src';
-
-type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
-
-@Component({
-  selector: 'pc-add-connection-drawer',
-  imports: [SideDrawer, Icon, FormsModule],
-  template: `
-    <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" i18n-title size="sm" i18n-size (close)="onClose()">
-      <div class="flex flex-col gap-4">
-        <!-- Person search -->
-        <div class="flex flex-col gap-1.5">
-          <label i18n class="text-sm font-semibold text-base-content/80">Search Contact</label>
-          @if (selectedPerson()) {
-            <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
-              <div
-                class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-              >
-                {{ initials(selectedPerson()!) }}
-              </div>
-              <span class="text-sm font-medium flex-1 truncate"
-                >{{ selectedPerson()!.first_name }} {{ selectedPerson()!.last_name }}</span
-              >
-              <button type="button" class="btn btn-ghost btn-xs btn-circle" (click)="clearSelection()">
-                <pc-icon name="x-mark" [size]="3"></pc-icon>
-              </button>
-            </div>
-          } @else {
-            <div class="relative">
-              <input
-                type="text"
-                class="input input-bordered w-full pr-10 text-sm"
-                placeholder="Type a name or email..."
-                i18n-placeholder
-                [ngModel]="searchStr()"
-                (ngModelChange)="onSearchChange($event)"
-              />
-              <pc-icon
-                name="magnifying-glass"
-                [size]="4"
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
-              ></pc-icon>
-            </div>
-            @if (searchResults().length > 0) {
-              <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
-                @for (p of searchResults(); track p.id) {
-                  <button
-                    type="button"
-                    class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
-                    (click)="selectPerson(p)"
-                  >
-                    <div
-                      class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-                    >
-                      {{ initials(p) }}
-                    </div>
-                    <div class="flex flex-col min-w-0">
-                      <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
-                      @if (p.email) {
-                        <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
-                      }
-                    </div>
-                  </button>
-                }
-              </div>
-            }
-            @if (isSearching() && searchStr().length > 0) {
-              <span i18n class="text-xs text-base-content/40 italic">Searching...</span>
-            }
-          }
-        </div>
-
-        <!-- Relation type -->
-        <div class="flex flex-col gap-1.5">
-          <label i18n class="text-sm font-semibold text-base-content/80">Relationship Type</label>
-          <select
-            class="select select-bordered w-full text-sm"
-            [ngModel]="relationType()"
-            (ngModelChange)="relationType.set($event)"
-          >
-            @for (type of relationTypes; track type) {
-              <option [value]="type">{{ relationTypeLabels[type] }}</option>
-            }
-          </select>
-        </div>
-
-        <!-- Custom label (shown when type = 'custom') -->
-        @if (relationType() === 'custom') {
-          <div class="flex flex-col gap-1.5">
-            <label i18n class="text-sm font-semibold text-base-content/80">Custom Label</label>
-            <input
-              type="text"
-              class="input input-bordered w-full text-sm"
-              placeholder="e.g. Major donor contact, Advisor..."
-              i18n-placeholder
-              maxlength="100"
-              [ngModel]="customLabel()"
-              (ngModelChange)="customLabel.set($event)"
-            />
-          </div>
-        }
-
-        <!-- Mutual toggle -->
-        <div class="flex items-center justify-between">
-          <div class="flex flex-col gap-0.5">
-            <span i18n class="text-sm font-semibold text-base-content/80">Mutual Connection</span>
-            <span i18n class="text-xs text-base-content/50">Shows on both profiles with ↔ indicator</span>
-          </div>
-          <input
-            type="checkbox"
-            class="toggle toggle-sm toggle-primary"
-            [ngModel]="isMutual()"
-            (ngModelChange)="isMutual.set($event)"
-          />
-        </div>
-
-        <!-- Notes -->
-        <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-semibold text-base-content/80"
-            >Notes <span i18n class="text-base-content/40 font-normal">(optional)</span></label
-          >
-          <textarea
-            class="textarea textarea-bordered w-full text-sm resize-none"
-            rows="3"
-            placeholder="Add context about this connection..."
-            i18n-placeholder
-            maxlength="1000"
-            [ngModel]="notes()"
-            (ngModelChange)="notes.set($event)"
-          ></textarea>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div pc-drawer-footer class="p-4 border-t border-base-300 flex gap-2">
-        <button i18n type="button" class="btn btn-ghost flex-1" (click)="onClose()" [disabled]="isSaving()">
-          Cancel
-        </button>
-        <button i18n type="button" class="btn btn-primary flex-1" [disabled]="!canSave()" (click)="onSave()">
-          @if (isSaving()) {
-            <span class="loading loading-spinner loading-sm"></span>
-          }
-          Add Connection
-        </button>
-      </div>
-    </pc-side-drawer>
-  `,
-})
-export class AddConnectionDrawer {
-  readonly personId = input.required<string>();
-  readonly isOpen = input.required<boolean>();
-  readonly closeDrawer = output<void>();
-  readonly saved = output<any>();
-
-  private readonly connectionsSvc = inject(ConnectionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly alertSvc = inject(AlertService);
-
-  protected readonly searchStr = signal('');
-  protected readonly searchResults = signal<PersonSearchResult[]>([]);
-  protected readonly selectedPerson = signal<PersonSearchResult | null>(null);
-  protected readonly relationType = signal<(typeof RELATION_TYPES)[number]>('close_friend');
-  protected readonly customLabel = signal('');
-  protected readonly isMutual = signal(false);
-  protected readonly notes = signal('');
-  protected readonly isSaving = signal(false);
-  protected readonly isSearching = signal(false);
-
-  protected readonly relationTypes = RELATION_TYPES;
-  protected readonly relationTypeLabels = RELATION_TYPE_LABELS;
-
-  private searchTimer: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly canSave = computed(() => {
-    if (!this.selectedPerson() || this.isSaving()) return false;
-    if (this.relationType() === 'custom' && !this.customLabel().trim()) return false;
-    return true;
-  });
-
-  protected initials(p: PersonSearchResult) {
-    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
-  }
-
-  protected onSearchChange(value: string) {
-    this.searchStr.set(value);
-    if (this.searchTimer) clearTimeout(this.searchTimer);
-    if (!value.trim()) {
-      this.searchResults.set([]);
-      return;
-    }
-    this.isSearching.set(true);
-    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
-  }
-
-  private async executeSearch(value: string): Promise<void> {
-    try {
-      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
-      const currentPersonId = this.personId();
-      this.searchResults.set(
-        ((result as any).rows ?? [])
-          .filter((p: any) => String(p.id) !== String(currentPersonId))
-          .map((p: any) => ({ id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email })),
-      );
-    } catch {
-      this.searchResults.set([]);
-    } finally {
-      this.isSearching.set(false);
-    }
-  }
-
-  protected selectPerson(p: PersonSearchResult) {
-    this.selectedPerson.set(p);
-    this.searchStr.set('');
-    this.searchResults.set([]);
-  }
-
-  protected clearSelection() {
-    this.selectedPerson.set(null);
-    this.searchStr.set('');
-    this.searchResults.set([]);
-  }
-
-  protected async onSave() {
-    const person = this.selectedPerson();
-    if (!person) return;
-    this.isSaving.set(true);
-    try {
-      const data: AddConnectionType = {
-        to_person_id: person.id,
-        relation_type: this.relationType(),
-        custom_label: this.relationType() === 'custom' ? this.customLabel().trim() : null,
-        is_mutual: this.isMutual(),
-        notes: this.notes().trim() || null,
-      };
-      const result = await this.connectionsSvc.add(this.personId(), data);
-      this.alertSvc.showSuccess('Connection added');
-      this.saved.emit(result);
-      this.resetForm();
-      this.closeDrawer.emit();
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('already exists')) {
-        this.alertSvc.showError('A connection of this type already exists between these contacts.');
-      }
-    } finally {
-      this.isSaving.set(false);
-    }
-  }
-
-  protected onClose() {
-    this.resetForm();
-    this.closeDrawer.emit();
-  }
-
-  private resetForm() {
-    this.selectedPerson.set(null);
-    this.searchStr.set('');
-    this.searchResults.set([]);
-    this.relationType.set('close_friend');
-    this.customLabel.set('');
-    this.isMutual.set(false);
-    this.notes.set('');
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-connections.ts
-
-```typescript
-import { Component, inject, input, output, signal, OnInit } from '@angular/core';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { ConnectionCard } from './connection-card';
-import { AddConnectionDrawer } from './add-connection-drawer';
-import { Icon } from '@uxcommon/components/icons/icon';
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-
-@Component({
-  selector: 'pc-person-connections',
-  imports: [ConnectionCard, AddConnectionDrawer, Icon],
-  template: `
-    <div class="flex flex-col gap-4">
-      <!-- Header -->
-      <div class="flex items-center justify-between">
-        <h4 i18n class="font-semibold text-base-content/80">
-          Connections
-          @if (connections().length > 0) {
-            <span class="badge badge-sm badge-neutral ml-2">{{ connections().length }}</span>
-          }
-        </h4>
-        <button type="button" class="btn btn-sm btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          Add Connection
-        </button>
-      </div>
-
-      <!-- Loading skeleton -->
-      @if (isLoading()) {
-        <div class="flex flex-col gap-2">
-          <div class="skeleton h-16 w-full rounded-xl"></div>
-          <div class="skeleton h-16 w-full rounded-xl"></div>
-        </div>
-      } @else if (connections().length === 0) {
-        <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
-          No connections recorded. Add one to start mapping this contact's network.
-        </div>
-      } @else {
-        <div class="flex flex-col gap-2">
-          @for (conn of connections(); track conn.id) {
-            <pc-connection-card
-              [connection]="conn"
-              [currentPersonId]="personId()"
-              (remove)="onRemove($event)"
-            ></pc-connection-card>
-          }
-        </div>
-      }
-    </div>
-
-    <pc-add-connection-drawer
-      [personId]="personId()"
-      [isOpen]="showAddDrawer()"
-      (closeDrawer)="showAddDrawer.set(false)"
-      (saved)="onConnectionAdded()"
-    ></pc-add-connection-drawer>
-  `,
-})
-export class PersonConnections implements OnInit {
-  readonly personId = input.required<string>();
-  readonly countChange = output<number>();
-
-  private readonly connectionsSvc = inject(ConnectionsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly connections = signal<any[]>([]);
-  protected readonly showAddDrawer = signal(false);
-
-  public ngOnInit() {
-    void this.load();
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const result = await this.connectionsSvc.getForPerson(this.personId());
-      this.connections.set(result as any[]);
-      this.countChange.emit(result.length);
-    } catch {
-      // silently fail — tab stays empty
-    } finally {
-      end();
-    }
-  }
-
-  protected onConnectionAdded() {
-    void this.load();
-  }
-
-  protected async onRemove(id: string) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Connection',
-      message: 'Are you sure you want to remove this connection?',
-      confirmText: 'Remove',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-    try {
-      await this.connectionsSvc.remove(id);
-      this.connections.update((list) => list.filter((c) => c.id !== id));
-      this.countChange.emit(this.connections().length);
-      this.alertSvc.showSuccess('Connection removed');
-    } catch {
-      this.alertSvc.showError('Failed to remove connection');
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { form, required, email, disabled, FormField } from '@angular/forms/signals';
 import { FormsModule } from '@angular/forms';
-import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { IAuthUserDetail, IUserStatsSnapshot, UpdateAuthUserType } from '../../../../../../libs/common/src';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInHousehold } from './people-in-household';
-import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../../households/services/households-service';
-import { PersonsService } from '../services/persons-service';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { DonationsService } from '../../../services/api/donations-service';
-import { EventsService } from '../../../services/api/events-service';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { PersonConnections } from './person-connections';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { Icon } from '@icons/icon';
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
-import { PcIconNameType } from '@icons/icons.index';
-
-interface SocialLinkDef {
-  name: string;
-  url: string | null | undefined;
-  icon: PcIconNameType;
-  color: string;
-}
 
 @Component({
-  selector: 'pc-person-view',
-  imports: [
-    DatePipe,
-    RouterModule,
-    FormsModule,
-    PeopleInHousehold,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatusBadge,
-    StatCard,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Tags,
-    PersonConnections,
-  ],
-  templateUrl: './person-view.html',
+  selector: 'pc-profile-page',
+  imports: [DatePipe, PcInput, FormField, Icon, UserAvatarComponent, FormsModule, DecimalPipe, DetailItem],
+  templateUrl: './profile-page.html',
 })
-export class PersonView {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
+export class ProfilePage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  protected readonly donationsSvc = inject(DonationsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly volunteerSvc = inject(VolunteerService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly connectionsSvc = inject(ConnectionsService);
 
   private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly uploadingAvatar = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly stats = signal<IUserStatsSnapshot | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+  protected readonly avatarUrl = signal<string | null>(null);
 
-  protected readonly person = signal<any | null>(null);
+  // Profile picture cropping state
+  protected readonly cropImageSrc = signal<string | null>(null);
+  protected readonly cropZoom = signal<number>(1.0);
+  protected readonly cropX = signal<number>(0);
+  protected readonly cropY = signal<number>(0);
+  protected readonly displayWidth = signal<number>(0);
+  protected readonly displayHeight = signal<number>(0);
 
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+  private cropFileName = '';
+  private isDragging = false;
+  private startX = 0;
+  private startY = 0;
 
-  // Analytics & Lists
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
-  protected readonly volunteerHistory = signal<any[]>([]);
-  protected readonly donationStats = signal<{
-    cumulativeAmount: number;
-    limitAmount: number;
-    remainingAmount: number;
-  } | null>(null);
-  protected readonly donationHistory = signal<any[]>([]);
-  protected readonly eventHistory = signal<any[]>([]);
-  protected readonly eventStats = signal<{ events_count: number } | null>(null);
-  protected readonly connectionCount = signal(0);
-  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
-  protected readonly openedNewslettersCount = computed(() => {
-    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
-      .length;
-  });
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
-
-  // Donation Dialog State
-  protected readonly isCheckingEligibility = signal(false);
-  protected readonly donationAmount = signal<number | null>(null);
-  protected readonly showDonationModal = signal(false);
-  protected readonly eligibilityError = signal<string | null>(null);
-
-  // Address
-  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
-  protected readonly householdResource = resource({
-    params: () => this.householdId(),
-    loader: async ({ params: householdId }) => {
-      if (!householdId) return null;
-      try {
-        return await this.householdsSvc.getById(householdId);
-      } catch {
-        return null;
-      }
-    },
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    mention_in_comment: true,
+    task_assigned: true,
+    task_due: true,
+    person_assigned: true,
+    export_ready: true,
+    import_summary: true,
   });
 
-  protected readonly addressString = computed(() => {
-    const hh = this.householdResource.value() as Households | null | undefined;
-    if (!hh || hh.is_placeholder) return 'No Address Assigned';
-    return this.getFormattedAddress(hh);
-  });
-  protected readonly isPlaceholderHousehold = computed(() => {
-    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.email, () => this.isViewer() || this.saving());
+    disabled(p.first_name, () => this.isViewer() || this.saving());
+    disabled(p.last_name, () => this.isViewer() || this.saving());
+    disabled(p.mention_in_comment, () => this.isViewer() || this.saving());
+    disabled(p.task_assigned, () => this.isViewer() || this.saving());
+    disabled(p.task_due, () => this.isViewer() || this.saving());
+    disabled(p.person_assigned, () => this.isViewer() || this.saving());
+    disabled(p.export_ready, () => this.isViewer() || this.saving());
+    disabled(p.import_summary, () => this.isViewer() || this.saving());
   });
 
-  // Contact initials and full name computation
+  protected readonly isViewer = computed(() => this.detail()?.role === 'viewer');
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
   protected readonly initials = computed(() => {
-    const first = this.person()?.first_name || '';
-    const last = this.person()?.last_name || '';
-    if (!first && !last) return '?';
-    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+    const first = this.payload().first_name?.trim();
+    const last = this.payload().last_name?.trim();
+    if (first && last) {
+      return (first[0]! + last[0]!).toUpperCase();
+    }
+    if (first) {
+      return first[0]!.toUpperCase();
+    }
+    const emailStr = this.payload().email?.trim();
+    if (emailStr) {
+      return emailStr[0]!.toUpperCase();
+    }
+    return '?';
   });
 
-  protected readonly fullName = computed(() => {
-    const p = this.person();
-    if (!p) return '';
-    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
-  });
-
-  // Social icons
-  public socialLinks = computed<SocialLinkDef[]>(() => {
-    const p = this.person();
+  protected readonly activityCards = computed(() => {
+    const s = this.stats();
+    if (!s) return [];
     return [
       {
-        name: 'LinkedIn',
-        url: p.linkedin,
-        icon: 'linkedin',
-        color: 'bg-[#0a66c2]', // LinkedIn Blue
+        key: 'emails',
+        title: 'Emails Assigned',
+        value: s.emails_assigned.total,
+        subtitle: `${s.emails_assigned.open} open · ${s.emails_assigned.closed} closed`,
+        icon: 'envelope' as const,
+        asOf: null,
       },
       {
-        name: 'X',
-        url: p.twitter,
-        icon: 'x',
-        color: 'bg-black', // X Black
+        key: 'contacts',
+        title: 'Contacts Added',
+        value: s.contacts_added.total,
+        subtitle: s.contacts_added.last_created_at ? 'Last new contact' : 'No contacts yet',
+        icon: 'users' as const,
+        asOf: s.contacts_added.last_created_at,
       },
       {
-        name: 'Facebook',
-        url: p.facebook,
-        icon: 'facebook',
-        color: 'bg-[#1877f2]', // Facebook Blue
+        key: 'imports',
+        title: 'Files Imported',
+        value: s.files_imported.count,
+        subtitle: `${s.files_imported.total_rows} people imported`,
+        icon: 'arrow-down-tray' as const,
+        asOf: s.files_imported.last_activity_at,
       },
       {
-        name: 'Instagram',
-        url: p.instagram,
-        icon: 'instagram',
-        color: 'bg-[#e1306c]', // Instagram Pink/Red
+        key: 'exports',
+        title: 'Files Exported',
+        value: s.files_exported.count,
+        subtitle: `${s.files_exported.total_rows} rows exported`,
+        icon: 'arrow-up-tray' as const,
+        asOf: s.files_exported.last_activity_at,
       },
     ];
   });
 
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
-    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
-    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
-    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
-    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
-    { id: 'household', label: 'Household', icon: 'home' },
-  ]);
-
-  protected getMailStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'sent' || s === 'delivered') return 'success';
-    if (s === 'opened') return 'info';
-    if (s === 'read') return 'neutral';
-    return 'ghost';
+  public ngOnInit(): void {
+    void this.load();
   }
 
-  protected getEmailEventType(eventType: string | null | undefined): any {
-    const et = String(eventType || '').toLowerCase();
-    if (et === 'open') return 'success';
-    if (et === 'click') return 'warning';
-    if (et === 'delivered' || et === 'processed') return 'info';
-    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
-    return 'ghost';
-  }
-
-  protected getShiftStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'signed_up') return 'warning';
-    if (s === 'no_show') return 'error';
-    return 'ghost';
-  }
-
-  protected getEventStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    if (s === 'attended') return 'success';
-    if (s === 'registered') return 'warning';
-    if (s === 'no_show') return 'error';
-    if (s === 'cancelled') return 'neutral';
-    return 'ghost';
-  }
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load person details
-      const personData = await this.personsSvc.getById(id);
-      this.person.set(personData);
-
-      // 2. Load tags and issues
-      const tagList = await this.personsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.personsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
-
-      // 3. Load volunteer stats and history
-      try {
-        const stats = await this.volunteerSvc.getVolunteerStats(id);
-        this.volunteerStats.set(stats);
-        const history = await this.volunteerSvc.getHistoryForPerson(id);
-        this.volunteerHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load volunteer details', err);
-      }
-
-      // 4. Load donations stats and history
-      try {
-        const stats = await this.donationsSvc.getStats(id);
-        this.donationStats.set(stats);
-        const history = await this.donationsSvc.getHistory(id);
-        this.donationHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load donations history', err);
-      }
-
-      // 5. Load event history
-      try {
-        const stats = await this.eventsSvc.getStatsForPerson(id);
-        this.eventStats.set(stats);
-        const history = await this.eventsSvc.getHistoryForPerson(id);
-        this.eventHistory.set(history || []);
-      } catch (err) {
-        console.error('Failed to load event history', err);
-      }
-
-      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
-      try {
-        const count = await this.connectionsSvc.countForPerson(id);
-        this.connectionCount.set(count);
-      } catch (err) {
-        console.error('Failed to load connection count', err);
-      }
-
-      // Check query params for Stripe Checkout success redirects
-      const params = this.route.snapshot.queryParams;
-      if (params['checkout_success'] === 'true' && params['session_id']) {
-        try {
-          await this.donationsSvc.confirmDonation(params['session_id']);
-          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
-          // Reload donation stats/history after confirmation
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to confirm stripe checkout session:', err);
-          this.alertSvc.showError('Finalizing payment verification...');
-        }
-      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
-        try {
-          const amt = Number(params['amount'] || 0);
-          await this.donationsSvc.confirmMockDonation({
-            personId: id,
-            amountCents: amt * 100,
-            sessionId: params['session_id'],
-            province: params['province'] || '',
-            country: params['country'] || '',
-          });
-          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
-          const stats = await this.donationsSvc.getStats(id);
-          this.donationStats.set(stats);
-          const history = await this.donationsSvc.getHistory(id);
-          this.donationHistory.set(history || []);
-          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
-        } catch (err) {
-          console.error('Failed to record mock donation:', err);
-        }
-      }
-
-      // 5. Load interactions (emails + newsletters)
-      try {
-        const activity = await this.personsSvc.getActivity(id);
-        this.activityData.set(activity || { emails: [], newsletters: [] });
-      } catch (err) {
-        console.error('Failed to load activity log', err);
-      }
-    } catch (err) {
-      this.alertSvc.showError('Failed to load person details: ' + String(err));
-    } finally {
-      end();
-      this.initialized.set(true);
+  protected async save(event?: Event) {
+    if (event) {
+      event.preventDefault();
     }
-  }
 
-  protected openCollectDonation() {
-    this.donationAmount.set(null);
-    this.eligibilityError.set(null);
-    this.showDonationModal.set(true);
-  }
-
-  protected closeDonationModal() {
-    this.showDonationModal.set(false);
-  }
-
-  protected async submitDonation() {
-    const amt = this.donationAmount();
-    if (amt === null || amt <= 0) {
-      this.alertSvc.showError('Please specify a valid donation amount.');
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
       return;
     }
 
-    this.isCheckingEligibility.set(true);
-    this.eligibilityError.set(null);
+    const user = this.detail();
+    if (!user) return;
 
-    const hh = this.householdResource.value() as Households | null | undefined;
-    const address = {
-      country: hh?.country || 'CA',
-      state: hh?.state || 'ON',
-    };
+    const payload = this.buildPayload();
 
+    this.saving.set(true);
+    this.error.set(null);
     try {
-      const eligibility = await this.donationsSvc.checkEligibility({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (!eligibility.eligible) {
-        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
-        this.isCheckingEligibility.set(false);
-        return;
-      }
-
-      this.closeDonationModal();
-      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
-
-      // Redirect
-      const session = await this.donationsSvc.createCheckout({
-        personId: this.id(),
-        amountCents: amt * 100,
-        address,
-      });
-
-      if (session && session.url) {
-        window.location.href = session.url;
-      } else {
-        this.alertSvc.showError('Failed to initialize payment gateway.');
-      }
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
-    } finally {
-      this.isCheckingEligibility.set(false);
-    }
-  }
-
-  protected editPerson() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deletePerson() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Person',
-      message: 'Are you sure you want to delete this person? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.personsSvc.delete(this.id());
-      this.personsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Person deleted');
-      await this.router.navigate(['/people']);
+      await this.userService.updateUserProfile(user.id, payload);
+      this.alerts.showSuccess('Profile updated successfully');
+      await this.load();
+      this.form().reset();
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -34449,507 +30764,23 @@ export class PersonView {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Unable to delete person';
-      this.alertSvc.showError(message);
+            : 'Unable to update profile';
+      this.error.set(message);
+      this.alerts.showError(message);
     } finally {
-      end();
+      this.saving.set(false);
     }
   }
 
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-
-  protected navigateToHousehold() {
-    const household_id = this.householdId();
-    if (household_id) {
-      void this.router.navigate(['households', household_id]);
-    }
-  }
-
-  private getFormattedAddress(address: AddressType): string {
-    const parts: string[] = [];
-    const streetParts = [
-      address.apt ? `Apt ${address.apt}` : null,
-      address.street_num,
-      address.street1,
-      address.street2,
-    ].filter(Boolean);
-
-    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    const formatted = parts.join(', ').trim();
-    return formatted || 'No Address Assigned';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
-  templateUrl: './persons-grid.html',
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected readonly mappableFields = [
-    'first_name',
-    'middle_names',
-    'last_name',
-    'email',
-    'email2',
-    'mobile',
-    'home_phone',
-    'street_num',
-    'street1',
-    'street2',
-    'apt',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'notes',
-  ];
-
-  protected col: ColDef[] = [
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'mobile', headerName: 'Mobile', editable: true },
-    { field: 'company_name', headerName: 'Company', editable: false },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        return parts.join(', ').trim() || 'No household assigned';
-      },
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  // Generic CSV importer integration
-  protected importerOpen = signal(false);
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
-  public listId = input<string | null>(null);
-
-  protected readonly narrowTypeOptions = [
-    { label: 'All', value: null, tags: [] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
-    { label: 'Donors', value: 'donor', tags: ['donor'] },
-  ];
-
-  protected tagsInput = '';
-
-  public ngOnInit() {
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
+  protected async cancelEmailChange() {
+    this.saving.set(true);
+    this.error.set(null);
     try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      // Any logic that depends on this data should go here
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  // paging/preview managed by CsvImportComponent
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // --- Import CSV Flow ---
-  protected openImportDialog() {
-    // Clear any prior summary to avoid stale dialogs
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importerOpen.set(true);
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-    const inputTags = this.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => !!t);
-    const tags = inputTags;
-
-    try {
-      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        tag: res?.tag ?? undefined,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  public autoMapHeader(h: string): string {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      firstname: 'first_name',
-      fname: 'first_name',
-      middlename: 'middle_names',
-      lastname: 'last_name',
-      lname: 'last_name',
-      name: 'first_name',
-      email: 'email',
-      emailaddress: 'email',
-      email1address: 'email',
-      email2: 'email2',
-      email2address: 'email2',
-      mobile: 'mobile',
-      mobilephone: 'mobile',
-      cellphone: 'mobile',
-      primaryphone: 'mobile',
-      businessphone: 'mobile',
-      homephone: 'home_phone',
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      homecity: 'city',
-      homestate: 'state',
-      homepostalcode: 'zip',
-      homecountry: 'country',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      businesscity: 'city',
-      businessstate: 'state',
-      businesspostalcode: 'zip',
-      businesscountry: 'country',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+      await this.auth.cancelEmailChange();
+      this.alerts.showSuccess('Email change canceled and reverted');
+      await this.load();
     } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
+      const message =
         err instanceof Error && err.message
           ? err.message
           : isRecord(err) &&
@@ -34957,42 +30788,230 @@ export class PersonsGrid implements OnInit {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+            : 'Unable to cancel email change';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
+  }
+
+  protected formatAsOf(date: Date | null): string {
+    if (!date) return '—';
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(new Date(date));
+    } catch {
+      return date.toString();
+    }
+  }
+
+  protected onAvatarFileChange(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    this.cropFileName = file.name;
+    input.value = '';
+
+    // Read the file as a DataURL to display in the crop modal
+    const reader = new FileReader();
+    reader.onload = () => {
+      const imgUrl = reader.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const containerSize = 256;
+        const minDimension = Math.min(img.width, img.height);
+        const displayScale = containerSize / minDimension;
+
+        this.displayWidth.set(img.width * displayScale);
+        this.displayHeight.set(img.height * displayScale);
+        this.cropImageSrc.set(imgUrl);
+        this.cropZoom.set(1.0);
+        this.cropX.set(0);
+        this.cropY.set(0);
+      };
+      img.src = imgUrl;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  protected cancelCrop() {
+    this.cropImageSrc.set(null);
+  }
+
+  protected onCropDragStart(event: MouseEvent) {
+    event.preventDefault();
+    this.isDragging = true;
+    this.startX = event.clientX - this.cropX();
+    this.startY = event.clientY - this.cropY();
+  }
+
+  protected onCropDragMove(event: MouseEvent) {
+    if (!this.isDragging) return;
+    this.cropX.set(event.clientX - this.startX);
+    this.cropY.set(event.clientY - this.startY);
+  }
+
+  protected onCropDragEnd() {
+    this.isDragging = false;
+  }
+
+  protected getCropTransformStyle() {
+    return `translate(-50%, -50%) translate(${this.cropX()}px, ${this.cropY()}px) scale(${this.cropZoom()})`;
+  }
+
+  protected async cropAndUpload() {
+    const imgUrl = this.cropImageSrc();
+    if (!imgUrl) return;
+
+    this.cropImageSrc.set(null);
+    this.uploadingAvatar.set(true);
+
+    try {
+      const img = new Image();
+      img.src = imgUrl;
+      await new Promise((resolve) => (img.onload = resolve));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+
+      const containerSize = 256;
+      const targetSize = 128;
+
+      // Real scale factor between loaded image dimensions and container dimensions
+      const minDimension = Math.min(img.width, img.height);
+      const displayScale = containerSize / minDimension;
+
+      const w = img.width * displayScale;
+      const h = img.height * displayScale;
+
+      ctx.clearRect(0, 0, targetSize, targetSize);
+
+      ctx.save();
+      ctx.translate(targetSize / 2, targetSize / 2);
+      ctx.scale(targetSize / containerSize, targetSize / containerSize);
+      ctx.translate(this.cropX(), this.cropY());
+      ctx.scale(this.cropZoom(), this.cropZoom());
+      ctx.drawImage(img, -w / 2, -h / 2, w, h);
+      ctx.restore();
+
+      // Convert canvas to WebP blob (gives optimal compression and small file size)
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.85));
+      if (!blob) throw new Error('Failed to create WebP image blob');
+
+      const fileExt = this.cropFileName.split('.').pop() ?? 'png';
+      const webpFileName = this.cropFileName.replace(new RegExp(`\\.${fileExt}$`), '') + '.webp';
+      const webpFile = new File([blob], webpFileName, { type: 'image/webp' });
+
+      const data = await this.auth.uploadAvatar(webpFile);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl(data.avatar_url));
+      this.alerts.showSuccess('Profile picture updated successfully');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to crop/upload avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  protected async removeAvatar() {
+    this.uploadingAvatar.set(true);
+    try {
+      await this.auth.deleteAvatar();
+      this.avatarUrl.set(null);
+      this.alerts.showSuccess('Profile picture removed');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove avatar');
+    } finally {
+      this.uploadingAvatar.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      // First ensure we have/refresh current user
+      const currentUser = await this.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new Error('Not logged in');
       }
+
+      const user = await this.userService.getProfileById(currentUser.id);
+      this.detail.set(user);
+      this.stats.set(user.stats as any);
+      this.avatarUrl.set(this.userService.resolveAvatarUrl((user as any).avatar_url));
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load profile';
+      this.error.set(message);
+      this.alerts.showError(message);
     } finally {
       end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
     }
-    return true;
+  }
+
+  private setForm(user: IAuthUserDetail) {
+    const prefs = user.notification_preferences || {
+      mention_in_comment: true,
+      task_assigned: true,
+      task_due: true,
+      person_assigned: true,
+      export_ready: true,
+      import_summary: true,
+    };
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+      mention_in_comment: prefs.mention_in_comment ?? true,
+      task_assigned: prefs.task_assigned ?? true,
+      task_due: prefs.task_due ?? true,
+      person_assigned: prefs.person_assigned ?? true,
+      export_ready: prefs.export_ready ?? true,
+      import_summary: prefs.import_summary ?? true,
+    });
+  }
+
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+      notification_preferences: {
+        mention_in_comment: raw.mention_in_comment,
+        task_assigned: raw.task_assigned,
+        task_due: raw.task_due,
+        person_assigned: raw.person_assigned,
+        export_ready: raw.export_ready,
+        import_summary: raw.import_summary,
+      },
+    } as UpdateAuthUserType;
   }
 }
 
@@ -35001,540 +31020,150 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
+## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.ts
 
 ```typescript
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { SettingsService } from '../services/settings-service';
+import { DatePipe } from '@angular/common';
+import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
-import { TokenService } from '../../../services/api/token-service';
-import { environment } from '../../../../environments/environment';
-import { DonationsService } from '../../../services/api/donations-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { TRPCService } from '../../../services/api/trpc-service';
 
-export interface TaxCreditTier {
-  limit: number;
-  rate: number;
-}
-
-export interface DonationPeriod {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string | null;
-  limit_amount: number;
-  is_active: boolean;
+export interface BillingDetailsSnapshot {
+  plan: string;
+  status: string;
+  endsAt: Date | null;
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  hasActiveSubscription: boolean;
+  isMockMode: boolean;
 }
 
 @Component({
-  selector: 'pc-donations-settings',
-  imports: [FormsModule, Icon],
-  templateUrl: './donations-settings.html',
+  selector: 'pc-billing-settings',
+  imports: [DatePipe, Icon],
+  templateUrl: './billing-settings.html',
 })
-export class DonationsSettingsComponent implements OnInit {
-  private readonly settingsSvc = inject(SettingsService);
+export class BillingSettingsComponent extends TRPCService<any> implements OnInit {
   private readonly alerts = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly stripeSecretKey = signal('');
-  protected readonly stripeWebhookSecret = signal('');
-  protected readonly donationLimit = signal(1000);
-  protected readonly restrictResidency = signal(false);
-  protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
-  protected readonly webhookToken = signal('');
-
-  // Donation periods
-  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
-  protected readonly showAddPeriod = signal(false);
-  protected readonly newPeriodName = signal('');
-  protected readonly newPeriodStartDate = signal('');
-  protected readonly newPeriodEndDate = signal('');
-  protected readonly newPeriodLimit = signal<number>(1000);
-  protected readonly isSavingPeriod = signal(false);
-
-  // New multi-country autocomplete & states checkboxes
-  protected readonly selectedCountries = signal<string[]>([]);
-  protected readonly selectedRegions = signal<string[]>([]);
-
-  protected readonly countrySearch = signal('');
-  protected readonly showCountryDropdown = signal(false);
-
-  protected readonly allCountries = [
-    { code: 'CA', name: 'Canada' },
-    { code: 'US', name: 'United States' },
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'AU', name: 'Australia' },
-    { code: 'NZ', name: 'New Zealand' },
-    { code: 'FR', name: 'France' },
-    { code: 'DE', name: 'Germany' },
-    { code: 'IN', name: 'India' },
-    { code: 'IT', name: 'Italy' },
-    { code: 'ES', name: 'Spain' },
-    { code: 'NL', name: 'Netherlands' },
-  ];
-
-  protected readonly canadaProvinces = [
-    { code: 'ON', name: 'Ontario' },
-    { code: 'QC', name: 'Quebec' },
-    { code: 'BC', name: 'British Columbia' },
-    { code: 'AB', name: 'Alberta' },
-    { code: 'MB', name: 'Manitoba' },
-    { code: 'SK', name: 'Saskatchewan' },
-    { code: 'NS', name: 'Nova Scotia' },
-    { code: 'NB', name: 'New Brunswick' },
-    { code: 'NL', name: 'Newfoundland and Labrador' },
-    { code: 'PE', name: 'Prince Edward Island' },
-    { code: 'NT', name: 'Northwest Territories' },
-    { code: 'YT', name: 'Yukon' },
-    { code: 'NU', name: 'Nunavut' },
-  ];
-
-  protected readonly usStates = [
-    { code: 'AL', name: 'Alabama' },
-    { code: 'AK', name: 'Alaska' },
-    { code: 'AZ', name: 'Arizona' },
-    { code: 'AR', name: 'Arkansas' },
-    { code: 'CA', name: 'California' },
-    { code: 'CO', name: 'Colorado' },
-    { code: 'CT', name: 'Connecticut' },
-    { code: 'DE', name: 'Delaware' },
-    { code: 'FL', name: 'Florida' },
-    { code: 'GA', name: 'Georgia' },
-    { code: 'HI', name: 'Hawaii' },
-    { code: 'ID', name: 'Idaho' },
-    { code: 'IL', name: 'Illinois' },
-    { code: 'IN', name: 'Indiana' },
-    { code: 'IA', name: 'Iowa' },
-    { code: 'KS', name: 'Kansas' },
-    { code: 'KY', name: 'Kentucky' },
-    { code: 'LA', name: 'Louisiana' },
-    { code: 'ME', name: 'Maine' },
-    { code: 'MD', name: 'Maryland' },
-    { code: 'MA', name: 'Massachusetts' },
-    { code: 'MI', name: 'Michigan' },
-    { code: 'MN', name: 'Minnesota' },
-    { code: 'MS', name: 'Mississippi' },
-    { code: 'MO', name: 'Missouri' },
-    { code: 'MT', name: 'Montana' },
-    { code: 'NE', name: 'Nebraska' },
-    { code: 'NV', name: 'Nevada' },
-    { code: 'NH', name: 'New Hampshire' },
-    { code: 'NJ', name: 'New Jersey' },
-    { code: 'NM', name: 'New Mexico' },
-    { code: 'NY', name: 'New York' },
-    { code: 'NC', name: 'North Carolina' },
-    { code: 'ND', name: 'North Dakota' },
-    { code: 'OH', name: 'Ohio' },
-    { code: 'OK', name: 'Oklahoma' },
-    { code: 'OR', name: 'Oregon' },
-    { code: 'PA', name: 'Pennsylvania' },
-    { code: 'RI', name: 'Rhode Island' },
-    { code: 'SC', name: 'South Carolina' },
-    { code: 'SD', name: 'South Dakota' },
-    { code: 'TN', name: 'Tennessee' },
-    { code: 'TX', name: 'Texas' },
-    { code: 'UT', name: 'Utah' },
-    { code: 'VT', name: 'Vermont' },
-    { code: 'VA', name: 'Virginia' },
-    { code: 'WA', name: 'Washington' },
-    { code: 'WV', name: 'West Virginia' },
-    { code: 'WI', name: 'Wisconsin' },
-    { code: 'WY', name: 'Wyoming' },
-  ];
-
-  protected readonly germanyStates = [
-    { code: 'DE-BW', name: 'Baden-Württemberg' },
-    { code: 'DE-BY', name: 'Bavaria' },
-    { code: 'DE-BE', name: 'Berlin' },
-    { code: 'DE-BB', name: 'Brandenburg' },
-    { code: 'DE-HB', name: 'Bremen' },
-    { code: 'DE-HH', name: 'Hamburg' },
-    { code: 'DE-HE', name: 'Hesse' },
-    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
-    { code: 'DE-NI', name: 'Lower Saxony' },
-    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
-    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
-    { code: 'DE-SL', name: 'Saarland' },
-    { code: 'DE-SN', name: 'Saxony' },
-    { code: 'DE-ST', name: 'Saxony-Anhalt' },
-    { code: 'DE-SH', name: 'Schleswig-Holstein' },
-    { code: 'DE-TH', name: 'Thuringia' },
-  ];
-
-  protected readonly franceRegions = [
-    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
-    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
-    { code: 'FR-BRE', name: 'Brittany' },
-    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
-    { code: 'FR-COR', name: 'Corsica' },
-    { code: 'FR-GES', name: 'Grand Est' },
-    { code: 'FR-HDF', name: 'Hauts-de-France' },
-    { code: 'FR-IDF', name: 'Île-de-France' },
-    { code: 'FR-NOR', name: 'Normandy' },
-    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
-    { code: 'FR-OCC', name: 'Occitania' },
-    { code: 'FR-PDL', name: 'Pays de la Loire' },
-    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
-  ];
-
-  protected readonly indiaStates = [
-    { code: 'IN-AP', name: 'Andhra Pradesh' },
-    { code: 'IN-AR', name: 'Arunachal Pradesh' },
-    { code: 'IN-AS', name: 'Assam' },
-    { code: 'IN-BR', name: 'Bihar' },
-    { code: 'IN-CG', name: 'Chhattisgarh' },
-    { code: 'IN-GA', name: 'Goa' },
-    { code: 'IN-GJ', name: 'Gujarat' },
-    { code: 'IN-HR', name: 'Haryana' },
-    { code: 'IN-HP', name: 'Himachal Pradesh' },
-    { code: 'IN-JH', name: 'Jharkhand' },
-    { code: 'IN-KA', name: 'Karnataka' },
-    { code: 'IN-KL', name: 'Kerala' },
-    { code: 'IN-MP', name: 'Madhya Pradesh' },
-    { code: 'IN-MH', name: 'Maharashtra' },
-    { code: 'IN-MN', name: 'Manipur' },
-    { code: 'IN-ML', name: 'Meghalaya' },
-    { code: 'IN-MZ', name: 'Mizoram' },
-    { code: 'IN-NL', name: 'Nagaland' },
-    { code: 'IN-OD', name: 'Odisha' },
-    { code: 'IN-PB', name: 'Punjab' },
-    { code: 'IN-RJ', name: 'Rajasthan' },
-    { code: 'IN-SK', name: 'Sikkim' },
-    { code: 'IN-TN', name: 'Tamil Nadu' },
-    { code: 'IN-TG', name: 'Telangana' },
-    { code: 'IN-TR', name: 'Tripura' },
-    { code: 'IN-UP', name: 'Uttar Pradesh' },
-    { code: 'IN-UT', name: 'Uttarakhand' },
-    { code: 'IN-WB', name: 'West Bengal' },
-    { code: 'IN-DL', name: 'Delhi (UT)' },
-    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
-    { code: 'IN-LA', name: 'Ladakh (UT)' },
-    { code: 'IN-PY', name: 'Puducherry (UT)' },
-  ];
-
-  // Tiers editing inputs
-  protected readonly newLimit = signal<number | null>(null);
-  protected readonly newRate = signal<number | null>(null);
-
-  protected readonly isSaving = signal(false);
-
-  protected readonly tenantId = computed(() => {
-    const token = this.tokenSvc.getAuthToken();
-    if (!token) return '';
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]!));
-        return String(payload.tenant_id || '');
-      }
-    } catch (e) {
-      console.error('Failed to parse auth token payload', e);
-    }
-    return '';
-  });
-
-  protected readonly webhookUrl = computed(() => {
-    const token = this.webhookToken();
-    if (!token) return 'Loading Webhook URL...';
-    const base = environment.apiUrl.replace(/\/$/, '');
-    return `${base}/api/donations/webhook?token=${token}`;
-  });
-
-  protected readonly availableCountriesToSelect = computed(() => {
-    const search = this.countrySearch().toLowerCase().trim();
-    const selected = new Set(this.selectedCountries());
-    return this.allCountries.filter(
-      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
-    );
-  });
-
-  protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
-  protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
-  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
-  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
-  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
-
-  // Plain-language calculation summary
-  protected readonly taxCreditSummary = computed(() => {
-    const sorted = [...this.taxCreditTiers()].sort((a, b) => a.limit - b.limit);
-    if (sorted.length === 0) {
-      return ['No tax credit tiers defined. Donations will not receive any tax credit.'];
-    }
-
-    const lines: string[] = [];
-    let previousLimit = 0;
-
-    for (let i = 0; i < sorted.length; i++) {
-      const tier = sorted[i]!;
-      const ratePct = Math.round(tier.rate * 100);
-
-      if (i === 0) {
-        lines.push(`${ratePct}% credit on the first $${tier.limit} donated.`);
-      } else {
-        const range = `$${previousLimit + 1} to $${tier.limit}`;
-        lines.push(`${ratePct}% credit on the next $${tier.limit - previousLimit} donated (amounts from ${range}).`);
-      }
-      previousLimit = tier.limit;
-    }
-
-    lines.push(`0% credit on any amounts exceeding $${previousLimit}.`);
-    return lines;
-  });
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly actionPending = signal(false);
+  protected readonly details = signal<BillingDetailsSnapshot | null>(null);
 
   ngOnInit(): void {
-    void this.loadOnInit();
+    void this.initBilling();
   }
 
-  private async loadOnInit(): Promise<void> {
-    await this.settingsSvc.load();
-    this.loadValues();
-    await this.loadPeriods();
+  private async initBilling() {
+    await this.loadBilling();
+
+    // Listen to query params for mock successes or redirect callbacks
+    this.route.queryParams
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((params) => void this.handleQueryParams(params));
   }
 
-  private async loadPeriods() {
+  protected async loadBilling() {
+    const end = this._loading.begin();
     try {
-      const periods = await this.donationsSvc.getDonationPeriods();
-      this.donationPeriods.set(periods as any);
-    } catch {
-      // non-fatal — periods table may not exist yet if migration hasn't run
-    }
-  }
-
-  protected async addPeriod() {
-    const name = this.newPeriodName().trim();
-    const start = this.newPeriodStartDate().trim();
-    const limit = Number(this.newPeriodLimit());
-
-    if (!name) {
-      this.alerts.showError('Period name is required');
-      return;
-    }
-    if (!start) {
-      this.alerts.showError('Start date is required');
-      return;
-    }
-    if (!limit || limit <= 0) {
-      this.alerts.showError('Limit amount must be greater than 0');
-      return;
-    }
-
-    const endDate = this.newPeriodEndDate().trim() || null;
-    if (endDate && endDate <= start) {
-      this.alerts.showError('End date must be after start date');
-      return;
-    }
-
-    this.isSavingPeriod.set(true);
-    try {
-      await this.donationsSvc.createDonationPeriod({
-        name,
-        start_date: start,
-        end_date: endDate,
-        limit_amount: limit * 100,
-      });
-      this.alerts.showSuccess(`Donation period "${name}" created`);
-      this.newPeriodName.set('');
-      this.newPeriodStartDate.set('');
-      this.newPeriodEndDate.set('');
-      this.newPeriodLimit.set(1000);
-      this.showAddPeriod.set(false);
-      await this.loadPeriods();
+      const data = await this.api.billing.getDetails.query();
+      this.details.set(data);
     } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
+      console.error(err);
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load subscription details.');
     } finally {
-      this.isSavingPeriod.set(false);
+      end();
     }
   }
 
-  protected async togglePeriodActive(period: DonationPeriod) {
+  private async handleQueryParams(params: Record<string, string>): Promise<void> {
+    if (params['mock_checkout_success'] && params['plan']) {
+      const plan = params['plan'] as 'grassroots' | 'representative';
+      await this.handleMockActivation(plan);
+    } else if (params['checkout_success']) {
+      this.alerts.showSuccess('Subscription activated successfully! Thank you for your purchase.');
+      this.clearQueryParams();
+    } else if (params['mock_portal_success']) {
+      this.alerts.showSuccess('Simulated Customer Portal: Retrieved successfully.');
+      this.clearQueryParams();
+    }
+  }
+
+  protected async subscribe(plan: 'grassroots' | 'representative') {
+    this.actionPending.set(true);
     try {
-      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
-      await this.loadPeriods();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
-    }
-  }
-
-  protected async deletePeriod(period: DonationPeriod) {
-    const confirmed = await this.dialogs.confirm({
-      title: `Delete period "${period.name}"?`,
-      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-    try {
-      await this.donationsSvc.deleteDonationPeriod(period.id);
-      this.alerts.showSuccess('Period deleted');
-      await this.loadPeriods();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
-    }
-  }
-
-  protected formatDate(dateStr: string | null): string {
-    if (!dateStr) return 'No end date';
-    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
-  }
-
-  protected isPeriodActive(period: DonationPeriod): boolean {
-    const today = new Date().toISOString().slice(0, 10);
-    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
-  }
-
-  private loadValues() {
-    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
-    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
-    this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
-    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
-
-    // Load countries
-    const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
-    const parsedCountries = countriesStr
-      .split(',')
-      .map((c) => c.trim())
-      .filter(Boolean);
-    this.selectedCountries.set(parsedCountries);
-
-    // Load regions (provinces / states)
-    const regionsStr = this.settingsSvc.getValue<string>('donations.allowed_regions', 'ON');
-    const parsedRegions = regionsStr
-      .split(',')
-      .map((r) => r.trim())
-      .filter(Boolean);
-    this.selectedRegions.set(parsedRegions);
-
-    // Load tax tiers
-    const tiersRaw = this.settingsSvc.getValue<any>('donations.tax_credit_tiers', []);
-    let parsedTiers: TaxCreditTier[] = [];
-    if (typeof tiersRaw === 'string') {
-      try {
-        parsedTiers = JSON.parse(tiersRaw);
-      } catch {
-        parsedTiers = [];
+      const res = await this.api.billing.createCheckout.mutate({ plan });
+      if (res?.url) {
+        window.location.href = res.url;
+      } else {
+        throw new Error('No redirect URL returned from billing engine.');
       }
-    } else if (Array.isArray(tiersRaw)) {
-      parsedTiers = tiersRaw;
-    }
-    this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
-
-    // Load or generate webhook token
-    let token = this.settingsSvc.getValue<string>('donations.webhook_token', '');
-    if (!token) {
-      token = 'wt_' + Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    }
-    this.webhookToken.set(token);
-  }
-
-  protected selectCountry(country: { code: string; name: string }) {
-    this.selectedCountries.update((list) => [...list, country.code]);
-    this.countrySearch.set('');
-    this.showCountryDropdown.set(false);
-  }
-
-  protected removeCountry(code: string) {
-    this.selectedCountries.update((list) => list.filter((c) => c !== code));
-    // Clean up regions for removed countries
-    if (code === 'CA') {
-      const provinceCodes = new Set(this.canadaProvinces.map((p) => p.code));
-      this.selectedRegions.update((list) => list.filter((r) => !provinceCodes.has(r)));
-    } else if (code === 'US') {
-      const stateCodes = new Set(this.usStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    } else if (code === 'DE') {
-      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    } else if (code === 'FR') {
-      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
-      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
-    } else if (code === 'IN') {
-      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    }
-  }
-
-  protected toggleRegion(code: string) {
-    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
-  }
-
-  protected getCountryName(code: string): string {
-    const found = this.allCountries.find((c) => c.code === code);
-    return found ? found.name : code;
-  }
-
-  protected addTier() {
-    const limit = this.newLimit();
-    const rateInput = this.newRate();
-
-    if (limit === null || limit <= 0) {
-      this.alerts.showError('Limit must be greater than 0');
-      return;
-    }
-    if (rateInput === null || rateInput < 0 || rateInput > 100) {
-      this.alerts.showError('Rate must be between 0% and 100%');
-      return;
-    }
-
-    const rate = rateInput / 100;
-
-    const current = this.taxCreditTiers();
-    if (current.some((t) => t.limit === limit)) {
-      this.alerts.showError('A tier with this limit already exists');
-      return;
-    }
-
-    const updated = [...current, { limit, rate }].sort((a, b) => a.limit - b.limit);
-    this.taxCreditTiers.set(updated);
-
-    this.newLimit.set(null);
-    this.newRate.set(null);
-  }
-
-  protected removeTier(index: number) {
-    const updated = this.taxCreditTiers().filter((_, i) => i !== index);
-    this.taxCreditTiers.set(updated);
-  }
-
-  protected reset() {
-    this.loadValues();
-    this.alerts.showSuccess('Settings reset to saved values');
-  }
-
-  protected async save() {
-    this.isSaving.set(true);
-    try {
-      const entries = [
-        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
-        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
-        { key: 'donations.limit', value: Number(this.donationLimit()) },
-        { key: 'donations.restrict_residency', value: this.restrictResidency() },
-        { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
-        { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
-        { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
-        { key: 'donations.webhook_token', value: this.webhookToken() },
-      ];
-
-      await this.settingsSvc.upsert(entries);
-      this.alerts.showSuccess('Donations configuration saved successfully');
     } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
-      );
-    } finally {
-      this.isSaving.set(false);
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Checkout failed. Please try again.');
+      this.actionPending.set(false);
     }
   }
 
-  protected copyWebhookUrl() {
-    navigator.clipboard
-      .writeText(this.webhookUrl())
-      .then(() => this.alerts.showSuccess('Webhook URL copied!'))
-      .catch(() => this.alerts.showError('Failed to copy webhook URL'));
+  protected async openPortal() {
+    this.actionPending.set(true);
+    try {
+      const res = await this.api.billing.createPortal.mutate();
+      if (res?.url) {
+        window.location.href = res.url;
+      } else {
+        throw new Error('No redirect URL returned from billing portal.');
+      }
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not open billing portal.');
+      this.actionPending.set(false);
+    }
+  }
+
+  private async handleMockActivation(plan: 'grassroots' | 'representative') {
+    const end = this._loading.begin();
+    try {
+      await this.api.billing.activateMockPlan.mutate({ plan });
+      this.alerts.showSuccess(`Success! [Mock Mode] activated your "${plan.toUpperCase()}" plan.`);
+      await this.loadBilling();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Mock plan activation failed.');
+    } finally {
+      end();
+      this.clearQueryParams();
+    }
+  }
+
+  protected async cancelMock() {
+    const end = this._loading.begin();
+    try {
+      await this.api.billing.cancelMockPlan.mutate();
+      this.alerts.showSuccess('Mock subscription has been canceled.');
+      await this.loadBilling();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to cancel mock plan.');
+    } finally {
+      end();
+    }
+  }
+
+  private clearQueryParams() {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        mock_checkout_success: null,
+        plan: null,
+        checkout_success: null,
+        mock_portal_success: null,
+      },
+      queryParamsHandling: 'merge',
+    });
   }
 }
 ```
@@ -35752,6 +31381,132 @@ export class DonationsSettingsComponent implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.ts
+
+```typescript
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { Icon } from '@icons/icon';
+import { AuthService } from '../../../auth/auth-service';
+
+interface PasskeyRow {
+  id: string;
+  friendly_name: string | null;
+  device_type: string;
+  backed_up: boolean;
+  created_at: Date;
+  editingName: boolean;
+  pendingName: string;
+}
+
+@Component({
+  selector: 'pc-passkey-settings',
+  imports: [DatePipe, Icon],
+  templateUrl: './passkey-settings.html',
+})
+export class PasskeySettingsComponent implements OnInit {
+  private readonly authService = inject(AuthService);
+  private readonly alerts = inject(AlertService);
+  private readonly dialog = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly adding = signal(false);
+  protected readonly passkeys = signal<PasskeyRow[]>([]);
+
+  ngOnInit(): void {
+    void this.loadPasskeys();
+  }
+
+  protected async loadPasskeys() {
+    const end = this._loading.begin();
+    try {
+      const rows = (await this.authService.listPasskeys()) as any[];
+      this.passkeys.set(
+        rows.map((r) => ({
+          id: String(r.id),
+          friendly_name: r.friendly_name ?? null,
+          device_type: r.device_type,
+          backed_up: r.backed_up,
+          created_at: new Date(r.created_at),
+          editingName: false,
+          pendingName: r.friendly_name ?? '',
+        })),
+      );
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to load passkeys.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async addPasskey() {
+    this.adding.set(true);
+    try {
+      const result = await this.authService.registerPasskey();
+      if (result.verified) {
+        this.alerts.showSuccess('Passkey registered successfully.');
+        await this.loadPasskeys();
+      }
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to register passkey.');
+      }
+    } finally {
+      this.adding.set(false);
+    }
+  }
+
+  protected async deletePasskey(passkey: PasskeyRow) {
+    const confirmed = await this.dialog.confirm({
+      title: 'Remove Passkey',
+      message: `Remove "${passkey.friendly_name || 'this passkey'}"? You will no longer be able to sign in with it.`,
+      variant: 'danger',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+    try {
+      await this.authService.deletePasskey(passkey.id);
+      this.alerts.showSuccess('Passkey removed.');
+      this.passkeys.update((list) => list.filter((p) => p.id !== passkey.id));
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove passkey.');
+    }
+  }
+
+  protected startEditName(passkey: PasskeyRow) {
+    this.passkeys.update((list) =>
+      list.map((p) => (p.id === passkey.id ? { ...p, editingName: true, pendingName: p.friendly_name ?? '' } : p)),
+    );
+  }
+
+  protected cancelEditName(passkey: PasskeyRow) {
+    this.passkeys.update((list) => list.map((p) => (p.id === passkey.id ? { ...p, editingName: false } : p)));
+  }
+
+  protected updatePendingName(passkey: PasskeyRow, value: string) {
+    this.passkeys.update((list) => list.map((p) => (p.id === passkey.id ? { ...p, pendingName: value } : p)));
+  }
+
+  protected async savePasskeyName(passkey: PasskeyRow) {
+    const name = passkey.pendingName.trim();
+    if (!name) return;
+    try {
+      await this.authService.updatePasskeyName(passkey.id, name);
+      this.passkeys.update((list) =>
+        list.map((p) => (p.id === passkey.id ? { ...p, friendly_name: name, editingName: false } : p)),
+      );
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to rename passkey.');
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/shifts/services/shifts-service.ts
 
 ```typescript
@@ -35816,751 +31571,6 @@ export class ShiftsService extends AbstractAPIService<'volunteer_events', Update
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('Volunteer export is not available'));
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
-import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-
-import {
-  AddVolunteerEventObj,
-  AddVolunteerEventType,
-  UpdateVolunteerEventType,
-} from '../../../../../../../libs/common/src';
-import { environment } from '../../../../environments/environment';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ShiftsService } from '../services/shifts-service';
-
-@Component({
-  selector: 'pc-shift-form',
-  imports: [
-    DatePipe,
-    FormsModule,
-    FormField,
-    PcInput,
-    PcTextarea,
-    RouterModule,
-    Icon,
-    PcDetailHeader,
-    PcEntityOverview,
-    PcCard,
-    FieldsSelector,
-    PublicLinkPanel,
-  ],
-  templateUrl: './shift-form.html',
-  providers: [VolunteerService],
-})
-export class ShiftFormComponent {
-  private readonly _loading = createLoadingGate();
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly router = inject(Router);
-  private readonly volunteerEventsSvc = inject(ShiftsService);
-  private readonly volunteerSvc = inject(VolunteerService);
-
-  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-  protected readonly publicUrl = computed(() => {
-    const slug = this.payload().slug;
-    if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/events/view/${slug}`;
-  });
-
-  protected readonly allVolunteers = signal<any[]>([]);
-  protected readonly detail = signal<any>(null);
-  protected readonly payload = signal({
-    name: '',
-    slug: '',
-    description: '',
-    location_address: '',
-    start_time: '',
-    end_time: '',
-    capacity: null as number | null,
-    contact_email: '',
-    contact_phone: '',
-    is_private: false,
-    send_reminder: true,
-    send_signup_confirmation: true,
-    send_volunteer_alert: true,
-  });
-  protected readonly endBeforeStartError = computed(() => {
-    const { start_time, end_time } = this.payload();
-    if (!start_time || !end_time) return false;
-    return new Date(end_time) <= new Date(start_time);
-  });
-  protected readonly environment = environment;
-  protected readonly error = signal<string | null>(null);
-  protected readonly eventPassed = computed(() => {
-    const end = this.payload().end_time;
-    if (!end) return false;
-    return new Date(end) < new Date();
-  });
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddVolunteerEventObj);
-  });
-  protected readonly isNew = computed(() => !this.id());
-  protected readonly loading = this._loading.visible;
-
-  // Roster state
-  protected readonly roster = signal<any[]>([]);
-  protected readonly saving = signal(false);
-  protected readonly slugChecking = signal(false);
-  protected readonly slugUnique = signal<boolean | null>(null);
-  protected readonly volunteerSearch = signal('');
-
-  // Filter out volunteers that are already signed up
-  protected readonly volunteerSearchResults = computed(() => {
-    const search = this.volunteerSearch().toLowerCase().trim();
-    if (!search) return [];
-
-    const rosterIds = new Set(this.roster().map((r) => String(r.person_id)));
-    return this.allVolunteers().filter((v) => {
-      if (rosterIds.has(String(v.id))) return false;
-      const fullName = `${v.first_name || ''} ${v.last_name || ''}`.toLowerCase();
-      const email = (v.email || '').toLowerCase();
-      return fullName.includes(search) || email.includes(search);
-    });
-  });
-
-  protected slugManuallyEdited = false;
-
-  public readonly id = input<string>();
-
-  constructor() {
-    const nameSignal = computed(() => this.payload().name);
-    effect(() => {
-      const name = nameSignal();
-      if (this.isNew() && !this.slugManuallyEdited) {
-        const suggested = this.slugify(name);
-        if (untracked(this.payload).slug !== suggested) {
-          this.payload.update((p) => ({
-            ...p,
-            slug: suggested,
-          }));
-        }
-      }
-    });
-
-    const slugSignal = computed(() => this.payload().slug);
-    effect(() => {
-      const slug = slugSignal();
-      if (this.slugTimeoutId) {
-        clearTimeout(this.slugTimeoutId);
-        this.slugTimeoutId = null;
-      }
-
-      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-        this.slugUnique.set(null);
-        this.slugChecking.set(false);
-        return;
-      }
-
-      this.slugChecking.set(true);
-      this.slugTimeoutId = setTimeout(() => {
-        void (async () => {
-          try {
-            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
-            if (untracked(slugSignal) === slug) {
-              this.slugUnique.set(res.unique);
-            }
-          } catch (err) {
-            console.error('Failed to check slug uniqueness', err);
-          } finally {
-            if (untracked(slugSignal) === slug) {
-              this.slugChecking.set(false);
-            }
-          }
-        })();
-      }, 300);
-    });
-  }
-
-  public ngOnInit(): void {
-    const end = this._loading.begin();
-    try {
-      void Promise.all([this.loadVolunteers(), this.loadEvent()]).finally(() => end());
-    } catch {
-      end();
-    }
-  }
-
-  // Roster Management
-  protected async addVolunteer(person: any) {
-    try {
-      await this.volunteerSvc.signupVolunteer({
-        event_id: this.id()!,
-        person_id: String(person.id),
-        status: 'signed_up',
-      });
-      this.volunteerSearch.set('');
-      this.alerts.showSuccess(`${person.first_name} added to roster`);
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
-    }
-  }
-
-  protected copyToClipboard(url: string) {
-    navigator.clipboard
-      .writeText(url)
-      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
-      .catch((err) => console.error('Failed to copy', err));
-  }
-
-  protected async deleteEvent() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event',
-      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    this.saving.set(true);
-    try {
-      await this.volunteerEventsSvc.delete(this.id()!);
-      this.volunteerEventsSvc.triggerRefresh();
-      this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/events/shifts']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async loadEvent() {
-    if (this.isNew()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const event = state.cloneData;
-        this.payload.set({
-          name: event.name ? `${event.name} (Copy)` : '',
-          slug: event.slug ? `${event.slug}-copy` : '',
-          description: event.description ?? '',
-          location_address: event.location_address ?? '',
-          start_time: this.toDatetimeLocalString(event.start_time),
-          end_time: this.toDatetimeLocalString(event.end_time),
-          capacity: event.capacity ?? null,
-          contact_email: event.contact_email ?? '',
-          contact_phone: event.contact_phone ?? '',
-          is_private: !!event.is_private,
-          send_reminder: event.send_reminder !== false,
-          send_signup_confirmation: event.send_signup_confirmation !== false,
-          send_volunteer_alert: event.send_volunteer_alert !== false,
-        });
-      }
-      return;
-    }
-
-    try {
-      const event = await this.volunteerEventsSvc.getById(this.id()!);
-      this.detail.set(event);
-      this.payload.set({
-        name: event.name ?? '',
-        slug: event.slug ?? '',
-        description: event.description ?? '',
-        location_address: event.location_address ?? '',
-        start_time: this.toDatetimeLocalString(event.start_time),
-        end_time: this.toDatetimeLocalString(event.end_time),
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? '',
-        contact_phone: event.contact_phone ?? '',
-        is_private: !!event.is_private,
-        send_reminder: event.send_reminder !== false,
-        send_signup_confirmation: event.send_signup_confirmation !== false,
-        send_volunteer_alert: event.send_volunteer_alert !== false,
-      });
-
-      if (Array.isArray((event as any).fields) && (event as any).fields.length > 0) {
-        this.selectedFields.set((event as any).fields);
-      }
-
-      await this.loadRoster();
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
-      this.alerts.showError(this.error()!);
-    }
-  }
-
-  protected async loadRoster() {
-    if (!this.id()) return;
-    try {
-      const roster = await this.volunteerSvc.getShiftsForEvent(this.id()!);
-      this.roster.set(roster || []);
-    } catch (err) {
-      console.error('Failed to load event roster', err);
-    }
-  }
-
-  protected async loadVolunteers() {
-    try {
-      const res = await this.personsSvc.getAll({ limit: 1000, tags: ['volunteer'] });
-      this.allVolunteers.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load volunteers', err);
-    }
-  }
-
-  protected onSlugInput() {
-    this.slugManuallyEdited = true;
-  }
-
-  protected async removeVolunteer(shift: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Volunteer',
-      message: 'Remove this person from the event roster?',
-      variant: 'danger',
-      confirmText: 'Remove',
-    });
-    if (!confirmed) return;
-    try {
-      await this.volunteerSvc.deleteShift(shift.id);
-      this.alerts.showSuccess('Volunteer removed');
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
-    }
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    if (this.endBeforeStartError()) {
-      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
-      return;
-    }
-
-    if (this.slugUnique() === false) {
-      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    const raw = this.payload();
-    const data = {
-      name: raw.name.trim(),
-      slug: raw.slug.trim(),
-      description: raw.description?.trim() || null,
-      location_address: raw.location_address?.trim() || null,
-      start_time: new Date(raw.start_time),
-      end_time: new Date(raw.end_time),
-      capacity: raw.capacity ? Number(raw.capacity) : null,
-      contact_email: raw.contact_email?.trim() || null,
-      contact_phone: raw.contact_phone?.trim() || null,
-      is_private: !!raw.is_private,
-      send_reminder: !!raw.send_reminder,
-      send_signup_confirmation: !!raw.send_signup_confirmation,
-      send_volunteer_alert: !!raw.send_volunteer_alert,
-      fields: this.selectedFields(),
-    };
-
-    try {
-      if (this.isNew()) {
-        const res = await this.volunteerEventsSvc.add(data as AddVolunteerEventType);
-        this.volunteerEventsSvc.triggerRefresh();
-        this.alerts.showSuccess('Event created successfully');
-        await this.router.navigate(['/events/shifts', res.id]);
-      } else {
-        await this.volunteerEventsSvc.update(this.id()!, data as UpdateVolunteerEventType);
-        this.volunteerEventsSvc.triggerRefresh();
-        this.alerts.showSuccess('Event updated successfully');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/events/shifts', this.id()]);
-        }
-      }
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
-      this.alerts.showError(this.error()!);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async saveShiftDetails(shift: any) {
-    try {
-      await this.volunteerSvc.updateShift(shift.id, {
-        status: shift.status,
-        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
-        notes: shift.notes || null,
-      });
-      this.alerts.showSuccess('Shift details saved');
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
-    }
-  }
-
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
-
-  protected toDatetimeLocalString(val: any): string {
-    if (!val) return '';
-    const date = new Date(val);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
-  protected updateShiftHours(shift: any, hours: any) {
-    shift.hours_worked = hours ? Number(hours) : null;
-  }
-
-  protected updateShiftNotes(shift: any, notes: any) {
-    shift.notes = notes || null;
-  }
-
-  protected async updateShiftStatus(shift: any, status: any) {
-    try {
-      await this.volunteerSvc.updateShift(shift.id, {
-        status,
-        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
-        notes: shift.notes || null,
-      });
-      this.alerts.showSuccess('Shift status updated');
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
-
-```typescript
-import { Component, inject, viewChild, signal } from '@angular/core';
-import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { AddTagObj } from '../../../../../../../libs/common/src';
-
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-function randomHexColor(): string {
-  return (
-    '#' +
-    Math.floor(Math.random() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')
-  );
-}
-
-@Component({
-  selector: 'pc-add-issue',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique issue name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input
-            class="input input-bordered input-sm w-24"
-            type="color"
-            [formField]="form.color"
-            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
-          />
-          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
-            @for (err of form.color().errors(); track err) {
-              <span class="text-error text-xs">{{ err.message }}</span>
-            }
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
-      </div>
-    </form>
-  </div>`,
-})
-export class AddIssue {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tagSvc = inject(TagsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    color: randomHexColor(),
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddTagObj);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  public readonly formActions = viewChild(FormActions);
-
-  protected async add(event?: any) {
-    if (event instanceof Event) {
-      event.preventDefault();
-    }
-
-    if (this.isLoading()) return;
-
-    this.form().markAsTouched();
-    if (!this.form().valid) return;
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const formObj = this.payload();
-          await this.tagSvc.add({ ...formObj, type: 'issue' });
-          await this.tagOptionsSvc.invalidate('issue');
-          this.tagSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Issue added successfully.');
-
-          this.payload.set({ name: '', description: '', color: randomHexColor() });
-          this.formActions()?.stayOrCancel();
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
-
-```typescript
-import { Component, inject, viewChild, signal } from '@angular/core';
-import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
-import { TagsService } from '@experiences/tags/services/tags-service';
-
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-function randomHexColor(): string {
-  return (
-    '#' +
-    Math.floor(Math.random() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')
-  );
-}
-
-@Component({
-  selector: 'pc-add-tag',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique tag name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
-          @if (form.color().invalid() && form.color().touched()) {
-            <span i18n class="text-error text-xs">Use a value like #3366ff</span>
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
-      </div>
-    </form>
-  </div>`,
-})
-export class AddTag {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tagSvc = inject(TagsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    color: randomHexColor(),
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    required(p.name);
-    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  public readonly formActions = viewChild(FormActions);
-
-  protected async add(event?: any) {
-    if (event instanceof Event) {
-      event.preventDefault();
-    }
-
-    if (this.isLoading()) {
-      return;
-    }
-
-    // force validation messages to appear
-    this.form().markAsTouched();
-
-    if (!this.form().valid) {
-      return;
-    }
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const formObj = this.payload();
-          await this.tagSvc.add(formObj);
-          await this.tagOptionsSvc.invalidate('tag');
-          this.tagSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Tag added successfully.');
-
-          // Reset the backing signal
-          this.payload.set({
-            name: '',
-            description: '',
-            color: randomHexColor(),
-          });
-
-          this.formActions()?.stayOrCancel();
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/tags-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { getAllOptionsType } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-class TagsOnlyService extends TagsService {
-  public override getAll(options?: getAllOptionsType) {
-    return this.getAllWithCounts({ ...(options ?? {}), type: 'tag' } as getAllOptionsType);
-  }
-}
-
-@Component({
-  selector: 'pc-tags-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Tags"
-        i18n-title
-        description="Manage custom categorization tags used across people, households."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [allowFilter]="false"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-label"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    TagsOnlyService,
-    { provide: AbstractAPIService, useExisting: TagsOnlyService },
-    provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
-  ],
-})
-export class TagsGridComponent {
-  protected col = [
-    {
-      field: 'name',
-      headerName: 'Tag Name',
-      editable: true,
-      valueFormatter: (p: any) => (p.value ? p.value.charAt(0).toUpperCase() + p.value.slice(1) : ''),
-    },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'color',
-      headerName: 'Colour',
-      editable: true,
-      cellDataType: 'color',
-      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
-    },
-    { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
-    { field: 'use_count_people', headerName: 'People' },
-    { field: 'use_count_households', headerName: 'Households' },
-  ];
-
-  protected renderColorCell(raw: unknown): string {
-    const v = typeof raw === 'string' ? raw.trim() : '';
-    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
-      return '<span class="text-xs text-neutral">None</span>';
-    }
-    const color = v.toLowerCase();
-
-    return `
-    <span class="inline-block h-4 w-8 rounded border shadow-sm"
-          style="background-color:${color}; border-color:${color}"
-          title="${color}"></span>
-  `;
   }
 }
 ```
@@ -37356,6 +32366,213 @@ export class TaskView {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { PcTabOption, TabPanel, Tabs } from '@uxcommon/components/tabs/tabs';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import type { IAuthUser } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { UserService } from '../../../services/user.service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamsService } from '../services/teams-service';
+
+@Component({
+  selector: 'pc-team-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    ProfileCard,
+    DetailRow,
+  ],
+  templateUrl: './team-view.html',
+})
+export class TeamViewComponent {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly teamsSvc = inject(TeamsService);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly team = signal<any>(null);
+  protected readonly teamTasks = signal<any[]>([]);
+  protected readonly volunteers = computed(() => this.team()?.volunteers ?? []);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly teamTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'volunteers', label: `Volunteers (${this.volunteers().length})`, icon: 'user-group' },
+    { id: 'lists', label: `Target Lists (${this.team()?.lists?.length || 0})`, icon: 'queue-list' },
+    { id: 'tasks', label: `Team Tasks (${this.teamTasks().length})`, icon: 'document-check' },
+  ]);
+
+  protected readonly captainName = computed(() => {
+    const captainId = this.team()?.team_captain_id;
+    if (!captainId) return '—';
+    const match = this.volunteers().find((v: any) => v.id === captainId);
+    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
+  });
+
+  protected readonly leadName = computed(() => {
+    const leadId = this.team()?.team_lead_user_id;
+    if (!leadId) return '—';
+    const match = this.users().find((u) => String(u.id) === String(leadId));
+    return match ? `${match.first_name} ${match.last_name || ''}`.trim() : '—';
+  });
+
+  protected readonly activeTasksCount = computed(() => {
+    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    // Load users
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load team detail
+      const data = await this.teamsSvc.getById(id);
+      this.team.set(data);
+
+      // 2. Load associated tasks
+      const res = await this.tasksSvc.getAll({
+        filterModel: { team_id: { value: id } },
+      } as any);
+      this.teamTasks.set(res?.rows ?? []);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load team details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editTeam() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteTeam() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.teamsSvc.delete(this.id());
+      this.teamsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Team deleted');
+      await this.router.navigate(['/teams']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected getCreatedAt(): Date | null {
+    const date = this.team()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.team()?.updated_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+
+  protected getPriorityType(priority: string | null | undefined): any {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'error';
+      case 'high':
+        return 'warning';
+      case 'medium':
+        return 'info';
+      default:
+        return 'ghost';
+    }
+  }
+
+  protected getStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done':
+        return 'success';
+      case 'in_progress':
+        return 'info';
+      case 'blocked':
+        return 'error';
+      case 'canceled':
+        return 'neutral';
+      default:
+        return 'ghost';
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
 
 ```typescript
@@ -37555,237 +32772,6 @@ export class UserAddComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-@Component({
-  selector: 'pc-user-edit',
-  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
-  templateUrl: './user-edit.html',
-})
-export class UserEditComponent {
-  readonly id = input.required<string>();
-
-  private readonly alerts = inject(AlertService);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: '',
-    verified: false,
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
-    disabled(p.verified, () => true);
-  });
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
-        }
-        void this.load();
-      });
-    });
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid() || !this.id()) {
-      return;
-    }
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.users.update(this.id(), payload);
-      this.alerts.showSuccess('User updated');
-      this.users.triggerRefresh();
-      await this.load();
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected readonly resettingPassword = signal(false);
-
-  protected async triggerPasswordReset() {
-    if (!this.id()) return;
-    this.resettingPassword.set(true);
-    try {
-      await this.users.adminTriggerPasswordReset(this.id());
-      this.alerts.showSuccess('Password reset email sent to user');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to trigger password reset';
-      this.alerts.showError(message);
-    } finally {
-      this.resettingPassword.set(false);
-    }
-  }
-
-  protected async deleteUser() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
-      }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-      role: user.role ?? '',
-      verified: Boolean(user.verified),
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-      role: normalize(raw.role),
-      verified: Boolean(raw.verified),
-    } as UpdateAuthUserType;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
 
 ```typescript
@@ -37963,630 +32949,6 @@ export class UsersGridComponent {
     }
     return false;
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.ts
-
-```typescript
-import { Component, OnInit, signal, inject, computed } from '@angular/core';
-import { FormField, form, validateStandardSchema, submit } from '@angular/forms/signals';
-import { AddWorkflowObj } from '../../../../../../../libs/common/src';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { DatePipe } from '@angular/common';
-import { WorkflowsService } from '../services/workflows-service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
-import { ShiftsService } from '../../shifts/services/shifts-service';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { FormsService } from '@experiences/forms/services/forms-service';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-
-@Component({
-  selector: 'pc-workflow-form',
-  imports: [
-    RouterModule,
-    FormsModule,
-    FormField,
-    Icon,
-    RecordActivities,
-    DatePipe,
-    VisualNewsletterEditorComponent,
-    FormActions,
-    Tabs,
-    TabPanel,
-  ],
-  templateUrl: './workflow-form.html',
-  providers: [WorkflowsService, ShiftsService, TagsService, FormsService, ListsService],
-})
-export class WorkflowFormComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly workflowsSvc = inject(WorkflowsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly volunteerEventsSvc = inject(ShiftsService);
-  private readonly tagsSvc = inject(TagsService);
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly isNew = signal(true);
-  protected readonly workflowId = signal<string | null>(null);
-  protected readonly activeTab = signal<string>('steps');
-
-  protected readonly workflowTabs = computed<PcTabOption[]>(() => [
-    { id: 'steps', label: `Sequence Designer (${this.steps().length})`, icon: 'pencil-square' },
-    {
-      id: 'enrollments',
-      label: `Enrolled Contacts (${this.enrollments().length})`,
-      icon: 'user-group',
-      disabled: this.isNew(),
-      tooltip: 'Save workflow to enroll contacts',
-    },
-  ]);
-
-  // Trigger state and visual designer nodes selection
-  protected readonly triggerSelected = signal(false);
-  protected readonly selectedNodeType = signal<'trigger' | 'step' | 'settings'>('settings');
-  protected readonly selectedNodeIndex = signal<number | null>(null);
-
-  // Modal visual email designer state
-  protected readonly editingEmailStepIndex = signal<number | null>(null);
-
-  // Loaded volunteer events list
-  protected readonly volunteerEvents = signal<any[]>([]);
-  // Loaded tags, forms, and static lists
-  protected readonly tags = signal<any[]>([]);
-  protected readonly webForms = signal<any[]>([]);
-  protected readonly lists = signal<any[]>([]);
-
-  // Backing payload signal for workflow settings form
-  protected readonly payload = signal<{
-    name: string;
-    description: string;
-    trigger_type:
-      | 'volunteer_signup'
-      | 'manual'
-      | 'tag_added'
-      | 'web_form_submitted'
-      | 'volunteer_shift_status'
-      | 'contact_created'
-      | 'list_joined'
-      | 'payment_event'
-      | 'new_subscriber'
-      | 'new_unsubscriber';
-    trigger_event_id: string;
-    status: 'active' | 'draft' | 'paused';
-  }>({
-    name: '',
-    description: '',
-    trigger_type: 'manual',
-    trigger_event_id: '',
-    status: 'draft',
-  });
-
-  // Signal-based form
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddWorkflowObj);
-  });
-
-  // Computed signal to resolve the name of the selected event
-  protected readonly selectedEventName = computed(() => {
-    const eventId = this.payload().trigger_event_id;
-    if (!eventId) return null;
-    const type = this.payload().trigger_type;
-    if (type === 'volunteer_signup') {
-      const event = this.volunteerEvents().find((e) => String(e.id) === String(eventId));
-      return event ? event.name : 'Unknown Event';
-    }
-    if (type === 'tag_added') {
-      const tag = this.tags().find((t) => String(t.id) === String(eventId));
-      return tag ? tag.name : 'Unknown Tag';
-    }
-    if (type === 'web_form_submitted') {
-      const formEl = this.webForms().find((f) => String(f.id) === String(eventId));
-      return formEl ? formEl.name : 'Unknown Web Form';
-    }
-    if (type === 'list_joined') {
-      const listEl = this.lists().find((l) => String(l.id) === String(eventId));
-      return listEl ? listEl.name : 'Unknown List';
-    }
-    if (type === 'volunteer_shift_status') {
-      if (eventId === 'attended') return 'Attended';
-      if (eventId === 'no_show') return 'No Show';
-      if (eventId === 'cancelled') return 'Cancelled';
-      return eventId;
-    }
-    return null;
-  });
-
-  // Steps signal
-  protected readonly steps = signal<any[]>([]);
-  // Enrollments signal
-  protected readonly enrollments = signal<any[]>([]);
-
-  // Search contacts for manual enrollment
-  protected readonly searchQuery = signal('');
-  protected readonly searchResults = signal<any[]>([]);
-  protected readonly searchingContacts = signal(false);
-
-  public ngOnInit(): void {
-    const id = this.route.snapshot.paramMap.get('id');
-    void this.loadVolunteerEvents();
-    void this.loadTags();
-    void this.loadWebForms();
-    void this.loadLists();
-    if (id && id !== 'add') {
-      this.isNew.set(false);
-      this.workflowId.set(id);
-      this.triggerSelected.set(true);
-      this.activeTab.set('steps');
-      void this.loadWorkflowDetails();
-      void this.loadSteps();
-      void this.loadEnrollments();
-    } else {
-      this.isNew.set(true);
-      this.triggerSelected.set(false);
-    }
-  }
-
-  private async loadVolunteerEvents(): Promise<void> {
-    try {
-      const res = await this.volunteerEventsSvc.getAll({ limit: 1000 });
-      this.volunteerEvents.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load volunteer events', err);
-    }
-  }
-
-  private async loadTags(): Promise<void> {
-    try {
-      const res = await this.tagsSvc.getAll({ limit: 1000 });
-      this.tags.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load tags', err);
-    }
-  }
-
-  private async loadWebForms(): Promise<void> {
-    try {
-      const res = await this.formsSvc.getAll({ limit: 1000 });
-      this.webForms.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load web forms', err);
-    }
-  }
-
-  private async loadLists(): Promise<void> {
-    try {
-      const res = await this.listsSvc.getAll({ limit: 1000 });
-      this.lists.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load lists', err);
-    }
-  }
-
-  // --- TAB MANAGEMENT ---
-  protected selectTab(tab: string): void {
-    this.activeTab.set(tab);
-    if (tab !== 'steps') {
-      this.selectedNodeType.set('settings');
-      this.selectedNodeIndex.set(null);
-    }
-  }
-
-  // --- TRIGGER SELECTION ---
-  protected selectTrigger(
-    type:
-      | 'volunteer_signup'
-      | 'manual'
-      | 'tag_added'
-      | 'web_form_submitted'
-      | 'volunteer_shift_status'
-      | 'contact_created'
-      | 'list_joined'
-      | 'payment_event'
-      | 'new_subscriber'
-      | 'new_unsubscriber',
-  ): void {
-    let name = 'New Workflow Campaign';
-    let description = 'Custom multi-step communication sequence.';
-
-    switch (type) {
-      case 'volunteer_signup':
-        name = 'Volunteer Signup Welcome Onboarding';
-        description = 'Automated welcoming sequence sent to volunteer signups.';
-        break;
-      case 'tag_added':
-        name = 'Tag Assigned Campaign';
-        description = 'Automated campaign triggered when a specific tag is added to a constituent.';
-        break;
-      case 'web_form_submitted':
-        name = 'Web Form Submission Response';
-        description = 'Runs automatically after a contact submits a public web form.';
-        break;
-      case 'volunteer_shift_status':
-        name = 'Volunteer Shift Follow-up';
-        description = 'Triggered when a volunteer shift status is updated.';
-        break;
-      case 'contact_created':
-        name = 'New Constituent Welcome Series';
-        description = 'Welcoming sequence triggered when any new person is added to the database.';
-        break;
-      case 'list_joined':
-        name = 'List Joined Campaign';
-        description = 'Triggered when a constituent is added to a static list.';
-        break;
-      case 'payment_event':
-        name = 'Stripe Billing Event Campaign';
-        description = 'Runs in response to payment events like invoice payment status updates.';
-        break;
-      case 'new_subscriber':
-        name = 'New Subscriber Onboarding';
-        description = 'Welcomes new subscribers to the newsletter list.';
-        break;
-      case 'new_unsubscriber':
-        name = 'Unsubscribe Confirmation Campaign';
-        description = 'Triggered when a contact is marked unsubscribed.';
-        break;
-      case 'manual':
-        name = 'Constituent Re-engagement Campaign';
-        description = 'Custom multi-step communication sequence.';
-        break;
-    }
-
-    this.payload.update((p) => ({
-      ...p,
-      trigger_type: type,
-      trigger_event_id: '',
-      name,
-      description,
-    }));
-
-    // Initialize with 1 default step
-    this.steps.set([
-      {
-        step_number: 1,
-        delay_days: 1,
-        delay_unit: 'days',
-        subject: type === 'volunteer_signup' ? 'Welcome to our organization!' : 'Hello from the team!',
-        preview_text: 'Thank you for connecting with us',
-        html_content: '<p>Hi there,</p><p>We are thrilled to have you! We will reach out shortly.</p>',
-        plain_text_content: 'Hi there,\n\nWe are thrilled to have you! We will reach out shortly.',
-      },
-    ]);
-
-    this.triggerSelected.set(true);
-    this.selectedNodeType.set('settings');
-  }
-
-  // --- LOAD DATA ---
-  private async loadWorkflowDetails(): Promise<void> {
-    const id = this.workflowId();
-    if (!id) return;
-    const end = this._loading.begin();
-    try {
-      const record = await this.workflowsSvc.getById(id);
-      if (record) {
-        this.payload.set({
-          name: record.name || '',
-          description: record.description || '',
-          trigger_type: record.trigger_type || 'manual',
-          trigger_event_id: record.trigger_event_id || '',
-          status: record.status || 'draft',
-        });
-      }
-    } catch (err) {
-      console.error('Failed to load workflow details', err);
-      this.alertSvc.showError('Failed to load workflow details.');
-    } finally {
-      end();
-    }
-  }
-
-  private async loadSteps(): Promise<void> {
-    const id = this.workflowId();
-    if (!id) return;
-    try {
-      const records = await this.workflowsSvc.getSteps(id);
-      this.steps.set(records || []);
-    } catch (err) {
-      console.error('Failed to load workflow steps', err);
-    }
-  }
-
-  private async loadEnrollments(): Promise<void> {
-    const id = this.workflowId();
-    if (!id) return;
-    try {
-      const records = await this.workflowsSvc.getEnrollments(id);
-      this.enrollments.set(records || []);
-    } catch (err) {
-      console.error('Failed to load enrollments', err);
-    }
-  }
-
-  protected async deleteWorkflow() {
-    const id = this.workflowId();
-    if (!id) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Workflow',
-      message: 'Are you sure you want to delete this workflow? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.workflowsSvc.delete(id);
-      this.workflowsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Workflow deleted');
-      await this.router.navigate(['/workflows']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete workflow';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  // --- SAVE WORKFLOW SETTINGS & SEQUENCE ---
-  protected async saveSettings(done?: (() => void) | Event): Promise<void> {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (!this.form().valid) {
-      this.alertSvc.showError('Please enter a valid workflow name.');
-      return;
-    }
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const raw = this.payload();
-          const data = {
-            ...raw,
-            trigger_event_id: raw.trigger_event_id && raw.trigger_event_id !== '' ? raw.trigger_event_id : null,
-          };
-          if (this.isNew()) {
-            // 1. Create Workflow Settings
-            const result = await this.workflowsSvc.add(data);
-            const newId = String(result['id']);
-            this.workflowId.set(newId);
-            this.isNew.set(false);
-
-            // 2. Save current steps as well
-            await this.workflowsSvc.saveSteps(newId, this.steps());
-
-            this.alertSvc.showSuccess('Workflow created successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.router.navigate(['../', newId], { relativeTo: this.route });
-            }
-          } else {
-            const id = this.workflowId();
-            if (id) {
-              // Update settings
-              await this.workflowsSvc.update(id, data);
-              // Save steps
-              await this.workflowsSvc.saveSteps(id, this.steps());
-            }
-
-            this.alertSvc.showSuccess('Workflow saved successfully!');
-            if (typeof done === 'function') {
-              done();
-            } else {
-              void this.loadWorkflowDetails();
-              void this.loadSteps();
-            }
-          }
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : 'An error occurred while saving the workflow.',
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-
-  // --- STEP DESIGNER ACTIONS ---
-  protected addStepAt(index: number): void {
-    const current = [...this.steps()];
-    const newStep = {
-      step_number: index + 1,
-      delay_days: index === 0 ? 1 : 2,
-      delay_unit: 'days',
-      subject: 'Follow-up message',
-      preview_text: '',
-      html_content: '<p>Hi there,</p><p>We wanted to touch base again...</p>',
-      plain_text_content: 'Hi there,\n\nWe wanted to touch base again...',
-    };
-    current.splice(index, 0, newStep);
-
-    // Reorder/Re-index step numbers
-    const updated = current.map((step, idx) => ({
-      ...step,
-      step_number: idx + 1,
-    }));
-    this.steps.set(updated);
-
-    // Auto-select new step properties in sidebar
-    this.selectedNodeType.set('step');
-    this.selectedNodeIndex.set(index);
-  }
-
-  protected addStep(): void {
-    this.addStepAt(this.steps().length);
-  }
-
-  protected removeStep(index: number): void {
-    const current = this.steps();
-    const updated = current
-      .filter((_, idx) => idx !== index)
-      .map((step, idx) => ({
-        ...step,
-        step_number: idx + 1,
-      }));
-    this.steps.set(updated);
-
-    // Clear selection if deleted step was selected
-    if (this.selectedNodeIndex() === index) {
-      this.selectedNodeType.set('settings');
-      this.selectedNodeIndex.set(null);
-    } else {
-      const selectedIndex = this.selectedNodeIndex();
-      if (selectedIndex !== null && selectedIndex > index) {
-        this.selectedNodeIndex.set(selectedIndex - 1);
-      }
-    }
-  }
-
-  // --- EMAIL DESIGNER MODAL METHODS ---
-  protected openEmailDesigner(idx: number): void {
-    this.editingEmailStepIndex.set(idx);
-  }
-
-  protected closeEmailDesigner(): void {
-    this.editingEmailStepIndex.set(null);
-  }
-
-  protected getEditingHtml(): string {
-    const idx = this.editingEmailStepIndex();
-    if (idx === null) return '';
-    return this.steps()[idx]?.html_content || '';
-  }
-
-  protected getEditingText(): string {
-    const idx = this.editingEmailStepIndex();
-    if (idx === null) return '';
-    return this.steps()[idx]?.plain_text_content || '';
-  }
-
-  protected onStepHtmlChange(html: string): void {
-    const idx = this.editingEmailStepIndex();
-    if (idx === null) return;
-    const current = [...this.steps()];
-    current[idx] = {
-      ...current[idx],
-      html_content: html,
-    };
-    this.steps.set(current);
-  }
-
-  protected onStepTextChange(text: string): void {
-    const idx = this.editingEmailStepIndex();
-    if (idx === null) return;
-    const current = [...this.steps()];
-    current[idx] = {
-      ...current[idx],
-      plain_text_content: text,
-    };
-    this.steps.set(current);
-  }
-
-  // --- MANUAL ENROLLMENT METHODS ---
-  protected async searchContacts(): Promise<void> {
-    const query = this.searchQuery().trim();
-    if (!query) {
-      this.searchResults.set([]);
-      return;
-    }
-    this.searchingContacts.set(true);
-    try {
-      const res = await this.personsSvc.getAll({ searchStr: query, limit: 10 });
-      this.searchResults.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to search contacts', err);
-      this.alertSvc.showError('Failed to search contacts.');
-    } finally {
-      this.searchingContacts.set(false);
-    }
-  }
-
-  protected async enrollSelected(personId: string): Promise<void> {
-    const wfId = this.workflowId();
-    if (!wfId) return;
-    const end = this._loading.begin();
-    try {
-      await this.workflowsSvc.enrollPerson(wfId, personId);
-      this.alertSvc.showSuccess('Contact successfully enrolled in campaign.');
-      this.searchQuery.set('');
-      this.searchResults.set([]);
-      void this.loadEnrollments();
-    } catch (err) {
-      console.error('Enrollment failed', err);
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to enroll contact.');
-    } finally {
-      end();
-    }
-  }
-
-  protected async cancelEnrollment(enrollmentId: string): Promise<void> {
-    const confirmCancel = await this.dialogs.confirm({
-      title: 'Cancel Enrollment',
-      message: 'Are you sure you want to cancel this enrollment? This stops any future emails in this sequence.',
-      variant: 'warning',
-      confirmText: 'Cancel Enrollment',
-    });
-    if (!confirmCancel) return;
-
-    const end = this._loading.begin();
-    try {
-      await this.workflowsSvc.cancelEnrollment(enrollmentId);
-      this.alertSvc.showSuccess('Enrollment cancelled.');
-      void this.loadEnrollments();
-    } catch (err) {
-      console.error('Cancellation failed', err);
-      this.alertSvc.showError('Failed to cancel enrollment.');
-    } finally {
-      end();
-    }
-  }
-
-  protected formatTriggerType(trigger: string): string {
-    if (trigger === 'volunteer_signup') return 'Volunteer Signup';
-    if (trigger === 'manual') return 'Manual Enrollment';
-    if (trigger === 'tag_added') return 'Tag Added';
-    if (trigger === 'web_form_submitted') return 'Web Form Submitted';
-    if (trigger === 'volunteer_shift_status') return 'Volunteer Shift Status';
-    if (trigger === 'contact_created') return 'New Contact Created';
-    if (trigger === 'list_joined') return 'List Joined';
-    if (trigger === 'payment_event') return 'Billing / Payment Event';
-    if (trigger === 'new_subscriber') return 'New Subscriber';
-    if (trigger === 'new_unsubscriber') return 'New Unsubscriber';
-    return trigger;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -41126,6 +35488,688 @@ module.exports = [
 }
 ```
 
+## File: apps/frontend/src/app/auth/cancel-deletion-page/cancel-deletion-page.ts
+
+```typescript
+import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AuthLayoutComponent } from '../auth-layout';
+import { TRPCService } from '../../services/api/trpc-service';
+import { AuthService } from '../auth-service';
+
+@Component({
+  selector: 'pc-cancel-deletion-page',
+  imports: [RouterLink, AuthLayoutComponent, Icon, DatePipe],
+  templateUrl: './cancel-deletion-page.html',
+})
+export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDestroy {
+  private readonly route = inject(ActivatedRoute);
+  protected readonly auth = inject(AuthService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
+  protected readonly errorMessage = signal('');
+  protected readonly actionPending = signal(false);
+
+  // Authenticated flow: user is logged in with a pending deletion
+  protected readonly loggedInUser = this.auth.getUserSignal();
+  protected get canCancel(): boolean {
+    const role = this.loggedInUser()?.role;
+    return role === 'admin' || role === 'owner';
+  }
+  protected get deletionDate(): Date | null {
+    const d = this.loggedInUser()?.tenant_deletion_scheduled_at;
+    return d ? new Date(d) : null;
+  }
+
+  // Token flow: arrived via email link (not logged in)
+  private tenantId: string | null = null;
+  private token: string | null = null;
+  protected readonly isTokenFlow = signal(false);
+  private sessionPollInterval: ReturnType<typeof setInterval> | null = null;
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    this.tenantId = this.route.snapshot.queryParamMap.get('tid');
+    this.token = this.route.snapshot.queryParamMap.get('token');
+
+    if (this.tenantId && this.token) {
+      // Email link flow — process immediately
+      this.isTokenFlow.set(true);
+      await this.cancelViaToken();
+    } else if (this.auth.getUser()) {
+      // Logged-in flow — poll every 5s so if the account is deleted while on this
+      // page the session clears and the user is redirected to sign-in automatically
+      this.sessionPollInterval = setInterval(() => void this.pollSession(), 5000);
+    }
+  }
+
+  public ngOnDestroy() {
+    if (this.sessionPollInterval) {
+      clearInterval(this.sessionPollInterval);
+    }
+  }
+
+  private async pollSession(): Promise<void> {
+    const user = await this.auth.getCurrentUser().catch(() => null);
+    if (!user) {
+      await this.auth.signOut();
+    }
+  }
+
+  private async cancelViaToken() {
+    const end = this._loading.begin();
+    try {
+      await this.api.auth.cancelTenantDeletionByToken.mutate({ tenantId: this.tenantId!, token: this.token! });
+      this.status.set('success');
+      // Refresh so authGuard doesn't re-redirect on subsequent navigation
+      await this.auth.getCurrentUser().catch(() => null);
+    } catch (err) {
+      this.status.set('error');
+      this.errorMessage.set(
+        err instanceof Error && err.message
+          ? err.message
+          : 'This link is invalid or the deletion window has already passed.',
+      );
+    } finally {
+      end();
+    }
+  }
+
+  protected async cancelViaAuth() {
+    this.actionPending.set(true);
+    try {
+      await this.api.auth.cancelTenantDeletion.mutate();
+      // Refresh user so guard clears and we can navigate
+      await this.auth.getCurrentUser();
+      void this.router.navigate(['/']);
+    } catch (err) {
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'Failed to cancel deletion. Please try again.',
+      );
+    } finally {
+      this.actionPending.set(false);
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.ts
+
+```typescript
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { ConfirmSubscriptionService } from './confirm-subscription-service';
+
+@Component({
+  selector: 'pc-confirm-subscription',
+  imports: [AuthLayoutComponent, Icon],
+  templateUrl: './confirm-subscription-page.html',
+})
+export class ConfirmSubscriptionPage implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly confirmSvc = inject(ConfirmSubscriptionService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
+  protected readonly errorMessage = signal<string>('');
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    const token = this.route.snapshot.queryParamMap.get('token');
+
+    if (!token) {
+      this.status.set('error');
+      this.errorMessage.set('Invalid or missing confirmation token.');
+      return;
+    }
+
+    const end = this._loading.begin();
+    this.status.set('idle');
+
+    try {
+      const result = await this.confirmSvc.confirmSubscription(token);
+      if (result && result.success) {
+        this.status.set('success');
+      } else {
+        this.status.set('error');
+        this.errorMessage.set('Confirmation failed. The link may be invalid or expired.');
+      }
+    } catch (err) {
+      this.status.set('error');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during confirmation.',
+      );
+    } finally {
+      end();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.ts
+
+```typescript
+import { Component, inject, signal, OnInit, linkedSignal, resource, computed, effect } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { ActivityService } from '../services/activity.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { UserService } from '../../../services/user.service';
+import { IAuthUser } from '../../../../../../../libs/common/src';
+
+@Component({
+  selector: 'pc-activity-feed',
+  imports: [DatePipe, RouterLink, Icon],
+  templateUrl: './activity-feed.html',
+  styles: [
+    `
+      :host {
+        display: block;
+        min-height: 100%;
+      }
+    `,
+  ],
+})
+export class ActivityFeed implements OnInit {
+  private readonly activitySvc = inject(ActivityService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+
+  protected readonly isLoadingExport = signal(false);
+
+  protected readonly selectedUser = signal<string>('');
+  protected readonly selectedEntity = signal<string>('');
+  protected readonly selectedActivity = signal<string>('');
+  protected readonly searchStr = signal<string>('');
+  protected readonly users = signal<IAuthUser[]>([]);
+
+  private readonly pageSize = 25;
+
+  private readonly refreshTrigger = signal(0);
+
+  protected readonly filterState = computed(() => ({
+    user: this.selectedUser(),
+    entity: this.selectedEntity(),
+    activity: this.selectedActivity(),
+    refresh: this.refreshTrigger(),
+  }));
+
+  protected readonly activities = linkedSignal({
+    source: this.filterState,
+    computation: () => [] as any[], // Automatically resets to [] when filterState changes
+  });
+
+  protected readonly hasMore = linkedSignal({
+    source: this.filterState,
+    computation: () => false, // Automatically resets to false when filterState changes
+  });
+
+  protected readonly currentOffset = linkedSignal({
+    source: () => ({
+      source: this.filterState,
+      user: this.selectedUser(),
+      entity: this.selectedEntity(),
+      activity: this.selectedActivity(),
+      refresh: this.refreshTrigger(),
+    }),
+    computation: () => 0,
+  });
+
+  protected readonly activitiesResource = resource({
+    params: () => ({
+      offset: this.currentOffset(),
+      user: this.selectedUser(),
+      entity: this.selectedEntity(),
+      activity: this.selectedActivity(),
+    }),
+    loader: async ({ params }) => {
+      return (await this.activitySvc.getFeed({
+        startRow: params.offset,
+        endRow: params.offset + this.pageSize,
+        userId: params.user || undefined,
+        entity: params.entity || undefined,
+        activity: params.activity || undefined,
+      })) as any;
+    },
+  });
+
+  protected readonly isLoading = computed(() => this.activitiesResource.isLoading());
+
+  constructor() {
+    effect(() => {
+      const res = this.activitiesResource.value() as any;
+      if (res) {
+        const newRows = res.rows || [];
+        if (this.currentOffset() === 0) {
+          this.activities.set(newRows);
+        } else {
+          this.activities.update((curr) => {
+            const existingIds = new Set(curr.map((r: any) => r.id));
+            const filteredNew = newRows.filter((r: any) => !existingIds.has(r.id));
+            return [...curr, ...filteredNew];
+          });
+        }
+        this.hasMore.set(newRows.length === this.pageSize);
+      }
+    });
+
+    effect(() => {
+      const err = this.activitiesResource.error();
+      if (err) {
+        this.alertSvc.showError('Failed to fetch activity logs');
+      }
+    });
+  }
+
+  public ngOnInit() {
+    void this.loadUsers();
+  }
+
+  private async loadUsers() {
+    try {
+      const u = await this.userService.getUsers();
+      this.users.set(u || []);
+    } catch (err) {
+      console.error('Failed to load users for filter', err);
+    }
+  }
+
+  protected refreshFeed() {
+    this.refreshTrigger.update((n) => n + 1);
+  }
+
+  protected loadMore() {
+    this.currentOffset.update((c) => c + this.pageSize);
+  }
+
+  protected async exportFeed() {
+    this.isLoadingExport.set(true);
+    try {
+      const res = await this.activitySvc.exportCsv({
+        options: {
+          userId: this.selectedUser() || undefined,
+          entity: this.selectedEntity() || undefined,
+          activity: this.selectedActivity() || undefined,
+        },
+        fileName: `activity-feed-${new Date().toISOString().slice(0, 10)}.csv`,
+      });
+
+      if (res && res.status === 'processing') {
+        this.alertSvc.showSuccess(
+          'Activity feed export has been queued. You will receive an email once it is complete.',
+        );
+      } else if (res && res.csv) {
+        const blob = new Blob([res.csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = res.fileName || 'activity-feed-export.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.alertSvc.showSuccess('Activity feed exported successfully');
+      } else {
+        this.alertSvc.showError('No activity data to export');
+      }
+    } catch (err) {
+      console.error('Failed to export activity feed', err);
+      this.alertSvc.showError('Failed to export activity feed');
+    } finally {
+      this.isLoadingExport.set(false);
+    }
+  }
+
+  protected getUserInitials(act: any): string {
+    const fn = act.first_name || '';
+    const ln = act.last_name || '';
+    return `${fn.charAt(0)}${ln.charAt(0)}`.toUpperCase() || '?';
+  }
+
+  protected getActivityIcon(activity: string): PcIconNameType {
+    switch (activity) {
+      case 'create':
+        return 'plus';
+      case 'update':
+        return 'pencil-square';
+      case 'delete':
+        return 'trash';
+      case 'merge':
+        return 'merge';
+      case 'import':
+        return 'arrow-up-tray';
+      case 'export':
+        return 'arrow-down-tray';
+      case 'assign':
+        return 'user-plus';
+      case 'unassign':
+        return 'user-circle';
+      case 'close':
+        return 'check-circle';
+      case 'reopen':
+        return 'arrow-path';
+      default:
+        return 'information-circle';
+    }
+  }
+
+  protected getActivityClass(activity: string): string {
+    switch (activity) {
+      case 'create':
+        return 'border-success text-success';
+      case 'update':
+        return 'border-info text-info';
+      case 'delete':
+        return 'border-error text-error';
+      case 'merge':
+        return 'border-warning text-warning';
+      case 'import':
+        return 'border-secondary text-secondary';
+      case 'export':
+        return 'border-primary text-primary';
+      case 'assign':
+        return 'border-accent text-accent';
+      case 'unassign':
+        return 'border-base-content/40 text-base-content/60';
+      case 'close':
+        return 'border-success text-success';
+      case 'reopen':
+        return 'border-warning text-warning';
+      default:
+        return 'border-base-content/40 text-base-content/60';
+    }
+  }
+
+  private formatValue(val: any): string {
+    if (val === null || val === undefined || val === '') return 'none';
+    if (typeof val === 'boolean') return val ? 'yes' : 'no';
+    if (typeof val === 'object') return JSON.stringify(val);
+    const str = String(val);
+    if (str.length > 40) {
+      return `"${str.substring(0, 40)}..."`;
+    }
+    return `"${str}"`;
+  }
+
+  protected getActivityPrefix(act: any): string {
+    const meta = act.metadata ?? {};
+    const ent = act.entity ?? 'record';
+
+    switch (act.activity) {
+      case 'create':
+        if (act.activity === 'submission') return ' submitted ';
+        return ' created a new ';
+      case 'delete':
+        return ' deleted ';
+      case 'merge':
+        return ' merged duplicate ';
+      case 'import':
+        return ' imported ';
+      case 'export':
+        return ' exported ';
+      case 'assign':
+        return ' assigned ';
+      case 'unassign':
+        return ' unassigned ';
+      case 'close':
+        return ' closed ';
+      case 'reopen':
+        return ' reopened ';
+      case 'submission':
+        return ' submitted ';
+      case 'signup':
+        return ' signed up for ';
+      case 'send':
+        return ' sent ';
+      case 'update': {
+        if (meta['action'] === 'add_comment') {
+          return ' added a comment to ';
+        }
+        if (meta['action'] === 'add_subtask') {
+          return ` added subtask "${meta['subtask_name']}" to `;
+        }
+        if (meta['action'] === 'toggle_subtask') {
+          return ` ${meta['status'] === 'done' ? 'completed' : 'reopened'} subtask "${meta['subtask_name']}" on `;
+        }
+        if (meta['action'] === 'add_attachment') {
+          return ` attached file "${meta['filename']}" to `;
+        }
+        if (meta['action'] === 'change_due_date') {
+          if (meta['due_at']) {
+            const parts = String(meta['due_at']).split('-');
+            let formattedDate = String(meta['due_at']);
+            if (parts.length === 3) {
+              const year = parseInt(parts[0]!, 10);
+              const month = parseInt(parts[1]!, 10) - 1;
+              const day = parseInt(parts[2]!, 10);
+              const dateVal = new Date(year, month, day);
+              formattedDate = dateVal.toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+              });
+            }
+            return ` changed the due date to ${formattedDate} on `;
+          }
+          return ' removed the due date on ';
+        }
+        if (meta['action'] === 'attach_tag' || meta['action'] === 'attach_issue') {
+          return ` attached tag "${meta['name']}" to `;
+        }
+        if (meta['action'] === 'detach_tag' || meta['action'] === 'detach_issue') {
+          return ` detached tag "${meta['name']}" from `;
+        }
+        if (meta['action'] === 'status_update') {
+          return ' updated the status of ';
+        }
+
+        // Household address check
+        const entLower = ent.toLowerCase();
+        if (entLower === 'households' || entLower === 'household') {
+          const addressFields = [
+            'apt',
+            'street_num',
+            'street1',
+            'street2',
+            'city',
+            'state',
+            'zip',
+            'country',
+            'formatted_address',
+          ];
+          if (meta.changes && Object.keys(meta.changes).some((k) => addressFields.includes(k))) {
+            return ' updated the address of ';
+          }
+        }
+        return ' updated ';
+      }
+      default:
+        return ` performed ${act.activity} on `;
+    }
+  }
+
+  protected getEntityLabelText(act: any): string {
+    const entLower = (act.entity ?? '').toLowerCase();
+    const meta = act.metadata ?? {};
+    if (entLower === 'email' || entLower === 'emails') {
+      return 'email';
+    }
+
+    let typePrefix = '';
+    if (entLower === 'persons' || entLower === 'person' || entLower === 'people') typePrefix = 'person ';
+    else if (entLower === 'households' || entLower === 'household') typePrefix = 'household ';
+    else if (entLower === 'companies' || entLower === 'company') typePrefix = 'company ';
+    else if (entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived') typePrefix = 'task ';
+    else if (entLower === 'teams' || entLower === 'team') typePrefix = 'team ';
+    else if (entLower === 'tags' || entLower === 'tag') typePrefix = 'tag ';
+    else if (entLower === 'web_forms' || entLower === 'web_form' || entLower === 'forms' || entLower === 'form')
+      typePrefix = 'form ';
+    else if (entLower === 'volunteer_events' || entLower === 'volunteer_event') typePrefix = 'volunteer event ';
+    else if (entLower === 'volunteer_shifts' || entLower === 'volunteer_shift') typePrefix = 'volunteer shift ';
+    else if (entLower === 'newsletters' || entLower === 'newsletter') typePrefix = 'newsletter ';
+
+    let label = '';
+    if (meta.entity_label) {
+      label = meta.entity_label;
+    } else if (entLower === 'persons' || entLower === 'person' || entLower === 'people') {
+      const name =
+        meta.person_name ||
+        meta.name ||
+        (act.first_name && act.last_name ? `${act.first_name} ${act.last_name}` : null);
+      label = name || 'person #' + (act.entity_id || meta.id);
+    } else if (entLower === 'households' || entLower === 'household') {
+      label = meta.household_name || meta.address || 'household #' + (act.entity_id || meta.id);
+    } else if (entLower === 'companies' || entLower === 'company') {
+      label = meta.company_name || meta.name || 'company #' + (act.entity_id || meta.id);
+    } else if (entLower === 'tasks' || entLower === 'task' || entLower === 'tasks_archived') {
+      label = meta.task_name || meta.name || 'task #' + (act.entity_id || meta.id);
+    } else if (entLower === 'volunteer_events' || entLower === 'volunteer_event') {
+      label = meta.event_name || meta.name || 'event #' + (act.entity_id || meta.id);
+    } else if (entLower === 'teams' || entLower === 'team') {
+      label = meta.team_name || meta.name || 'team #' + (act.entity_id || meta.id);
+    } else if (entLower === 'tags' || entLower === 'tag') {
+      label = meta.tag_name || meta.name || 'tag #' + (act.entity_id || meta.id);
+    } else {
+      label = meta.name || meta.subject || meta.title || meta.task_name || '#' + (act.entity_id || meta.id);
+    }
+
+    const normLabel = label.trim().toLowerCase();
+    const normPrefix = typePrefix.trim().toLowerCase();
+
+    if (normPrefix && normLabel.startsWith(normPrefix)) {
+      return label;
+    }
+    if (normPrefix === 'volunteer event' && normLabel.startsWith('event')) {
+      return 'volunteer ' + label;
+    }
+    return `${typePrefix}${label}`;
+  }
+
+  protected getActivitySuffix(act: any): string {
+    const meta = act.metadata ?? {};
+    if (act.activity === 'assign') {
+      const assignee = meta['assigned_to_name'] ?? meta['person_name'] ?? 'someone';
+      return ` to ${assignee}`;
+    }
+    if (act.activity === 'update' && meta.changes) {
+      const parts: string[] = [];
+      const keys = Object.keys(meta.changes);
+      if (keys.length > 0) {
+        for (const key of keys) {
+          const change = meta.changes[key];
+          const fieldName = key.replace(/_/g, ' ');
+          const fromVal = this.formatValue(change.from);
+          const toVal = this.formatValue(change.to);
+          parts.push(`${fieldName} from ${fromVal} to ${toVal}`);
+        }
+        return ` (changed ${parts.join(', ')})`;
+      }
+    }
+    return '';
+  }
+
+  protected getEntityLink(act: any): { path: string; params?: Record<string, string>; label?: string } | null {
+    const metadata = act.metadata ?? {};
+    const id = act.entity_id || metadata.id || metadata.event_id;
+    if (!id) return null;
+
+    const entity = act.entity?.toLowerCase();
+    switch (entity) {
+      case 'email':
+      case 'emails':
+        // Deep-link to inbox and pre-select the email
+        return { path: '/inbox', params: { email: id }, label: undefined };
+      case 'person':
+      case 'persons':
+      case 'contact':
+      case 'contacts':
+        return { path: `/people/${id}`, label: undefined };
+      case 'household':
+      case 'households':
+        return { path: `/households/${id}`, label: undefined };
+      case 'task':
+      case 'tasks':
+      case 'tasks_archived':
+        return { path: `/tasks/${id}`, label: undefined };
+      case 'volunteer_events':
+      case 'volunteer_event':
+      case 'volunteer_shifts':
+      case 'volunteer_shift': {
+        const eventId = metadata.event_id || id;
+        return { path: `/events/${eventId}`, label: undefined };
+      }
+      case 'newsletter':
+      case 'newsletters':
+        return { path: `/newsletters/${id}`, label: undefined };
+      case 'web_forms':
+      case 'web_form':
+      case 'form':
+      case 'forms':
+        return { path: `/forms/${id}`, label: undefined };
+      case 'company':
+      case 'companies':
+        return { path: `/companies/${id}`, label: undefined };
+      case 'team':
+      case 'teams':
+        return { path: `/teams/${id}`, label: undefined };
+      case 'user':
+      case 'users':
+        return { path: `/users/${id}`, label: undefined };
+      default:
+        return null;
+    }
+  }
+
+  protected onUserChange(event: Event) {
+    const val = (event.target as HTMLSelectElement).value;
+    this.selectedUser.set(val);
+    this.refreshFeed();
+  }
+
+  protected onEntityChange(event: Event) {
+    const val = (event.target as HTMLSelectElement).value;
+    this.selectedEntity.set(val);
+    this.refreshFeed();
+  }
+
+  protected onActivityChange(event: Event) {
+    const val = (event.target as HTMLSelectElement).value;
+    this.selectedActivity.set(val);
+    this.refreshFeed();
+  }
+
+  protected hasActiveFilters(): boolean {
+    return !!(this.selectedUser() || this.selectedEntity() || this.selectedActivity());
+  }
+
+  protected clearFilters() {
+    this.selectedUser.set('');
+    this.selectedEntity.set('');
+    this.selectedActivity.set('');
+    this.refreshFeed();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
 
 ```typescript
@@ -41595,356 +36639,302 @@ export class EmailHeader {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
+## File: apps/frontend/src/app/experiences/events/ui/event-view.ts
 
 ```typescript
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
-import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-import { environment } from '../../../../environments/environment';
-
-import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
-import { EventsService } from '../../../services/api/events-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
 import { EventsFrontendService } from '../services/events-frontend-service';
+import { EventsService } from '../../../services/api/events-service';
+import { PersonsService } from '../../persons/services/persons-service';
 
 @Component({
-  selector: 'pc-event-form',
+  selector: 'pc-event-view',
   imports: [
-    FormsModule,
-    FormField,
-    PcInput,
-    PcTextarea,
+    DatePipe,
     RouterModule,
+    FormsModule,
     Icon,
-    PcDetailHeader,
-    PcEntityOverview,
+    RecordActivities,
+    DetailLayout,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailRow,
     PcCard,
-    FieldsSelector,
-    PublicLinkPanel,
   ],
-  templateUrl: './event-form.html',
+  templateUrl: './event-view.html',
   providers: [EventsService],
 })
-export class EventFormComponent {
-  private readonly _loading = createLoadingGate();
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
+export class EventViewComponent {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
   private readonly eventsSvc = inject(EventsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
 
-  protected readonly addingTicket = signal(false);
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly event = signal<any | null>(null);
+  protected readonly ticketTypes = signal<any[]>([]);
+  protected readonly registrations = signal<any[]>([]);
+
+  // Person search for adding registrations
+  protected readonly personSearch = signal('');
+  protected readonly personSearchResults = signal<any[]>([]);
+  protected readonly selectedPersonId = signal<string | null>(null);
+  protected readonly selectedTicketTypeId = signal<string | null>(null);
+  protected readonly addingRegistration = signal(false);
+  protected readonly searchTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  protected activeTab = signal<string>('attendees');
+
+  protected readonly eventTabs = computed<PcTabOption[]>(() => [
+    {
+      id: 'attendees',
+      label: `Attendees (${this.registrations().filter((r) => r.status !== 'cancelled').length})`,
+      icon: 'user-group',
+    },
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  ]);
+
+  protected readonly eventPassed = computed(() => {
+    const end = this.event()?.end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
+  });
+
+  protected readonly activeCount = computed(() => this.registrations().filter((r) => r.status !== 'cancelled').length);
+
+  protected readonly attendedCount = computed(() => this.registrations().filter((r) => r.status === 'attended').length);
+
   protected readonly publicUrl = computed(() => {
-    const slug = this.payload().slug;
-    if (!slug || this.isNew()) return '';
+    const slug = this.event()?.slug;
+    if (!slug) return '';
     return `${environment.apiUrl}/api/event-pages/view/${slug}`;
   });
-  protected readonly detail = signal<any>(null);
-  protected readonly payload = signal({
-    name: '',
-    slug: '',
-    description: '',
-    location_address: '',
-    start_time: '',
-    end_time: '',
-    capacity: null as number | null,
-    contact_email: '',
-    contact_phone: '',
-    is_published: false,
-    send_reminder: true,
-    send_registration_confirmation: true,
+
+  protected readonly remainingCapacity = computed(() => {
+    const ev = this.event();
+    if (!ev || ev.capacity === null || ev.capacity === undefined) return 'Unlimited';
+    return Math.max(0, ev.capacity - this.activeCount());
   });
-  protected readonly endBeforeStartError = computed(() => {
-    const { start_time, end_time } = this.payload();
-    if (!start_time || !end_time) return false;
-    return new Date(end_time) <= new Date(start_time);
-  });
-  protected readonly error = signal<string | null>(null);
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddEventObj);
-  });
-  protected readonly isNew = computed(() => !this.id());
-  protected readonly loading = this._loading.visible;
-  protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
-  protected readonly saving = signal(false);
-  protected readonly slugChecking = signal(false);
-  protected readonly slugUnique = signal<boolean | null>(null);
-
-  // Ticket types
-  protected readonly ticketTypes = signal<any[]>([]);
-
-  protected slugManuallyEdited = false;
-
-  protected setNewTicketName(v: string) {
-    this.newTicket.update((t) => ({ ...t, name: v }));
-  }
-  protected setNewTicketPrice(v: string) {
-    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
-  }
-  protected setNewTicketCapacity(v: string) {
-    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
-  }
-
-  public readonly id = input<string>();
 
   constructor() {
-    const nameSignal = computed(() => this.payload().name);
     effect(() => {
-      const name = nameSignal();
-      if (this.isNew() && !this.slugManuallyEdited) {
-        const suggested = this.slugify(name);
-        if (untracked(this.payload).slug !== suggested) {
-          this.payload.update((p) => ({ ...p, slug: suggested }));
-        }
-      }
-    });
-
-    const slugSignal = computed(() => this.payload().slug);
-    effect(() => {
-      const slug = slugSignal();
-      if (this.slugTimeoutId) {
-        clearTimeout(this.slugTimeoutId);
-        this.slugTimeoutId = null;
-      }
-      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-        this.slugUnique.set(null);
-        this.slugChecking.set(false);
-        return;
-      }
-      this.slugChecking.set(true);
-      this.slugTimeoutId = setTimeout(() => {
-        void (async () => {
-          try {
-            const res = await this.eventsFrontendSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
-            if (untracked(slugSignal) === slug) {
-              this.slugUnique.set(res.unique);
-            }
-          } catch (err) {
-            console.error('Failed to check slug uniqueness', err);
-          } finally {
-            if (untracked(slugSignal) === slug) {
-              this.slugChecking.set(false);
-            }
-          }
-        })();
-      }, 300);
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
-  public ngOnInit(): void {
+  protected async loadAllData(id: string) {
     const end = this._loading.begin();
-    void this.loadEvent().finally(() => end());
+    try {
+      const [eventData, ticketData, regData] = await Promise.all([
+        this.eventsFrontendSvc.getById(id),
+        this.eventsSvc.getTicketTypes(id),
+        this.eventsSvc.getRegistrations(id),
+      ]);
+      this.event.set(eventData);
+      this.ticketTypes.set(ticketData || []);
+      this.registrations.set(regData || []);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load event details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
   }
 
-  protected cancelAddTicket() {
-    this.addingTicket.set(false);
+  protected copyPublicUrl() {
+    const url = this.publicUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Public RSVP link copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected editEvent() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
   protected async deleteEvent() {
-    if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
       title: 'Delete Event Page',
-      message: 'Are you sure you want to delete this event page? All registrations will also be deleted.',
+      message: 'Are you sure you want to delete this event? All registrations will also be deleted.',
       variant: 'danger',
       confirmText: 'Delete',
     });
     if (!confirmed) return;
 
-    this.saving.set(true);
+    const end = this._loading.begin();
     try {
-      await this.eventsFrontendSvc.delete(this.id()!);
+      await this.eventsFrontendSvc.delete(this.id());
       this.eventsFrontendSvc.triggerRefresh();
-      this.alerts.showSuccess('Event deleted');
+      this.alertSvc.showSuccess('Event deleted');
       await this.router.navigate(['/events/pages']);
     } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Unable to delete event');
     } finally {
-      this.saving.set(false);
+      end();
     }
   }
 
-  protected async deleteTicketType(id: string) {
+  // Person search
+  protected async onPersonSearch(query: string) {
+    this.personSearch.set(query);
+    this.selectedPersonId.set(null);
+    if (!query.trim()) {
+      this.personSearchResults.set([]);
+      return;
+    }
+    try {
+      const res = await this.personsSvc.getAll({ searchStr: query.toLowerCase().trim(), startRow: 0, endRow: 10 });
+      this.personSearchResults.set(res?.rows || []);
+    } catch {
+      this.personSearchResults.set([]);
+    }
+  }
+
+  protected selectPerson(person: any) {
+    this.selectedPersonId.set(String(person.id));
+    this.personSearch.set(`${person.first_name} ${person.last_name}`.trim());
+    this.personSearchResults.set([]);
+  }
+
+  protected async addRegistration() {
+    const personId = this.selectedPersonId();
+    if (!personId) {
+      this.alertSvc.showError('Please select a person to register.');
+      return;
+    }
+    this.addingRegistration.set(true);
+    try {
+      await this.eventsSvc.addRegistration({
+        event_id: this.id(),
+        person_id: personId,
+        ticket_type_id: this.selectedTicketTypeId() || null,
+      });
+      this.alertSvc.showSuccess('Registration added');
+      this.personSearch.set('');
+      this.selectedPersonId.set(null);
+      this.selectedTicketTypeId.set(null);
+      this.personSearchResults.set([]);
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to add registration');
+    } finally {
+      this.addingRegistration.set(false);
+    }
+  }
+
+  protected async checkIn(reg: any) {
+    try {
+      await this.eventsSvc.checkIn(String(reg.id));
+      this.alertSvc.showSuccess(`${reg.first_name} checked in`);
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to check in');
+    }
+  }
+
+  protected async updateStatus(reg: any, status: string) {
+    try {
+      await this.eventsSvc.updateRegistration(String(reg.id), { status: status as any });
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to update status');
+    }
+  }
+
+  protected async deleteRegistration(reg: any) {
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete Ticket Type',
-      message: 'Delete this ticket type?',
+      title: 'Remove Registration',
+      message: `Remove ${reg.first_name} ${reg.last_name} from this event?`,
       variant: 'danger',
-      confirmText: 'Delete',
+      confirmText: 'Remove',
     });
     if (!confirmed) return;
     try {
-      await this.eventsSvc.deleteTicketType(id);
-      this.alerts.showSuccess('Ticket type deleted');
-      await this.loadTicketTypes();
+      await this.eventsSvc.deleteRegistration(String(reg.id));
+      this.alertSvc.showSuccess('Registration removed');
+      const regs = await this.eventsSvc.getRegistrations(this.id());
+      this.registrations.set(regs || []);
     } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to remove registration');
     }
   }
 
-  protected formatPrice(cents: number): string {
-    if (!cents) return 'Free';
-    return `$${(cents / 100).toFixed(2)}`;
+  protected exportCsv() {
+    const regs = this.registrations().filter((r) => r.status !== 'cancelled');
+    const headers = ['First Name', 'Last Name', 'Email', 'Mobile', 'Ticket Type', 'Price', 'Status', 'Checked In At'];
+    const rows = regs.map((r) => [
+      r.first_name ?? '',
+      r.last_name ?? '',
+      r.email ?? '',
+      r.mobile ?? '',
+      r.ticket_type_name ?? '',
+      r.ticket_price_cents != null ? `$${(r.ticket_price_cents / 100).toFixed(2)}` : 'Free',
+      r.status ?? '',
+      r.checked_in_at ? new Date(r.checked_in_at).toLocaleString() : '',
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.event()?.slug || 'event'}-attendees.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
-  protected async loadEvent() {
-    if (this.isNew()) return;
-
-    try {
-      const event = (await this.eventsFrontendSvc.getById(this.id()!)) as any;
-      this.detail.set(event);
-      this.payload.set({
-        name: event.name ?? '',
-        slug: event.slug ?? '',
-        description: event.description ?? '',
-        location_address: event.location_address ?? '',
-        start_time: this.toDatetimeLocalString(event.start_time),
-        end_time: this.toDatetimeLocalString(event.end_time),
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? '',
-        contact_phone: event.contact_phone ?? '',
-        is_published: !!event.is_published,
-        send_reminder: event.send_reminder !== false,
-        send_registration_confirmation: event.send_registration_confirmation !== false,
-      });
-      if (Array.isArray(event.fields) && event.fields.length > 0) {
-        this.selectedFields.set(event.fields);
-      }
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
-      this.alerts.showError(this.error()!);
+  protected getStatusType(status: string | null | undefined): any {
+    switch (String(status || '').toLowerCase()) {
+      case 'attended':
+        return 'success';
+      case 'registered':
+        return 'warning';
+      case 'no_show':
+        return 'error';
+      case 'cancelled':
+        return 'neutral';
+      default:
+        return 'ghost';
     }
   }
 
-  protected async loadTicketTypes() {
-    if (!this.id()) return;
-    try {
-      const types = await this.eventsSvc.getTicketTypes(this.id()!);
-      this.ticketTypes.set(types || []);
-    } catch (err) {
-      console.error('Failed to load ticket types', err);
-    }
-  }
-
-  protected onSlugInput() {
-    this.slugManuallyEdited = true;
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) done.preventDefault();
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    if (this.endBeforeStartError()) {
-      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
-      return;
-    }
-
-    if (this.slugUnique() === false) {
-      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    const raw = this.payload();
-    const data = {
-      name: raw.name.trim(),
-      slug: raw.slug.trim(),
-      description: raw.description?.trim() || null,
-      location_address: raw.location_address?.trim() || null,
-      start_time: new Date(raw.start_time),
-      end_time: new Date(raw.end_time),
-      capacity: raw.capacity ? Number(raw.capacity) : null,
-      contact_email: raw.contact_email?.trim() || null,
-      contact_phone: raw.contact_phone?.trim() || null,
-      is_published: !!raw.is_published,
-      send_reminder: !!raw.send_reminder,
-      send_registration_confirmation: !!raw.send_registration_confirmation,
-      fields: this.selectedFields(),
-    };
-
-    try {
-      if (this.isNew()) {
-        const res = await this.eventsFrontendSvc.add(data as AddEventType);
-        this.eventsFrontendSvc.triggerRefresh();
-        this.alerts.showSuccess('Event created successfully');
-        await this.router.navigate(['/events/pages', (res as any).id]);
-      } else {
-        await this.eventsFrontendSvc.update(this.id()!, data as UpdateEventType);
-        this.eventsFrontendSvc.triggerRefresh();
-        this.alerts.showSuccess('Event updated successfully');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/events/pages', this.id()]);
-        }
-      }
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
-      this.alerts.showError(this.error()!);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async saveNewTicket() {
-    const t = this.newTicket();
-    if (!t.name.trim()) {
-      this.alerts.showError('Ticket type name is required');
-      return;
-    }
-    try {
-      await this.eventsSvc.addTicketType({
-        event_id: this.id()!,
-        name: t.name.trim(),
-        description: t.description?.trim() || null,
-        price_cents: Number(t.price_cents) || 0,
-        capacity: t.capacity ? Number(t.capacity) : null,
-      });
-      this.addingTicket.set(false);
-      this.alerts.showSuccess('Ticket type added');
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
-    }
-  }
-
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
-
-  // Ticket type management
-  protected startAddTicket() {
-    this.newTicket.set({ name: '', description: '', price_cents: 0, capacity: null });
-    this.addingTicket.set(true);
-  }
-
-  protected toDatetimeLocalString(val: any): string {
-    if (!val) return '';
-    const date = new Date(val);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  protected ticketTypeLabel(id: string | null): string {
+    if (!id) return '';
+    const t = this.ticketTypes().find((tt) => tt.id === id);
+    return t ? t.name : '';
   }
 }
 ```
@@ -42097,37 +37087,588 @@ export class FilesGrid implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
+## File: apps/frontend/src/app/experiences/forms/ui/form-editor.ts
 
 ```typescript
-import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { Loader } from '@googlemaps/js-api-loader';
-import type { IAuthUser } from '@common';
+import { AddWebFormObj } from '../../../../../../../libs/common/src';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { FormsService } from '../services/forms-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Tags } from '@experiences/tags/ui/tags';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
 import { Icon } from '@icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInHousehold } from '../../persons/ui/people-in-household';
-import { UserService } from '../../../services/user.service';
-import { HouseholdsService } from '../services/households-service';
-import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { environment } from '../../../../environments/environment';
+
+@Component({
+  selector: 'pc-form-editor',
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard, FieldsSelector],
+  templateUrl: './form-editor.html',
+})
+export class FormEditorComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly settingsSvc = inject(SettingsService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly isInitialized = signal(false);
+  protected readonly saving = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly isNew = signal(true);
+  protected readonly formId = signal<string | null>(null);
+
+  protected readonly hasStripeKey = computed(() => {
+    const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
+    return !!key.trim();
+  });
+
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
+  protected readonly selectedLists = signal<string[]>([]);
+  protected readonly selectedTags = signal<string[]>([]);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+
+  private isEnabled(field: string): boolean {
+    const list = this.selectedFields();
+    return list.includes(field) || list.includes(`${field}:required`);
+  }
+
+  private isRequired(field: string): boolean {
+    const list = this.selectedFields();
+    return list.includes(`${field}:required`);
+  }
+
+  protected readonly showFirstName = computed(() => this.isEnabled('first_name'));
+  protected readonly isFirstNameRequired = computed(() => this.isRequired('first_name'));
+
+  protected readonly showLastName = computed(() => this.isEnabled('last_name'));
+  protected readonly isLastNameRequired = computed(() => this.isRequired('last_name'));
+
+  protected readonly showMobile = computed(() => this.isEnabled('mobile'));
+  protected readonly isMobileRequired = computed(() => this.isRequired('mobile'));
+
+  protected readonly showNotes = computed(() => this.isEnabled('notes'));
+  protected readonly isNotesRequired = computed(() => this.isRequired('notes'));
+
+  protected readonly showStreet1 = computed(() => this.isEnabled('street1'));
+  protected readonly isStreet1Required = computed(() => this.isRequired('street1'));
+
+  protected readonly showCity = computed(() => this.isEnabled('city'));
+  protected readonly isCityRequired = computed(() => this.isRequired('city'));
+
+  protected readonly showState = computed(() => this.isEnabled('state'));
+  protected readonly isStateRequired = computed(() => this.isRequired('state'));
+
+  protected readonly showZip = computed(() => this.isEnabled('zip'));
+  protected readonly isZipRequired = computed(() => this.isRequired('zip'));
+
+  protected readonly showCountry = computed(() => this.isEnabled('country'));
+  protected readonly isCountryRequired = computed(() => this.isRequired('country'));
+
+  protected toggleField(field: string): void {
+    const current = this.selectedFields();
+    const isCurrentlyEnabled = current.includes(field) || current.includes(`${field}:required`);
+
+    if (isCurrentlyEnabled) {
+      this.selectedFields.set(current.filter((f) => f !== field && f !== `${field}:required`));
+    } else {
+      this.selectedFields.set([...current, field]);
+    }
+  }
+
+  protected toggleRequired(field: string): void {
+    const current = this.selectedFields();
+    const hasOptional = current.includes(field);
+    const hasRequired = current.includes(`${field}:required`);
+
+    if (hasOptional) {
+      this.selectedFields.set([...current.filter((f) => f !== field), `${field}:required`]);
+    } else if (hasRequired) {
+      this.selectedFields.set([...current.filter((f) => f !== `${field}:required`), field]);
+    }
+  }
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    redirect_url: '',
+    status: 'active' as 'active' | 'archived',
+    send_confirmation: true,
+    send_alert: true,
+    form_type: 'standard' as 'standard' | 'donation' | 'recurring_donation',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddWebFormObj);
+  });
+
+  protected readonly isDonationForm = computed(() => this.payload().form_type === 'donation');
+
+  protected readonly embedSnippet = computed(() => {
+    const id = this.formId();
+    if (!id) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, ''); // Use configured backend URL
+    const fields = this.selectedFields();
+
+    const isEnabled = (name: string): boolean => {
+      if (this.isDonationForm()) {
+        const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+        if (alwaysEnabled.includes(name)) return true;
+      }
+      return fields.includes(name) || fields.includes(`${name}:required`);
+    };
+
+    const isRequired = (name: string): boolean => {
+      if (this.isDonationForm()) {
+        const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+        if (alwaysRequired.includes(name)) return true;
+      }
+      return fields.includes(`${name}:required`);
+    };
+
+    if (this.isDonationForm()) {
+      return `<!-- PeopleCRM Embeddable Donation Form -->
+<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <!-- Visually hidden honeypot field to prevent spam bots -->
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
+    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
+    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
+    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
+    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+      <option value="CA">Canada</option>
+      <option value="US">United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="AU">Australia</option>
+    </select>
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province of Residence *</label>
+    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
+    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    isEnabled('mobile')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
+    <input type="text" name="mobile" placeholder="Phone Number" ${isRequired('mobile') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('notes')
+      ? `
+
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
+    <textarea name="notes" placeholder="How can we help?" ${isRequired('notes') ? 'required' : ''} rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }
+
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Next</button>
+  <p style="font-size: 11px; color: #666; margin-top: 8px; text-align: center;">Submitting will validate eligibility and redirect you to Stripe for secure payment.</p>
+</form>`;
+    }
+
+    return `<!-- PeopleCRM Embeddable Form -->
+<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <!-- Visually hidden honeypot field to prevent spam bots -->
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+${
+  isEnabled('first_name')
+    ? `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isRequired('first_name') ? ' *' : ''}</label>
+    <input type="text" name="first_name" placeholder="First Name" ${isRequired('first_name') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+    : ''
+}${
+      isEnabled('last_name')
+        ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isRequired('last_name') ? ' *' : ''}</label>
+    <input type="text" name="last_name" placeholder="Last Name" ${isRequired('last_name') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+        : ''
+    }
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    isEnabled('mobile')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone${isRequired('mobile') ? ' *' : ''}</label>
+    <input type="text" name="mobile" placeholder="Phone Number" ${isRequired('mobile') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('street1')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address${isRequired('street1') ? ' *' : ''}</label>
+    <input type="text" name="street1" placeholder="E.g. 123 Main St" ${isRequired('street1') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('city')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City${isRequired('city') ? ' *' : ''}</label>
+    <input type="text" name="city" placeholder="E.g. Toronto" ${isRequired('city') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('country')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country${isRequired('country') ? ' *' : ''}</label>
+    <select name="country" ${isRequired('country') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+      <option value="CA">Canada</option>
+      <option value="US">United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="AU">Australia</option>
+    </select>
+  </div>`
+      : ''
+  }${
+    isEnabled('state')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province${isRequired('state') ? ' *' : ''}</label>
+    <input type="text" name="state" placeholder="E.g. ON or NY" ${isRequired('state') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('zip')
+      ? `
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code${isRequired('zip') ? ' *' : ''}</label>
+    <input type="text" name="zip" placeholder="E.g. M5V 2T6" ${isRequired('zip') ? 'required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    isEnabled('notes')
+      ? `
+
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message${isRequired('notes') ? ' *' : ''}</label>
+    <textarea name="notes" placeholder="How can we help?" ${isRequired('notes') ? 'required' : ''} rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }
+
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">Subscribe</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    const id = this.formId();
+    if (!id) return '';
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
+  });
+
+  public ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id && id !== 'add') {
+      this.isNew.set(false);
+      this.formId.set(id);
+    }
+    void this.loadLists();
+    void this.settingsSvc.load();
+  }
+
+  protected listName(id: string): string {
+    const match = this.availableLists().find((list) => list.id === id);
+    return match?.name ?? 'List';
+  }
+
+  protected handleListSelect(event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    if (!select) return;
+    const value = select.value;
+    if (!value) return;
+    const current = new Set(this.selectedLists());
+    if (!current.has(value)) {
+      current.add(value);
+      this.selectedLists.set(Array.from(current));
+    }
+    select.value = '';
+  }
+
+  protected removeList(listId: string): void {
+    this.selectedLists.set(this.selectedLists().filter((id) => id !== listId));
+  }
+
+  protected handleTagsChange(tags: string[]): void {
+    this.selectedTags.set(Array.isArray(tags) ? [...tags] : []);
+  }
+
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected copyUrl(): void {
+    const url = this.formUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Form landing page URL copied!'),
+      () => this.alertSvc.showError('Failed to copy URL.'),
+    );
+  }
+
+  protected async deleteForm() {
+    const id = this.formId();
+    if (!id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      await this.formsSvc.delete(id);
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate(['/forms']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete web form';
+      this.alertSvc.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      this.alertSvc.showError('Please check your inputs.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    await submit(this.form, {
+      action: async () => {
+        const values = this.payload();
+
+        try {
+          if (this.isNew()) {
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+              form_type: values.form_type,
+            };
+            const result = (await this.formsSvc.add(payload)) as { id: string };
+            this.alertSvc.showSuccess('Form created successfully!');
+            void this.router.navigate(['/forms', result.id]);
+          } else {
+            const id = this.formId()!;
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+            };
+            await this.formsSvc.update(id, payload);
+            this.alertSvc.showSuccess('Form updated successfully!');
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.router.navigate(['/forms', id]);
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving the form.';
+          this.error.set(msg);
+          this.alertSvc.showError(msg);
+        } finally {
+          this.saving.set(false);
+        }
+        return null;
+      },
+    });
+  }
+
+  private async loadLists(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
+      if (!this.isNew()) {
+        await this.loadFormDetails();
+      }
+    } catch (err) {
+      console.error('Failed to load lists', err);
+    } finally {
+      this.isInitialized.set(true);
+      end();
+    }
+  }
+
+  private async loadFormDetails(): Promise<void> {
+    const id = this.formId();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      const form = (await this.formsSvc.getById(id)) as any;
+      if (form) {
+        this.payload.set({
+          name: form.name ?? '',
+          description: form.description ?? '',
+          redirect_url: form.redirect_url ?? '',
+          status: (form.status as 'active' | 'archived') ?? 'active',
+          send_confirmation: form.send_confirmation !== false,
+          send_alert: form.send_alert !== false,
+          form_type: (form.form_type as 'standard' | 'donation' | 'recurring_donation') ?? 'standard',
+        });
+        this.form().reset();
+        this.selectedTags.set(Array.isArray(form.target_tags) ? form.target_tags : []);
+        this.selectedLists.set(Array.isArray(form.target_lists) ? form.target_lists : []);
+
+        // Load fields configuration
+        if (form.fields) {
+          const fields = Array.isArray(form.fields) ? form.fields : JSON.parse(form.fields);
+          this.selectedFields.set(fields);
+        } else {
+          this.selectedFields.set(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load form details', err);
+      this.error.set('Failed to load form details.');
+    } finally {
+      end();
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
+
+```typescript
+import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { FormsService } from '../services/forms-service';
+import { ListsService } from '../../lists/services/lists-service';
+import { UserService } from '../../../services/user.service';
+import type { IAuthUser } from '@common';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { environment } from '../../../../environments/environment';
 
 @Component({
-  selector: 'pc-household-view',
+  selector: 'pc-form-view',
   imports: [
+    DatePipe,
     RouterModule,
-    PeopleInHousehold,
     Icon,
     RecordActivities,
     DetailLayout,
@@ -42136,69 +37677,162 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
     TabPanel,
     StatCard,
     ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Tags,
+    DetailRow,
   ],
-  templateUrl: './household-view.html',
+  templateUrl: './form-view.html',
 })
-export class HouseholdView {
-  readonly id = input.required<string>();
-
+export class FormViewComponent {
   private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly loader = inject(Loader);
-  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  readonly id = input.required<string>();
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
-  protected readonly household = signal<Households | null>(null);
+  protected readonly formRecord = signal<any | null>(null);
+  protected readonly submissionsCount = signal(0);
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly users = signal<IAuthUser[]>([]);
+  private readonly router = inject(Router);
   private usersById = new Map<string, IAuthUser>();
-
-  // Segmentation
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
-  protected readonly peopleCount = signal(0);
-
-  // Address
-  protected readonly addressString = computed(() => {
-    const raw = this.household();
-    if (!raw) return 'No Address Assigned';
-    if (raw.is_placeholder) return 'People with no addresses';
-    if (raw.formatted_address) return raw.formatted_address;
-
-    const parts: string[] = [];
-    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
-
-    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
-
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
-
-    return parts.join(', ').trim() || 'No Address Assigned';
-  });
-
-  protected readonly hasMap = computed(() => {
-    const h = this.household();
-    return !!(h && h.lat && h.lng && !h.is_placeholder);
-  });
-
-  private mapInitialized = false;
-  private readonly mapContainer = viewChild<ElementRef>('mapContainer');
 
   // Active tab state
   protected activeTab = signal<string>('activity');
 
-  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+  protected readonly formTabs = computed<PcTabOption[]>(() => [
     { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'members', label: `Household Members (${this.peopleCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+    { id: 'targetActions', label: 'Target Lists & Actions', icon: 'queue-list' },
+    { id: 'fieldsPreview', label: 'Fields & Layout', icon: 'information-circle' },
   ]);
+
+  protected readonly selectedFields = computed(() => {
+    const record = this.formRecord();
+    if (!record) return [];
+    if (record.fields) {
+      return Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+    }
+    return ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+  });
+
+  protected readonly fieldsCount = computed(() => {
+    const fields = this.selectedFields();
+    // Email is always required and present
+    const standardFieldsCount = fields.filter((f: string) => f !== 'email').length;
+    return standardFieldsCount + 1;
+  });
+
+  protected readonly targetListsNames = computed(() => {
+    const record = this.formRecord();
+    if (!record || !record.target_lists) return [];
+    const listIds: string[] = Array.isArray(record.target_lists)
+      ? record.target_lists
+      : JSON.parse(record.target_lists || '[]');
+
+    return listIds.map((id) => this.availableLists().find((l) => l.id === id)?.name).filter(Boolean) as string[];
+  });
+
+  protected readonly embedSnippet = computed(() => {
+    const record = this.formRecord();
+    if (!record || !this.id()) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const fields = this.selectedFields();
+    const isDonation = record.form_type === 'donation';
+    const isRecurring = record.form_type === 'recurring_donation';
+    const isAnyDonation = isDonation || isRecurring;
+
+    const addressFields = isAnyDonation
+      ? `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+      <input type="text" name="city" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal *</label>
+      <input type="text" name="zip" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+      <input type="text" name="state" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+    <div>
+      <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country *</label>
+      <input type="text" name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    </div>
+  </div>`
+      : '';
+
+    const amountField = isDonation
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($) *</label>
+    <input type="number" name="amount" min="1" step="1" placeholder="50" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : isRecurring
+        ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+        : '';
+
+    const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
+
+    return `<!-- PeopleCRM Embeddable Form -->
+<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+${
+  fields.includes('first_name') || isAnyDonation
+    ? `  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="first_name" placeholder="First Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+    : ''
+}${
+      fields.includes('last_name') || isAnyDonation
+        ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name${isAnyDonation ? ' *' : ''}</label>
+    <input type="text" name="last_name" placeholder="Last Name"${isAnyDonation ? ' required' : ''} style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+        : ''
+    }
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${
+    !isAnyDonation && fields.includes('mobile')
+      ? `\n  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Mobile / Phone</label>
+    <input type="text" name="mobile" placeholder="Phone Number" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`
+      : ''
+  }${
+    !isAnyDonation && fields.includes('notes')
+      ? `\n  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Notes / Message</label>
+    <textarea name="notes" placeholder="How can we help?" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; resize: vertical;"></textarea>
+  </div>`
+      : ''
+  }${addressFields}${amountField}
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    if (!this.id()) return '';
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
+  });
 
   constructor() {
     effect(() => {
@@ -42206,16 +37840,7 @@ export class HouseholdView {
       void untracked(() => this.loadAllData(currentId));
     });
 
-    effect(() => {
-      const elRef = this.mapContainer();
-      if (elRef) {
-        void this.initMap(elRef.nativeElement);
-      } else {
-        this.mapInitialized = false;
-      }
-    });
-
-    // Load users for addedby/updatedby display names
+    // Load users
     this.userService
       .getUsers()
       .then((u) => {
@@ -42228,76 +37853,51 @@ export class HouseholdView {
   protected async loadAllData(id: string) {
     const end = this._loading.begin();
     try {
-      // 1. Load household details
-      const householdData = (await this.householdsSvc.getById(id)) as Households;
-      this.household.set(householdData);
+      // 1. Load Form details
+      const record = await this.formsSvc.getById(id);
+      this.formRecord.set(record);
 
-      // 2. Load tags and issues
-      const tagList = await this.householdsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.householdsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
+      // 2. Load available Lists to resolve list names
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
 
-      // 3. Load people in household count
-      const count = await this.householdsSvc.getPeopleCount(id);
-      this.peopleCount.set(count);
+      // 3. Load submissions count
+      const subCount = await this.formsSvc.getSubmissionsCount(id);
+      this.submissionsCount.set(subCount);
     } catch (err) {
-      this.alertSvc.showError('Failed to load household details: ' + String(err));
+      this.alertSvc.showError('Failed to load form details: ' + String(err));
     } finally {
       end();
       this.initialized.set(true);
     }
   }
 
-  protected editHousehold() {
+  protected editForm() {
     void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
-  protected async deleteHousehold() {
+  protected async deleteForm() {
     if (!this.id()) return;
+    const backRoute: string = this.route.snapshot.data['backRoute'] ?? '/forms';
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Web Form',
+      message: 'Are you sure you want to delete this web form? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
     const end = this._loading.begin();
     try {
-      // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
-      const personIds = people.map((p) => p.id);
-      const peopleCount = personIds.length;
-
-      if (peopleCount > 0) {
-        // Show the 3-option warning dialog
-        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-          title: 'Households have people',
-          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-          variant: 'warning',
-          choices: [
-            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-          ],
-          cancelText: 'Cancel',
-        });
-
-        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
-
-        if (choice === 'keep-people') {
-          for (const pid of personIds) {
-            await this.personsSvc.removeHousehold(pid);
-          }
-        } else if (choice === 'delete-people') {
-          await this.personsSvc.deleteMany(personIds);
-        }
-      } else {
-        const confirmed = await this.dialogSvc.confirm({
-          title: 'Delete Household',
-          message: 'Are you sure you want to delete this household? This action cannot be undone.',
-          variant: 'danger',
-          confirmText: 'Delete',
-        });
-        if (!confirmed) return;
-      }
-
-      await this.householdsSvc.delete(this.id());
-      this.householdsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Household deleted');
-      await this.router.navigate(['/households']);
+      await this.formsSvc.delete(this.id());
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Web form deleted');
+      await this.router.navigate([backRoute]);
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -42307,57 +37907,401 @@ export class HouseholdView {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Unable to delete household';
+            : 'Unable to delete web form';
       this.alertSvc.showError(message);
     } finally {
       end();
     }
   }
 
-  private async initMap(mapEl: HTMLElement) {
-    const h = this.household();
-    if (!h || !h.lat || !h.lng || h.is_placeholder || this.mapInitialized) return;
-
-    try {
-      await this.loader.importLibrary('maps');
-      const { AdvancedMarkerElement } = (await this.loader.importLibrary('marker')) as any;
-      const center = { lat: Number(h.lat), lng: Number(h.lng) };
-      const map = new google.maps.Map(mapEl, {
-        center,
-        zoom: 15,
-        disableDefaultUI: false,
-        zoomControl: true,
-        streetViewControl: false,
-        mapTypeControl: false,
-        mapId: 'DEMO_MAP_ID',
-      });
-
-      new AdvancedMarkerElement({
-        position: center,
-        map,
-        title: this.addressString(),
-      });
-      this.mapInitialized = true;
-    } catch (err) {
-      console.error('Failed to load Google Map:', err);
-    }
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Form HTML snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
   }
 
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
+  protected getCreatedAt(): Date | null {
+    const date = this.formRecord()?.created_at;
+    return date ? new Date(date) : null;
+  }
+
+  protected getUpdatedAt(): Date | null {
+    const date = this.formRecord()?.updated_at;
+    return date ? new Date(date) : null;
   }
 
   protected getUserName(id: string | null | undefined): string {
     if (!id) return '?';
     return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
+
+```typescript
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, FormField, validateStandardSchema, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AddWebFormObj } from '../../../../../../../libs/common/src';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { FormsService } from '@experiences/forms/services/forms-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Tags } from '@experiences/tags/ui/tags';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { Icon } from '@icons/icon';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { environment } from '../../../../environments/environment';
+
+@Component({
+  selector: 'pc-fundraising-form',
+  imports: [FormField, RouterModule, Tags, TagItem, Icon, FormActions, PcCard],
+  templateUrl: './fundraising-form.html',
+})
+export class FundraisingFormComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly settingsSvc = inject(SettingsService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly isInitialized = signal(false);
+  protected readonly saving = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly isNew = signal(true);
+  protected readonly formId = signal<string | null>(null);
+
+  protected setType(type: 'donation' | 'recurring_donation') {
+    this.payload.update((p) => ({ ...p, form_type: type }));
+  }
+
+  protected readonly hasStripeKey = computed(() => {
+    const key = this.settingsSvc.getValue<string>('donations.stripe_secret_key', '');
+    return !!key.trim();
+  });
+
+  protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
+  protected readonly selectedLists = signal<string[]>([]);
+  protected readonly selectedTags = signal<string[]>([]);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    redirect_url: '',
+    status: 'active' as 'active' | 'archived',
+    send_confirmation: true,
+    send_alert: true,
+    form_type: 'donation' as 'donation' | 'recurring_donation',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddWebFormObj);
+  });
+
+  protected readonly isRecurring = computed(() => this.payload().form_type === 'recurring_donation');
+
+  protected readonly embedSnippet = computed(() => {
+    const id = this.formId();
+    if (!id) return '';
+    const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const recurring = this.isRecurring();
+
+    const amountField = recurring
+      ? `
+  <div style="margin-bottom: 16px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Monthly Pledge Amount ($) *</label>
+    <input type="number" name="monthly_amount" min="1" step="1" placeholder="25" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+    <small style="font-size: 12px; color: #666;">You will be billed this amount every month.</small>
+  </div>`
+      : `
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Donation Amount ($ CAD) *</label>
+    <input type="number" name="amount" min="1" step="any" placeholder="E.g. 50.00" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>`;
+
+    const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
+
+    return `<!-- PeopleCRM Embeddable Donation Form -->
+<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+  <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">First Name *</label>
+    <input type="text" name="first_name" placeholder="John" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Last Name *</label>
+    <input type="text" name="last_name" placeholder="Doe" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Email Address *</label>
+    <input type="email" name="email" placeholder="you@example.com" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Street Address *</label>
+    <input type="text" name="street1" placeholder="E.g. 123 Main St" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">City *</label>
+    <input type="text" name="city" placeholder="E.g. Toronto" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Country of Residence *</label>
+    <select name="country" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;">
+      <option value="CA">Canada</option>
+      <option value="US">United States</option>
+      <option value="GB">United Kingdom</option>
+      <option value="AU">Australia</option>
+    </select>
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">State / Province *</label>
+    <input type="text" name="state" placeholder="E.g. ON or NY" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>
+
+  <div style="margin-bottom: 12px;">
+    <label style="display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px;">Zip / Postal Code *</label>
+    <input type="text" name="zip" placeholder="E.g. M5V 2T6" required style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box;" />
+  </div>${amountField}
+
+  <button type="submit" style="background-color: #0ea5e9; color: white; padding: 10px 16px; border: none; border-radius: 4px; font-weight: 600; cursor: pointer; width: 100%;">${submitLabel}</button>
+</form>`;
+  });
+
+  protected readonly formUrl = computed(() => {
+    const id = this.formId();
+    if (!id) return '';
+    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
+  });
+
+  public ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id && id !== 'add') {
+      this.isNew.set(false);
+      this.formId.set(id);
+    }
+    void this.loadLists();
+    void this.settingsSvc.load();
+  }
+
+  protected listName(id: string): string {
+    const match = this.availableLists().find((list) => list.id === id);
+    return match?.name ?? 'List';
+  }
+
+  protected handleListSelect(event: Event): void {
+    const select = event.target as HTMLSelectElement | null;
+    if (!select) return;
+    const value = select.value;
+    if (!value) return;
+    const current = new Set(this.selectedLists());
+    if (!current.has(value)) {
+      current.add(value);
+      this.selectedLists.set(Array.from(current));
+    }
+    select.value = '';
+  }
+
+  protected removeList(listId: string): void {
+    this.selectedLists.set(this.selectedLists().filter((id) => id !== listId));
+  }
+
+  protected handleTagsChange(tags: string[]): void {
+    this.selectedTags.set(Array.isArray(tags) ? [...tags] : []);
+  }
+
+  protected copySnippet(): void {
+    const code = this.embedSnippet();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(
+      () => this.alertSvc.showSuccess('Donation page snippet copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected copyUrl(): void {
+    const url = this.formUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Donation page URL copied!'),
+      () => this.alertSvc.showError('Failed to copy URL.'),
+    );
+  }
+
+  protected async deleteForm() {
+    const id = this.formId();
+    if (!id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Donation Page',
+      message: 'Are you sure you want to delete this donation page? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      await this.formsSvc.delete(id);
+      this.formsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Donation page deleted');
+      await this.router.navigate(['/donation-pages']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete donation page';
+      this.alertSvc.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      this.alertSvc.showError('Please check your inputs.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    await submit(this.form, {
+      action: async () => {
+        const values = this.payload();
+
+        try {
+          if (this.isNew()) {
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+              form_type: values.form_type,
+            };
+            const result = (await this.formsSvc.add(payload)) as { id: string };
+            this.alertSvc.showSuccess('Donation page created successfully!');
+            void this.router.navigate(['/donation-pages', result.id]);
+          } else {
+            const id = this.formId()!;
+            const payload = {
+              name: values.name?.trim() ?? '',
+              description: values.description?.trim() || null,
+              redirect_url: values.redirect_url?.trim() || null,
+              target_tags: this.selectedTags().length ? this.selectedTags() : null,
+              target_lists: this.selectedLists().length ? this.selectedLists() : null,
+              status: values.status,
+              fields: this.selectedFields(),
+              send_confirmation: !!values.send_confirmation,
+              send_alert: !!values.send_alert,
+            };
+            await this.formsSvc.update(id, payload);
+            this.alertSvc.showSuccess('Donation page updated successfully!');
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.router.navigate(['/donation-pages', id]);
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error && err.message ? err.message : 'An error occurred while saving.';
+          this.error.set(msg);
+          this.alertSvc.showError(msg);
+        } finally {
+          this.saving.set(false);
+        }
+        return null;
+      },
+    });
+  }
+
+  private async loadLists(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const result = await this.listsSvc.getAll({ limit: 100 });
+      const rows = Array.isArray(result?.rows) ? result.rows : [];
+      this.availableLists.set(
+        rows.map((row: any) => ({
+          id: String(row.id),
+          name: String(row.name),
+        })),
+      );
+      if (!this.isNew()) {
+        await this.loadPageDetails();
+      }
+    } catch (err) {
+      console.error('Failed to load lists', err);
+    } finally {
+      this.isInitialized.set(true);
+      end();
+    }
+  }
+
+  private async loadPageDetails(): Promise<void> {
+    const id = this.formId();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      const record = (await this.formsSvc.getById(id)) as any;
+      if (record) {
+        this.payload.set({
+          name: record.name ?? '',
+          description: record.description ?? '',
+          redirect_url: record.redirect_url ?? '',
+          status: (record.status as 'active' | 'archived') ?? 'active',
+          send_confirmation: record.send_confirmation !== false,
+          send_alert: record.send_alert !== false,
+          form_type: (record.form_type as 'donation' | 'recurring_donation') ?? 'donation',
+        });
+        this.form().reset();
+        this.selectedTags.set(Array.isArray(record.target_tags) ? record.target_tags : []);
+        this.selectedLists.set(Array.isArray(record.target_lists) ? record.target_lists : []);
+        if (record.fields) {
+          const fields = Array.isArray(record.fields) ? record.fields : JSON.parse(record.fields);
+          this.selectedFields.set(fields);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load page details', err);
+      this.error.set('Failed to load page details.');
+    } finally {
+      end();
+    }
   }
 }
 
@@ -42726,151 +38670,819 @@ export class HouseholdsGrid implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/list-view.ts
+## File: apps/frontend/src/app/experiences/persons/ui/add-connection-drawer.ts
 
 ```typescript
-import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { ListsType } from '../../../../../../../libs/common/src';
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { Component, inject, input, output, signal, computed } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
+import { Icon } from '@uxcommon/components/icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonsService } from '../services/persons-service';
+import { RELATION_TYPES, RELATION_TYPE_LABELS } from '../../../../../../../libs/common/src';
+import type { AddConnectionType } from '../../../../../../../libs/common/src';
 
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
-import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
 
 @Component({
-  selector: 'pc-list-view',
-  imports: [FormActions, Icon, RouterLink, RecordActivities, PersonsGrid, HouseholdsGrid, StatCard, Tabs, TabPanel],
-  templateUrl: './list-view.html',
+  selector: 'pc-add-connection-drawer',
+  imports: [SideDrawer, Icon, FormsModule],
+  template: `
+    <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" i18n-title size="sm" i18n-size (close)="onClose()">
+      <div class="flex flex-col gap-4">
+        <!-- Person search -->
+        <div class="flex flex-col gap-1.5">
+          <label i18n class="text-sm font-semibold text-base-content/80">Search Contact</label>
+          @if (selectedPerson()) {
+            <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
+              <div
+                class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+              >
+                {{ initials(selectedPerson()!) }}
+              </div>
+              <span class="text-sm font-medium flex-1 truncate"
+                >{{ selectedPerson()!.first_name }} {{ selectedPerson()!.last_name }}</span
+              >
+              <button type="button" class="btn btn-ghost btn-xs btn-circle" (click)="clearSelection()">
+                <pc-icon name="x-mark" [size]="3"></pc-icon>
+              </button>
+            </div>
+          } @else {
+            <div class="relative">
+              <input
+                type="text"
+                class="input input-bordered w-full pr-10 text-sm"
+                placeholder="Type a name or email..."
+                i18n-placeholder
+                [ngModel]="searchStr()"
+                (ngModelChange)="onSearchChange($event)"
+              />
+              <pc-icon
+                name="magnifying-glass"
+                [size]="4"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+              ></pc-icon>
+            </div>
+            @if (searchResults().length > 0) {
+              <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
+                @for (p of searchResults(); track p.id) {
+                  <button
+                    type="button"
+                    class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
+                    (click)="selectPerson(p)"
+                  >
+                    <div
+                      class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+                    >
+                      {{ initials(p) }}
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                      <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
+                      @if (p.email) {
+                        <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
+                      }
+                    </div>
+                  </button>
+                }
+              </div>
+            }
+            @if (isSearching() && searchStr().length > 0) {
+              <span i18n class="text-xs text-base-content/40 italic">Searching...</span>
+            }
+          }
+        </div>
+
+        <!-- Relation type -->
+        <div class="flex flex-col gap-1.5">
+          <label i18n class="text-sm font-semibold text-base-content/80">Relationship Type</label>
+          <select
+            class="select select-bordered w-full text-sm"
+            [ngModel]="relationType()"
+            (ngModelChange)="relationType.set($event)"
+          >
+            @for (type of relationTypes; track type) {
+              <option [value]="type">{{ relationTypeLabels[type] }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Custom label (shown when type = 'custom') -->
+        @if (relationType() === 'custom') {
+          <div class="flex flex-col gap-1.5">
+            <label i18n class="text-sm font-semibold text-base-content/80">Custom Label</label>
+            <input
+              type="text"
+              class="input input-bordered w-full text-sm"
+              placeholder="e.g. Major donor contact, Advisor..."
+              i18n-placeholder
+              maxlength="100"
+              [ngModel]="customLabel()"
+              (ngModelChange)="customLabel.set($event)"
+            />
+          </div>
+        }
+
+        <!-- Mutual toggle -->
+        <div class="flex items-center justify-between">
+          <div class="flex flex-col gap-0.5">
+            <span i18n class="text-sm font-semibold text-base-content/80">Mutual Connection</span>
+            <span i18n class="text-xs text-base-content/50">Shows on both profiles with ↔ indicator</span>
+          </div>
+          <input
+            type="checkbox"
+            class="toggle toggle-sm toggle-primary"
+            [ngModel]="isMutual()"
+            (ngModelChange)="isMutual.set($event)"
+          />
+        </div>
+
+        <!-- Notes -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-semibold text-base-content/80"
+            >Notes <span i18n class="text-base-content/40 font-normal">(optional)</span></label
+          >
+          <textarea
+            class="textarea textarea-bordered w-full text-sm resize-none"
+            rows="3"
+            placeholder="Add context about this connection..."
+            i18n-placeholder
+            maxlength="1000"
+            [ngModel]="notes()"
+            (ngModelChange)="notes.set($event)"
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div pc-drawer-footer class="p-4 border-t border-base-300 flex gap-2">
+        <button i18n type="button" class="btn btn-ghost flex-1" (click)="onClose()" [disabled]="isSaving()">
+          Cancel
+        </button>
+        <button i18n type="button" class="btn btn-primary flex-1" [disabled]="!canSave()" (click)="onSave()">
+          @if (isSaving()) {
+            <span class="loading loading-spinner loading-sm"></span>
+          }
+          Add Connection
+        </button>
+      </div>
+    </pc-side-drawer>
+  `,
 })
-export class ListView implements OnDestroy {
+export class AddConnectionDrawer {
+  readonly personId = input.required<string>();
+  readonly isOpen = input.required<boolean>();
+  readonly closeDrawer = output<void>();
+  readonly saved = output<any>();
+
+  private readonly connectionsSvc = inject(ConnectionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alertSvc = inject(AlertService);
+
+  protected readonly searchStr = signal('');
+  protected readonly searchResults = signal<PersonSearchResult[]>([]);
+  protected readonly selectedPerson = signal<PersonSearchResult | null>(null);
+  protected readonly relationType = signal<(typeof RELATION_TYPES)[number]>('close_friend');
+  protected readonly customLabel = signal('');
+  protected readonly isMutual = signal(false);
+  protected readonly notes = signal('');
+  protected readonly isSaving = signal(false);
+  protected readonly isSearching = signal(false);
+
+  protected readonly relationTypes = RELATION_TYPES;
+  protected readonly relationTypeLabels = RELATION_TYPE_LABELS;
+
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly canSave = computed(() => {
+    if (!this.selectedPerson() || this.isSaving()) return false;
+    if (this.relationType() === 'custom' && !this.customLabel().trim()) return false;
+    return true;
+  });
+
+  protected initials(p: PersonSearchResult) {
+    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
+  }
+
+  protected onSearchChange(value: string) {
+    this.searchStr.set(value);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    if (!value.trim()) {
+      this.searchResults.set([]);
+      return;
+    }
+    this.isSearching.set(true);
+    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
+  }
+
+  private async executeSearch(value: string): Promise<void> {
+    try {
+      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
+      const currentPersonId = this.personId();
+      this.searchResults.set(
+        ((result as any).rows ?? [])
+          .filter((p: any) => String(p.id) !== String(currentPersonId))
+          .map((p: any) => ({ id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email })),
+      );
+    } catch {
+      this.searchResults.set([]);
+    } finally {
+      this.isSearching.set(false);
+    }
+  }
+
+  protected selectPerson(p: PersonSearchResult) {
+    this.selectedPerson.set(p);
+    this.searchStr.set('');
+    this.searchResults.set([]);
+  }
+
+  protected clearSelection() {
+    this.selectedPerson.set(null);
+    this.searchStr.set('');
+    this.searchResults.set([]);
+  }
+
+  protected async onSave() {
+    const person = this.selectedPerson();
+    if (!person) return;
+    this.isSaving.set(true);
+    try {
+      const data: AddConnectionType = {
+        to_person_id: person.id,
+        relation_type: this.relationType(),
+        custom_label: this.relationType() === 'custom' ? this.customLabel().trim() : null,
+        is_mutual: this.isMutual(),
+        notes: this.notes().trim() || null,
+      };
+      const result = await this.connectionsSvc.add(this.personId(), data);
+      this.alertSvc.showSuccess('Connection added');
+      this.saved.emit(result);
+      this.resetForm();
+      this.closeDrawer.emit();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('already exists')) {
+        this.alertSvc.showError('A connection of this type already exists between these contacts.');
+      }
+    } finally {
+      this.isSaving.set(false);
+    }
+  }
+
+  protected onClose() {
+    this.resetForm();
+    this.closeDrawer.emit();
+  }
+
+  private resetForm() {
+    this.selectedPerson.set(null);
+    this.searchStr.set('');
+    this.searchResults.set([]);
+    this.relationType.set('close_friend');
+    this.customLabel.set('');
+    this.isMutual.set(false);
+    this.notes.set('');
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-connections.ts
+
+```typescript
+import { Component, inject, input, output, signal, OnInit } from '@angular/core';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { ConnectionCard } from './connection-card';
+import { AddConnectionDrawer } from './add-connection-drawer';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+@Component({
+  selector: 'pc-person-connections',
+  imports: [ConnectionCard, AddConnectionDrawer, Icon],
+  template: `
+    <div class="flex flex-col gap-4">
+      <!-- Header -->
+      <div class="flex items-center justify-between">
+        <h4 i18n class="font-semibold text-base-content/80">
+          Connections
+          @if (connections().length > 0) {
+            <span class="badge badge-sm badge-neutral ml-2">{{ connections().length }}</span>
+          }
+        </h4>
+        <button type="button" class="btn btn-sm btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          Add Connection
+        </button>
+      </div>
+
+      <!-- Loading skeleton -->
+      @if (isLoading()) {
+        <div class="flex flex-col gap-2">
+          <div class="skeleton h-16 w-full rounded-xl"></div>
+          <div class="skeleton h-16 w-full rounded-xl"></div>
+        </div>
+      } @else if (connections().length === 0) {
+        <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
+          No connections recorded. Add one to start mapping this contact's network.
+        </div>
+      } @else {
+        <div class="flex flex-col gap-2">
+          @for (conn of connections(); track conn.id) {
+            <pc-connection-card
+              [connection]="conn"
+              [currentPersonId]="personId()"
+              (remove)="onRemove($event)"
+            ></pc-connection-card>
+          }
+        </div>
+      }
+    </div>
+
+    <pc-add-connection-drawer
+      [personId]="personId()"
+      [isOpen]="showAddDrawer()"
+      (closeDrawer)="showAddDrawer.set(false)"
+      (saved)="onConnectionAdded()"
+    ></pc-add-connection-drawer>
+  `,
+})
+export class PersonConnections implements OnInit {
+  readonly personId = input.required<string>();
+  readonly countChange = output<number>();
+
+  private readonly connectionsSvc = inject(ConnectionsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly connections = signal<any[]>([]);
+  protected readonly showAddDrawer = signal(false);
+
+  public ngOnInit() {
+    void this.load();
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const result = await this.connectionsSvc.getForPerson(this.personId());
+      this.connections.set(result as any[]);
+      this.countChange.emit(result.length);
+    } catch {
+      // silently fail — tab stays empty
+    } finally {
+      end();
+    }
+  }
+
+  protected onConnectionAdded() {
+    void this.load();
+  }
+
+  protected async onRemove(id: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Connection',
+      message: 'Are you sure you want to remove this connection?',
+      confirmText: 'Remove',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.connectionsSvc.remove(id);
+      this.connections.update((list) => list.filter((c) => c.id !== id));
+      this.countChange.emit(this.connections().length);
+      this.alertSvc.showSuccess('Connection removed');
+    } catch {
+      this.alertSvc.showError('Failed to remove connection');
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import type { AddressType, Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInHousehold } from './people-in-household';
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../../households/services/households-service';
+import { PersonsService } from '../services/persons-service';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { DonationsService } from '../../../services/api/donations-service';
+import { EventsService } from '../../../services/api/events-service';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonConnections } from './person-connections';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
+import { PcIconNameType } from '@icons/icons.index';
+
+interface SocialLinkDef {
+  name: string;
+  url: string | null | undefined;
+  icon: PcIconNameType;
+  color: string;
+}
+
+@Component({
+  selector: 'pc-person-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    FormsModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    StatCard,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+    Tags,
+    PersonConnections,
+  ],
+  templateUrl: './person-view.html',
+})
+export class PersonView {
   readonly id = input.required<string>();
 
-  private readonly alerts = inject(AlertService);
-  private readonly lists = inject(ListsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  protected readonly donationsSvc = inject(DonationsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly dialogs = inject(ConfirmDialogService);
-  protected loading = signal<boolean>(false);
-  protected refreshing = signal<boolean>(false);
-  protected memberCount = signal<number>(0);
-  protected object = signal<'people' | 'households' | null>(null);
-  protected listData = signal<ListsType | null>(null);
-  protected stats = signal<any>(null);
-  // Active tab state
-  protected activeTab = signal<string>('members');
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly connectionsSvc = inject(ConnectionsService);
 
-  protected readonly listTabs = computed<PcTabOption[]>(() => [
-    { id: 'members', label: `Members (${this.memberCount()})`, icon: 'user-group' },
-    { id: 'newsletters', label: `Newsletter Campaigns (${this.stats()?.newsletters?.length || 0})`, icon: 'megaphone' },
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly person = signal<any | null>(null);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Analytics & Lists
+  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
+  protected readonly volunteerHistory = signal<any[]>([]);
+  protected readonly donationStats = signal<{
+    cumulativeAmount: number;
+    limitAmount: number;
+    remainingAmount: number;
+  } | null>(null);
+  protected readonly donationHistory = signal<any[]>([]);
+  protected readonly eventHistory = signal<any[]>([]);
+  protected readonly eventStats = signal<{ events_count: number } | null>(null);
+  protected readonly connectionCount = signal(0);
+  protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
+  protected readonly openedNewslettersCount = computed(() => {
+    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
+      .length;
+  });
+  protected readonly tags = signal<string[]>([]);
+  protected readonly issues = signal<string[]>([]);
+
+  // Donation Dialog State
+  protected readonly isCheckingEligibility = signal(false);
+  protected readonly donationAmount = signal<number | null>(null);
+  protected readonly showDonationModal = signal(false);
+  protected readonly eligibilityError = signal<string | null>(null);
+
+  // Address
+  protected readonly householdId = computed(() => this.person()?.household_id ?? null);
+  protected readonly householdResource = resource({
+    params: () => this.householdId(),
+    loader: async ({ params: householdId }) => {
+      if (!householdId) return null;
+      try {
+        return await this.householdsSvc.getById(householdId);
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  protected readonly addressString = computed(() => {
+    const hh = this.householdResource.value() as Households | null | undefined;
+    if (!hh || hh.is_placeholder) return 'No Address Assigned';
+    return this.getFormattedAddress(hh);
+  });
+  protected readonly isPlaceholderHousehold = computed(() => {
+    return (this.householdResource.value() as Households | null | undefined)?.is_placeholder ?? false;
+  });
+
+  // Contact initials and full name computation
+  protected readonly initials = computed(() => {
+    const first = this.person()?.first_name || '';
+    const last = this.person()?.last_name || '';
+    if (!first && !last) return '?';
+    return `${first.charAt(0)}${last.charAt(0)}`.toUpperCase();
+  });
+
+  protected readonly fullName = computed(() => {
+    const p = this.person();
+    if (!p) return '';
+    return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
+  });
+
+  // Social icons
+  public socialLinks = computed<SocialLinkDef[]>(() => {
+    const p = this.person();
+    return [
+      {
+        name: 'LinkedIn',
+        url: p.linkedin,
+        icon: 'linkedin',
+        color: 'bg-[#0a66c2]', // LinkedIn Blue
+      },
+      {
+        name: 'X',
+        url: p.twitter,
+        icon: 'x',
+        color: 'bg-black', // X Black
+      },
+      {
+        name: 'Facebook',
+        url: p.facebook,
+        icon: 'facebook',
+        color: 'bg-[#1877f2]', // Facebook Blue
+      },
+      {
+        name: 'Instagram',
+        url: p.instagram,
+        icon: 'instagram',
+        color: 'bg-[#e1306c]', // Instagram Pink/Red
+      },
+    ];
+  });
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly personTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
+    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
+    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
+    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
+    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
+    { id: 'household', label: 'Household', icon: 'home' },
   ]);
 
-  protected isPeople = computed(() => this.object() === 'people');
+  protected getMailStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'sent' || s === 'delivered') return 'success';
+    if (s === 'opened') return 'info';
+    if (s === 'read') return 'neutral';
+    return 'ghost';
+  }
+
+  protected getEmailEventType(eventType: string | null | undefined): any {
+    const et = String(eventType || '').toLowerCase();
+    if (et === 'open') return 'success';
+    if (et === 'click') return 'warning';
+    if (et === 'delivered' || et === 'processed') return 'info';
+    if (['bounce', 'dropped', 'spamreport', 'unsubscribe'].includes(et)) return 'error';
+    return 'ghost';
+  }
+
+  protected getShiftStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'signed_up') return 'warning';
+    if (s === 'no_show') return 'error';
+    return 'ghost';
+  }
+
+  protected getEventStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    if (s === 'attended') return 'success';
+    if (s === 'registered') return 'warning';
+    if (s === 'no_show') return 'error';
+    if (s === 'cancelled') return 'neutral';
+    return 'ghost';
+  }
 
   constructor() {
     effect(() => {
       const currentId = this.id();
-      untracked(() => {
-        if (currentId) void this.loadListDetails();
-      });
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
-  protected async loadListDetails(id = this.id()) {
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
     try {
-      this.loading.set(true);
+      // 1. Load person details
+      const personData = await this.personsSvc.getById(id);
+      this.person.set(personData);
 
-      const list = (await this.lists.getById(id)) as ListsType;
-      this.listData.set(list);
-      this.object.set(list.object as 'people' | 'households');
+      // 2. Load tags and issues
+      const tagList = await this.personsSvc.getTags(id, 'tag');
+      this.tags.set(tagList);
+      const issueList = await this.personsSvc.getTags(id, 'issue');
+      this.issues.set(issueList);
 
-      // Fetch list membership count efficiently
-      const count = await this.lists.getMemberCount(id);
-      this.memberCount.set(count);
-
-      // Fetch campaign stats and history
-      const statsData = await this.lists.getListStats(id);
-      this.stats.set(statsData);
-    } catch (_e) {
-      this.alerts.showError('Failed to load list details');
-    } finally {
-      this.loading.set(false);
-    }
-  }
-
-  private pollInterval: ReturnType<typeof setInterval> | null = null;
-
-  protected async refreshList() {
-    try {
-      this.refreshing.set(true);
-      await this.lists.refreshList(this.id());
-      this.alerts.showSuccess('Refresh job scheduled in background');
-      this.pollRefreshStatus();
-    } catch (e) {
-      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
-      this.refreshing.set(false);
-    }
-  }
-
-  private pollRefreshStatus() {
-    if (this.pollInterval) clearInterval(this.pollInterval);
-
-    this.pollInterval = setInterval(() => void this.pollStep(), 1500);
-  }
-
-  private async pollStep(): Promise<void> {
-    try {
-      const list = (await this.lists.getById(this.id())) as ListsType;
-      this.listData.set(list);
-      if (list.status !== 'refreshing') {
-        if (this.pollInterval) clearInterval(this.pollInterval);
-        this.pollInterval = null;
-        this.refreshing.set(false);
-        if (list.status === 'failed') {
-          this.alerts.showError('List refresh failed in background');
-        } else {
-          this.alerts.showSuccess('List refreshed successfully');
-        }
-        await this.loadListDetails();
+      // 3. Load volunteer stats and history
+      try {
+        const stats = await this.volunteerSvc.getVolunteerStats(id);
+        this.volunteerStats.set(stats);
+        const history = await this.volunteerSvc.getHistoryForPerson(id);
+        this.volunteerHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load volunteer details', err);
       }
-    } catch (_e) {
-      if (this.pollInterval) clearInterval(this.pollInterval);
-      this.pollInterval = null;
-      this.refreshing.set(false);
+
+      // 4. Load donations stats and history
+      try {
+        const stats = await this.donationsSvc.getStats(id);
+        this.donationStats.set(stats);
+        const history = await this.donationsSvc.getHistory(id);
+        this.donationHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load donations history', err);
+      }
+
+      // 5. Load event history
+      try {
+        const stats = await this.eventsSvc.getStatsForPerson(id);
+        this.eventStats.set(stats);
+        const history = await this.eventsSvc.getHistoryForPerson(id);
+        this.eventHistory.set(history || []);
+      } catch (err) {
+        console.error('Failed to load event history', err);
+      }
+
+      // 6. Load connection count (tab badge — full list loads lazily inside the tab)
+      try {
+        const count = await this.connectionsSvc.countForPerson(id);
+        this.connectionCount.set(count);
+      } catch (err) {
+        console.error('Failed to load connection count', err);
+      }
+
+      // Check query params for Stripe Checkout success redirects
+      const params = this.route.snapshot.queryParams;
+      if (params['checkout_success'] === 'true' && params['session_id']) {
+        try {
+          await this.donationsSvc.confirmDonation(params['session_id']);
+          this.alertSvc.showSuccess('Donation processed successfully! Thank you for your support.');
+          // Reload donation stats/history after confirmation
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to confirm stripe checkout session:', err);
+          this.alertSvc.showError('Finalizing payment verification...');
+        }
+      } else if (params['mock_donation_success'] === 'true' && params['session_id']) {
+        try {
+          const amt = Number(params['amount'] || 0);
+          await this.donationsSvc.confirmMockDonation({
+            personId: id,
+            amountCents: amt * 100,
+            sessionId: params['session_id'],
+            province: params['province'] || '',
+            country: params['country'] || '',
+          });
+          this.alertSvc.showSuccess('[MOCK] Donation recorded successfully!');
+          const stats = await this.donationsSvc.getStats(id);
+          this.donationStats.set(stats);
+          const history = await this.donationsSvc.getHistory(id);
+          this.donationHistory.set(history || []);
+          void this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+        } catch (err) {
+          console.error('Failed to record mock donation:', err);
+        }
+      }
+
+      // 5. Load interactions (emails + newsletters)
+      try {
+        const activity = await this.personsSvc.getActivity(id);
+        this.activityData.set(activity || { emails: [], newsletters: [] });
+      } catch (err) {
+        console.error('Failed to load activity log', err);
+      }
+    } catch (err) {
+      this.alertSvc.showError('Failed to load person details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
     }
   }
 
-  public ngOnDestroy() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+  protected openCollectDonation() {
+    this.donationAmount.set(null);
+    this.eligibilityError.set(null);
+    this.showDonationModal.set(true);
+  }
+
+  protected closeDonationModal() {
+    this.showDonationModal.set(false);
+  }
+
+  protected async submitDonation() {
+    const amt = this.donationAmount();
+    if (amt === null || amt <= 0) {
+      this.alertSvc.showError('Please specify a valid donation amount.');
+      return;
+    }
+
+    this.isCheckingEligibility.set(true);
+    this.eligibilityError.set(null);
+
+    const hh = this.householdResource.value() as Households | null | undefined;
+    const address = {
+      country: hh?.country || 'CA',
+      state: hh?.state || 'ON',
+    };
+
+    try {
+      const eligibility = await this.donationsSvc.checkEligibility({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (!eligibility.eligible) {
+        this.eligibilityError.set(eligibility.reason || 'Donor is ineligible to donate.');
+        this.isCheckingEligibility.set(false);
+        return;
+      }
+
+      this.closeDonationModal();
+      this.alertSvc.showSuccess('Redirecting to Stripe Checkout...');
+
+      // Redirect
+      const session = await this.donationsSvc.createCheckout({
+        personId: this.id(),
+        amountCents: amt * 100,
+        address,
+      });
+
+      if (session && session.url) {
+        window.location.href = session.url;
+      } else {
+        this.alertSvc.showError('Failed to initialize payment gateway.');
+      }
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Verification check failed.');
+    } finally {
+      this.isCheckingEligibility.set(false);
     }
   }
 
-  protected editList() {
+  protected editPerson() {
     void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
-  protected async deleteList() {
+  protected async deletePerson() {
     if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete List',
-      message: 'Are you sure you want to delete this list? This action cannot be undone.',
+      title: 'Delete Person',
+      message: 'Are you sure you want to delete this person? This action cannot be undone.',
       variant: 'danger',
       confirmText: 'Delete',
     });
     if (!confirmed) return;
-    this.loading.set(true);
+    const end = this._loading.begin();
     try {
-      await this.lists.delete(this.id());
-      this.lists.triggerRefresh();
-      this.alerts.showSuccess('List deleted');
-      await this.router.navigate(['/lists']);
+      await this.personsSvc.delete(this.id());
+      this.personsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Person deleted');
+      await this.router.navigate(['/people']);
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -42880,23 +39492,53 @@ export class ListView implements OnDestroy {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Unable to delete list';
-      this.alerts.showError(message);
+            : 'Unable to delete person';
+      this.alertSvc.showError(message);
     } finally {
-      this.loading.set(false);
+      end();
     }
   }
 
-  protected formatDate(value: Date | string | null | undefined): string {
-    if (!value) return '—';
-    const date = value instanceof Date ? value : new Date(value);
-    if (isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
   }
 
-  protected formatPercent(value: number | null | undefined): string {
-    if (value == null) return '0%';
-    return `${value.toFixed(1)}%`;
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+
+  protected navigateToHousehold() {
+    const household_id = this.householdId();
+    if (household_id) {
+      void this.router.navigate(['households', household_id]);
+    }
+  }
+
+  private getFormattedAddress(address: AddressType): string {
+    const parts: string[] = [];
+    const streetParts = [
+      address.apt ? `Apt ${address.apt}` : null,
+      address.street_num,
+      address.street1,
+      address.street2,
+    ].filter(Boolean);
+
+    const locationParts = [address.city, address.state, address.zip, address.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    const formatted = parts.join(', ').trim();
+    return formatted || 'No Address Assigned';
   }
 }
 
@@ -42905,207 +39547,1037 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
 
 ```typescript
-import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
-import { UpdateListType } from '../../../../../../../libs/common/src';
-import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
-import { ListsService } from '@experiences/lists/services/lists-service';
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
 @Component({
-  selector: 'pc-lists-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Lists"
-        i18n-title
-        description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [allowFilter]="false"
-        plusIcon="add-list"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-  `,
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  templateUrl: './persons-grid.html',
   providers: [
-    { provide: AbstractAPIService, useExisting: ListsService },
-    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
   ],
 })
-export class ListsGridComponent implements OnDestroy {
-  private readonly refreshSvc = inject(ListsRefreshService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly alerts = inject(AlertService);
-  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
 
-  constructor() {
-    effect(() => {
-      const count = this.refreshSvc.refreshCount();
-      if (count > 0) {
-        void untracked(() => this.grid()?.refresh());
-      }
-    });
-  }
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
 
-  protected col = [
-    { field: 'name', headerName: 'List Name', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'object',
-      headerName: 'Target Object',
-      valueFormatter: (p: any) => {
-        const val = p?.value;
-        if (val === 'people') return 'People';
-        if (val === 'households') return 'Households';
-        return val ?? '—';
-      },
-    },
-    {
-      field: 'is_dynamic',
-      headerName: 'List Type',
-      cellRenderer: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
-        return isDynamic
-          ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
-          : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
-      },
-    },
-    {
-      field: 'list_size',
-      headerName: 'Size',
-      valueFormatter: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
-        if (isDynamic === true || isDynamic === 'true' || isDynamic === 1) {
-          return 'N/A';
-        }
-        return p?.value ?? 0;
-      },
-    },
-    {
-      field: 'last_refreshed_at',
-      headerName: 'Last Refreshed',
-      valueFormatter: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
-        if (!isDynamic) return '—';
-        if (!p?.value) return 'Never';
-        const date = new Date(p.value);
-        if (isNaN(date.getTime())) return 'Never';
-        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-      },
-    },
-    {
-      field: 'refresh_action',
-      headerName: 'Refresh',
-      cellRenderer: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
-        if (!isDynamic) return '—';
-        const status = p?.data?.status;
-        const isLocallyRefreshing = this.refreshingIds.has(p?.data?.id);
-        if (status === 'refreshing' || isLocallyRefreshing) {
-          return `
-            <div class="flex items-center justify-center h-full w-full">
-              <span class="loading loading-ring loading-lg text-primary"></span>
-            </div>
-          `;
-        }
-        return `
-          <div class="flex items-center justify-center h-full w-full">
-            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh dynamic list">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-            </button>
-          </div>
-        `;
-      },
-      onCellClicked: (p: any) => {
-        const isDynamic = p?.data?.is_dynamic;
-        const id = p?.data?.id;
-        const isRefreshing = p?.data?.status === 'refreshing' || this.refreshingIds.has(id);
-        if (isDynamic && !isRefreshing) {
-          void this.refreshList(id, p);
-        }
-      },
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Last Updated',
-      valueFormatter: (p: any) => {
-        if (!p?.value) return '—';
-        const date = new Date(p.value);
-        if (isNaN(date.getTime())) return '—';
-        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-      },
-    },
-    { field: 'created_by', headerName: 'Created By' },
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected readonly mappableFields = [
+    'first_name',
+    'middle_names',
+    'last_name',
+    'email',
+    'email2',
+    'mobile',
+    'home_phone',
+    'street_num',
+    'street1',
+    'street2',
+    'apt',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'notes',
   ];
 
-  private readonly refreshingIds = new Set<string>();
+  protected col: ColDef[] = [
+    { field: 'first_name', headerName: 'First Name', editable: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true },
+    { field: 'email', headerName: 'Email', editable: true },
+    { field: 'mobile', headerName: 'Mobile', editable: true },
+    { field: 'company_name', headerName: 'Company', editable: false },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        return parts.join(', ').trim() || 'No household assigned';
+      },
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
 
-  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+  // Generic CSV importer integration
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
 
-  private async refreshList(id: string, cellParams: any) {
+  public listId = input<string | null>(null);
+
+  protected readonly narrowTypeOptions = [
+    { label: 'All', value: null, tags: [] },
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+    { label: 'Donors', value: 'donor', tags: ['donor'] },
+  ];
+
+  protected tagsInput = '';
+
+  public ngOnInit() {
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
     try {
-      this.refreshingIds.add(id);
-      // Re-render the cell immediately to show the loading spinner.
-      cellParams?.api?.refreshCells({ rowNodes: [cellParams.node], columns: ['refresh_action'], force: true });
-
-      this.alerts.showSuccess('Refresh job scheduled in background');
-      await this.listsSvc.refreshList(id);
-      this.pollRefreshStatus(id);
-    } catch (e) {
-      this.refreshingIds.delete(id);
-      cellParams?.api?.refreshCells({ rowNodes: [cellParams.node], columns: ['refresh_action'], force: true });
-      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      // Any logic that depends on this data should go here
+    } catch (error) {
+      console.error('Initialization failed', error);
     }
   }
 
-  private pollRefreshStatus(id: string) {
-    const existing = this.pollIntervals.get(id);
-    if (existing) clearInterval(existing);
-
-    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
-
-    this.pollIntervals.set(id, interval);
-  }
-
-  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
+  private async loadTagOptions() {
     try {
-      const list = await this.listsSvc.getById(id);
-      if ((list as any)?.status !== 'refreshing') {
-        clearInterval(interval);
-        this.pollIntervals.delete(id);
-        this.refreshingIds.delete(id);
-        if ((list as any)?.status === 'failed') {
-          this.alerts.showError('List refresh failed in background');
-        } else {
-          this.alerts.showSuccess('List refreshed successfully');
-        }
-        void this.grid()?.refresh();
-      }
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
     } catch {
-      clearInterval(interval);
-      this.pollIntervals.delete(id);
-      this.refreshingIds.delete(id);
+      this.tagOptionValues = [];
     }
   }
 
-  public ngOnDestroy() {
-    for (const interval of this.pollIntervals.values()) {
-      clearInterval(interval);
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
     }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  // paging/preview managed by CsvImportComponent
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // --- Import CSV Flow ---
+  protected openImportDialog() {
+    // Clear any prior summary to avoid stale dialogs
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
+    this.importerOpen.set(true);
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+    const inputTags = this.tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => !!t);
+    const tags = inputTags;
+
+    try {
+      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        tag: res?.tag ?? undefined,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  public autoMapHeader(h: string): string {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      firstname: 'first_name',
+      fname: 'first_name',
+      middlename: 'middle_names',
+      lastname: 'last_name',
+      lname: 'last_name',
+      name: 'first_name',
+      email: 'email',
+      emailaddress: 'email',
+      email1address: 'email',
+      email2: 'email2',
+      email2address: 'email2',
+      mobile: 'mobile',
+      mobilephone: 'mobile',
+      cellphone: 'mobile',
+      primaryphone: 'mobile',
+      businessphone: 'mobile',
+      homephone: 'home_phone',
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      homecity: 'city',
+      homestate: 'state',
+      homepostalcode: 'zip',
+      homecountry: 'country',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      businesscity: 'city',
+      businessstate: 'state',
+      businesspostalcode: 'zip',
+      businesscountry: 'country',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
+
+```typescript
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { SettingsService } from '../services/settings-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { TokenService } from '../../../services/api/token-service';
+import { environment } from '../../../../environments/environment';
+import { DonationsService } from '../../../services/api/donations-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+export interface TaxCreditTier {
+  limit: number;
+  rate: number;
+}
+
+export interface DonationPeriod {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string | null;
+  limit_amount: number;
+  is_active: boolean;
+}
+
+@Component({
+  selector: 'pc-donations-settings',
+  imports: [FormsModule, Icon],
+  templateUrl: './donations-settings.html',
+})
+export class DonationsSettingsComponent implements OnInit {
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly stripeSecretKey = signal('');
+  protected readonly stripeWebhookSecret = signal('');
+  protected readonly donationLimit = signal(1000);
+  protected readonly restrictResidency = signal(false);
+  protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
+  protected readonly webhookToken = signal('');
+
+  // Donation periods
+  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
+  protected readonly showAddPeriod = signal(false);
+  protected readonly newPeriodName = signal('');
+  protected readonly newPeriodStartDate = signal('');
+  protected readonly newPeriodEndDate = signal('');
+  protected readonly newPeriodLimit = signal<number>(1000);
+  protected readonly isSavingPeriod = signal(false);
+
+  // New multi-country autocomplete & states checkboxes
+  protected readonly selectedCountries = signal<string[]>([]);
+  protected readonly selectedRegions = signal<string[]>([]);
+
+  protected readonly countrySearch = signal('');
+  protected readonly showCountryDropdown = signal(false);
+
+  protected readonly allCountries = [
+    { code: 'CA', name: 'Canada' },
+    { code: 'US', name: 'United States' },
+    { code: 'GB', name: 'United Kingdom' },
+    { code: 'AU', name: 'Australia' },
+    { code: 'NZ', name: 'New Zealand' },
+    { code: 'FR', name: 'France' },
+    { code: 'DE', name: 'Germany' },
+    { code: 'IN', name: 'India' },
+    { code: 'IT', name: 'Italy' },
+    { code: 'ES', name: 'Spain' },
+    { code: 'NL', name: 'Netherlands' },
+  ];
+
+  protected readonly canadaProvinces = [
+    { code: 'ON', name: 'Ontario' },
+    { code: 'QC', name: 'Quebec' },
+    { code: 'BC', name: 'British Columbia' },
+    { code: 'AB', name: 'Alberta' },
+    { code: 'MB', name: 'Manitoba' },
+    { code: 'SK', name: 'Saskatchewan' },
+    { code: 'NS', name: 'Nova Scotia' },
+    { code: 'NB', name: 'New Brunswick' },
+    { code: 'NL', name: 'Newfoundland and Labrador' },
+    { code: 'PE', name: 'Prince Edward Island' },
+    { code: 'NT', name: 'Northwest Territories' },
+    { code: 'YT', name: 'Yukon' },
+    { code: 'NU', name: 'Nunavut' },
+  ];
+
+  protected readonly usStates = [
+    { code: 'AL', name: 'Alabama' },
+    { code: 'AK', name: 'Alaska' },
+    { code: 'AZ', name: 'Arizona' },
+    { code: 'AR', name: 'Arkansas' },
+    { code: 'CA', name: 'California' },
+    { code: 'CO', name: 'Colorado' },
+    { code: 'CT', name: 'Connecticut' },
+    { code: 'DE', name: 'Delaware' },
+    { code: 'FL', name: 'Florida' },
+    { code: 'GA', name: 'Georgia' },
+    { code: 'HI', name: 'Hawaii' },
+    { code: 'ID', name: 'Idaho' },
+    { code: 'IL', name: 'Illinois' },
+    { code: 'IN', name: 'Indiana' },
+    { code: 'IA', name: 'Iowa' },
+    { code: 'KS', name: 'Kansas' },
+    { code: 'KY', name: 'Kentucky' },
+    { code: 'LA', name: 'Louisiana' },
+    { code: 'ME', name: 'Maine' },
+    { code: 'MD', name: 'Maryland' },
+    { code: 'MA', name: 'Massachusetts' },
+    { code: 'MI', name: 'Michigan' },
+    { code: 'MN', name: 'Minnesota' },
+    { code: 'MS', name: 'Mississippi' },
+    { code: 'MO', name: 'Missouri' },
+    { code: 'MT', name: 'Montana' },
+    { code: 'NE', name: 'Nebraska' },
+    { code: 'NV', name: 'Nevada' },
+    { code: 'NH', name: 'New Hampshire' },
+    { code: 'NJ', name: 'New Jersey' },
+    { code: 'NM', name: 'New Mexico' },
+    { code: 'NY', name: 'New York' },
+    { code: 'NC', name: 'North Carolina' },
+    { code: 'ND', name: 'North Dakota' },
+    { code: 'OH', name: 'Ohio' },
+    { code: 'OK', name: 'Oklahoma' },
+    { code: 'OR', name: 'Oregon' },
+    { code: 'PA', name: 'Pennsylvania' },
+    { code: 'RI', name: 'Rhode Island' },
+    { code: 'SC', name: 'South Carolina' },
+    { code: 'SD', name: 'South Dakota' },
+    { code: 'TN', name: 'Tennessee' },
+    { code: 'TX', name: 'Texas' },
+    { code: 'UT', name: 'Utah' },
+    { code: 'VT', name: 'Vermont' },
+    { code: 'VA', name: 'Virginia' },
+    { code: 'WA', name: 'Washington' },
+    { code: 'WV', name: 'West Virginia' },
+    { code: 'WI', name: 'Wisconsin' },
+    { code: 'WY', name: 'Wyoming' },
+  ];
+
+  protected readonly germanyStates = [
+    { code: 'DE-BW', name: 'Baden-Württemberg' },
+    { code: 'DE-BY', name: 'Bavaria' },
+    { code: 'DE-BE', name: 'Berlin' },
+    { code: 'DE-BB', name: 'Brandenburg' },
+    { code: 'DE-HB', name: 'Bremen' },
+    { code: 'DE-HH', name: 'Hamburg' },
+    { code: 'DE-HE', name: 'Hesse' },
+    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
+    { code: 'DE-NI', name: 'Lower Saxony' },
+    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
+    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
+    { code: 'DE-SL', name: 'Saarland' },
+    { code: 'DE-SN', name: 'Saxony' },
+    { code: 'DE-ST', name: 'Saxony-Anhalt' },
+    { code: 'DE-SH', name: 'Schleswig-Holstein' },
+    { code: 'DE-TH', name: 'Thuringia' },
+  ];
+
+  protected readonly franceRegions = [
+    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
+    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
+    { code: 'FR-BRE', name: 'Brittany' },
+    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
+    { code: 'FR-COR', name: 'Corsica' },
+    { code: 'FR-GES', name: 'Grand Est' },
+    { code: 'FR-HDF', name: 'Hauts-de-France' },
+    { code: 'FR-IDF', name: 'Île-de-France' },
+    { code: 'FR-NOR', name: 'Normandy' },
+    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
+    { code: 'FR-OCC', name: 'Occitania' },
+    { code: 'FR-PDL', name: 'Pays de la Loire' },
+    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
+  ];
+
+  protected readonly indiaStates = [
+    { code: 'IN-AP', name: 'Andhra Pradesh' },
+    { code: 'IN-AR', name: 'Arunachal Pradesh' },
+    { code: 'IN-AS', name: 'Assam' },
+    { code: 'IN-BR', name: 'Bihar' },
+    { code: 'IN-CG', name: 'Chhattisgarh' },
+    { code: 'IN-GA', name: 'Goa' },
+    { code: 'IN-GJ', name: 'Gujarat' },
+    { code: 'IN-HR', name: 'Haryana' },
+    { code: 'IN-HP', name: 'Himachal Pradesh' },
+    { code: 'IN-JH', name: 'Jharkhand' },
+    { code: 'IN-KA', name: 'Karnataka' },
+    { code: 'IN-KL', name: 'Kerala' },
+    { code: 'IN-MP', name: 'Madhya Pradesh' },
+    { code: 'IN-MH', name: 'Maharashtra' },
+    { code: 'IN-MN', name: 'Manipur' },
+    { code: 'IN-ML', name: 'Meghalaya' },
+    { code: 'IN-MZ', name: 'Mizoram' },
+    { code: 'IN-NL', name: 'Nagaland' },
+    { code: 'IN-OD', name: 'Odisha' },
+    { code: 'IN-PB', name: 'Punjab' },
+    { code: 'IN-RJ', name: 'Rajasthan' },
+    { code: 'IN-SK', name: 'Sikkim' },
+    { code: 'IN-TN', name: 'Tamil Nadu' },
+    { code: 'IN-TG', name: 'Telangana' },
+    { code: 'IN-TR', name: 'Tripura' },
+    { code: 'IN-UP', name: 'Uttar Pradesh' },
+    { code: 'IN-UT', name: 'Uttarakhand' },
+    { code: 'IN-WB', name: 'West Bengal' },
+    { code: 'IN-DL', name: 'Delhi (UT)' },
+    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
+    { code: 'IN-LA', name: 'Ladakh (UT)' },
+    { code: 'IN-PY', name: 'Puducherry (UT)' },
+  ];
+
+  // Tiers editing inputs
+  protected readonly newLimit = signal<number | null>(null);
+  protected readonly newRate = signal<number | null>(null);
+
+  protected readonly isSaving = signal(false);
+
+  protected readonly tenantId = computed(() => {
+    const token = this.tokenSvc.getAuthToken();
+    if (!token) return '';
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]!));
+        return String(payload.tenant_id || '');
+      }
+    } catch (e) {
+      console.error('Failed to parse auth token payload', e);
+    }
+    return '';
+  });
+
+  protected readonly webhookUrl = computed(() => {
+    const token = this.webhookToken();
+    if (!token) return 'Loading Webhook URL...';
+    const base = environment.apiUrl.replace(/\/$/, '');
+    return `${base}/api/donations/webhook?token=${token}`;
+  });
+
+  protected readonly availableCountriesToSelect = computed(() => {
+    const search = this.countrySearch().toLowerCase().trim();
+    const selected = new Set(this.selectedCountries());
+    return this.allCountries.filter(
+      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
+    );
+  });
+
+  protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
+  protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
+  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
+  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
+  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
+
+  // Plain-language calculation summary
+  protected readonly taxCreditSummary = computed(() => {
+    const sorted = [...this.taxCreditTiers()].sort((a, b) => a.limit - b.limit);
+    if (sorted.length === 0) {
+      return ['No tax credit tiers defined. Donations will not receive any tax credit.'];
+    }
+
+    const lines: string[] = [];
+    let previousLimit = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const tier = sorted[i]!;
+      const ratePct = Math.round(tier.rate * 100);
+
+      if (i === 0) {
+        lines.push(`${ratePct}% credit on the first $${tier.limit} donated.`);
+      } else {
+        const range = `$${previousLimit + 1} to $${tier.limit}`;
+        lines.push(`${ratePct}% credit on the next $${tier.limit - previousLimit} donated (amounts from ${range}).`);
+      }
+      previousLimit = tier.limit;
+    }
+
+    lines.push(`0% credit on any amounts exceeding $${previousLimit}.`);
+    return lines;
+  });
+
+  ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.settingsSvc.load();
+    this.loadValues();
+    await this.loadPeriods();
+  }
+
+  private async loadPeriods() {
+    try {
+      const periods = await this.donationsSvc.getDonationPeriods();
+      this.donationPeriods.set(periods as any);
+    } catch {
+      // non-fatal — periods table may not exist yet if migration hasn't run
+    }
+  }
+
+  protected async addPeriod() {
+    const name = this.newPeriodName().trim();
+    const start = this.newPeriodStartDate().trim();
+    const limit = Number(this.newPeriodLimit());
+
+    if (!name) {
+      this.alerts.showError('Period name is required');
+      return;
+    }
+    if (!start) {
+      this.alerts.showError('Start date is required');
+      return;
+    }
+    if (!limit || limit <= 0) {
+      this.alerts.showError('Limit amount must be greater than 0');
+      return;
+    }
+
+    const endDate = this.newPeriodEndDate().trim() || null;
+    if (endDate && endDate <= start) {
+      this.alerts.showError('End date must be after start date');
+      return;
+    }
+
+    this.isSavingPeriod.set(true);
+    try {
+      await this.donationsSvc.createDonationPeriod({
+        name,
+        start_date: start,
+        end_date: endDate,
+        limit_amount: limit * 100,
+      });
+      this.alerts.showSuccess(`Donation period "${name}" created`);
+      this.newPeriodName.set('');
+      this.newPeriodStartDate.set('');
+      this.newPeriodEndDate.set('');
+      this.newPeriodLimit.set(1000);
+      this.showAddPeriod.set(false);
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
+    } finally {
+      this.isSavingPeriod.set(false);
+    }
+  }
+
+  protected async togglePeriodActive(period: DonationPeriod) {
+    try {
+      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
+    }
+  }
+
+  protected async deletePeriod(period: DonationPeriod) {
+    const confirmed = await this.dialogs.confirm({
+      title: `Delete period "${period.name}"?`,
+      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.donationsSvc.deleteDonationPeriod(period.id);
+      this.alerts.showSuccess('Period deleted');
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
+    }
+  }
+
+  protected formatDate(dateStr: string | null): string {
+    if (!dateStr) return 'No end date';
+    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  protected isPeriodActive(period: DonationPeriod): boolean {
+    const today = new Date().toISOString().slice(0, 10);
+    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
+  }
+
+  private loadValues() {
+    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
+    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
+    this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
+    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
+
+    // Load countries
+    const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
+    const parsedCountries = countriesStr
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    this.selectedCountries.set(parsedCountries);
+
+    // Load regions (provinces / states)
+    const regionsStr = this.settingsSvc.getValue<string>('donations.allowed_regions', 'ON');
+    const parsedRegions = regionsStr
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    this.selectedRegions.set(parsedRegions);
+
+    // Load tax tiers
+    const tiersRaw = this.settingsSvc.getValue<any>('donations.tax_credit_tiers', []);
+    let parsedTiers: TaxCreditTier[] = [];
+    if (typeof tiersRaw === 'string') {
+      try {
+        parsedTiers = JSON.parse(tiersRaw);
+      } catch {
+        parsedTiers = [];
+      }
+    } else if (Array.isArray(tiersRaw)) {
+      parsedTiers = tiersRaw;
+    }
+    this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
+
+    // Load or generate webhook token
+    let token = this.settingsSvc.getValue<string>('donations.webhook_token', '');
+    if (!token) {
+      token = 'wt_' + Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    }
+    this.webhookToken.set(token);
+  }
+
+  protected selectCountry(country: { code: string; name: string }) {
+    this.selectedCountries.update((list) => [...list, country.code]);
+    this.countrySearch.set('');
+    this.showCountryDropdown.set(false);
+  }
+
+  protected removeCountry(code: string) {
+    this.selectedCountries.update((list) => list.filter((c) => c !== code));
+    // Clean up regions for removed countries
+    if (code === 'CA') {
+      const provinceCodes = new Set(this.canadaProvinces.map((p) => p.code));
+      this.selectedRegions.update((list) => list.filter((r) => !provinceCodes.has(r)));
+    } else if (code === 'US') {
+      const stateCodes = new Set(this.usStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'DE') {
+      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'FR') {
+      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
+      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
+    } else if (code === 'IN') {
+      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    }
+  }
+
+  protected toggleRegion(code: string) {
+    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
+  }
+
+  protected getCountryName(code: string): string {
+    const found = this.allCountries.find((c) => c.code === code);
+    return found ? found.name : code;
+  }
+
+  protected addTier() {
+    const limit = this.newLimit();
+    const rateInput = this.newRate();
+
+    if (limit === null || limit <= 0) {
+      this.alerts.showError('Limit must be greater than 0');
+      return;
+    }
+    if (rateInput === null || rateInput < 0 || rateInput > 100) {
+      this.alerts.showError('Rate must be between 0% and 100%');
+      return;
+    }
+
+    const rate = rateInput / 100;
+
+    const current = this.taxCreditTiers();
+    if (current.some((t) => t.limit === limit)) {
+      this.alerts.showError('A tier with this limit already exists');
+      return;
+    }
+
+    const updated = [...current, { limit, rate }].sort((a, b) => a.limit - b.limit);
+    this.taxCreditTiers.set(updated);
+
+    this.newLimit.set(null);
+    this.newRate.set(null);
+  }
+
+  protected removeTier(index: number) {
+    const updated = this.taxCreditTiers().filter((_, i) => i !== index);
+    this.taxCreditTiers.set(updated);
+  }
+
+  protected reset() {
+    this.loadValues();
+    this.alerts.showSuccess('Settings reset to saved values');
+  }
+
+  protected async save() {
+    this.isSaving.set(true);
+    try {
+      const entries = [
+        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
+        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
+        { key: 'donations.limit', value: Number(this.donationLimit()) },
+        { key: 'donations.restrict_residency', value: this.restrictResidency() },
+        { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
+        { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
+        { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
+        { key: 'donations.webhook_token', value: this.webhookToken() },
+      ];
+
+      await this.settingsSvc.upsert(entries);
+      this.alerts.showSuccess('Donations configuration saved successfully');
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
+      );
+    } finally {
+      this.isSaving.set(false);
+    }
+  }
+
+  protected copyWebhookUrl() {
+    navigator.clipboard
+      .writeText(this.webhookUrl())
+      .then(() => this.alerts.showSuccess('Webhook URL copied!'))
+      .catch(() => this.alerts.showError('Failed to copy webhook URL'));
   }
 }
 ```
@@ -43288,118 +40760,212 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.ts
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
 import { Icon } from '@icons/icon';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { ShiftsService } from '../services/shifts-service';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { environment } from '../../../../environments/environment';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
+
+import {
+  AddVolunteerEventObj,
+  AddVolunteerEventType,
+  UpdateVolunteerEventType,
+} from '../../../../../../../libs/common/src';
+import { environment } from '../../../../environments/environment';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ShiftsService } from '../services/shifts-service';
 
 @Component({
-  selector: 'pc-shift-view',
+  selector: 'pc-shift-form',
   imports: [
     DatePipe,
+    FormsModule,
+    FormField,
+    PcInput,
+    PcTextarea,
     RouterModule,
     Icon,
-    RecordActivities,
-    DetailLayout,
-    Tabs,
-    TabPanel,
-    StatusBadge,
-    StatCard,
-    ProfileCard,
-    DetailRow,
+    PcDetailHeader,
+    PcEntityOverview,
     PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
   ],
-  templateUrl: './shift-view.html',
+  templateUrl: './shift-form.html',
   providers: [VolunteerService],
 })
-export class ShiftViewComponent {
-  readonly id = input.required<string>();
-
-  private readonly alertSvc = inject(AlertService);
+export class ShiftFormComponent implements OnInit {
+  private readonly _loading = createLoadingGate();
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly router = inject(Router);
   private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly event = signal<any | null>(null);
-  protected readonly roster = signal<any[]>([]);
 
-  // Active tab state
-  protected activeTab = signal<string>('roster');
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  protected readonly eventTabs = computed<PcTabOption[]>(() => [
-    { id: 'roster', label: `Volunteer Roster (${this.roster().length})`, icon: 'user-group' },
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-  ]);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return `${environment.apiUrl}/api/events/view/${slug}`;
+  });
 
+  protected readonly allVolunteers = signal<any[]>([]);
+  protected readonly detail = signal<any>(null);
+  protected readonly payload = signal({
+    name: '',
+    slug: '',
+    description: '',
+    location_address: '',
+    start_time: '',
+    end_time: '',
+    capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_private: false,
+    send_reminder: true,
+    send_signup_confirmation: true,
+    send_volunteer_alert: true,
+  });
+  protected readonly endBeforeStartError = computed(() => {
+    const { start_time, end_time } = this.payload();
+    if (!start_time || !end_time) return false;
+    return new Date(end_time) <= new Date(start_time);
+  });
+  protected readonly environment = environment;
+  protected readonly error = signal<string | null>(null);
   protected readonly eventPassed = computed(() => {
-    const end = this.event()?.end_time;
+    const end = this.payload().end_time;
     if (!end) return false;
     return new Date(end) < new Date();
   });
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddVolunteerEventObj);
+  });
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly loading = this._loading.visible;
 
-  protected readonly remainingCapacity = computed(() => {
-    const detail = this.event();
-    if (!detail || detail.capacity === null || detail.capacity === undefined) {
-      return 'Unlimited';
-    }
-    const count = this.roster().length;
-    return Math.max(0, detail.capacity - count);
+  // Roster state
+  protected readonly roster = signal<any[]>([]);
+  protected readonly saving = signal(false);
+  protected readonly slugChecking = signal(false);
+  protected readonly slugUnique = signal<boolean | null>(null);
+  protected readonly volunteerSearch = signal('');
+
+  // Filter out volunteers that are already signed up
+  protected readonly volunteerSearchResults = computed(() => {
+    const search = this.volunteerSearch().toLowerCase().trim();
+    if (!search) return [];
+
+    const rosterIds = new Set(this.roster().map((r) => String(r.person_id)));
+    return this.allVolunteers().filter((v) => {
+      if (rosterIds.has(String(v.id))) return false;
+      const fullName = `${v.first_name || ''} ${v.last_name || ''}`.toLowerCase();
+      const email = (v.email || '').toLowerCase();
+      return fullName.includes(search) || email.includes(search);
+    });
   });
 
-  protected readonly publicUrl = computed(() => {
-    const detail = this.event();
-    if (!detail || !detail.public_url) return '';
-    return environment.apiUrl + detail.public_url;
-  });
+  protected slugManuallyEdited = false;
+
+  public readonly id = input<string>();
 
   constructor() {
+    const nameSignal = computed(() => this.payload().name);
     effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
+      const name = nameSignal();
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        if (untracked(this.payload).slug !== suggested) {
+          this.payload.update((p) => ({
+            ...p,
+            slug: suggested,
+          }));
+        }
+      }
+    });
+
+    const slugSignal = computed(() => this.payload().slug);
+    effect(() => {
+      const slug = slugSignal();
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
+
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
+
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
+            if (untracked(slugSignal) === slug) {
+              this.slugUnique.set(res.unique);
+            }
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (untracked(slugSignal) === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
     });
   }
 
-  protected async loadAllData(id: string) {
+  public ngOnInit(): void {
     const end = this._loading.begin();
     try {
-      // 1. Load Event details
-      const detail = await this.volunteerEventsSvc.getById(id);
-      this.event.set(detail);
-
-      // 2. Load associated shifts/roster
-      const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
-      this.roster.set(rosterData || []);
-    } catch (err) {
-      this.alertSvc.showError('Failed to load event details: ' + String(err));
-    } finally {
+      void Promise.all([this.loadVolunteers(), this.loadEvent()]).finally(() => end());
+    } catch {
       end();
-      this.initialized.set(true);
     }
   }
 
-  protected editEvent() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
+  // Roster Management
+  protected async addVolunteer(person: any) {
+    try {
+      await this.volunteerSvc.signupVolunteer({
+        event_id: this.id()!,
+        person_id: String(person.id),
+        status: 'signed_up',
+      });
+      this.volunteerSearch.set('');
+      this.alerts.showSuccess(`${person.first_name} added to roster`);
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
+    }
+  }
+
+  protected copyToClipboard(url: string) {
+    navigator.clipboard
+      .writeText(url)
+      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
+      .catch((err) => console.error('Failed to copy', err));
   }
 
   protected async deleteEvent() {
@@ -43411,56 +40977,227 @@ export class ShiftViewComponent {
       confirmText: 'Delete',
     });
     if (!confirmed) return;
-    const end = this._loading.begin();
+
+    this.saving.set(true);
     try {
-      await this.volunteerEventsSvc.delete(this.id());
+      await this.volunteerEventsSvc.delete(this.id()!);
       this.volunteerEventsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Event deleted');
+      this.alerts.showSuccess('Event deleted');
       await this.router.navigate(['/events/shifts']);
     } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete event';
-      this.alertSvc.showError(message);
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
     } finally {
-      end();
+      this.saving.set(false);
     }
   }
 
-  protected copySnippet(): void {
-    const url = this.publicUrl();
-    if (!url) return;
-    navigator.clipboard.writeText(url).then(
-      () => this.alertSvc.showSuccess('Public signup link copied to clipboard!'),
-      () => this.alertSvc.showError('Failed to copy to clipboard.'),
-    );
-  }
+  protected async loadEvent() {
+    if (this.isNew()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const event = state.cloneData;
+        this.payload.set({
+          name: event.name ? `${event.name} (Copy)` : '',
+          slug: event.slug ? `${event.slug}-copy` : '',
+          description: event.description ?? '',
+          location_address: event.location_address ?? '',
+          start_time: this.toDatetimeLocalString(event.start_time),
+          end_time: this.toDatetimeLocalString(event.end_time),
+          capacity: event.capacity ?? null,
+          contact_email: event.contact_email ?? '',
+          contact_phone: event.contact_phone ?? '',
+          is_private: !!event.is_private,
+          send_reminder: event.send_reminder !== false,
+          send_signup_confirmation: event.send_signup_confirmation !== false,
+          send_volunteer_alert: event.send_volunteer_alert !== false,
+        });
+      }
+      return;
+    }
 
-  protected getStatusType(status: string | null | undefined): any {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'attended':
-        return 'success';
-      case 'signed_up':
-        return 'warning';
-      case 'no_show':
-        return 'error';
-      case 'cancelled':
-        return 'neutral';
-      default:
-        return 'ghost';
+    try {
+      const event = await this.volunteerEventsSvc.getById(this.id()!);
+      this.detail.set(event);
+      this.payload.set({
+        name: event.name ?? '',
+        slug: event.slug ?? '',
+        description: event.description ?? '',
+        location_address: event.location_address ?? '',
+        start_time: this.toDatetimeLocalString(event.start_time),
+        end_time: this.toDatetimeLocalString(event.end_time),
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? '',
+        contact_phone: event.contact_phone ?? '',
+        is_private: !!event.is_private,
+        send_reminder: event.send_reminder !== false,
+        send_signup_confirmation: event.send_signup_confirmation !== false,
+        send_volunteer_alert: event.send_volunteer_alert !== false,
+      });
+
+      if (Array.isArray((event as any).fields) && (event as any).fields.length > 0) {
+        this.selectedFields.set((event as any).fields);
+      }
+
+      await this.loadRoster();
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
+      this.alerts.showError(this.error()!);
     }
   }
-}
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  protected async loadRoster() {
+    if (!this.id()) return;
+    try {
+      const roster = await this.volunteerSvc.getShiftsForEvent(this.id()!);
+      this.roster.set(roster || []);
+    } catch (err) {
+      console.error('Failed to load event roster', err);
+    }
+  }
+
+  protected async loadVolunteers() {
+    try {
+      const res = await this.personsSvc.getAll({ limit: 1000, tags: ['volunteer'] });
+      this.allVolunteers.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load volunteers', err);
+    }
+  }
+
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
+
+  protected async removeVolunteer(shift: any) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Volunteer',
+      message: 'Remove this person from the event roster?',
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+    try {
+      await this.volunteerSvc.deleteShift(shift.id);
+      this.alerts.showSuccess('Volunteer removed');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
+    }
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    if (this.endBeforeStartError()) {
+      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
+      return;
+    }
+
+    if (this.slugUnique() === false) {
+      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    const raw = this.payload();
+    const data = {
+      name: raw.name.trim(),
+      slug: raw.slug.trim(),
+      description: raw.description?.trim() || null,
+      location_address: raw.location_address?.trim() || null,
+      start_time: new Date(raw.start_time),
+      end_time: new Date(raw.end_time),
+      capacity: raw.capacity ? Number(raw.capacity) : null,
+      contact_email: raw.contact_email?.trim() || null,
+      contact_phone: raw.contact_phone?.trim() || null,
+      is_private: !!raw.is_private,
+      send_reminder: !!raw.send_reminder,
+      send_signup_confirmation: !!raw.send_signup_confirmation,
+      send_volunteer_alert: !!raw.send_volunteer_alert,
+      fields: this.selectedFields(),
+    };
+
+    try {
+      if (this.isNew()) {
+        const res = await this.volunteerEventsSvc.add(data as AddVolunteerEventType);
+        this.volunteerEventsSvc.triggerRefresh();
+        this.alerts.showSuccess('Event created successfully');
+        await this.router.navigate(['/events/shifts', res.id]);
+      } else {
+        await this.volunteerEventsSvc.update(this.id()!, data as UpdateVolunteerEventType);
+        this.volunteerEventsSvc.triggerRefresh();
+        this.alerts.showSuccess('Event updated successfully');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/events/shifts', this.id()]);
+        }
+      }
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
+      this.alerts.showError(this.error()!);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async saveShiftDetails(shift: any) {
+    try {
+      await this.volunteerSvc.updateShift(shift.id, {
+        status: shift.status,
+        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
+        notes: shift.notes || null,
+      });
+      this.alerts.showSuccess('Shift details saved');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
+    }
+  }
+
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+
+  protected toDatetimeLocalString(val: any): string {
+    if (!val) return '';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  protected updateShiftHours(shift: any, hours: any) {
+    shift.hours_worked = hours ? Number(hours) : null;
+  }
+
+  protected updateShiftNotes(shift: any, notes: any) {
+    shift.notes = notes || null;
+  }
+
+  protected async updateShiftStatus(shift: any, status: any) {
+    try {
+      await this.volunteerSvc.updateShift(shift.id, {
+        status,
+        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
+        notes: shift.notes || null,
+      });
+      this.alerts.showSuccess('Shift status updated');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
+    }
+  }
 }
 ```
 
@@ -43550,226 +41287,309 @@ export class ShiftsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
+## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
-import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
+import { Component, inject, viewChild, signal } from '@angular/core';
+import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddTagObj } from '../../../../../../../libs/common/src';
+
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
-import { UserService } from '../../../services/user.service';
-import { ListsService } from '../../lists/services/lists-service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import { TeamDetail, TeamsService } from '../services/teams-service';
-
-interface PersonOption {
-  email: string | null;
-  id: string;
-  label: string;
+function randomHexColor(): string {
+  return (
+    '#' +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')
+  );
 }
 
-import { DatePipe } from '@angular/common';
-
 @Component({
-  selector: 'pc-team-form',
-  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
-  templateUrl: './team-form.html',
+  selector: 'pc-add-issue',
+  imports: [PcInput, FormField, FormActions],
+  template: `<div class="flex min-h-full flex-col bg-base-100">
+    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
+      <div class="flex flex-col gap-2">
+        <label i18n class="label text-base font-light">
+          Enter a unique issue name (and optionally, give it a description)
+        </label>
+        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+        <div class="flex items-center gap-2">
+          <label i18n class="label-text font-light text-sm">Colour</label>
+          <input
+            class="input input-bordered input-sm w-24"
+            type="color"
+            [formField]="form.color"
+            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
+          />
+          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
+            @for (err of form.color().errors(); track err) {
+              <span class="text-error text-xs">{{ err.message }}</span>
+            }
+          }
+        </div>
+        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
+      </div>
+    </form>
+  </div>`,
 })
-export class TeamFormComponent implements OnInit {
-  readonly id = input<string>();
+export class AddIssue {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tagSvc = inject(TagsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
 
-  private readonly alerts = inject(AlertService);
-  private readonly persons = inject(PersonsService);
-  private readonly router = inject(Router);
-  private readonly teams = inject(TeamsService);
-  private readonly lists = inject(ListsService);
-  private readonly userService = inject(UserService);
-  private readonly tasksSvc = inject(TasksService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly isNew = computed(() => !this.id());
-
-  protected readonly detail = signal<TeamDetail | null>(null);
-  protected readonly error = signal<string | null>(null);
+  private _loading = createLoadingGate();
 
   protected readonly payload = signal({
     name: '',
     description: '',
-    team_captain_id: '',
-    team_lead_user_id: '',
-    volunteer_ids: [] as string[],
-    list_ids: [] as string[],
+    color: randomHexColor(),
   });
 
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddTeamObj);
+  public readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddTagObj);
   });
+
+  protected isLoading = this._loading.visible;
+
+  public readonly formActions = viewChild(FormActions);
+
+  protected async add(event?: any) {
+    if (event instanceof Event) {
+      event.preventDefault();
+    }
+
+    if (this.isLoading()) return;
+
+    this.form().markAsTouched();
+    if (!this.form().valid) return;
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const formObj = this.payload();
+          await this.tagSvc.add({ ...formObj, type: 'issue' });
+          await this.tagOptionsSvc.invalidate('issue');
+          this.tagSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Issue added successfully.');
+
+          this.payload.set({ name: '', description: '', color: randomHexColor() });
+          this.formActions()?.stayOrCancel();
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
+
+```typescript
+import { Component, inject, viewChild, signal } from '@angular/core';
+import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
+import { TagsService } from '@experiences/tags/services/tags-service';
+
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+
+function randomHexColor(): string {
+  return (
+    '#' +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')
+  );
+}
+
+@Component({
+  selector: 'pc-add-tag',
+  imports: [PcInput, FormField, FormActions],
+  template: `<div class="flex min-h-full flex-col bg-base-100">
+    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
+      <div class="flex flex-col gap-2">
+        <label i18n class="label text-base font-light">
+          Enter a unique tag name (and optionally, give it a description)
+        </label>
+        <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+        <div class="flex items-center gap-2">
+          <label i18n class="label-text font-light text-sm">Colour</label>
+          <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
+          @if (form.color().invalid() && form.color().touched()) {
+            <span i18n class="text-error text-xs">Use a value like #3366ff</span>
+          }
+        </div>
+        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
+      </div>
+    </form>
+  </div>`,
+})
+export class AddTag {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tagSvc = inject(TagsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  private _loading = createLoadingGate();
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    color: randomHexColor(),
+  });
+
+  public readonly form = form(this.payload, (p) => {
+    required(p.name);
+    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
+  });
+
+  protected isLoading = this._loading.visible;
+
+  public readonly formActions = viewChild(FormActions);
+
+  protected async add(event?: any) {
+    if (event instanceof Event) {
+      event.preventDefault();
+    }
+
+    if (this.isLoading()) {
+      return;
+    }
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    if (!this.form().valid) {
+      return;
+    }
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const formObj = this.payload();
+          await this.tagSvc.add(formObj);
+          await this.tagOptionsSvc.invalidate('tag');
+          this.tagSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Tag added successfully.');
+
+          // Reset the backing signal
+          this.payload.set({
+            name: '',
+            description: '',
+            color: randomHexColor(),
+          });
+
+          this.formActions()?.stayOrCancel();
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email, disabled } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+@Component({
+  selector: 'pc-user-edit',
+  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
+  templateUrl: './user-edit.html',
+})
+export class UserEditComponent {
+  readonly id = input.required<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
-  protected signalPeople = signal<PersonOption[]>([]);
-  protected readonly people = computed(() => this.signalPeople());
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly availableLists = signal<any[]>([]);
-  protected readonly assignedLists = signal<any[]>([]);
-  protected readonly teamTasks = signal<any[]>([]);
   protected readonly saving = signal(false);
-  protected readonly volunteers = computed(() => this.detail()?.volunteers ?? []);
+  protected readonly error = signal<string | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: '',
+    verified: false,
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
+    disabled(p.verified, () => true);
+  });
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
 
   constructor() {
     effect(() => {
-      const options = this.people();
-      if (options.length === 0) return;
-
-      const current = untracked(this.payload);
-      let nextCaptain = current.team_captain_id;
-      let changed = false;
-
-      if (nextCaptain && !options.some((p) => p.id === nextCaptain)) {
-        nextCaptain = '';
-        changed = true;
-      }
-
-      const currentVolunteers = current.volunteer_ids ?? [];
-      const validIds = currentVolunteers.filter((id) => options.some((p) => p.id === id));
-      if (validIds.length !== currentVolunteers.length) {
-        changed = true;
-      }
-
-      if (changed) {
-        this.payload.update((p) => ({
-          ...p,
-          team_captain_id: nextCaptain,
-          volunteer_ids: validIds,
-        }));
-      }
-    });
-  }
-
-  public ngOnInit(): void {
-    void this.initialize();
-  }
-  private async initialize(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
-
-      if (this.isNew()) {
-        const state = window.history.state;
-        if (state && state.cloneData) {
-          const sourceTeamId = state.cloneData.id;
-          if (sourceTeamId) {
-            try {
-              const teamDetail = await this.teams.getById(sourceTeamId);
-              this.payload.set({
-                name: teamDetail.name ? `${teamDetail.name} (Copy)` : '',
-                description: teamDetail.description ?? '',
-                team_captain_id: teamDetail.team_captain_id ?? '',
-                team_lead_user_id: teamDetail.team_lead_user_id ?? '',
-                volunteer_ids: teamDetail.volunteers?.map((v) => v.id) ?? [],
-                list_ids: teamDetail.list_ids ?? [],
-              });
-              this.assignedLists.set(teamDetail.lists ?? []);
-            } catch (err) {
-              console.error('Failed to load source team details for cloning', err);
-              const data = state.cloneData;
-              this.payload.set({
-                name: data.name ? `${data.name} (Copy)` : '',
-                description: data.description ?? '',
-                team_captain_id: data.team_captain_id ?? '',
-                team_lead_user_id: data.team_lead_user_id ?? '',
-                volunteer_ids: [],
-                list_ids: [],
-              });
-            }
-          }
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
         }
-      }
-    } finally {
-      end();
-    }
-  }
-
-  protected captainLabel(captainId: string | null) {
-    if (!captainId) return '—';
-    const person = this.people().find((p) => p.id === captainId);
-    return person?.label ?? '—';
-  }
-
-  protected isVolunteerSelected(id: string): boolean {
-    return this.payload().volunteer_ids?.includes(id) ?? false;
-  }
-
-  protected onVolunteersChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
-
-    this.payload.update((p) => ({
-      ...p,
-      volunteer_ids: selectedOptions,
-    }));
-    this.form.volunteer_ids().markAsDirty();
-  }
-
-  protected isListSelected(id: string): boolean {
-    return this.payload().list_ids?.includes(id) ?? false;
-  }
-
-  protected onListsChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
-
-    this.payload.update((p) => ({
-      ...p,
-      list_ids: selectedOptions,
-    }));
-    this.form.list_ids().markAsDirty();
-
-    const matching = this.availableLists().filter((l) => selectedOptions.includes(l.id));
-    this.assignedLists.set(matching);
-  }
-
-  protected async deleteTeam() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Team',
-      message: 'Are you sure you want to delete this team? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
+        void this.load();
+      });
     });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      await this.teams.delete(this.id()!);
-      this.teams.triggerRefresh();
-      this.alerts.showSuccess('Team deleted');
-      await this.router.navigate(['/teams']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete team';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
   }
 
   protected async save(done?: (() => void) | Event) {
@@ -43778,61 +41598,23 @@ export class TeamFormComponent implements OnInit {
     }
 
     this.form().markAsTouched();
-    if (this.form().invalid()) {
+    if (this.form().invalid() || !this.id()) {
       return;
     }
 
-    const raw = this.payload();
+    const payload = this.buildPayload();
 
     this.saving.set(true);
     this.error.set(null);
-
     try {
-      let result: TeamDetail;
-      if (this.isNew()) {
-        const payload: AddTeamType = {
-          name: raw.name?.trim() ?? '',
-          description: raw.description?.trim()?.length ? raw.description.trim() : null,
-          team_captain_id: raw.team_captain_id || undefined,
-          team_lead_user_id: raw.team_lead_user_id || undefined,
-          volunteer_ids: raw.volunteer_ids ?? [],
-          list_ids: raw.list_ids ?? [],
-        };
-        result = await this.teams.add(payload);
-        this.teams.triggerRefresh();
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/teams']);
-        }
-      } else if (this.id()) {
-        const payload: UpdateTeamType = {
-          name: raw.name?.trim() ?? null,
-          description: raw.description?.trim()?.length ? raw.description.trim() : null,
-          team_captain_id: raw.team_captain_id || null,
-          team_lead_user_id: raw.team_lead_user_id || null,
-          volunteer_ids: raw.volunteer_ids ?? [],
-          list_ids: raw.list_ids ?? [],
-        };
-        result = await this.teams.update(this.id()!, payload);
-        this.teams.triggerRefresh();
-        this.detail.set(result);
-        this.setForm(result);
-        this.form().reset();
-        this.alerts.showSuccess('Team updated');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/teams', this.id()]);
-        }
-        return;
-      } else {
-        throw new Error('Missing team identifier');
-      }
-      this.detail.set(result);
-      this.setForm(result);
+      await this.users.update(this.id(), payload);
+      this.alerts.showSuccess('User updated');
+      this.users.triggerRefresh();
+      await this.load();
       this.form().reset();
-      this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
+      if (typeof done === 'function') {
+        done();
+      }
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -43842,7 +41624,7 @@ export class TeamFormComponent implements OnInit {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Unable to save team';
+            : 'Unable to update user';
       this.error.set(message);
       this.alerts.showError(message);
     } finally {
@@ -43850,60 +41632,21 @@ export class TeamFormComponent implements OnInit {
     }
   }
 
-  private async loadPeople() {
-    try {
-      const res = await this.persons.getAll({ limit: 500, tags: ['volunteer'] });
-      const items = (res?.rows ?? []).map((person: any) => ({
-        id: String(person.id ?? ''),
-        label: `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email || 'Unknown',
-        email: person.email ?? null,
-      }));
-      this.signalPeople.set(items);
-    } catch (err) {
-      console.error('Failed to load volunteers list', err);
-      this.signalPeople.set([]);
-    }
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
   }
 
-  private async loadUsers() {
-    try {
-      const us = await this.userService.getUsers();
-      this.users.set(us || []);
-    } catch (err) {
-      console.error('Failed to load teammates list', err);
-      this.users.set([]);
-    }
-  }
+  protected readonly resettingPassword = signal(false);
 
-  private async loadLists() {
+  protected async triggerPasswordReset() {
+    if (!this.id()) return;
+    this.resettingPassword.set(true);
     try {
-      const res = await this.lists.getAll({ limit: 1000 });
-      this.availableLists.set(res?.rows ?? []);
-    } catch (err) {
-      console.error('Failed to load lists', err);
-      this.availableLists.set([]);
-    }
-  }
-
-  private async loadTeam() {
-    if (this.isNew()) {
-      this.detail.set(null);
-      this.setForm(null);
-      return;
-    }
-    if (!this.id()) {
-      this.error.set('Missing team identifier');
-      return;
-    }
-
-    try {
-      const team = await this.teams.getById(this.id()!);
-      this.detail.set(team);
-      this.setForm(team);
-      const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: this.id() } },
-      } as any);
-      this.teamTasks.set(res?.rows ?? []);
+      await this.users.adminTriggerPasswordReset(this.id());
+      this.alerts.showSuccess('Password reset email sent to user');
     } catch (err) {
       const message =
         err instanceof Error && err.message
@@ -43913,52 +41656,709 @@ export class TeamFormComponent implements OnInit {
               typeof err['data']['message'] === 'string' &&
               err['data']['message']
             ? err['data']['message']
-            : 'Failed to load team';
+            : 'Unable to trigger password reset';
+      this.alerts.showError(message);
+    } finally {
+      this.resettingPassword.set(false);
+    }
+  }
+
+  protected async deleteUser() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      const success = await this.users.delete(this.id());
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const user = await this.users.getById(this.id());
+      this.detail.set(user);
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
       this.error.set(message);
       this.alerts.showError(message);
+    } finally {
+      end();
     }
   }
 
-  private setForm(team: TeamDetail | null) {
+  private setForm(user: IAuthUserDetail) {
     this.payload.set({
-      name: team?.name ?? '',
-      description: team?.description ?? '',
-      team_captain_id: team?.team_captain_id ?? '',
-      team_lead_user_id: team?.team_lead_user_id ?? '',
-      volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
-      list_ids: team?.list_ids ?? [],
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+      role: user.role ?? '',
+      verified: Boolean(user.verified),
     });
-    this.assignedLists.set(team?.lists ?? []);
   }
 
-  protected getPriorityClass(priority: string | null | undefined): string {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'badge-error text-error-content';
-      case 'high':
-        return 'badge-warning text-warning-content';
-      case 'medium':
-        return 'badge-info text-info-content';
-      default:
-        return 'badge-ghost';
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+      role: normalize(raw.role),
+      verified: Boolean(raw.verified),
+    } as UpdateAuthUserType;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.ts
+
+```typescript
+import { Component, OnInit, signal, inject, computed } from '@angular/core';
+import { FormField, form, validateStandardSchema, submit } from '@angular/forms/signals';
+import { AddWorkflowObj } from '../../../../../../../libs/common/src';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { FormsModule } from '@angular/forms';
+import { DatePipe } from '@angular/common';
+import { WorkflowsService } from '../services/workflows-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { VisualNewsletterEditorComponent } from '../../newsletters/ui/visual-newsletter-editor';
+import { ShiftsService } from '../../shifts/services/shifts-service';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { FormsService } from '@experiences/forms/services/forms-service';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+
+@Component({
+  selector: 'pc-workflow-form',
+  imports: [
+    RouterModule,
+    FormsModule,
+    FormField,
+    Icon,
+    RecordActivities,
+    DatePipe,
+    VisualNewsletterEditorComponent,
+    FormActions,
+    Tabs,
+    TabPanel,
+  ],
+  templateUrl: './workflow-form.html',
+  providers: [WorkflowsService, ShiftsService, TagsService, FormsService, ListsService],
+})
+export class WorkflowFormComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly workflowsSvc = inject(WorkflowsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly volunteerEventsSvc = inject(ShiftsService);
+  private readonly tagsSvc = inject(TagsService);
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly isNew = signal(true);
+  protected readonly workflowId = signal<string | null>(null);
+  protected readonly activeTab = signal<string>('steps');
+
+  protected readonly workflowTabs = computed<PcTabOption[]>(() => [
+    { id: 'steps', label: `Sequence Designer (${this.steps().length})`, icon: 'pencil-square' },
+    {
+      id: 'enrollments',
+      label: `Enrolled Contacts (${this.enrollments().length})`,
+      icon: 'user-group',
+      disabled: this.isNew(),
+      tooltip: 'Save workflow to enroll contacts',
+    },
+  ]);
+
+  // Trigger state and visual designer nodes selection
+  protected readonly triggerSelected = signal(false);
+  protected readonly selectedNodeType = signal<'trigger' | 'step' | 'settings'>('settings');
+  protected readonly selectedNodeIndex = signal<number | null>(null);
+
+  // Modal visual email designer state
+  protected readonly editingEmailStepIndex = signal<number | null>(null);
+
+  // Loaded volunteer events list
+  protected readonly volunteerEvents = signal<any[]>([]);
+  // Loaded tags, forms, and static lists
+  protected readonly tags = signal<any[]>([]);
+  protected readonly webForms = signal<any[]>([]);
+  protected readonly lists = signal<any[]>([]);
+
+  // Backing payload signal for workflow settings form
+  protected readonly payload = signal<{
+    name: string;
+    description: string;
+    trigger_type:
+      | 'volunteer_signup'
+      | 'manual'
+      | 'tag_added'
+      | 'web_form_submitted'
+      | 'volunteer_shift_status'
+      | 'contact_created'
+      | 'list_joined'
+      | 'payment_event'
+      | 'new_subscriber'
+      | 'new_unsubscriber';
+    trigger_event_id: string;
+    status: 'active' | 'draft' | 'paused';
+  }>({
+    name: '',
+    description: '',
+    trigger_type: 'manual',
+    trigger_event_id: '',
+    status: 'draft',
+  });
+
+  // Signal-based form
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddWorkflowObj);
+  });
+
+  // Computed signal to resolve the name of the selected event
+  protected readonly selectedEventName = computed(() => {
+    const eventId = this.payload().trigger_event_id;
+    if (!eventId) return null;
+    const type = this.payload().trigger_type;
+    if (type === 'volunteer_signup') {
+      const event = this.volunteerEvents().find((e) => String(e.id) === String(eventId));
+      return event ? event.name : 'Unknown Event';
+    }
+    if (type === 'tag_added') {
+      const tag = this.tags().find((t) => String(t.id) === String(eventId));
+      return tag ? tag.name : 'Unknown Tag';
+    }
+    if (type === 'web_form_submitted') {
+      const formEl = this.webForms().find((f) => String(f.id) === String(eventId));
+      return formEl ? formEl.name : 'Unknown Web Form';
+    }
+    if (type === 'list_joined') {
+      const listEl = this.lists().find((l) => String(l.id) === String(eventId));
+      return listEl ? listEl.name : 'Unknown List';
+    }
+    if (type === 'volunteer_shift_status') {
+      if (eventId === 'attended') return 'Attended';
+      if (eventId === 'no_show') return 'No Show';
+      if (eventId === 'cancelled') return 'Cancelled';
+      return eventId;
+    }
+    return null;
+  });
+
+  // Steps signal
+  protected readonly steps = signal<any[]>([]);
+  // Enrollments signal
+  protected readonly enrollments = signal<any[]>([]);
+
+  // Search contacts for manual enrollment
+  protected readonly searchQuery = signal('');
+  protected readonly searchResults = signal<any[]>([]);
+  protected readonly searchingContacts = signal(false);
+
+  public ngOnInit(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    void this.loadVolunteerEvents();
+    void this.loadTags();
+    void this.loadWebForms();
+    void this.loadLists();
+    if (id && id !== 'add') {
+      this.isNew.set(false);
+      this.workflowId.set(id);
+      this.triggerSelected.set(true);
+      this.activeTab.set('steps');
+      void this.loadWorkflowDetails();
+      void this.loadSteps();
+      void this.loadEnrollments();
+    } else {
+      this.isNew.set(true);
+      this.triggerSelected.set(false);
     }
   }
 
-  protected getStatusClass(status: string | null | undefined): string {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'done':
-        return 'badge-success text-success-content';
-      case 'in_progress':
-        return 'badge-info text-info-content';
-      case 'blocked':
-        return 'badge-error text-error-content';
-      case 'canceled':
-        return 'badge-neutral text-neutral-content';
-      default:
-        return 'badge-ghost';
+  private async loadVolunteerEvents(): Promise<void> {
+    try {
+      const res = await this.volunteerEventsSvc.getAll({ limit: 1000 });
+      this.volunteerEvents.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load volunteer events', err);
     }
+  }
+
+  private async loadTags(): Promise<void> {
+    try {
+      const res = await this.tagsSvc.getAll({ limit: 1000 });
+      this.tags.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load tags', err);
+    }
+  }
+
+  private async loadWebForms(): Promise<void> {
+    try {
+      const res = await this.formsSvc.getAll({ limit: 1000 });
+      this.webForms.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load web forms', err);
+    }
+  }
+
+  private async loadLists(): Promise<void> {
+    try {
+      const res = await this.listsSvc.getAll({ limit: 1000 });
+      this.lists.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load lists', err);
+    }
+  }
+
+  // --- TAB MANAGEMENT ---
+  protected selectTab(tab: string): void {
+    this.activeTab.set(tab);
+    if (tab !== 'steps') {
+      this.selectedNodeType.set('settings');
+      this.selectedNodeIndex.set(null);
+    }
+  }
+
+  // --- TRIGGER SELECTION ---
+  protected selectTrigger(
+    type:
+      | 'volunteer_signup'
+      | 'manual'
+      | 'tag_added'
+      | 'web_form_submitted'
+      | 'volunteer_shift_status'
+      | 'contact_created'
+      | 'list_joined'
+      | 'payment_event'
+      | 'new_subscriber'
+      | 'new_unsubscriber',
+  ): void {
+    let name = 'New Workflow Campaign';
+    let description = 'Custom multi-step communication sequence.';
+
+    switch (type) {
+      case 'volunteer_signup':
+        name = 'Volunteer Signup Welcome Onboarding';
+        description = 'Automated welcoming sequence sent to volunteer signups.';
+        break;
+      case 'tag_added':
+        name = 'Tag Assigned Campaign';
+        description = 'Automated campaign triggered when a specific tag is added to a constituent.';
+        break;
+      case 'web_form_submitted':
+        name = 'Web Form Submission Response';
+        description = 'Runs automatically after a contact submits a public web form.';
+        break;
+      case 'volunteer_shift_status':
+        name = 'Volunteer Shift Follow-up';
+        description = 'Triggered when a volunteer shift status is updated.';
+        break;
+      case 'contact_created':
+        name = 'New Constituent Welcome Series';
+        description = 'Welcoming sequence triggered when any new person is added to the database.';
+        break;
+      case 'list_joined':
+        name = 'List Joined Campaign';
+        description = 'Triggered when a constituent is added to a static list.';
+        break;
+      case 'payment_event':
+        name = 'Stripe Billing Event Campaign';
+        description = 'Runs in response to payment events like invoice payment status updates.';
+        break;
+      case 'new_subscriber':
+        name = 'New Subscriber Onboarding';
+        description = 'Welcomes new subscribers to the newsletter list.';
+        break;
+      case 'new_unsubscriber':
+        name = 'Unsubscribe Confirmation Campaign';
+        description = 'Triggered when a contact is marked unsubscribed.';
+        break;
+      case 'manual':
+        name = 'Constituent Re-engagement Campaign';
+        description = 'Custom multi-step communication sequence.';
+        break;
+    }
+
+    this.payload.update((p) => ({
+      ...p,
+      trigger_type: type,
+      trigger_event_id: '',
+      name,
+      description,
+    }));
+
+    // Initialize with 1 default step
+    this.steps.set([
+      {
+        step_number: 1,
+        delay_days: 1,
+        delay_unit: 'days',
+        subject: type === 'volunteer_signup' ? 'Welcome to our organization!' : 'Hello from the team!',
+        preview_text: 'Thank you for connecting with us',
+        html_content: '<p>Hi there,</p><p>We are thrilled to have you! We will reach out shortly.</p>',
+        plain_text_content: 'Hi there,\n\nWe are thrilled to have you! We will reach out shortly.',
+      },
+    ]);
+
+    this.triggerSelected.set(true);
+    this.selectedNodeType.set('settings');
+  }
+
+  // --- LOAD DATA ---
+  private async loadWorkflowDetails(): Promise<void> {
+    const id = this.workflowId();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      const record = await this.workflowsSvc.getById(id);
+      if (record) {
+        this.payload.set({
+          name: record.name || '',
+          description: record.description || '',
+          trigger_type: record.trigger_type || 'manual',
+          trigger_event_id: record.trigger_event_id || '',
+          status: record.status || 'draft',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load workflow details', err);
+      this.alertSvc.showError('Failed to load workflow details.');
+    } finally {
+      end();
+    }
+  }
+
+  private async loadSteps(): Promise<void> {
+    const id = this.workflowId();
+    if (!id) return;
+    try {
+      const records = await this.workflowsSvc.getSteps(id);
+      this.steps.set(records || []);
+    } catch (err) {
+      console.error('Failed to load workflow steps', err);
+    }
+  }
+
+  private async loadEnrollments(): Promise<void> {
+    const id = this.workflowId();
+    if (!id) return;
+    try {
+      const records = await this.workflowsSvc.getEnrollments(id);
+      this.enrollments.set(records || []);
+    } catch (err) {
+      console.error('Failed to load enrollments', err);
+    }
+  }
+
+  protected async deleteWorkflow() {
+    const id = this.workflowId();
+    if (!id) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Workflow',
+      message: 'Are you sure you want to delete this workflow? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.workflowsSvc.delete(id);
+      this.workflowsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Workflow deleted');
+      await this.router.navigate(['/workflows']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete workflow';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  // --- SAVE WORKFLOW SETTINGS & SEQUENCE ---
+  protected async saveSettings(done?: (() => void) | Event): Promise<void> {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (!this.form().valid) {
+      this.alertSvc.showError('Please enter a valid workflow name.');
+      return;
+    }
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const raw = this.payload();
+          const data = {
+            ...raw,
+            trigger_event_id: raw.trigger_event_id && raw.trigger_event_id !== '' ? raw.trigger_event_id : null,
+          };
+          if (this.isNew()) {
+            // 1. Create Workflow Settings
+            const result = await this.workflowsSvc.add(data);
+            const newId = String(result['id']);
+            this.workflowId.set(newId);
+            this.isNew.set(false);
+
+            // 2. Save current steps as well
+            await this.workflowsSvc.saveSteps(newId, this.steps());
+
+            this.alertSvc.showSuccess('Workflow created successfully!');
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.router.navigate(['../', newId], { relativeTo: this.route });
+            }
+          } else {
+            const id = this.workflowId();
+            if (id) {
+              // Update settings
+              await this.workflowsSvc.update(id, data);
+              // Save steps
+              await this.workflowsSvc.saveSteps(id, this.steps());
+            }
+
+            this.alertSvc.showSuccess('Workflow saved successfully!');
+            if (typeof done === 'function') {
+              done();
+            } else {
+              void this.loadWorkflowDetails();
+              void this.loadSteps();
+            }
+          }
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : 'An error occurred while saving the workflow.',
+          );
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
+  }
+
+  // --- STEP DESIGNER ACTIONS ---
+  protected addStepAt(index: number): void {
+    const current = [...this.steps()];
+    const newStep = {
+      step_number: index + 1,
+      delay_days: index === 0 ? 1 : 2,
+      delay_unit: 'days',
+      subject: 'Follow-up message',
+      preview_text: '',
+      html_content: '<p>Hi there,</p><p>We wanted to touch base again...</p>',
+      plain_text_content: 'Hi there,\n\nWe wanted to touch base again...',
+    };
+    current.splice(index, 0, newStep);
+
+    // Reorder/Re-index step numbers
+    const updated = current.map((step, idx) => ({
+      ...step,
+      step_number: idx + 1,
+    }));
+    this.steps.set(updated);
+
+    // Auto-select new step properties in sidebar
+    this.selectedNodeType.set('step');
+    this.selectedNodeIndex.set(index);
+  }
+
+  protected addStep(): void {
+    this.addStepAt(this.steps().length);
+  }
+
+  protected removeStep(index: number): void {
+    const current = this.steps();
+    const updated = current
+      .filter((_, idx) => idx !== index)
+      .map((step, idx) => ({
+        ...step,
+        step_number: idx + 1,
+      }));
+    this.steps.set(updated);
+
+    // Clear selection if deleted step was selected
+    if (this.selectedNodeIndex() === index) {
+      this.selectedNodeType.set('settings');
+      this.selectedNodeIndex.set(null);
+    } else {
+      const selectedIndex = this.selectedNodeIndex();
+      if (selectedIndex !== null && selectedIndex > index) {
+        this.selectedNodeIndex.set(selectedIndex - 1);
+      }
+    }
+  }
+
+  // --- EMAIL DESIGNER MODAL METHODS ---
+  protected openEmailDesigner(idx: number): void {
+    this.editingEmailStepIndex.set(idx);
+  }
+
+  protected closeEmailDesigner(): void {
+    this.editingEmailStepIndex.set(null);
+  }
+
+  protected getEditingHtml(): string {
+    const idx = this.editingEmailStepIndex();
+    if (idx === null) return '';
+    return this.steps()[idx]?.html_content || '';
+  }
+
+  protected getEditingText(): string {
+    const idx = this.editingEmailStepIndex();
+    if (idx === null) return '';
+    return this.steps()[idx]?.plain_text_content || '';
+  }
+
+  protected onStepHtmlChange(html: string): void {
+    const idx = this.editingEmailStepIndex();
+    if (idx === null) return;
+    const current = [...this.steps()];
+    current[idx] = {
+      ...current[idx],
+      html_content: html,
+    };
+    this.steps.set(current);
+  }
+
+  protected onStepTextChange(text: string): void {
+    const idx = this.editingEmailStepIndex();
+    if (idx === null) return;
+    const current = [...this.steps()];
+    current[idx] = {
+      ...current[idx],
+      plain_text_content: text,
+    };
+    this.steps.set(current);
+  }
+
+  // --- MANUAL ENROLLMENT METHODS ---
+  protected async searchContacts(): Promise<void> {
+    const query = this.searchQuery().trim();
+    if (!query) {
+      this.searchResults.set([]);
+      return;
+    }
+    this.searchingContacts.set(true);
+    try {
+      const res = await this.personsSvc.getAll({ searchStr: query, limit: 10 });
+      this.searchResults.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to search contacts', err);
+      this.alertSvc.showError('Failed to search contacts.');
+    } finally {
+      this.searchingContacts.set(false);
+    }
+  }
+
+  protected async enrollSelected(personId: string): Promise<void> {
+    const wfId = this.workflowId();
+    if (!wfId) return;
+    const end = this._loading.begin();
+    try {
+      await this.workflowsSvc.enrollPerson(wfId, personId);
+      this.alertSvc.showSuccess('Contact successfully enrolled in campaign.');
+      this.searchQuery.set('');
+      this.searchResults.set([]);
+      void this.loadEnrollments();
+    } catch (err) {
+      console.error('Enrollment failed', err);
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Failed to enroll contact.');
+    } finally {
+      end();
+    }
+  }
+
+  protected async cancelEnrollment(enrollmentId: string): Promise<void> {
+    const confirmCancel = await this.dialogs.confirm({
+      title: 'Cancel Enrollment',
+      message: 'Are you sure you want to cancel this enrollment? This stops any future emails in this sequence.',
+      variant: 'warning',
+      confirmText: 'Cancel Enrollment',
+    });
+    if (!confirmCancel) return;
+
+    const end = this._loading.begin();
+    try {
+      await this.workflowsSvc.cancelEnrollment(enrollmentId);
+      this.alertSvc.showSuccess('Enrollment cancelled.');
+      void this.loadEnrollments();
+    } catch (err) {
+      console.error('Cancellation failed', err);
+      this.alertSvc.showError('Failed to cancel enrollment.');
+    } finally {
+      end();
+    }
+  }
+
+  protected formatTriggerType(trigger: string): string {
+    if (trigger === 'volunteer_signup') return 'Volunteer Signup';
+    if (trigger === 'manual') return 'Manual Enrollment';
+    if (trigger === 'tag_added') return 'Tag Added';
+    if (trigger === 'web_form_submitted') return 'Web Form Submitted';
+    if (trigger === 'volunteer_shift_status') return 'Volunteer Shift Status';
+    if (trigger === 'contact_created') return 'New Contact Created';
+    if (trigger === 'list_joined') return 'List Joined';
+    if (trigger === 'payment_event') return 'Billing / Payment Event';
+    if (trigger === 'new_subscriber') return 'New Subscriber';
+    if (trigger === 'new_unsubscriber') return 'New Unsubscriber';
+    return trigger;
   }
 }
 
@@ -44505,369 +42905,6 @@ export interface GridHost {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
-
-```typescript
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
-import { Router, RouterModule } from '@angular/router';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { CompanyInputObj } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { CompaniesService } from '../services/companies-service';
-import { PeopleInCompany } from './people-in-company';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-@Component({
-  selector: 'pc-company-form',
-  imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
-  templateUrl: './company-form.html',
-})
-export class CompanyForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly company = signal<any | null>(null);
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    website: '',
-    industry: '',
-    email: '',
-    phone: '',
-    notes: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, CompanyInputObj);
-  });
-  protected id = input<string>();
-  protected isLoading = this._loading.visible;
-
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadCompany();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          name: data.name ? `${data.name} (Copy)` : '',
-          description: data.description ?? '',
-          website: data.website ?? '',
-          industry: data.industry ?? '',
-          email: data.email ?? '',
-          phone: data.phone ?? '',
-          notes: data.notes ?? '',
-        });
-      }
-    }
-  }
-
-  private async loadCompany() {
-    if (!this.id()) return;
-    const end = this._loading.begin();
-    try {
-      const data = await this.companiesSvc.getById(this.id()!);
-      this.company.set(data);
-      if (data) {
-        this.payload.set({
-          name: data.name ?? '',
-          description: data.description ?? '',
-          website: data.website ?? '',
-          industry: data.industry ?? '',
-          email: data.email ?? '',
-          phone: data.phone ?? '',
-          notes: data.notes ?? '',
-        });
-        this.form().reset();
-      }
-    } catch (err) {
-      console.error('Failed to load company details:', err);
-    } finally {
-      end();
-    }
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id()!);
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-    const raw = this.payload();
-    if (this.id()) {
-      const end = this._loading.begin();
-      this.companiesSvc
-        .update(this.id()!, raw)
-        .then(() => {
-          this.companiesSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Company updated successfully');
-          if (typeof done === 'function') {
-            done();
-          } else {
-            void this.router.navigate(['/companies', this.id()]);
-          }
-        })
-        .catch((err: any) => {
-          const message =
-            err instanceof Error && err.message
-              ? err.message
-              : isRecord(err) &&
-                  isRecord(err['data']) &&
-                  typeof err['data']['message'] === 'string' &&
-                  err['data']['message']
-                ? err['data']['message']
-                : 'Unable to save company';
-          this.alertSvc.showError(message);
-        })
-        .finally(() => end());
-    } else {
-      const end = this._loading.begin();
-      this.companiesSvc
-        .add(raw)
-        .then(() => {
-          this.companiesSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Company added successfully');
-          if (typeof done === 'function') {
-            done();
-          } else {
-            void this.router.navigate(['/companies']);
-          }
-        })
-        .catch((err: any) => {
-          const message =
-            err instanceof Error && err.message
-              ? err.message
-              : isRecord(err) &&
-                  isRecord(err['data']) &&
-                  typeof err['data']['message'] === 'string' &&
-                  err['data']['message']
-                ? err['data']['message']
-                : 'Unable to save company';
-          this.alertSvc.showError(message);
-        })
-        .finally(() => end());
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
-
-```typescript
-import { inject, signal, computed, Directive } from '@angular/core';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-
-export interface DuplicateGroup<T> {
-  reason: string;
-  items: T[]; // Normalized array (replaces specific persons/households/companies arrays)
-  selectedTargetId?: string;
-  selectedSourceId?: string;
-}
-
-@Directive() // Needed for abstract classes using dependency injection in Angular
-export abstract class BaseDuplicateManager<T extends { id: string; created_at: string | Date }> {
-  protected readonly alertSvc = inject(AlertService);
-  protected readonly dialogs = inject(ConfirmDialogService);
-
-  public readonly isLoading = signal(false);
-  public readonly groups = signal<DuplicateGroup<T>[]>([]);
-
-  public readonly currentPage = signal(1);
-  public readonly pageSize = signal(10);
-  public readonly totalGroups = signal(0);
-  public readonly totalPages = computed(() => Math.ceil(this.totalGroups() / this.pageSize()));
-
-  // Abstract methods the child components must implement
-  protected abstract getEntityName(): string;
-  protected abstract getItemDisplayName(item: T): string;
-  protected abstract fetchFromService(options: {
-    page: number;
-    pageSize: number;
-  }): Promise<{ groups: any[]; total: number }>;
-  protected abstract getItemsFromRawGroup(rawGroup: any): T[];
-  protected abstract mergeInService(targetId: string, sourceId: string): Promise<void>;
-
-  public async loadDuplicates() {
-    this.isLoading.set(true);
-    try {
-      const response = await this.fetchFromService({
-        page: this.currentPage(),
-        pageSize: this.pageSize(),
-      });
-
-      this.totalGroups.set(response.total);
-
-      const mappedGroups: DuplicateGroup<T>[] = response.groups.map((g) => {
-        let selectedTargetId: string | undefined = undefined;
-        let selectedSourceId: string | undefined = undefined;
-        const items = this.getItemsFromRawGroup(g);
-
-        const [firstItem, secondItem] = items;
-        if (items.length === 2 && firstItem && secondItem) {
-          const date0 = new Date(firstItem.created_at).getTime();
-          const date1 = new Date(secondItem.created_at).getTime();
-          if (date0 <= date1) {
-            selectedTargetId = firstItem.id;
-            selectedSourceId = secondItem.id;
-          } else {
-            selectedTargetId = secondItem.id;
-            selectedSourceId = firstItem.id;
-          }
-        }
-        return { reason: g.reason, items, selectedTargetId, selectedSourceId };
-      });
-      this.groups.set(mappedGroups);
-    } catch (_err) {
-      this.alertSvc.showError(`Failed to fetch ${this.getEntityName()} duplicates`);
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  public selectRole(groupIndex: number, itemId: string, role: 'target' | 'source') {
-    this.groups.update((current) => {
-      const updated = [...current];
-
-      // 1. Create a shallow copy of the group to avoid mutating the original reference
-      const existingGroup = updated[groupIndex];
-      if (!existingGroup) return current;
-      const updatedGroup = { ...existingGroup };
-
-      // 2. Apply your logic to the NEW object
-      if (role === 'target') {
-        updatedGroup.selectedTargetId = itemId;
-        if (updatedGroup.selectedSourceId === itemId) updatedGroup.selectedSourceId = undefined;
-      } else {
-        updatedGroup.selectedSourceId = itemId;
-        if (updatedGroup.selectedTargetId === itemId) updatedGroup.selectedTargetId = undefined;
-      }
-
-      // 3. Assign the new object back to the array
-      updated[groupIndex] = updatedGroup;
-
-      return updated;
-    });
-  }
-
-  public async mergeGroup(groupIndex: number) {
-    const group = this.groups()[groupIndex];
-    if (!group) return;
-    const targetId = group.selectedTargetId;
-    const sourceId = group.selectedSourceId;
-    if (!targetId || !sourceId) return;
-
-    const targetItem = group.items.find((i) => i.id === targetId);
-    const sourceItem = group.items.find((i) => i.id === sourceId);
-    if (!targetItem || !sourceItem) return;
-
-    const primaryName = this.getItemDisplayName(targetItem);
-    const dupName = this.getItemDisplayName(sourceItem);
-
-    const confirmed = await this.dialogs.confirm({
-      title: 'Confirm Merge',
-      message: `Are you sure you want to merge "${dupName}" into "${primaryName}"? This action will permanently delete this duplicate ${this.getEntityName()} and cannot be undone.`,
-      variant: 'warning',
-      confirmText: 'Merge',
-      cancelText: 'Cancel',
-    });
-
-    if (!confirmed) return;
-
-    try {
-      await this.mergeInService(targetId, sourceId);
-      this.alertSvc.showSuccess(`Successfully merged into "${primaryName}"`);
-
-      let updatedGroups = this.groups().filter((_, idx) => idx !== groupIndex);
-      updatedGroups = updatedGroups.map((g) => ({
-        ...g,
-        items: g.items.filter((i) => i.id !== sourceId),
-      }));
-
-      const initialLength = updatedGroups.length;
-      updatedGroups = updatedGroups.filter((g) => g.items.length > 1);
-      const groupsRemovedCount = 1 + (initialLength - updatedGroups.length);
-
-      this.groups.set(updatedGroups);
-      this.totalGroups.update((t) => Math.max(0, t - groupsRemovedCount));
-
-      if (updatedGroups.length === 0 && this.currentPage() > 1) {
-        this.currentPage.update((p) => p - 1);
-        void this.loadDuplicates();
-      } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
-        void this.loadDuplicates();
-      }
-    } catch (err) {
-      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Merge failed');
-    }
-  }
-
-  public nextPage() {
-    if (this.currentPage() < this.totalPages()) {
-      this.currentPage.update((p) => p + 1);
-      void this.loadDuplicates();
-    }
-  }
-
-  public prevPage() {
-    if (this.currentPage() > 1) {
-      this.currentPage.update((p) => p - 1);
-      void this.loadDuplicates();
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
 
 ```typescript
@@ -45299,6 +43336,1030 @@ export class EmailFolderList implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
+import { environment } from '../../../../environments/environment';
+
+import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
+import { EventsService } from '../../../services/api/events-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EventsFrontendService } from '../services/events-frontend-service';
+
+@Component({
+  selector: 'pc-event-form',
+  imports: [
+    FormsModule,
+    FormField,
+    PcInput,
+    PcTextarea,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    PcEntityOverview,
+    PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
+  ],
+  templateUrl: './event-form.html',
+  providers: [EventsService],
+})
+export class EventFormComponent implements OnInit {
+  private readonly _loading = createLoadingGate();
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly eventsFrontendSvc = inject(EventsFrontendService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly router = inject(Router);
+
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly addingTicket = signal(false);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+  });
+  protected readonly detail = signal<any>(null);
+  protected readonly payload = signal({
+    name: '',
+    slug: '',
+    description: '',
+    location_address: '',
+    start_time: '',
+    end_time: '',
+    capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_published: false,
+    send_reminder: true,
+    send_registration_confirmation: true,
+  });
+  protected readonly endBeforeStartError = computed(() => {
+    const { start_time, end_time } = this.payload();
+    if (!start_time || !end_time) return false;
+    return new Date(end_time) <= new Date(start_time);
+  });
+  protected readonly error = signal<string | null>(null);
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddEventObj);
+  });
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly loading = this._loading.visible;
+  protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
+  protected readonly saving = signal(false);
+  protected readonly slugChecking = signal(false);
+  protected readonly slugUnique = signal<boolean | null>(null);
+
+  // Ticket types
+  protected readonly ticketTypes = signal<any[]>([]);
+
+  protected slugManuallyEdited = false;
+
+  protected setNewTicketName(v: string) {
+    this.newTicket.update((t) => ({ ...t, name: v }));
+  }
+  protected setNewTicketPrice(v: string) {
+    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
+  }
+  protected setNewTicketCapacity(v: string) {
+    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
+  }
+
+  public readonly id = input<string>();
+
+  constructor() {
+    const nameSignal = computed(() => this.payload().name);
+    effect(() => {
+      const name = nameSignal();
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        if (untracked(this.payload).slug !== suggested) {
+          this.payload.update((p) => ({ ...p, slug: suggested }));
+        }
+      }
+    });
+
+    const slugSignal = computed(() => this.payload().slug);
+    effect(() => {
+      const slug = slugSignal();
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.eventsFrontendSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
+            if (untracked(slugSignal) === slug) {
+              this.slugUnique.set(res.unique);
+            }
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (untracked(slugSignal) === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
+    });
+  }
+
+  public ngOnInit(): void {
+    const end = this._loading.begin();
+    void this.loadEvent().finally(() => end());
+  }
+
+  protected cancelAddTicket() {
+    this.addingTicket.set(false);
+  }
+
+  protected async deleteEvent() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event Page',
+      message: 'Are you sure you want to delete this event page? All registrations will also be deleted.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
+    try {
+      await this.eventsFrontendSvc.delete(this.id()!);
+      this.eventsFrontendSvc.triggerRefresh();
+      this.alerts.showSuccess('Event deleted');
+      await this.router.navigate(['/events/pages']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async deleteTicketType(id: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Ticket Type',
+      message: 'Delete this ticket type?',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    try {
+      await this.eventsSvc.deleteTicketType(id);
+      this.alerts.showSuccess('Ticket type deleted');
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
+    }
+  }
+
+  protected formatPrice(cents: number): string {
+    if (!cents) return 'Free';
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+
+  protected async loadEvent() {
+    if (this.isNew()) return;
+
+    try {
+      const event = (await this.eventsFrontendSvc.getById(this.id()!)) as any;
+      this.detail.set(event);
+      this.payload.set({
+        name: event.name ?? '',
+        slug: event.slug ?? '',
+        description: event.description ?? '',
+        location_address: event.location_address ?? '',
+        start_time: this.toDatetimeLocalString(event.start_time),
+        end_time: this.toDatetimeLocalString(event.end_time),
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? '',
+        contact_phone: event.contact_phone ?? '',
+        is_published: !!event.is_published,
+        send_reminder: event.send_reminder !== false,
+        send_registration_confirmation: event.send_registration_confirmation !== false,
+      });
+      if (Array.isArray(event.fields) && event.fields.length > 0) {
+        this.selectedFields.set(event.fields);
+      }
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
+      this.alerts.showError(this.error()!);
+    }
+  }
+
+  protected async loadTicketTypes() {
+    if (!this.id()) return;
+    try {
+      const types = await this.eventsSvc.getTicketTypes(this.id()!);
+      this.ticketTypes.set(types || []);
+    } catch (err) {
+      console.error('Failed to load ticket types', err);
+    }
+  }
+
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) done.preventDefault();
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    if (this.endBeforeStartError()) {
+      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
+      return;
+    }
+
+    if (this.slugUnique() === false) {
+      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    const raw = this.payload();
+    const data = {
+      name: raw.name.trim(),
+      slug: raw.slug.trim(),
+      description: raw.description?.trim() || null,
+      location_address: raw.location_address?.trim() || null,
+      start_time: new Date(raw.start_time),
+      end_time: new Date(raw.end_time),
+      capacity: raw.capacity ? Number(raw.capacity) : null,
+      contact_email: raw.contact_email?.trim() || null,
+      contact_phone: raw.contact_phone?.trim() || null,
+      is_published: !!raw.is_published,
+      send_reminder: !!raw.send_reminder,
+      send_registration_confirmation: !!raw.send_registration_confirmation,
+      fields: this.selectedFields(),
+    };
+
+    try {
+      if (this.isNew()) {
+        const res = await this.eventsFrontendSvc.add(data as AddEventType);
+        this.eventsFrontendSvc.triggerRefresh();
+        this.alerts.showSuccess('Event created successfully');
+        await this.router.navigate(['/events/pages', (res as any).id]);
+      } else {
+        await this.eventsFrontendSvc.update(this.id()!, data as UpdateEventType);
+        this.eventsFrontendSvc.triggerRefresh();
+        this.alerts.showSuccess('Event updated successfully');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/events/pages', this.id()]);
+        }
+      }
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
+      this.alerts.showError(this.error()!);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async saveNewTicket() {
+    const t = this.newTicket();
+    if (!t.name.trim()) {
+      this.alerts.showError('Ticket type name is required');
+      return;
+    }
+    try {
+      await this.eventsSvc.addTicketType({
+        event_id: this.id()!,
+        name: t.name.trim(),
+        description: t.description?.trim() || null,
+        price_cents: Number(t.price_cents) || 0,
+        capacity: t.capacity ? Number(t.capacity) : null,
+      });
+      this.addingTicket.set(false);
+      this.alerts.showSuccess('Ticket type added');
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
+    }
+  }
+
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+
+  // Ticket type management
+  protected startAddTicket() {
+    this.newTicket.set({ name: '', description: '', price_cents: 0, capacity: null });
+    this.addingTicket.set(true);
+  }
+
+  protected toDatetimeLocalString(val: any): string {
+    if (!val) return '';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
+
+```typescript
+import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Loader } from '@googlemaps/js-api-loader';
+import type { IAuthUser } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInHousehold } from '../../persons/ui/people-in-household';
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../services/households-service';
+import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+@Component({
+  selector: 'pc-household-view',
+  imports: [
+    RouterModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+    Tags,
+  ],
+  templateUrl: './household-view.html',
+})
+export class HouseholdView {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly loader = inject(Loader);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly household = signal<Households | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
+
+  // Segmentation
+  protected readonly tags = signal<string[]>([]);
+  protected readonly issues = signal<string[]>([]);
+  protected readonly peopleCount = signal(0);
+
+  // Address
+  protected readonly addressString = computed(() => {
+    const raw = this.household();
+    if (!raw) return 'No Address Assigned';
+    if (raw.is_placeholder) return 'People with no addresses';
+    if (raw.formatted_address) return raw.formatted_address;
+
+    const parts: string[] = [];
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
+
+    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    return parts.join(', ').trim() || 'No Address Assigned';
+  });
+
+  protected readonly hasMap = computed(() => {
+    const h = this.household();
+    return !!(h && h.lat && h.lng && !h.is_placeholder);
+  });
+
+  private mapInitialized = false;
+  private readonly mapContainer = viewChild<ElementRef>('mapContainer');
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'members', label: `Household Members (${this.peopleCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    effect(() => {
+      const elRef = this.mapContainer();
+      if (elRef) {
+        void this.initMap(elRef.nativeElement);
+      } else {
+        this.mapInitialized = false;
+      }
+    });
+
+    // Load users for addedby/updatedby display names
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load household details
+      const householdData = (await this.householdsSvc.getById(id)) as Households;
+      this.household.set(householdData);
+
+      // 2. Load tags and issues
+      const tagList = await this.householdsSvc.getTags(id, 'tag');
+      this.tags.set(tagList);
+      const issueList = await this.householdsSvc.getTags(id, 'issue');
+      this.issues.set(issueList);
+
+      // 3. Load people in household count
+      const count = await this.householdsSvc.getPeopleCount(id);
+      this.peopleCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load household details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editHousehold() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteHousehold() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
+          }
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
+        if (!confirmed) return;
+      }
+
+      await this.householdsSvc.delete(this.id());
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  private async initMap(mapEl: HTMLElement) {
+    const h = this.household();
+    if (!h || !h.lat || !h.lng || h.is_placeholder || this.mapInitialized) return;
+
+    try {
+      await this.loader.importLibrary('maps');
+      const { AdvancedMarkerElement } = (await this.loader.importLibrary('marker')) as any;
+      const center = { lat: Number(h.lat), lng: Number(h.lng) };
+      const map = new google.maps.Map(mapEl, {
+        center,
+        zoom: 15,
+        disableDefaultUI: false,
+        zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: false,
+        mapId: 'DEMO_MAP_ID',
+      });
+
+      new AdvancedMarkerElement({
+        position: center,
+        map,
+        title: this.addressString(),
+      });
+      this.mapInitialized = true;
+    } catch (err) {
+      console.error('Failed to load Google Map:', err);
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/lists/ui/list-view.ts
+
+```typescript
+import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { ListsType } from '../../../../../../../libs/common/src';
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PersonsGrid } from '@experiences/persons/ui/persons-grid';
+import { HouseholdsGrid } from '@experiences/households/ui/households-grid';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+
+@Component({
+  selector: 'pc-list-view',
+  imports: [FormActions, Icon, RouterLink, RecordActivities, PersonsGrid, HouseholdsGrid, StatCard, Tabs, TabPanel],
+  templateUrl: './list-view.html',
+})
+export class ListView implements OnDestroy {
+  readonly id = input.required<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly lists = inject(ListsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  protected loading = signal<boolean>(false);
+  protected refreshing = signal<boolean>(false);
+  protected memberCount = signal<number>(0);
+  protected object = signal<'people' | 'households' | null>(null);
+  protected listData = signal<ListsType | null>(null);
+  protected stats = signal<any>(null);
+  // Active tab state
+  protected activeTab = signal<string>('members');
+
+  protected readonly listTabs = computed<PcTabOption[]>(() => [
+    { id: 'members', label: `Members (${this.memberCount()})`, icon: 'user-group' },
+    { id: 'newsletters', label: `Newsletter Campaigns (${this.stats()?.newsletters?.length || 0})`, icon: 'megaphone' },
+  ]);
+
+  protected isPeople = computed(() => this.object() === 'people');
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (currentId) void this.loadListDetails();
+      });
+    });
+  }
+
+  protected async loadListDetails(id = this.id()) {
+    try {
+      this.loading.set(true);
+
+      const list = (await this.lists.getById(id)) as ListsType;
+      this.listData.set(list);
+      this.object.set(list.object as 'people' | 'households');
+
+      // Fetch list membership count efficiently
+      const count = await this.lists.getMemberCount(id);
+      this.memberCount.set(count);
+
+      // Fetch campaign stats and history
+      const statsData = await this.lists.getListStats(id);
+      this.stats.set(statsData);
+    } catch (_e) {
+      this.alerts.showError('Failed to load list details');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private pollInterval: ReturnType<typeof setInterval> | null = null;
+
+  protected async refreshList() {
+    try {
+      this.refreshing.set(true);
+      await this.lists.refreshList(this.id());
+      this.alerts.showSuccess('Refresh job scheduled in background');
+      this.pollRefreshStatus();
+    } catch (e) {
+      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
+      this.refreshing.set(false);
+    }
+  }
+
+  private pollRefreshStatus() {
+    if (this.pollInterval) clearInterval(this.pollInterval);
+
+    this.pollInterval = setInterval(() => void this.pollStep(), 1500);
+  }
+
+  private async pollStep(): Promise<void> {
+    try {
+      const list = (await this.lists.getById(this.id())) as ListsType;
+      this.listData.set(list);
+      if (list.status !== 'refreshing') {
+        if (this.pollInterval) clearInterval(this.pollInterval);
+        this.pollInterval = null;
+        this.refreshing.set(false);
+        if (list.status === 'failed') {
+          this.alerts.showError('List refresh failed in background');
+        } else {
+          this.alerts.showSuccess('List refreshed successfully');
+        }
+        await this.loadListDetails();
+      }
+    } catch (_e) {
+      if (this.pollInterval) clearInterval(this.pollInterval);
+      this.pollInterval = null;
+      this.refreshing.set(false);
+    }
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+  }
+
+  protected editList() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteList() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete List',
+      message: 'Are you sure you want to delete this list? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.loading.set(true);
+    try {
+      await this.lists.delete(this.id());
+      this.lists.triggerRefresh();
+      this.alerts.showSuccess('List deleted');
+      await this.router.navigate(['/lists']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete list';
+      this.alerts.showError(message);
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  protected formatDate(value: Date | string | null | undefined): string {
+    if (!value) return '—';
+    const date = value instanceof Date ? value : new Date(value);
+    if (isNaN(date.getTime())) return '—';
+    return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  }
+
+  protected formatPercent(value: number | null | undefined): string {
+    if (value == null) return '0%';
+    return `${value.toFixed(1)}%`;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
+
+```typescript
+import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
+import { UpdateListType } from '../../../../../../../libs/common/src';
+import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+@Component({
+  selector: 'pc-lists-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Lists"
+        i18n-title
+        description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [allowFilter]="false"
+        plusIcon="add-list"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: ListsService },
+    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+  ],
+})
+export class ListsGridComponent implements OnDestroy {
+  private readonly refreshSvc = inject(ListsRefreshService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alerts = inject(AlertService);
+  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
+
+  constructor() {
+    effect(() => {
+      const count = this.refreshSvc.refreshCount();
+      if (count > 0) {
+        void untracked(() => this.grid()?.refresh());
+      }
+    });
+  }
+
+  protected col: ColDef[] = [
+    { field: 'name', headerName: 'List Name', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'object',
+      headerName: 'Target Object',
+      valueFormatter: (p: CellParams) => {
+        const val = p?.value;
+        if (val === 'people') return 'People';
+        if (val === 'households') return 'Households';
+        return (val as string | undefined) ?? '—';
+      },
+    },
+    {
+      field: 'is_dynamic',
+      headerName: 'List Type',
+      cellRenderer: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        return isDynamic
+          ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
+          : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
+      },
+    },
+    {
+      field: 'list_size',
+      headerName: 'Size',
+      valueFormatter: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (isDynamic === true || isDynamic === 'true' || isDynamic === 1) {
+          return 'N/A';
+        }
+        return (p?.value as number | undefined) ?? 0;
+      },
+    },
+    {
+      field: 'last_refreshed_at',
+      headerName: 'Last Refreshed',
+      valueFormatter: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (!isDynamic) return '—';
+        if (!p?.value) return 'Never';
+        const date = new Date(p.value as string | number | Date);
+        if (isNaN(date.getTime())) return 'Never';
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      },
+    },
+    {
+      field: 'refresh_action',
+      headerName: 'Refresh',
+      cellRenderer: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (!isDynamic) return '—';
+        const status = p?.data?.['status'];
+        const isLocallyRefreshing = this.refreshingIds.has(String(p?.data?.['id'] ?? ''));
+        if (status === 'refreshing' || isLocallyRefreshing) {
+          return `
+            <div class="flex items-center justify-center h-full w-full">
+              <span class="loading loading-ring loading-lg text-primary"></span>
+            </div>
+          `;
+        }
+        return `
+          <div class="flex items-center justify-center h-full w-full">
+            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh dynamic list">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            </button>
+          </div>
+        `;
+      },
+      onCellClicked: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        const id = String(p?.data?.['id'] ?? '');
+        const isRefreshing = p?.data?.['status'] === 'refreshing' || this.refreshingIds.has(id);
+        if (isDynamic && !isRefreshing) {
+          void this.refreshList(id, p);
+        }
+      },
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Last Updated',
+      valueFormatter: (p: CellParams) => {
+        if (!p?.value) return '—';
+        const date = new Date(p.value as string | number | Date);
+        if (isNaN(date.getTime())) return '—';
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      },
+    },
+    { field: 'created_by', headerName: 'Created By' },
+  ];
+
+  private readonly refreshingIds = new Set<string>();
+
+  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+  private async refreshList(id: string, cellParams: CellParams) {
+    try {
+      this.refreshingIds.add(id);
+      // Re-render the cell immediately to show the loading spinner.
+      this.refreshCellIfPossible(cellParams);
+
+      this.alerts.showSuccess('Refresh job scheduled in background');
+      await this.listsSvc.refreshList(id);
+      this.pollRefreshStatus(id);
+    } catch (e) {
+      this.refreshingIds.delete(id);
+      this.refreshCellIfPossible(cellParams);
+      this.alerts.showError(e instanceof Error && e.message ? e.message : String(e));
+    }
+  }
+
+  /** Best-effort refresh of a single grid cell, if the underlying table API supports it. */
+  private refreshCellIfPossible(cellParams: unknown): void {
+    if (!isRecord(cellParams)) return;
+    const api = cellParams['api'];
+    if (!isRecord(api) || typeof api['refreshCells'] !== 'function') return;
+    (api['refreshCells'] as (opts: unknown) => void)({
+      rowNodes: [cellParams['node']],
+      columns: ['refresh_action'],
+      force: true,
+    });
+  }
+
+  private pollRefreshStatus(id: string) {
+    const existing = this.pollIntervals.get(id);
+    if (existing) clearInterval(existing);
+
+    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
+
+    this.pollIntervals.set(id, interval);
+  }
+
+  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
+    try {
+      const list = await this.listsSvc.getById(id);
+      if (isRecord(list) && list['status'] !== 'refreshing') {
+        clearInterval(interval);
+        this.pollIntervals.delete(id);
+        this.refreshingIds.delete(id);
+        if (isRecord(list) && list['status'] === 'failed') {
+          this.alerts.showError('List refresh failed in background');
+        } else {
+          this.alerts.showSuccess('List refreshed successfully');
+        }
+        void this.grid()?.refresh();
+      }
+    } catch {
+      clearInterval(interval);
+      this.pollIntervals.delete(id);
+      this.refreshingIds.delete(id);
+    }
+  }
+
+  public ngOnDestroy() {
+    for (const interval of this.pollIntervals.values()) {
+      clearInterval(interval);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.ts
 
 ```typescript
@@ -45474,6 +44535,1605 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
       this.pollingTimer = null;
     }
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { ShiftsService } from '../services/shifts-service';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { environment } from '../../../../environments/environment';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+@Component({
+  selector: 'pc-shift-view',
+  imports: [
+    DatePipe,
+    RouterModule,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    Tabs,
+    TabPanel,
+    StatusBadge,
+    StatCard,
+    ProfileCard,
+    DetailRow,
+    PcCard,
+  ],
+  templateUrl: './shift-view.html',
+  providers: [VolunteerService],
+})
+export class ShiftViewComponent {
+  readonly id = input.required<string>();
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly volunteerEventsSvc = inject(ShiftsService);
+  private readonly volunteerSvc = inject(VolunteerService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly event = signal<any | null>(null);
+  protected readonly roster = signal<any[]>([]);
+
+  // Active tab state
+  protected activeTab = signal<string>('roster');
+
+  protected readonly eventTabs = computed<PcTabOption[]>(() => [
+    { id: 'roster', label: `Volunteer Roster (${this.roster().length})`, icon: 'user-group' },
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+  ]);
+
+  protected readonly eventPassed = computed(() => {
+    const end = this.event()?.end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
+  });
+
+  protected readonly remainingCapacity = computed(() => {
+    const detail = this.event();
+    if (!detail || detail.capacity === null || detail.capacity === undefined) {
+      return 'Unlimited';
+    }
+    const count = this.roster().length;
+    return Math.max(0, detail.capacity - count);
+  });
+
+  protected readonly publicUrl = computed(() => {
+    const detail = this.event();
+    if (!detail || !detail.public_url) return '';
+    return environment.apiUrl + detail.public_url;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load Event details
+      const detail = await this.volunteerEventsSvc.getById(id);
+      this.event.set(detail);
+
+      // 2. Load associated shifts/roster
+      const rosterData = await this.volunteerSvc.getShiftsForEvent(id);
+      this.roster.set(rosterData || []);
+    } catch (err) {
+      this.alertSvc.showError('Failed to load event details: ' + String(err));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editEvent() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteEvent() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.volunteerEventsSvc.delete(this.id());
+      this.volunteerEventsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Event deleted');
+      await this.router.navigate(['/events/shifts']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete event';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copySnippet(): void {
+    const url = this.publicUrl();
+    if (!url) return;
+    navigator.clipboard.writeText(url).then(
+      () => this.alertSvc.showSuccess('Public signup link copied to clipboard!'),
+      () => this.alertSvc.showError('Failed to copy to clipboard.'),
+    );
+  }
+
+  protected getStatusType(status: string | null | undefined): any {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'attended':
+        return 'success';
+      case 'signed_up':
+        return 'warning';
+      case 'no_show':
+        return 'error';
+      case 'cancelled':
+        return 'neutral';
+      default:
+        return 'ghost';
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.ts
+
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { UpdateTaskType } from '../../../../../../../libs/common/src';
+import { Icon } from '@uxcommon/components/icons/icon';
+
+import { TasksService } from '../services/tasks-service';
+
+@Component({
+  selector: 'pc-tasks-board',
+  imports: [Icon],
+  templateUrl: './tasks-board.html',
+})
+export class TasksBoard implements OnInit {
+  private readonly router = inject(Router);
+  private readonly svc = inject(TasksService);
+
+  protected readonly gridColsClass = 'grid-cols-1 md:grid-cols-3 xl:grid-cols-6';
+  protected readonly statuses = STATUSES as unknown as string[];
+  protected readonly tasks = signal<Task[]>([]);
+  protected readonly grouped = computed(() => {
+    const map: Record<string, Task[]> = Object.fromEntries(this.statuses.map((s) => [s, []]));
+    for (const t of this.tasks()) {
+      const s = (t.status || 'todo').toLowerCase();
+      (map[s] ??= []).push(t);
+    }
+    return map;
+  });
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    const res = await this.svc.getAll({
+      limit: 1000,
+      columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at'],
+    });
+    const rows = (res.rows || []) as unknown as any[];
+    const items: Task[] = rows.map((r) => ({
+      id: String(r.id),
+      name: String(r.name || '(no name)'),
+      status: r.status ?? 'todo',
+      priority: r.priority ?? null,
+      assigned_to: r.assigned_to ?? null,
+      due_at: r.due_at ?? null,
+    }));
+    this.tasks.set(items);
+  }
+
+  protected onDragOver(ev: DragEvent) {
+    ev.preventDefault();
+    ev.dataTransfer!.dropEffect = 'move';
+  }
+
+  protected onDragStart(ev: DragEvent, t: Task) {
+    if (ev.dataTransfer) {
+      ev.dataTransfer.setData('text/plain', t.id);
+      ev.dataTransfer.setData('application/x-status', String(t.status || 'todo'));
+      ev.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  protected async onDrop(ev: DragEvent, toStatus: string) {
+    ev.preventDefault();
+    const id = ev.dataTransfer?.getData('text/plain');
+    if (!id) return;
+    const list = this.tasks();
+    const idx = list.findIndex((x) => x.id === id);
+    if (idx < 0) return;
+    const curr = list[idx]!;
+    const next = String(toStatus) as UpdateTaskType['status'];
+    if (curr.status === next) return;
+
+    try {
+      await this.svc.update(id, { status: next } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      const copy = list.slice();
+      copy[idx] = { ...curr, status: String(next) };
+      this.tasks.set(copy);
+    } catch (_e) {
+      // ignore errors; could add toast
+    }
+  }
+
+  protected openTask(t: Task) {
+    void this.router.navigate(['tasks', t.id]);
+  }
+
+  protected toLabel(s: string) {
+    return STATUS_LABEL[s] || s;
+  }
+
+  protected priorityBadgeClass(p?: string | null) {
+    const v = (p || '').toLowerCase();
+    return v === 'urgent'
+      ? 'badge-error'
+      : v === 'high'
+        ? 'badge-warning'
+        : v === 'medium'
+          ? 'badge-info'
+          : 'badge-neutral';
+  }
+
+  protected dateLabel(v?: string | null) {
+    if (!v) return '';
+    const s = typeof v === 'string' ? v : String(v);
+    return s.length > 10 ? s.slice(0, 10) : s;
+  }
+}
+
+type Task = {
+  id: string;
+  name: string;
+  status: string | null;
+  priority?: string | null;
+  assigned_to?: string | null;
+  due_at?: string | null;
+};
+
+const STATUSES = ['todo', 'in_progress', 'blocked', 'done', 'canceled'] as const;
+const STATUS_LABEL: Record<string, string> = {
+  todo: 'Todo',
+  in_progress: 'In Progress',
+  blocked: 'Blocked',
+  done: 'Done',
+  canceled: 'Canceled',
+};
+```
+
+## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
+
+```typescript
+import { Component, computed, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+
+import { UserService } from '../../../services/user.service';
+import { ListsService } from '../../lists/services/lists-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamDetail, TeamsService } from '../services/teams-service';
+
+interface PersonOption {
+  email: string | null;
+  id: string;
+  label: string;
+}
+
+import { DatePipe } from '@angular/common';
+
+@Component({
+  selector: 'pc-team-form',
+  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
+  templateUrl: './team-form.html',
+})
+export class TeamFormComponent implements OnInit {
+  readonly id = input<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly persons = inject(PersonsService);
+  private readonly router = inject(Router);
+  private readonly teams = inject(TeamsService);
+  private readonly lists = inject(ListsService);
+  private readonly userService = inject(UserService);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly isNew = computed(() => !this.id());
+
+  protected readonly detail = signal<TeamDetail | null>(null);
+  protected readonly error = signal<string | null>(null);
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    team_captain_id: '',
+    team_lead_user_id: '',
+    volunteer_ids: [] as string[],
+    list_ids: [] as string[],
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddTeamObj);
+  });
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected signalPeople = signal<PersonOption[]>([]);
+  protected readonly people = computed(() => this.signalPeople());
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly availableLists = signal<any[]>([]);
+  protected readonly assignedLists = signal<any[]>([]);
+  protected readonly teamTasks = signal<any[]>([]);
+  protected readonly saving = signal(false);
+  protected readonly volunteers = computed(() => this.detail()?.volunteers ?? []);
+
+  constructor() {
+    effect(() => {
+      const options = this.people();
+      if (options.length === 0) return;
+
+      const current = untracked(this.payload);
+      let nextCaptain = current.team_captain_id;
+      let changed = false;
+
+      if (nextCaptain && !options.some((p) => p.id === nextCaptain)) {
+        nextCaptain = '';
+        changed = true;
+      }
+
+      const currentVolunteers = current.volunteer_ids ?? [];
+      const validIds = currentVolunteers.filter((id) => options.some((p) => p.id === id));
+      if (validIds.length !== currentVolunteers.length) {
+        changed = true;
+      }
+
+      if (changed) {
+        this.payload.update((p) => ({
+          ...p,
+          team_captain_id: nextCaptain,
+          volunteer_ids: validIds,
+        }));
+      }
+    });
+  }
+
+  public ngOnInit(): void {
+    void this.initialize();
+  }
+  private async initialize(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
+
+      if (this.isNew()) {
+        const state = window.history.state;
+        if (state && state.cloneData) {
+          const sourceTeamId = state.cloneData.id;
+          if (sourceTeamId) {
+            try {
+              const teamDetail = await this.teams.getById(sourceTeamId);
+              this.payload.set({
+                name: teamDetail.name ? `${teamDetail.name} (Copy)` : '',
+                description: teamDetail.description ?? '',
+                team_captain_id: teamDetail.team_captain_id ?? '',
+                team_lead_user_id: teamDetail.team_lead_user_id ?? '',
+                volunteer_ids: teamDetail.volunteers?.map((v) => v.id) ?? [],
+                list_ids: teamDetail.list_ids ?? [],
+              });
+              this.assignedLists.set(teamDetail.lists ?? []);
+            } catch (err) {
+              console.error('Failed to load source team details for cloning', err);
+              const data = state.cloneData;
+              this.payload.set({
+                name: data.name ? `${data.name} (Copy)` : '',
+                description: data.description ?? '',
+                team_captain_id: data.team_captain_id ?? '',
+                team_lead_user_id: data.team_lead_user_id ?? '',
+                volunteer_ids: [],
+                list_ids: [],
+              });
+            }
+          }
+        }
+      }
+    } finally {
+      end();
+    }
+  }
+
+  protected captainLabel(captainId: string | null) {
+    if (!captainId) return '—';
+    const person = this.people().find((p) => p.id === captainId);
+    return person?.label ?? '—';
+  }
+
+  protected isVolunteerSelected(id: string): boolean {
+    return this.payload().volunteer_ids?.includes(id) ?? false;
+  }
+
+  protected onVolunteersChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
+
+    this.payload.update((p) => ({
+      ...p,
+      volunteer_ids: selectedOptions,
+    }));
+    this.form.volunteer_ids().markAsDirty();
+  }
+
+  protected isListSelected(id: string): boolean {
+    return this.payload().list_ids?.includes(id) ?? false;
+  }
+
+  protected onListsChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
+
+    this.payload.update((p) => ({
+      ...p,
+      list_ids: selectedOptions,
+    }));
+    this.form.list_ids().markAsDirty();
+
+    const matching = this.availableLists().filter((l) => selectedOptions.includes(l.id));
+    this.assignedLists.set(matching);
+  }
+
+  protected async deleteTeam() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      await this.teams.delete(this.id()!);
+      this.teams.triggerRefresh();
+      this.alerts.showSuccess('Team deleted');
+      await this.router.navigate(['/teams']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    const raw = this.payload();
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    try {
+      let result: TeamDetail;
+      if (this.isNew()) {
+        const payload: AddTeamType = {
+          name: raw.name?.trim() ?? '',
+          description: raw.description?.trim()?.length ? raw.description.trim() : null,
+          team_captain_id: raw.team_captain_id || undefined,
+          team_lead_user_id: raw.team_lead_user_id || undefined,
+          volunteer_ids: raw.volunteer_ids ?? [],
+          list_ids: raw.list_ids ?? [],
+        };
+        result = await this.teams.add(payload);
+        this.teams.triggerRefresh();
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/teams']);
+        }
+      } else if (this.id()) {
+        const payload: UpdateTeamType = {
+          name: raw.name?.trim() ?? null,
+          description: raw.description?.trim()?.length ? raw.description.trim() : null,
+          team_captain_id: raw.team_captain_id || null,
+          team_lead_user_id: raw.team_lead_user_id || null,
+          volunteer_ids: raw.volunteer_ids ?? [],
+          list_ids: raw.list_ids ?? [],
+        };
+        result = await this.teams.update(this.id()!, payload);
+        this.teams.triggerRefresh();
+        this.detail.set(result);
+        this.setForm(result);
+        this.form().reset();
+        this.alerts.showSuccess('Team updated');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/teams', this.id()]);
+        }
+        return;
+      } else {
+        throw new Error('Missing team identifier');
+      }
+      this.detail.set(result);
+      this.setForm(result);
+      this.form().reset();
+      this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to save team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async loadPeople() {
+    try {
+      const res = await this.persons.getAll({ limit: 500, tags: ['volunteer'] });
+      const items = (res?.rows ?? []).map((person: any) => ({
+        id: String(person.id ?? ''),
+        label: `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email || 'Unknown',
+        email: person.email ?? null,
+      }));
+      this.signalPeople.set(items);
+    } catch (err) {
+      console.error('Failed to load volunteers list', err);
+      this.signalPeople.set([]);
+    }
+  }
+
+  private async loadUsers() {
+    try {
+      const us = await this.userService.getUsers();
+      this.users.set(us || []);
+    } catch (err) {
+      console.error('Failed to load teammates list', err);
+      this.users.set([]);
+    }
+  }
+
+  private async loadLists() {
+    try {
+      const res = await this.lists.getAll({ limit: 1000 });
+      this.availableLists.set(res?.rows ?? []);
+    } catch (err) {
+      console.error('Failed to load lists', err);
+      this.availableLists.set([]);
+    }
+  }
+
+  private async loadTeam() {
+    if (this.isNew()) {
+      this.detail.set(null);
+      this.setForm(null);
+      return;
+    }
+    if (!this.id()) {
+      this.error.set('Missing team identifier');
+      return;
+    }
+
+    try {
+      const team = await this.teams.getById(this.id()!);
+      this.detail.set(team);
+      this.setForm(team);
+      const res = await this.tasksSvc.getAll({
+        filterModel: { team_id: { value: this.id() } },
+      } as any);
+      this.teamTasks.set(res?.rows ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    }
+  }
+
+  private setForm(team: TeamDetail | null) {
+    this.payload.set({
+      name: team?.name ?? '',
+      description: team?.description ?? '',
+      team_captain_id: team?.team_captain_id ?? '',
+      team_lead_user_id: team?.team_lead_user_id ?? '',
+      volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
+      list_ids: team?.list_ids ?? [],
+    });
+    this.assignedLists.set(team?.lists ?? []);
+  }
+
+  protected getPriorityClass(priority: string | null | undefined): string {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'badge-error text-error-content';
+      case 'high':
+        return 'badge-warning text-warning-content';
+      case 'medium':
+        return 'badge-info text-info-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+
+  protected getStatusClass(status: string | null | undefined): string {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done':
+        return 'badge-success text-success-content';
+      case 'in_progress':
+        return 'badge-info text-info-content';
+      case 'blocked':
+        return 'badge-error text-error-content';
+      case 'canceled':
+        return 'badge-neutral text-neutral-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
+    >
+      @if (grid.showNarrowTypeFilter()) {
+      <pc-dg-filter-section
+        [title]="'Narrow by Type'"
+        [bordered]="false"
+        [clearable]="false"
+        [active]="grid.selectedNarrowType() !== null"
+        [open]="grid.selectedNarrowType() !== null"
+      >
+        <pc-singleselect-filter
+          [label]="'Type'"
+          [options]="narrowTypeOptions()"
+          [selected]="grid.selectedNarrowType()"
+          [radioName]="'narrowTypeMobile'"
+          (select)="grid.selectNarrowType($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider my-0"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar -->
+<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
+    [tip]="'Clone'"
+    icon="document-duplicate"
+    [hidden]="!grid.addRoute()"
+    (action)="onClone()"
+  />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  @if (!grid.disableMerge()) {
+  <pc-grid-tool-btn
+    [enabled]="grid.getCountRowSelected() === 2"
+    [tip]="'Merge selected rows'"
+    icon="merge"
+    (action)="onMergeSelected()"
+  />
+  }
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+    [spinning]="grid.isRefreshing()"
+    [tip]="'Refresh the grid'"
+    icon="arrow-path"
+    (action)="onRefresh()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableImport()"
+    [tip]="'Import data from CSV'"
+    icon="arrow-up-tray"
+    (action)="onImportCsv()"
+  />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableExport()"
+    [tip]="'Download as CSV'"
+    icon="arrow-down-tray"
+    (action)="onExportCsv()"
+  />
+
+  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+  } @if (grid.showNarrowTypeFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'tag'"
+    [tip]="'Narrow by type'"
+    [active]="grid.selectedNarrowType() !== null"
+    [hasDropdown]="true"
+  >
+    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
+      <pc-singleselect-filter
+        [label]="'Type'"
+        [options]="narrowTypeOptions()"
+        [selected]="grid.selectedNarrowType()"
+        [radioName]="'narrowType'"
+        (select)="grid.selectNarrowType($event)"
+      />
+    </div>
+  </pc-grid-tool-btn>
+  } @if (grid.showTagFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'label'"
+    [tip]="'Filter by Tags'"
+    [active]="grid.selectedTags().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedTags().length"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by Tags'"
+      [active]="grid.selectedTags().length > 0"
+      (clear)="grid.clearTagsFilter()"
+    >
+      <pc-multiselect-filter
+        [label]="'Tags'"
+        [options]="grid.filteredAvailableTags()"
+        [selected]="grid.selectedTags()"
+        [searchQuery]="grid.tagSearchQuery()"
+        (searchQueryChange)="grid.tagSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllTags()"
+        (clearVisible)="grid.clearAllTagsVisible()"
+        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+      />
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  } @if (grid.showIssueFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'shield-exclamation'"
+    [tip]="'Filter by Issues'"
+    [active]="grid.selectedIssues().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedIssues().length"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by Issues'"
+      [active]="grid.selectedIssues().length > 0"
+      (clear)="grid.clearIssuesFilter()"
+    >
+      <pc-multiselect-filter
+        [label]="'Issues'"
+        [options]="grid.filteredAvailableIssues()"
+        [selected]="grid.selectedIssues()"
+        [searchQuery]="grid.issueSearchQuery()"
+        (searchQueryChange)="grid.issueSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllIssues()"
+        (clearVisible)="grid.clearAllIssuesVisible()"
+        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+      />
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  } @if (grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'queue-list'"
+    [tip]="'Filter by List'"
+    [active]="grid.selectedListId() !== null"
+    [hasDropdown]="true"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by List'"
+      [active]="grid.selectedListId() !== null"
+      (clear)="grid.clearListFilter()"
+    >
+      <pc-singleselect-filter
+        [label]="'List'"
+        [options]="listOptions()"
+        [selected]="grid.selectedListId()"
+        [radioName]="'selectedList'"
+        [maxHeight]="14"
+        (select)="grid.selectListFilter($event)"
+      />
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  }
+
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Advanced Filters"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveAdvancedFilters()"
+    (action)="onToggleFilters()"
+  />
+  <pc-grid-tool-btn
+    icon="adjustments-horizontal"
+    tip="Advanced Query Builder"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+    (action)="grid.openAdvancedFilterBuilder()"
+  />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <pc-grid-tool-btn
+    [icon]="grid.archiveIcon()"
+    [tip]="grid.archiveTip()"
+    [hidden]="!grid.showArchiveIcon()"
+    [active]="grid.archiveModeState()"
+    (action)="onToggleArchive()"
+  />
+</ul>
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
+
+```typescript
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Router, RouterModule } from '@angular/router';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { CompanyInputObj } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { CompaniesService } from '../services/companies-service';
+import { PeopleInCompany } from './people-in-company';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+
+@Component({
+  selector: 'pc-company-form',
+  imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
+  templateUrl: './company-form.html',
+})
+export class CompanyForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly company = signal<any | null>(null);
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    website: '',
+    industry: '',
+    email: '',
+    phone: '',
+    notes: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, CompanyInputObj);
+  });
+  protected id = input<string>();
+  protected isLoading = this._loading.visible;
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadCompany();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          name: data.name ? `${data.name} (Copy)` : '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+      }
+    }
+  }
+
+  private async loadCompany() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
+    try {
+      const data = await this.companiesSvc.getById(this.id()!);
+      this.company.set(data);
+      if (data) {
+        this.payload.set({
+          name: data.name ?? '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+        this.form().reset();
+      }
+    } catch (err) {
+      console.error('Failed to load company details:', err);
+    } finally {
+      end();
+    }
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id()!);
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+    const raw = this.payload();
+    if (this.id()) {
+      const end = this._loading.begin();
+      this.companiesSvc
+        .update(this.id()!, raw)
+        .then(() => {
+          this.companiesSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Company updated successfully');
+          if (typeof done === 'function') {
+            done();
+          } else {
+            void this.router.navigate(['/companies', this.id()]);
+          }
+        })
+        .catch((err: any) => {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
+        .finally(() => end());
+    } else {
+      const end = this._loading.begin();
+      this.companiesSvc
+        .add(raw)
+        .then(() => {
+          this.companiesSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Company added successfully');
+          if (typeof done === 'function') {
+            done();
+          } else {
+            void this.router.navigate(['/companies']);
+          }
+        })
+        .catch((err: any) => {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
+        .finally(() => end());
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
+
+```typescript
+import { inject, signal, computed, Directive } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+
+export interface DuplicateGroup<T> {
+  reason: string;
+  items: T[]; // Normalized array (replaces specific persons/households/companies arrays)
+  selectedTargetId?: string;
+  selectedSourceId?: string;
+}
+
+@Directive() // Needed for abstract classes using dependency injection in Angular
+export abstract class BaseDuplicateManager<T extends { id: string; created_at: string | Date }> {
+  protected readonly alertSvc = inject(AlertService);
+  protected readonly dialogs = inject(ConfirmDialogService);
+
+  public readonly isLoading = signal(false);
+  public readonly groups = signal<DuplicateGroup<T>[]>([]);
+
+  public readonly currentPage = signal(1);
+  public readonly pageSize = signal(10);
+  public readonly totalGroups = signal(0);
+  public readonly totalPages = computed(() => Math.ceil(this.totalGroups() / this.pageSize()));
+
+  // Abstract methods the child components must implement
+  protected abstract getEntityName(): string;
+  protected abstract getItemDisplayName(item: T): string;
+  protected abstract fetchFromService(options: {
+    page: number;
+    pageSize: number;
+  }): Promise<{ groups: any[]; total: number }>;
+  protected abstract getItemsFromRawGroup(rawGroup: any): T[];
+  protected abstract mergeInService(targetId: string, sourceId: string): Promise<void>;
+
+  public async loadDuplicates() {
+    this.isLoading.set(true);
+    try {
+      const response = await this.fetchFromService({
+        page: this.currentPage(),
+        pageSize: this.pageSize(),
+      });
+
+      this.totalGroups.set(response.total);
+
+      const mappedGroups: DuplicateGroup<T>[] = response.groups.map((g) => {
+        let selectedTargetId: string | undefined = undefined;
+        let selectedSourceId: string | undefined = undefined;
+        const items = this.getItemsFromRawGroup(g);
+
+        const [firstItem, secondItem] = items;
+        if (items.length === 2 && firstItem && secondItem) {
+          const date0 = new Date(firstItem.created_at).getTime();
+          const date1 = new Date(secondItem.created_at).getTime();
+          if (date0 <= date1) {
+            selectedTargetId = firstItem.id;
+            selectedSourceId = secondItem.id;
+          } else {
+            selectedTargetId = secondItem.id;
+            selectedSourceId = firstItem.id;
+          }
+        }
+        return { reason: g.reason, items, selectedTargetId, selectedSourceId };
+      });
+      this.groups.set(mappedGroups);
+    } catch (_err) {
+      this.alertSvc.showError(`Failed to fetch ${this.getEntityName()} duplicates`);
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  public selectRole(groupIndex: number, itemId: string, role: 'target' | 'source') {
+    this.groups.update((current) => {
+      const updated = [...current];
+
+      // 1. Create a shallow copy of the group to avoid mutating the original reference
+      const existingGroup = updated[groupIndex];
+      if (!existingGroup) return current;
+      const updatedGroup = { ...existingGroup };
+
+      // 2. Apply your logic to the NEW object
+      if (role === 'target') {
+        updatedGroup.selectedTargetId = itemId;
+        if (updatedGroup.selectedSourceId === itemId) updatedGroup.selectedSourceId = undefined;
+      } else {
+        updatedGroup.selectedSourceId = itemId;
+        if (updatedGroup.selectedTargetId === itemId) updatedGroup.selectedTargetId = undefined;
+      }
+
+      // 3. Assign the new object back to the array
+      updated[groupIndex] = updatedGroup;
+
+      return updated;
+    });
+  }
+
+  public async mergeGroup(groupIndex: number) {
+    const group = this.groups()[groupIndex];
+    if (!group) return;
+    const targetId = group.selectedTargetId;
+    const sourceId = group.selectedSourceId;
+    if (!targetId || !sourceId) return;
+
+    const targetItem = group.items.find((i) => i.id === targetId);
+    const sourceItem = group.items.find((i) => i.id === sourceId);
+    if (!targetItem || !sourceItem) return;
+
+    const primaryName = this.getItemDisplayName(targetItem);
+    const dupName = this.getItemDisplayName(sourceItem);
+
+    const confirmed = await this.dialogs.confirm({
+      title: 'Confirm Merge',
+      message: `Are you sure you want to merge "${dupName}" into "${primaryName}"? This action will permanently delete this duplicate ${this.getEntityName()} and cannot be undone.`,
+      variant: 'warning',
+      confirmText: 'Merge',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await this.mergeInService(targetId, sourceId);
+      this.alertSvc.showSuccess(`Successfully merged into "${primaryName}"`);
+
+      let updatedGroups = this.groups().filter((_, idx) => idx !== groupIndex);
+      updatedGroups = updatedGroups.map((g) => ({
+        ...g,
+        items: g.items.filter((i) => i.id !== sourceId),
+      }));
+
+      const initialLength = updatedGroups.length;
+      updatedGroups = updatedGroups.filter((g) => g.items.length > 1);
+      const groupsRemovedCount = 1 + (initialLength - updatedGroups.length);
+
+      this.groups.set(updatedGroups);
+      this.totalGroups.update((t) => Math.max(0, t - groupsRemovedCount));
+
+      if (updatedGroups.length === 0 && this.currentPage() > 1) {
+        this.currentPage.update((p) => p - 1);
+        void this.loadDuplicates();
+      } else if (updatedGroups.length === 0 && this.totalGroups() > 0) {
+        void this.loadDuplicates();
+      }
+    } catch (err) {
+      this.alertSvc.showError(err instanceof Error && err.message ? err.message : 'Merge failed');
+    }
+  }
+
+  public nextPage() {
+    if (this.currentPage() < this.totalPages()) {
+      this.currentPage.update((p) => p + 1);
+      void this.loadDuplicates();
+    }
+  }
+
+  public prevPage() {
+    if (this.currentPage() > 1) {
+      this.currentPage.update((p) => p - 1);
+      void this.loadDuplicates();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { EventsFrontendService } from '../services/events-frontend-service';
+
+@Component({
+  selector: 'pc-events-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Event Pages"
+        i18n-title
+        description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="plus"
+        i18n-plusIcon
+        [showArchiveIcon]="true"
+        archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
+        archiveTip="See past events"
+        i18n-archiveTip
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: EventsFrontendService },
+    provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
+  ],
+})
+export class EventsGridComponent {
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col = [
+    { field: 'name', headerName: 'Event Name', editable: true },
+    { field: 'location_address', headerName: 'Location', editable: true },
+    {
+      field: 'start_time',
+      headerName: 'Start Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
+      editable: false,
+    },
+    {
+      field: 'end_time',
+      headerName: 'End Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
+      editable: false,
+    },
+    {
+      field: 'is_published',
+      headerName: 'Published',
+      valueFormatter: (p: any) => (p.value ? 'Yes' : 'Draft'),
+      editable: false,
+    },
+    {
+      field: 'registrations_count',
+      headerName: 'Registrations',
+      editable: false,
+    },
+    {
+      field: 'capacity',
+      headerName: 'Capacity',
+      editable: false,
+      valueFormatter: (p: any) => p.value ?? 'Unlimited',
+    },
+  ];
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DonationPagesService } from '@experiences/forms/services/donation-pages-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Component({
+  selector: 'pc-fundraising-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Donation Pages"
+        i18n-title
+        description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [allowFilter]="false"
+        [disableView]="false"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="plus"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: DonationPagesService },
+    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'donation-pages-export.csv' } }),
+  ],
+})
+export class FundraisingGridComponent {
+  protected col = [
+    { field: 'name', headerName: 'Page Name', editable: false },
+    { field: 'description', headerName: 'Description', editable: false },
+    {
+      field: 'form_type',
+      headerName: 'Type',
+      editable: false,
+      valueFormatter: (p: any) => (p.value === 'recurring_donation' ? 'Recurring' : 'One-Time'),
+    },
+    { field: 'status', headerName: 'Status', editable: true },
+    {
+      field: 'created_at',
+      headerName: 'Created At',
+      valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
+    },
+  ];
 }
 ```
 
@@ -46086,138 +46746,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.ts
-
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
-import { UpdateTaskType } from '../../../../../../../libs/common/src';
-import { Icon } from '@uxcommon/components/icons/icon';
-
-import { TasksService } from '../services/tasks-service';
-
-@Component({
-  selector: 'pc-tasks-board',
-  imports: [Icon],
-  templateUrl: './tasks-board.html',
-})
-export class TasksBoard implements OnInit {
-  private readonly router = inject(Router);
-  private readonly svc = inject(TasksService);
-
-  protected readonly gridColsClass = 'grid-cols-1 md:grid-cols-3 xl:grid-cols-6';
-  protected readonly statuses = STATUSES as unknown as string[];
-  protected readonly tasks = signal<Task[]>([]);
-  protected readonly grouped = computed(() => {
-    const map: Record<string, Task[]> = Object.fromEntries(this.statuses.map((s) => [s, []]));
-    for (const t of this.tasks()) {
-      const s = (t.status || 'todo').toLowerCase();
-      (map[s] ??= []).push(t);
-    }
-    return map;
-  });
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    const res = await this.svc.getAll({
-      limit: 1000,
-      columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at'],
-    });
-    const rows = (res.rows || []) as unknown as any[];
-    const items: Task[] = rows.map((r) => ({
-      id: String(r.id),
-      name: String(r.name || '(no name)'),
-      status: r.status ?? 'todo',
-      priority: r.priority ?? null,
-      assigned_to: r.assigned_to ?? null,
-      due_at: r.due_at ?? null,
-    }));
-    this.tasks.set(items);
-  }
-
-  protected onDragOver(ev: DragEvent) {
-    ev.preventDefault();
-    ev.dataTransfer!.dropEffect = 'move';
-  }
-
-  protected onDragStart(ev: DragEvent, t: Task) {
-    if (ev.dataTransfer) {
-      ev.dataTransfer.setData('text/plain', t.id);
-      ev.dataTransfer.setData('application/x-status', String(t.status || 'todo'));
-      ev.dataTransfer.effectAllowed = 'move';
-    }
-  }
-
-  protected async onDrop(ev: DragEvent, toStatus: string) {
-    ev.preventDefault();
-    const id = ev.dataTransfer?.getData('text/plain');
-    if (!id) return;
-    const list = this.tasks();
-    const idx = list.findIndex((x) => x.id === id);
-    if (idx < 0) return;
-    const curr = list[idx]!;
-    const next = String(toStatus) as UpdateTaskType['status'];
-    if (curr.status === next) return;
-
-    try {
-      await this.svc.update(id, { status: next } as UpdateTaskType);
-      this.svc.triggerRefresh();
-      const copy = list.slice();
-      copy[idx] = { ...curr, status: String(next) };
-      this.tasks.set(copy);
-    } catch (_e) {
-      // ignore errors; could add toast
-    }
-  }
-
-  protected openTask(t: Task) {
-    void this.router.navigate(['tasks', t.id]);
-  }
-
-  protected toLabel(s: string) {
-    return STATUS_LABEL[s] || s;
-  }
-
-  protected priorityBadgeClass(p?: string | null) {
-    const v = (p || '').toLowerCase();
-    return v === 'urgent'
-      ? 'badge-error'
-      : v === 'high'
-        ? 'badge-warning'
-        : v === 'medium'
-          ? 'badge-info'
-          : 'badge-neutral';
-  }
-
-  protected dateLabel(v?: string | null) {
-    if (!v) return '';
-    const s = typeof v === 'string' ? v : String(v);
-    return s.length > 10 ? s.slice(0, 10) : s;
-  }
-}
-
-type Task = {
-  id: string;
-  name: string;
-  status: string | null;
-  priority?: string | null;
-  assigned_to?: string | null;
-  due_at?: string | null;
-};
-
-const STATUSES = ['todo', 'in_progress', 'blocked', 'done', 'canceled'] as const;
-const STATUS_LABEL: Record<string, string> = {
-  todo: 'Todo',
-  in_progress: 'In Progress',
-  blocked: 'Blocked',
-  done: 'Done',
-  canceled: 'Canceled',
-};
-```
-
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
 
 ```typescript
@@ -46227,6 +46755,8 @@ import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { UserService } from '@frontend/services/user.service';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
@@ -46294,53 +46824,53 @@ export class TasksGrid implements OnInit {
   // Fields we will accept from CSV for future import support
   protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
 
-  protected col = [
+  protected col: ColDef[] = [
     { field: 'id', headerName: 'ID' },
     {
       field: 'assigned_to',
       headerName: 'Assigned To',
       editable: true,
-      valueGetter: (p: any) => this.assignedToValueGetter(p),
-      valueFormatter: (p: any) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: any) => this.renderAssignedCell(p.data?.assigned_to),
+      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
+      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
+      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
       cellEditorParams: () => ({
         values: [null, ...this.userIds],
         labels: [this.unassignedLabel, ...this.userLabels],
       }),
-      valueSetter: (p: any) => this.assignToValueSetter(p),
+      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
     },
     { field: 'name', headerName: 'Task', editable: true },
     {
       field: 'status',
       headerName: 'Status',
       editable: true,
-      cellRenderer: (p: any) => this.renderStatusBadge(p.value),
+      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
       cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
-      valueSetter: (p: any) => this.statusValueSetter(p),
+      valueSetter: (p: CellParams) => this.statusValueSetter(p),
     },
     {
       field: 'priority',
       headerName: 'Priority',
       editable: true,
-      cellRenderer: (p: any) => this.renderPriorityBadge(p.value),
+      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
       cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
-      valueSetter: (p: any) => this.priorityValueSetter(p),
+      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
     },
     {
       field: 'due_at',
       headerName: 'Due',
       editable: true,
-      valueGetter: (p: any) => this.toDateOnly(p.data?.due_at ?? p.value),
-      valueSetter: (p: any) => this.dueAtValueSetter(p),
-      valueFormatter: (p: any) => this.formatDate(p.value),
-      cellClass: (p: any) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
+      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
+      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value),
+      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
     },
     {
       field: 'createdby_id',
       headerName: 'Created By',
       editable: false,
-      valueFormatter: (p: any) => this.userNameForId(p.value),
-      cellRenderer: (p: any) => this.renderCreatedByCell(p.data?.createdby_id),
+      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
+      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
       // Provide filter options using known user labels
       cellEditorParams: () => ({ values: this.userLabels }),
     },
@@ -46358,7 +46888,7 @@ export class TasksGrid implements OnInit {
     try {
       const users = await this.userService.getUsers();
       this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.usersAvatarById = new Map(users.map((u) => [String(u.id), (u as any).avatar_url ?? null]));
+      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
       this.userIds = users.map((u) => String(u.id));
       this.userLabels = users.map((u) => `${u.first_name}`);
     } catch {
@@ -46427,55 +46957,59 @@ export class TasksGrid implements OnInit {
     this.importerOpen.set(true);
   }
 
-  private assignToValueSetter(p: any) {
+  private assignToValueSetter(p: CellParams) {
     const val =
       p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
         ? null
         : String(p.newValue);
-    if ((p.data as Record<string, any>)['assigned_to'] !== val) {
-      (p.data as Record<string, any>)['assigned_to'] = val;
+    const data = p.data;
+    if (!data) return false;
+    if (data['assigned_to'] !== val) {
+      data['assigned_to'] = val;
       return true;
     }
     return false;
   }
 
-  private assignedToValueFormatter(p: any) {
+  private assignedToValueFormatter(p: CellParams) {
     const v = p.value;
     if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
     return this.usersById.get(String(v)) ?? String(v ?? '');
   }
 
-  private assignedToValueGetter(p: any) {
-    const id = p.data?.assigned_to ?? p.value;
+  private assignedToValueGetter(p: CellParams) {
+    const id = p.data?.['assigned_to'] ?? p.value;
     if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
     return String(id);
   }
 
-  private dueAtValueSetter(p: any) {
-    const val: string = p.newValue || p.value || '';
+  private dueAtValueSetter(p: CellParams) {
+    const val = String(p.newValue || p.value || '');
     // ensure only YYYY-MM-DD is stored
     const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    if ((p.data as Record<string, any>)['due_at'] !== dateOnly) {
-      (p.data as Record<string, any>)['due_at'] = dateOnly;
+    const data = p.data;
+    if (!data) return false;
+    if (data['due_at'] !== dateOnly) {
+      data['due_at'] = dateOnly;
       return true;
     }
     return false;
   }
 
-  private formatDate(value: any) {
+  private formatDate(value: unknown) {
     if (!value) return '';
     const d = new Date(this.toDateOnly(value));
     if (isNaN(d.getTime())) return '';
     return d.toLocaleDateString();
   }
 
-  private isOverdue(row: any): boolean {
+  private isOverdue(row: GridRow | undefined): boolean {
     if (!row) return false;
 
-    const status = String(row.status ?? '').toLowerCase();
+    const status = String(row['status'] ?? '').toLowerCase();
     if (status === 'done' || status === 'canceled') return false;
 
-    const due = this.toDateOnly(row.due_at);
+    const due = this.toDateOnly(row['due_at']);
     if (!due) return false;
 
     const today = this.toDateOnly(new Date());
@@ -46503,16 +47037,18 @@ export class TasksGrid implements OnInit {
     return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
   }
 
-  private priorityValueSetter(p: any) {
-    const v = this.parsePriorityLabel(p.newValue);
-    if ((p.data as Record<string, any>)['priority'] !== v) {
-      (p.data as Record<string, any>)['priority'] = v;
+  private priorityValueSetter(p: CellParams) {
+    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['priority'] !== v) {
+      data['priority'] = v;
       return true;
     }
     return false;
   }
 
-  private renderAssignedCell(value: string | null | undefined) {
+  private renderAssignedCell(value: unknown) {
     const v = value == null ? '' : String(value);
     const isUnassigned = !v || v === this.unassignedLabel;
     const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
@@ -46556,7 +47092,7 @@ export class TasksGrid implements OnInit {
     `;
   }
 
-  private renderCreatedByCell(value: string | null | undefined) {
+  private renderCreatedByCell(value: unknown) {
     const label = value == null ? '' : String(value);
     if (!label) {
       return `<span class="text-base-content/30">—</span>`;
@@ -46598,7 +47134,7 @@ export class TasksGrid implements OnInit {
     `;
   }
 
-  private renderPriorityBadge(value: string | null | undefined) {
+  private renderPriorityBadge(value: unknown) {
     if (!value) return '';
     const v = String(value);
     const cls =
@@ -46607,7 +47143,7 @@ export class TasksGrid implements OnInit {
     return `<span class="badge ${cls} badge-sm">${label}</span>`;
   }
 
-  private renderStatusBadge(value: string | null | undefined) {
+  private renderStatusBadge(value: unknown) {
     if (!value) return '';
     const v = String(value);
     const cls =
@@ -46624,18 +47160,20 @@ export class TasksGrid implements OnInit {
     return `<span class="badge ${cls} badge-sm">${label}</span>`;
   }
 
-  private statusValueSetter(p: any) {
-    const v = this.parseStatusLabel(p.newValue);
-    if ((p.data as Record<string, any>)['status'] !== v) {
-      (p.data as Record<string, any>)['status'] = v;
+  private statusValueSetter(p: CellParams) {
+    const v = this.parseStatusLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['status'] !== v) {
+      data['status'] = v;
       return true;
     }
     return false;
   }
 
-  private toDateOnly(v: any): string {
+  private toDateOnly(v: unknown): string {
     if (!v) return '';
-    const str = typeof v === 'string' ? v : new Date(v).toISOString();
+    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
     return str.length > 10 ? str.slice(0, 10) : str;
   }
 
@@ -46647,539 +47185,10 @@ export class TasksGrid implements OnInit {
       .join(' ');
   }
 
-  private userNameForId(id: string | number | null | undefined) {
+  private userNameForId(id: unknown) {
     if (id === null || id === undefined || id === '') return '';
     const key = String(id);
     return this.usersById.get(key) ?? '';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { EventsFrontendService } from '../services/events-frontend-service';
-
-@Component({
-  selector: 'pc-events-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Event Pages"
-        i18n-title
-        description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
-        i18n-description
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="plus"
-        i18n-plusIcon
-        [showArchiveIcon]="true"
-        archiveIcon="archive-box-arrow-down"
-        i18n-archiveIcon
-        archiveTip="See past events"
-        i18n-archiveTip
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: EventsFrontendService },
-    provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
-  ],
-})
-export class EventsGridComponent {
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col = [
-    { field: 'name', headerName: 'Event Name', editable: true },
-    { field: 'location_address', headerName: 'Location', editable: true },
-    {
-      field: 'start_time',
-      headerName: 'Start Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
-      editable: false,
-    },
-    {
-      field: 'end_time',
-      headerName: 'End Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
-      editable: false,
-    },
-    {
-      field: 'is_published',
-      headerName: 'Published',
-      valueFormatter: (p: any) => (p.value ? 'Yes' : 'Draft'),
-      editable: false,
-    },
-    {
-      field: 'registrations_count',
-      headerName: 'Registrations',
-      editable: false,
-    },
-    {
-      field: 'capacity',
-      headerName: 'Capacity',
-      editable: false,
-      valueFormatter: (p: any) => p.value ?? 'Unlimited',
-    },
-  ];
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { DonationPagesService } from '@experiences/forms/services/donation-pages-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Component({
-  selector: 'pc-fundraising-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Donation Pages"
-        i18n-title
-        description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
-        i18n-description
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [allowFilter]="false"
-        [disableView]="false"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="plus"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: DonationPagesService },
-    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'donation-pages-export.csv' } }),
-  ],
-})
-export class FundraisingGridComponent {
-  protected col = [
-    { field: 'name', headerName: 'Page Name', editable: false },
-    { field: 'description', headerName: 'Description', editable: false },
-    {
-      field: 'form_type',
-      headerName: 'Type',
-      editable: false,
-      valueFormatter: (p: any) => (p.value === 'recurring_donation' ? 'Recurring' : 'One-Time'),
-    },
-    { field: 'status', headerName: 'Status', editable: true },
-    {
-      field: 'created_at',
-      headerName: 'Created At',
-      valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
-    },
-  ];
-}
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/household-form.ts
-
-```typescript
-import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { UpdateHouseholdsType, UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
-import { Tags } from '@experiences/tags/ui/tags';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
-
-import { HouseholdsService } from '../services/households-service';
-import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-
-@Component({
-  selector: 'pc-household-form',
-  imports: [
-    PcTextarea,
-    AddressAutocomplete,
-    Tags,
-    Icon,
-    RouterModule,
-    PcDetailHeader,
-    PcEntityOverview,
-    PcAddressFormGroup,
-  ],
-  templateUrl: './household-form.html',
-})
-export class HouseholdForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly personsSvc = inject(PersonsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly household = signal<Households | null>(null);
-
-  protected addressVerified = false;
-
-  protected tags: string[] = [];
-
-  protected issues: string[] = [];
-
-  protected readonly payload = signal({
-    formatted_address: '',
-    type: '',
-    lat: 0,
-    lng: 0,
-    street_num: '',
-    street1: '',
-    street2: '',
-    apt: '',
-    city: '',
-    state: '',
-    country: '',
-    zip: '',
-    home_phone: '',
-    notes: '',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, UpdateHouseholdsObj);
-  });
-
-  protected readonly addressString = computed(() => {
-    const raw = this.payload();
-
-    // If formatted_address is present (e.g. populated via Google Places autocomplete)
-    if (raw.formatted_address) {
-      return raw.formatted_address;
-    }
-
-    const parts: string[] = [];
-
-    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
-
-    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
-
-    if (streetParts.length) {
-      parts.push(streetParts.join(' ').trim());
-    }
-    if (locationParts.length) {
-      parts.push(locationParts.join(', ').trim());
-    }
-
-    return parts.join(', ').trim();
-  });
-
-  protected id = input<string>();
-  protected isLoading = this._loading.visible;
-
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  public handleAddressChange(address: AddressType) {
-    const end = this._loading.begin();
-    try {
-      if (!address || !address.street1) {
-        this.alertSvc.showError('Please select the correct address from the list or leave it blank');
-        return;
-      }
-      this.payload.update((prev) => ({
-        ...prev,
-        formatted_address: address.formatted_address ?? '',
-        type: address.type ?? '',
-        lat: address.lat ?? 0,
-        lng: address.lng ?? 0,
-        street_num: address.street_num ?? '',
-        street1: address.street1 ?? '',
-        street2: address.street2 ?? '',
-        apt: address.apt ?? '',
-        city: address.city ?? '',
-        state: address.state ?? '',
-        country: address.country ?? '',
-        zip: address.zip ?? '',
-      }));
-      this.form.street1().markAsDirty();
-      this.addressVerified = true;
-    } finally {
-      end();
-    }
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadHousehold();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          formatted_address: data.formatted_address ?? '',
-          type: data.type ?? '',
-          lat: data.lat ?? 0,
-          lng: data.lng ?? 0,
-          street_num: data.street_num ?? '',
-          street1: data.street1 ?? '',
-          street2: data.street2 ?? '',
-          apt: data.apt ?? '',
-          city: data.city ?? '',
-          state: data.state ?? '',
-          country: data.country ?? '',
-          zip: data.zip ?? '',
-          home_phone: data.home_phone ?? '',
-          notes: data.notes ?? '',
-        });
-      }
-    }
-  }
-
-  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
-    if (input.changed) {
-      const row = { [input.key]: input.value };
-      this.update(row);
-    }
-  }
-
-  protected async deleteHousehold() {
-    const id = this.id();
-    if (!id) return;
-    const end = this._loading.begin();
-    try {
-      // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(id, { columns: ['id'] })) as Array<{ id: string }>;
-      const personIds = people.map((p) => p.id);
-      const peopleCount = personIds.length;
-
-      if (peopleCount > 0) {
-        // Show the 3-option warning dialog
-        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-          title: 'Households have people',
-          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-          variant: 'warning',
-          choices: [
-            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-          ],
-          cancelText: 'Cancel',
-        });
-
-        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
-
-        if (choice === 'keep-people') {
-          for (const pid of personIds) {
-            await this.personsSvc.removeHousehold(pid);
-          }
-        } else if (choice === 'delete-people') {
-          await this.personsSvc.deleteMany(personIds);
-        }
-      } else {
-        const confirmed = await this.dialogSvc.confirm({
-          title: 'Delete Household',
-          message: 'Are you sure you want to delete this household? This action cannot be undone.',
-          variant: 'danger',
-          confirmText: 'Delete',
-        });
-        if (!confirmed) return;
-      }
-
-      await this.householdsSvc.delete(id);
-      this.householdsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Household deleted');
-      await this.router.navigate(['/households']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete household';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected save(done?: () => void) {
-    const raw = this.payload();
-    const data: UpdateHouseholdsType = {
-      home_phone: raw.home_phone,
-      street_num: raw.street_num,
-      street1: raw.street1,
-      street2: raw.street2,
-      apt: raw.apt,
-      city: raw.city,
-      state: raw.state,
-      zip: raw.zip,
-      country: raw.country,
-      notes: raw.notes,
-      formatted_address: raw.formatted_address || null,
-      type: raw.type || null,
-      lat: raw.lat || null,
-      lng: raw.lng || null,
-    };
-    if (!this.id()) {
-      return this.householdsSvc.add(data).then(async (result: any) => {
-        this.alertSvc.showSuccess('Household added successfully.');
-        this.householdsSvc.triggerRefresh();
-        done?.();
-        await this.router.navigate(['/households', result.id]);
-      });
-    }
-    return this.update(data, done);
-  }
-
-  protected async tagAdded(tag: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.householdsSvc.attachTag(id, tag, 'tag');
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to attach tag:', err);
-    }
-  }
-
-  protected async tagRemoved(tag: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.householdsSvc.detachTag(id, tag, 'tag');
-      await this.tagOptionsSvc.invalidate('tag');
-    } catch (err) {
-      console.error('Failed to detach tag:', err);
-    }
-  }
-
-  protected async issueAdded(issue: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.householdsSvc.attachTag(id, issue, 'issue');
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to attach issue:', err);
-    }
-  }
-
-  protected async issueRemoved(issue: string) {
-    const id = this.id();
-    if (!id) return;
-    try {
-      await this.householdsSvc.detachTag(id, issue, 'issue');
-      await this.tagOptionsSvc.invalidate('issue');
-    } catch (err) {
-      console.error('Failed to detach issue:', err);
-    }
-  }
-
-  private async getTags() {
-    const id = this.id();
-    if (!this.household() || !id) {
-      return;
-    }
-    this.tags = await this.householdsSvc.getTags(id, 'tag');
-    this.issues = await this.householdsSvc.getTags(id, 'issue');
-  }
-
-  private async loadHousehold() {
-    const id = this.id();
-    if (!id) return;
-
-    const end = this._loading.begin();
-
-    try {
-      this.household.set((await this.householdsSvc.getById(id)) as Households);
-      await this.getTags();
-      this.refreshForm();
-    } finally {
-      end();
-    }
-  }
-
-  private refreshForm() {
-    const household = this.household();
-    if (!household) return;
-
-    this.payload.set({
-      formatted_address: household.formatted_address ?? '',
-      type: household.type ?? '',
-      lat: household.lat ?? 0,
-      lng: household.lng ?? 0,
-      street_num: household.street_num ?? '',
-      street1: household.street1 ?? '',
-      street2: household.street2 ?? '',
-      apt: household.apt ?? '',
-      city: household.city ?? '',
-      state: household.state ?? '',
-      country: household.country ?? '',
-      zip: household.zip ?? '',
-      home_phone: household.home_phone ?? '',
-      notes: household.notes ?? '',
-    });
-    this.form().reset();
-  }
-
-  private update(data: Partial<UpdateHouseholdsType>, done?: () => void) {
-    const id = this.id();
-    if (!id) {
-      return;
-    }
-
-    const end = this._loading.begin();
-    void this.householdsSvc
-      .update(id, data)
-      .then(() => {
-        this.alertSvc.showSuccess('Household updated successfully.');
-        this.form().reset();
-        this.householdsSvc.triggerRefresh();
-        if (done) {
-          done();
-        }
-      })
-      .finally(() => end());
   }
 }
 
@@ -47253,368 +47262,6 @@ export class DataGridColumnsDropdownComponent {
     return this.grid().getColDefsForToolbar();
   });
 }
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
-    >
-      @if (grid.showNarrowTypeFilter()) {
-      <pc-dg-filter-section
-        [title]="'Narrow by Type'"
-        [bordered]="false"
-        [clearable]="false"
-        [active]="grid.selectedNarrowType() !== null"
-        [open]="grid.selectedNarrowType() !== null"
-      >
-        <pc-singleselect-filter
-          [label]="'Type'"
-          [options]="narrowTypeOptions()"
-          [selected]="grid.selectedNarrowType()"
-          [radioName]="'narrowTypeMobile'"
-          (select)="grid.selectNarrowType($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider my-0"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar -->
-<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
-    [tip]="'Clone'"
-    icon="document-duplicate"
-    [hidden]="!grid.addRoute()"
-    (action)="onClone()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  @if (!grid.disableMerge()) {
-  <pc-grid-tool-btn
-    [enabled]="grid.getCountRowSelected() === 2"
-    [tip]="'Merge selected rows'"
-    icon="merge"
-    (action)="onMergeSelected()"
-  />
-  }
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-    [spinning]="grid.isRefreshing()"
-    [tip]="'Refresh the grid'"
-    icon="arrow-path"
-    (action)="onRefresh()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableImport()"
-    [tip]="'Import data from CSV'"
-    icon="arrow-up-tray"
-    (action)="onImportCsv()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableExport()"
-    [tip]="'Download as CSV'"
-    icon="arrow-down-tray"
-    (action)="onExportCsv()"
-  />
-
-  @if (grid.showNarrowTypeFilter() || grid.showTagFilter()) {
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-  } @if (grid.showNarrowTypeFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'tag'"
-    [tip]="'Narrow by type'"
-    [active]="grid.selectedNarrowType() !== null"
-    [hasDropdown]="true"
-  >
-    <div tabindex="0" class="dropdown-content bg-base-100 rounded-box z-[1] w-48 p-3 shadow-lg border border-base-200">
-      <pc-singleselect-filter
-        [label]="'Type'"
-        [options]="narrowTypeOptions()"
-        [selected]="grid.selectedNarrowType()"
-        [radioName]="'narrowType'"
-        (select)="grid.selectNarrowType($event)"
-      />
-    </div>
-  </pc-grid-tool-btn>
-  } @if (grid.showTagFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'label'"
-    [tip]="'Filter by Tags'"
-    [active]="grid.selectedTags().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedTags().length"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by Tags'"
-      [active]="grid.selectedTags().length > 0"
-      (clear)="grid.clearTagsFilter()"
-    >
-      <pc-multiselect-filter
-        [label]="'Tags'"
-        [options]="grid.filteredAvailableTags()"
-        [selected]="grid.selectedTags()"
-        [searchQuery]="grid.tagSearchQuery()"
-        (searchQueryChange)="grid.tagSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllTags()"
-        (clearVisible)="grid.clearAllTagsVisible()"
-        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  } @if (grid.showIssueFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'shield-exclamation'"
-    [tip]="'Filter by Issues'"
-    [active]="grid.selectedIssues().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedIssues().length"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by Issues'"
-      [active]="grid.selectedIssues().length > 0"
-      (clear)="grid.clearIssuesFilter()"
-    >
-      <pc-multiselect-filter
-        [label]="'Issues'"
-        [options]="grid.filteredAvailableIssues()"
-        [selected]="grid.selectedIssues()"
-        [searchQuery]="grid.issueSearchQuery()"
-        (searchQueryChange)="grid.issueSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllIssues()"
-        (clearVisible)="grid.clearAllIssuesVisible()"
-        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  } @if (grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'queue-list'"
-    [tip]="'Filter by List'"
-    [active]="grid.selectedListId() !== null"
-    [hasDropdown]="true"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by List'"
-      [active]="grid.selectedListId() !== null"
-      (clear)="grid.clearListFilter()"
-    >
-      <pc-singleselect-filter
-        [label]="'List'"
-        [options]="listOptions()"
-        [selected]="grid.selectedListId()"
-        [radioName]="'selectedList'"
-        [maxHeight]="14"
-        (select)="grid.selectListFilter($event)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  }
-
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Advanced Filters"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveAdvancedFilters()"
-    (action)="onToggleFilters()"
-  />
-  <pc-grid-tool-btn
-    icon="adjustments-horizontal"
-    tip="Advanced Query Builder"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-    (action)="grid.openAdvancedFilterBuilder()"
-  />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <pc-grid-tool-btn
-    [icon]="grid.archiveIcon()"
-    [tip]="grid.archiveTip()"
-    [hidden]="!grid.showArchiveIcon()"
-    [active]="grid.archiveModeState()"
-    (action)="onToggleArchive()"
-  />
-</ul>
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
@@ -47715,6 +47362,630 @@ export class DataGridToolbarComponent {
   public onToggleCol(colId: string, visible: boolean) {
     this.grid.toggleColPublic(colId, visible);
   }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
+
+```html
+@if (displayTitle()) {
+<pc-grid-header
+  [title]="displayTitle()!"
+  [open]="showDescription()"
+  [description]="description() || ''"
+></pc-grid-header>
+}
+
+<div class="flex h-full w-full flex-col">
+  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
+      >All {{ displayedCount() }} rows on this page are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="selectAllMatching()"
+      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
+      >Select all {{ totalCountAll() }} rows</a
+    >
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
+      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="clearAllSelection()"
+      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
+      >Clear selection</a
+    >
+  </div>
+  }
+  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
+    <table #gridTable class="table w-full">
+      <thead>
+        <tr>
+          @if (enableSelection()) {
+          <th
+            class="border-r border-base-300 pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id) {
+          <th
+            role="columnheader"
+            class="cursor-grab border-r border-base-300 pl-2 relative"
+            [attr.data-col-id]="h.column.id"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="columnWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
+          >
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+                {{ h.column.columnDef.header || h.column.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label
+                  tabindex="0"
+                  class="btn btn-xs"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li>
+                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
+                          >Sort asc</a
+                        >
+                      </li>
+                      <li>
+                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
+                          >Sort desc</a
+                        >
+                      </li>
+                      <li>
+                        <a
+                          (click)="clearSort(h)"
+                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
+                          >Clear sort</a
+                        >
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
+                        >Column</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      <li>
+                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
+                          >Hide</a
+                        >
+                      </li>
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
+                            >Columns</span
+                          ><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li>
+                            <a (click)="showColumnById(cid)"
+                              ><ng-container
+                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
+                                >Show</ng-container
+                              >
+                              {{ columnLabelFor(cid) }}</a
+                            >
+                          </li>
+                          } @if (!hiddenColumns().length) {
+                          <li
+                            class="opacity-60 px-2 py-1"
+                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
+                          >
+                            None hidden
+                          </li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+              <span
+                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
+                [pcHeaderResize]="headerResizeConfig(h)"
+              ></span>
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody class="bg-base-100">
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Add your first record using the + button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          class="group hover:bg-base-300"
+          [class.cursor-pointer]="rowNavigatesToDetail()"
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
+          @if (enableSelection()) {
+          <td
+            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
+              <span
+                title="Open detail"
+                i18n-title="@@datagrid.rows.openDetailTitle"
+                aria-label="Open detail"
+                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
+                (click)="openEdit(rowId); $event.stopPropagation();"
+              >
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
+                ></pc-icon>
+              </span>
+              }
+            </div>
+          </td>
+          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
+          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
+          === col.field;
+          <td
+            [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            (click)="handleCellClick(r.original, col)"
+            (dblclick)="handleCellDblClick(r.original, col)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            class="min-w-0 px-2 border-r border-base-300 relative"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
+            [attr.data-col-id]="cell.column.id"
+            [style.width.px]="columnWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
+          >
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
+                  [ngModel]="tagSearch()"
+                  (ngModelChange)="tagSearch.set($event)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2 italic">
+                  @if (tagSearch()) {
+                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
+                    >No tags match "{{ tagSearch() }}"</ng-container
+                  >
+                  } @else {
+                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
+                    >No tags available</ng-container
+                  >
+                  }
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              [ngModel]="editingValue()"
+              (ngModelChange)="onSelectChange(r.original, col, $event)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            ></textarea>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
+            <pc-tags
+              [tags]="tagList"
+              [type]="tagTypeFor(col)"
+              [readonly]="true"
+              [canDelete]="false"
+              [compact]="true"
+              [limit]="2"
+              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
+            ></pc-tags>
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
+            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
+              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
+            </div>
+            } @else {
+            <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
+              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
+              }
+            </span>
+            } } }
+          </td>
+          } }
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
+    <div class="flex items-center gap-2 whitespace-nowrap">
+      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+        >Page Size:</span
+      >
+      <select
+        class="select select-bordered select-xs"
+        [ngModel]="pageSize()"
+        (ngModelChange)="onPageSizeChange($event)"
+      >
+        @if (![25,50,100].includes(pageSize())) {
+        <option [value]="pageSize()">{{ pageSize() }}</option>
+        } @for (opt of pageSizeChoices(); track opt) {
+        <option [value]="opt">{{ opt }}</option>
+        }
+      </select>
+    </div>
+    <div
+      class="whitespace-nowrap"
+      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
+    >
+      <span class="font-normal">{{ displayStartIndex() }}</span> to
+      <span class="font-normal">{{ displayEndIndex() }}</span> of
+      <span class="font-normal">{{ totalCountAll() }}</span>
+    </div>
+    <div class="join whitespace-nowrap">
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="First"
+        i18n-title="@@datagrid.pagination.firstTitle"
+        [disabled]="!canPrev()"
+        (click)="firstPage()"
+      >
+        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Prev"
+        i18n-title="@@datagrid.pagination.prevTitle"
+        [disabled]="!canPrev()"
+        (click)="prevPage()"
+      >
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
+        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
+      >
+        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
+        <span class="font-normal">{{ totalPages() }}</span>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Next"
+        i18n-title="@@datagrid.pagination.nextTitle"
+        [disabled]="!canNext()"
+        (click)="nextPage()"
+      >
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        title="Last"
+        i18n-title="@@datagrid.pagination.lastTitle"
+        [disabled]="!canNext()"
+        (click)="lastPage()"
+      >
+        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+  @if (isLoading()) {
+  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
+  }
+</div>
+
+<!-- Right-side Filter Panel -->
+@if (showFilterPanel()) {
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
+  (closePanel)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
+/>
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
+  <div
+    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
+  >
+    <div class="flex justify-between items-center pb-4 border-b border-base-200">
+      <div>
+        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
+          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
+          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+            >Advanced Filter Builder</ng-container
+          >
+        </h3>
+        <p
+          class="text-xs text-neutral-400 mt-1"
+          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
+        >
+          Build complex matching rules with custom operators and conjunction logic.
+        </p>
+      </div>
+      <button
+        class="btn btn-ghost btn-circle btn-sm"
+        (click)="showAdvancedFilterBuilder.set(false)"
+        aria-label="Close modal"
+        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
+      >
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <!-- Scrollable Body containing the rules -->
+    <div class="flex-1 overflow-y-auto py-6">
+      <pc-query-builder
+        [group]="advFilterRoot()"
+        [fields]="advancedFilterFields()"
+        [tagSvc]="tagsSvc ?? undefined"
+        [showSummary]="true"
+        (changed)="onAdvancedFilterChanged()"
+      ></pc-query-builder>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex justify-between items-center pt-4 border-t border-base-200">
+      <button
+        class="btn btn-outline btn-error btn-sm"
+        (click)="clearAdvancedFilter()"
+        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+      >
+        Clear Filters
+      </button>
+      <div class="flex gap-2">
+        <button
+          class="btn btn-ghost btn-sm"
+          (click)="showAdvancedFilterBuilder.set(false)"
+          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary btn-sm px-6"
+          (click)="applyAdvancedFilter()"
+          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 }
 ```
 
@@ -48289,6 +48560,386 @@ export class EmailList {
       this.alertSvc.showError('Failed to mark email as spam');
     }
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/household-form.ts
+
+```typescript
+import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { UpdateHouseholdsType, UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { AddressAutocomplete } from '@uxcommon/components/address-autocomplete/address-autocomplete';
+import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
+
+import { HouseholdsService } from '../services/households-service';
+import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+
+@Component({
+  selector: 'pc-household-form',
+  imports: [
+    PcTextarea,
+    AddressAutocomplete,
+    Tags,
+    Icon,
+    RouterModule,
+    PcDetailHeader,
+    PcEntityOverview,
+    PcAddressFormGroup,
+  ],
+  templateUrl: './household-form.html',
+})
+export class HouseholdForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly personsSvc = inject(PersonsService);
+
+  private _loading = createLoadingGate();
+
+  protected readonly household = signal<Households | null>(null);
+
+  protected addressVerified = false;
+
+  protected tags: string[] = [];
+
+  protected issues: string[] = [];
+
+  protected readonly payload = signal({
+    formatted_address: '',
+    type: '',
+    lat: 0,
+    lng: 0,
+    street_num: '',
+    street1: '',
+    street2: '',
+    apt: '',
+    city: '',
+    state: '',
+    country: '',
+    zip: '',
+    home_phone: '',
+    notes: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, UpdateHouseholdsObj);
+  });
+
+  protected readonly addressString = computed(() => {
+    const raw = this.payload();
+
+    // If formatted_address is present (e.g. populated via Google Places autocomplete)
+    if (raw.formatted_address) {
+      return raw.formatted_address;
+    }
+
+    const parts: string[] = [];
+
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
+
+    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
+
+    if (streetParts.length) {
+      parts.push(streetParts.join(' ').trim());
+    }
+    if (locationParts.length) {
+      parts.push(locationParts.join(', ').trim());
+    }
+
+    return parts.join(', ').trim();
+  });
+
+  protected id = input<string>();
+  protected isLoading = this._loading.visible;
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  public handleAddressChange(address: AddressType) {
+    const end = this._loading.begin();
+    try {
+      if (!address || !address.street1) {
+        this.alertSvc.showError('Please select the correct address from the list or leave it blank');
+        return;
+      }
+      this.payload.update((prev) => ({
+        ...prev,
+        formatted_address: address.formatted_address ?? '',
+        type: address.type ?? '',
+        lat: address.lat ?? 0,
+        lng: address.lng ?? 0,
+        street_num: address.street_num ?? '',
+        street1: address.street1 ?? '',
+        street2: address.street2 ?? '',
+        apt: address.apt ?? '',
+        city: address.city ?? '',
+        state: address.state ?? '',
+        country: address.country ?? '',
+        zip: address.zip ?? '',
+      }));
+      this.form.street1().markAsDirty();
+      this.addressVerified = true;
+    } finally {
+      end();
+    }
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadHousehold();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          formatted_address: data.formatted_address ?? '',
+          type: data.type ?? '',
+          lat: data.lat ?? 0,
+          lng: data.lng ?? 0,
+          street_num: data.street_num ?? '',
+          street1: data.street1 ?? '',
+          street2: data.street2 ?? '',
+          apt: data.apt ?? '',
+          city: data.city ?? '',
+          state: data.state ?? '',
+          country: data.country ?? '',
+          zip: data.zip ?? '',
+          home_phone: data.home_phone ?? '',
+          notes: data.notes ?? '',
+        });
+      }
+    }
+  }
+
+  protected async applyEdit(input: { key: string; value: string; changed: boolean }) {
+    if (input.changed) {
+      const row = { [input.key]: input.value };
+      this.update(row);
+    }
+  }
+
+  protected async deleteHousehold() {
+    const id = this.id();
+    if (!id) return;
+    const end = this._loading.begin();
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(id, { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
+          }
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
+        if (!confirmed) return;
+      }
+
+      await this.householdsSvc.delete(id);
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected save(done?: () => void) {
+    const raw = this.payload();
+    const data: UpdateHouseholdsType = {
+      home_phone: raw.home_phone,
+      street_num: raw.street_num,
+      street1: raw.street1,
+      street2: raw.street2,
+      apt: raw.apt,
+      city: raw.city,
+      state: raw.state,
+      zip: raw.zip,
+      country: raw.country,
+      notes: raw.notes,
+      formatted_address: raw.formatted_address || null,
+      type: raw.type || null,
+      lat: raw.lat || null,
+      lng: raw.lng || null,
+    };
+    if (!this.id()) {
+      return this.householdsSvc.add(data).then(async (result: any) => {
+        this.alertSvc.showSuccess('Household added successfully.');
+        this.householdsSvc.triggerRefresh();
+        done?.();
+        await this.router.navigate(['/households', result.id]);
+      });
+    }
+    return this.update(data, done);
+  }
+
+  protected async tagAdded(tag: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.householdsSvc.attachTag(id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to attach tag:', err);
+    }
+  }
+
+  protected async tagRemoved(tag: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.householdsSvc.detachTag(id, tag, 'tag');
+      await this.tagOptionsSvc.invalidate('tag');
+    } catch (err) {
+      console.error('Failed to detach tag:', err);
+    }
+  }
+
+  protected async issueAdded(issue: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.householdsSvc.attachTag(id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to attach issue:', err);
+    }
+  }
+
+  protected async issueRemoved(issue: string) {
+    const id = this.id();
+    if (!id) return;
+    try {
+      await this.householdsSvc.detachTag(id, issue, 'issue');
+      await this.tagOptionsSvc.invalidate('issue');
+    } catch (err) {
+      console.error('Failed to detach issue:', err);
+    }
+  }
+
+  private async getTags() {
+    const id = this.id();
+    if (!this.household() || !id) {
+      return;
+    }
+    this.tags = await this.householdsSvc.getTags(id, 'tag');
+    this.issues = await this.householdsSvc.getTags(id, 'issue');
+  }
+
+  private async loadHousehold() {
+    const id = this.id();
+    if (!id) return;
+
+    const end = this._loading.begin();
+
+    try {
+      this.household.set((await this.householdsSvc.getById(id)) as Households);
+      await this.getTags();
+      this.refreshForm();
+    } finally {
+      end();
+    }
+  }
+
+  private refreshForm() {
+    const household = this.household();
+    if (!household) return;
+
+    this.payload.set({
+      formatted_address: household.formatted_address ?? '',
+      type: household.type ?? '',
+      lat: household.lat ?? 0,
+      lng: household.lng ?? 0,
+      street_num: household.street_num ?? '',
+      street1: household.street1 ?? '',
+      street2: household.street2 ?? '',
+      apt: household.apt ?? '',
+      city: household.city ?? '',
+      state: household.state ?? '',
+      country: household.country ?? '',
+      zip: household.zip ?? '',
+      home_phone: household.home_phone ?? '',
+      notes: household.notes ?? '',
+    });
+    this.form().reset();
+  }
+
+  private update(data: Partial<UpdateHouseholdsType>, done?: () => void) {
+    const id = this.id();
+    if (!id) {
+      return;
+    }
+
+    const end = this._loading.begin();
+    void this.householdsSvc
+      .update(id, data)
+      .then(() => {
+        this.alertSvc.showSuccess('Household updated successfully.');
+        this.form().reset();
+        this.householdsSvc.triggerRefresh();
+        if (done) {
+          done();
+        }
+      })
+      .finally(() => end());
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -49546,630 +50197,6 @@ export class PersonForm implements OnInit {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-
-```html
-@if (displayTitle()) {
-<pc-grid-header
-  [title]="displayTitle()!"
-  [open]="showDescription()"
-  [description]="description() || ''"
-></pc-grid-header>
-}
-
-<div class="flex h-full w-full flex-col">
-  @if (showToolbar()) { <pc-dg-toolbar /> } @if (isLoading()) {
-  <progress class="progress h-1"></progress>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
-      >All {{ displayedCount() }} rows on this page are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="selectAllMatching()"
-      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
-      >Select all {{ totalCountAll() }} rows</a
-    >
-  </div>
-  } @if (allSelected()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
-      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="clearAllSelection()"
-      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
-      >Clear selection</a
-    >
-  </div>
-  }
-  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
-    <table #gridTable class="table w-full">
-      <thead>
-        <tr>
-          @if (enableSelection()) {
-          <th
-            class="border-r border-base-300 pl-2 selection-col"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-          </th>
-          } @for (h of leafHeaders(); track h.id) {
-          <th
-            role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative"
-            [attr.data-col-id]="h.column.id"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [draggable]="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="columnWidthPx(h.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
-          >
-            <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column.columnDef.header || h.column.id }}
-              </span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label
-                  tabindex="0"
-                  class="btn btn-xs"
-                  [class.btn-ghost]="!isColFiltered(h.column.id)"
-                  [class.btn-primary]="isColFiltered(h.column.id)"
-                  title="Column options"
-                  i18n-title="@@datagrid.columns.optionsTitle"
-                >
-                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
-                  @let col = getColDefById(h.column.id);
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
-                      track opt) {
-                      <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
-                      </li>
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      }
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li>
-                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
-                          >Sort asc</a
-                        >
-                      </li>
-                      <li>
-                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
-                          >Sort desc</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          (click)="clearSort(h)"
-                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
-                          >Clear sort</a
-                        >
-                      </li>
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
-                        >Column</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      <li>
-                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
-                          >Hide</a
-                        >
-                      </li>
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
-                            >Columns</span
-                          ><span>▸</span></label
-                        >
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li>
-                            <a (click)="showColumnById(cid)"
-                              ><ng-container
-                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
-                                >Show</ng-container
-                              >
-                              {{ columnLabelFor(cid) }}</a
-                            >
-                          </li>
-                          } @if (!hiddenColumns().length) {
-                          <li
-                            class="opacity-60 px-2 py-1"
-                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
-                          >
-                            None hidden
-                          </li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-              <span
-                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
-                title="Resize column"
-                i18n-title="@@datagrid.columns.resizeTitle"
-                [pcHeaderResize]="headerResizeConfig(h)"
-              ></span>
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-                >No results match your filters</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-                >Try clearing or adjusting your filters</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @else if (!visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-                >Nothing here yet</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @for (r of visibleTableRows(); let i = $index; track r.id) {
-        <tr
-          class="group hover:bg-base-300"
-          [class.cursor-pointer]="rowNavigatesToDetail()"
-          (mouseover)="onCellMouseOver(r.original)"
-          [attr.data-row-id]="toId(r.original)"
-          [class.bg-base-200]="(i % 2) === 1"
-        >
-          @if (enableSelection()) {
-          <td
-            class="sticky left-0 z-20 border-r border-base-300 pl-2"
-            [style.background]="rowBgForIndex(i)"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <div class="flex items-center gap-2">
-              @if (rowCanSelect()(r.original)) {
-              <input
-                type="checkbox"
-                class="checkbox checkbox-sm"
-                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
-                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-              />
-              } @let rowId = toId(r.original); @if (!disableView() && rowId) {
-              <span
-                title="Open detail"
-                i18n-title="@@datagrid.rows.openDetailTitle"
-                aria-label="Open detail"
-                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
-                (click)="openEdit(rowId); $event.stopPropagation();"
-              >
-                <pc-icon
-                  name="arrow-top-right-on-square"
-                  class="hover:text-primary cursor-pointer text-neutral invisible group-hover:visible pb-1"
-                ></pc-icon>
-              </span>
-              }
-            </div>
-          </td>
-          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
-          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
-          === col.field;
-          <td
-            [pcEditable]="editableCfg(r.original, col)"
-            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
-            tabindex="0"
-            (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col)"
-            (dblclick)="handleCellDblClick(r.original, col)"
-            [class.sticky]="pinState(cell) !== false"
-            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
-            [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
-            [class.overflow-visible]="isTagColumn(col) && isEditing"
-            class="min-w-0 px-2 border-r border-base-300 relative"
-            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
-            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
-            [attr.data-col-id]="cell.column.id"
-            [style.width.px]="columnWidthPx(cell.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
-          >
-            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (isTagColumn(col)) {
-            <!-- Tag column: checkbox multi-select panel -->
-            <div
-              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
-              (click)="$event.stopPropagation()"
-            >
-              <!-- Search box — pinned, never scrolls -->
-              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
-                <input
-                  type="text"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="Search tags…"
-                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
-                  [ngModel]="tagSearch()"
-                  (ngModelChange)="tagSearch.set($event)"
-                  autofocus
-                />
-              </div>
-              <!-- Scrollable tag list -->
-              <div class="flex-1 overflow-y-auto py-1">
-                @for (tag of filteredTagChoices(col); track tag) {
-                <label
-                  tabindex="-1"
-                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="isTagChecked(tag)"
-                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
-                  />
-                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
-                </label>
-                } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2 italic">
-                  @if (tagSearch()) {
-                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
-                    >No tags match "{{ tagSearch() }}"</ng-container
-                  >
-                  } @else {
-                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
-                    >No tags available</ng-container
-                  >
-                  }
-                </div>
-                }
-              </div>
-              <!-- Done button — pinned, never scrolls -->
-              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
-                <button
-                  class="btn btn-primary btn-xs"
-                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
-                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            } @else if (editorCfg) { @if (editorCfg.multiple) {
-            <select
-              class="select select-bordered w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              multiple
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } @else {
-            <select
-              class="select select-bordered w-full select-xs"
-              [ngModel]="editingValue()"
-              (ngModelChange)="onSelectChange(r.original, col, $event)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } } @else if (textCfg.textarea) {
-            <textarea
-              class="textarea textarea-bordered textarea-sm w-full"
-              [rows]="textCfg.rows"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            ></textarea>
-            } @else {
-            <input
-              [type]="inputTypeFor(col)"
-              class="input input-bordered input-xs w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            />
-            } } @else if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
-            (isTagColumn(col) && tagList.length) {
-            <pc-tags
-              [tags]="tagList"
-              [type]="tagTypeFor(col)"
-              [readonly]="true"
-              [canDelete]="false"
-              [compact]="true"
-              [limit]="2"
-              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
-            ></pc-tags>
-            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
-            === null || formattedVal === undefined || formattedVal === '') {
-            <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.field === 'address') {
-            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
-              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
-            </div>
-            } @else {
-            <span class="flex items-center gap-1 w-full">
-              @if (rawValue === null || rawValue === undefined || rawValue === '') {
-              <span class="flex-1 truncate text-base-content/30">—</span>
-              } @else {
-              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
-              }
-            </span>
-            } } }
-          </td>
-          } }
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
-    <div class="flex items-center gap-2 whitespace-nowrap">
-      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-        >Page Size:</span
-      >
-      <select
-        class="select select-bordered select-xs"
-        [ngModel]="pageSize()"
-        (ngModelChange)="onPageSizeChange($event)"
-      >
-        @if (![25,50,100].includes(pageSize())) {
-        <option [value]="pageSize()">{{ pageSize() }}</option>
-        } @for (opt of pageSizeChoices(); track opt) {
-        <option [value]="opt">{{ opt }}</option>
-        }
-      </select>
-    </div>
-    <div
-      class="whitespace-nowrap"
-      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-    >
-      <span class="font-normal">{{ displayStartIndex() }}</span> to
-      <span class="font-normal">{{ displayEndIndex() }}</span> of
-      <span class="font-normal">{{ totalCountAll() }}</span>
-    </div>
-    <div class="join whitespace-nowrap">
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="First"
-        i18n-title="@@datagrid.pagination.firstTitle"
-        [disabled]="!canPrev()"
-        (click)="firstPage()"
-      >
-        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Prev"
-        i18n-title="@@datagrid.pagination.prevTitle"
-        [disabled]="!canPrev()"
-        (click)="prevPage()"
-      >
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn font-light btn-sm join-item btn-ghost pointer-events-none whitespace-nowrap"
-        i18n="Datagrid|Current page number out of total pages@@datagrid.pagination.currentPage"
-      >
-        Page <span class="font-normal">{{ pageIndex() + 1 }}</span> of
-        <span class="font-normal">{{ totalPages() }}</span>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Next"
-        i18n-title="@@datagrid.pagination.nextTitle"
-        [disabled]="!canNext()"
-        (click)="nextPage()"
-      >
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        title="Last"
-        i18n-title="@@datagrid.pagination.lastTitle"
-        [disabled]="!canNext()"
-        (click)="lastPage()"
-      >
-        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-  @if (isLoading()) {
-  <pc-icon name="loading" class="absolute inset-0 grid place-items-center animate-pulse" [size]="24"></pc-icon>
-  }
-</div>
-
-<!-- Right-side Filter Panel -->
-@if (showFilterPanel()) {
-<pc-dg-filter-panel
-  [panelFields]="panelFields()"
-  [panelFilters]="panelFilters()"
-  [labelFor]="labelForFn"
-  [optionsFor]="optionsForFn"
-  [hasActiveFilters]="hasActiveFilters()"
-  (closePanel)="closePanel()"
-  (apply)="applyPanelFilters()"
-  (clear)="clearPanelFilters()"
-  (changeOp)="onPanelOpChange($event.field, $event.op)"
-  (changeValue)="onPanelValueChange($event.field, $event.value)"
-  (openAdvanced)="switchToAdvancedFilter()"
-/>
-}
-
-<!-- Advanced Filter Builder Modal -->
-@if (showAdvancedFilterBuilder()) {
-<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
-  <div
-    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
-  >
-    <div class="flex justify-between items-center pb-4 border-b border-base-200">
-      <div>
-        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
-          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-            >Advanced Filter Builder</ng-container
-          >
-        </h3>
-        <p
-          class="text-xs text-neutral-400 mt-1"
-          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-        >
-          Build complex matching rules with custom operators and conjunction logic.
-        </p>
-      </div>
-      <button
-        class="btn btn-ghost btn-circle btn-sm"
-        (click)="showAdvancedFilterBuilder.set(false)"
-        aria-label="Close modal"
-        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
-      >
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <!-- Scrollable Body containing the rules -->
-    <div class="flex-1 overflow-y-auto py-6">
-      <pc-query-builder
-        [group]="advFilterRoot()"
-        [fields]="advancedFilterFields()"
-        [tagSvc]="tagsSvc ?? undefined"
-        [showSummary]="true"
-        (changed)="onAdvancedFilterChanged()"
-      ></pc-query-builder>
-    </div>
-
-    <!-- Modal Footer Actions -->
-    <div class="flex justify-between items-center pt-4 border-t border-base-200">
-      <button
-        class="btn btn-outline btn-error btn-sm"
-        (click)="clearAdvancedFilter()"
-        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
-      >
-        Clear Filters
-      </button>
-      <div class="flex gap-2">
-        <button
-          class="btn btn-ghost btn-sm"
-          (click)="showAdvancedFilterBuilder.set(false)"
-          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-        >
-          Cancel
-        </button>
-        <button
-          class="btn btn-primary btn-sm px-6"
-          (click)="applyAdvancedFilter()"
-          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
 }
 ```
 
