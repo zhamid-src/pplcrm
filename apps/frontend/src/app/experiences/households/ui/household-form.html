@@ -21,6 +21,7 @@
       [buttonsToShow]="household()?.id ? 'two' : 'three'"
       [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
       [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
       deleteText="Delete household"
       (save)="save($event)"
       (delete)="deleteHousehold()"

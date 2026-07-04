@@ -17,6 +17,20 @@ export class ConfirmDialogHost {
   public state = this.stateSignal;
   public confirmBtnClass = computed(() => {
     const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
+    if (this.state()?.emphasizeCancel) {
+      switch (v) {
+        case 'danger':
+          return 'btn-ghost text-error';
+        case 'warning':
+          return 'btn-ghost text-warning';
+        case 'info':
+          return 'btn-ghost text-info';
+        case 'success':
+          return 'btn-ghost text-success';
+        default:
+          return 'btn-ghost';
+      }
+    }
     switch (v) {
       case 'danger':
         return 'btn-error';
@@ -30,6 +44,8 @@ export class ConfirmDialogHost {
         return '';
     }
   });
+
+  public cancelBtnClass = computed(() => (this.state()?.emphasizeCancel ? 'btn-primary' : ''));
 
   public choiceBtnClass(v?: DialogVariant): string {
     if (!v) return '';

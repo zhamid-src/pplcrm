@@ -9,6 +9,7 @@ import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { SettingsService } from '../../settings/services/settings-service';
 import { UserAdminService } from '../services/useradmin-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-user-add',
@@ -40,6 +41,8 @@ export class UserAddComponent implements OnInit {
     required(p.first_name);
   });
 
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
   protected readonly submitting = signal(false);
 
   public ngOnInit() {
@@ -69,6 +72,10 @@ export class UserAddComponent implements OnInit {
     } catch {
       // Ignore — fall back to the built-in default role.
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty('this invite');
   }
 
   protected cancel() {

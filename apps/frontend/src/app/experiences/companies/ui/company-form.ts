@@ -13,6 +13,7 @@ import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-head
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { Card as PcCard } from '@uxcommon/components/card/card';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-company-form',
@@ -54,6 +55,7 @@ export class CompanyForm implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, CompanyInputObj);
   });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
   protected id = input<string>();
   protected isLoading = this._loading.visible;
 
@@ -137,6 +139,10 @@ export class CompanyForm implements OnInit {
     } finally {
       end();
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.company()?.name || 'this company');
   }
 
   protected save(done?: (() => void) | Event) {

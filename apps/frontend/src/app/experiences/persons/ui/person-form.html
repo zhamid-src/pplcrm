@@ -13,6 +13,7 @@
       [buttonsToShow]="buttonsToShow()"
       [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
       [showDelete]="!!person()?.id"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
       deleteText="Delete person"
       (save)="save($event)"
       (delete)="deletePerson()"

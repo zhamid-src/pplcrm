@@ -8,6 +8,7 @@
     [isLoading]="submitting()"
     buttonsToShow="two"
     btn1Text="Send invite"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
     (save)="submit($event)"
   ></pc-detail-header>
 

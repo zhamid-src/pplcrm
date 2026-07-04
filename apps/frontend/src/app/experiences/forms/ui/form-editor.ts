@@ -15,6 +15,7 @@ import { Card as PcCard } from '@uxcommon/components/card/card';
 import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
   selector: 'pc-form-editor',
@@ -121,6 +122,8 @@ export class FormEditorComponent implements OnInit {
   protected readonly form = form(this.payload, (p) => {
     validateStandardSchema(p, AddWebFormObj);
   });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
 
   protected readonly isDonationForm = computed(() => this.payload().form_type === 'donation');
 
@@ -415,6 +418,10 @@ ${
     } finally {
       this.saving.set(false);
     }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.payload().name || 'this form');
   }
 
   protected async save(done?: (() => void) | Event) {
