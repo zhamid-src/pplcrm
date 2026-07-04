@@ -7,6 +7,7 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
@@ -64,6 +65,20 @@ export class ShiftFormComponent implements OnInit {
 
   protected readonly allVolunteers = signal<any[]>([]);
   protected readonly detail = signal<any>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const shifts: PcBreadcrumb = { label: 'Shifts', route: '/events/shifts' };
+    const id = this.id();
+    if (id) {
+      return [
+        shifts,
+        { label: this.detail()?.name || 'Volunteer event', route: ['/events/shifts', id] },
+        { label: 'Edit' },
+      ];
+    }
+    return [shifts, { label: 'New volunteer event' }];
+  });
+
   protected readonly payload = signal({
     name: '',
     slug: '',

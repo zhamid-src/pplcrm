@@ -15,6 +15,7 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Card as PcCard } from '@uxcommon/components/card/card';
@@ -71,6 +72,11 @@ export class UserViewComponent {
     const name = tokens.join(' ').trim();
     return name || user.email;
   });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User' },
+  ]);
 
   protected readonly activityCards = computed(() => {
     const s = this.stats();

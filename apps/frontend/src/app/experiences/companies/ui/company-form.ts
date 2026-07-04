@@ -10,6 +10,7 @@ import { CompaniesService } from '../services/companies-service';
 import { PeopleInCompany } from './people-in-company';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 
@@ -26,6 +27,19 @@ export class CompanyForm implements OnInit {
 
   private readonly _loading = createLoadingGate();
   protected readonly company = signal<any | null>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const companies: PcBreadcrumb = { label: 'Companies', route: '/companies' };
+    const id = this.company()?.id;
+    if (id) {
+      return [
+        companies,
+        { label: this.company()?.name || 'Company', route: ['/companies', String(id)] },
+        { label: 'Edit' },
+      ];
+    }
+    return [companies, { label: 'New company' }];
+  });
 
   protected readonly payload = signal({
     name: '',

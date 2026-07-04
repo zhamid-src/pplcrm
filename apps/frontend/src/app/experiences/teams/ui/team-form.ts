@@ -4,6 +4,7 @@ import { Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { Icon } from '@uxcommon/components/icons/icon';
 import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
@@ -47,6 +48,15 @@ export class TeamFormComponent implements OnInit {
 
   protected readonly detail = signal<TeamDetail | null>(null);
   protected readonly error = signal<string | null>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const teams: PcBreadcrumb = { label: 'Teams', route: '/teams' };
+    const id = this.id();
+    if (id) {
+      return [teams, { label: this.detail()?.name || 'Team', route: ['/teams', id] }, { label: 'Edit' }];
+    }
+    return [teams, { label: 'New team' }];
+  });
 
   protected readonly payload = signal({
     name: '',

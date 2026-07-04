@@ -1,6 +1,7 @@
 import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
 import { DetailHeader } from '../detail-header/detail-header';
 
 @Component({
@@ -13,6 +14,8 @@ import { DetailHeader } from '../detail-header/detail-header';
         <pc-detail-header
           [title]="title()"
           [subtitle]="subtitle()"
+          [crumbs]="crumbs()"
+          [eyebrow]="eyebrow()"
           [icon]="icon()"
           [iconSize]="iconSize()"
           [isLoading]="isLoading()"
@@ -55,6 +58,8 @@ import { DetailHeader } from '../detail-header/detail-header';
 export class DetailLayout {
   public title = input.required<string>();
   public subtitle = input<string | null | undefined>();
+  public crumbs = input<PcBreadcrumb[]>([]);
+  public eyebrow = input<string>('');
   public icon = input<PcIconNameType | null | undefined>();
   public iconSize = input<number>(6);
   public isLoading = input.required<boolean>();

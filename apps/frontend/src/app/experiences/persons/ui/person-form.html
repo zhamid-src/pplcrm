@@ -5,14 +5,15 @@
   <div class="max-w-4xl mx-auto w-full">
     <!-- Back to profile or list -->
     <pc-detail-header
-      [title]="person()?.id ? 'Edit Person Details' : 'Add New Person'"
-      [icon]="person()?.id ? 'pencil-square' : 'user-plus'"
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Editing' : 'New'"
+      [crumbs]="crumbs()"
       [form]="form"
       [isLoading]="isLoading()"
       [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save Person' : 'Create Person'"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
       [showDelete]="!!person()?.id"
-      deleteText="Delete Person"
+      deleteText="Delete person"
       (save)="save($event)"
       (delete)="deletePerson()"
     ></pc-detail-header>

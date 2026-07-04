@@ -15,6 +15,7 @@ import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { environment } from '../../../../environments/environment';
 
@@ -49,6 +50,11 @@ export class FormViewComponent {
   protected readonly initialized = signal(false);
   protected readonly formRecord = signal<any | null>(null);
   protected readonly submissionsCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Forms', route: '/forms' },
+    { label: this.formRecord()?.name || 'Form' },
+  ]);
   protected readonly availableLists = signal<Array<{ id: string; name: string }>>([]);
   protected readonly users = signal<IAuthUser[]>([]);
   private readonly router = inject(Router);

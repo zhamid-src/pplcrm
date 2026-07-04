@@ -11,6 +11,7 @@ import { Input as PcInput } from '@uxcommon/components/input/input';
 import { Select as PcSelect } from '@uxcommon/components/select/select';
 import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 
 import { UserService } from '../../../services/user.service';
@@ -117,6 +118,15 @@ export class PersonForm implements OnInit {
   protected readonly formName = computed(() => {
     const v = this.payload();
     return `${v.first_name || ''} ${v.middle_names || ''} ${v.last_name || ''}`.trim();
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const people: PcBreadcrumb = { label: 'People', route: '/people' };
+    const id = this.person()?.id;
+    if (id) {
+      return [people, { label: this.formName() || 'Person', route: ['/people', String(id)] }, { label: 'Edit' }];
+    }
+    return [people, { label: 'New person' }];
   });
 
   protected readonly formInitials = computed(() => {

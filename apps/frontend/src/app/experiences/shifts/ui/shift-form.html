@@ -13,16 +13,17 @@
   <div class="space-y-6">
     <!-- Header -->
     <pc-detail-header
-      [title]="isNew() ? 'Create Volunteer Event' : detail()?.name"
+      [title]="isNew() ? 'New volunteer event' : detail()?.name || 'Volunteer event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
       [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
-      icon="clock"
       [form]="form"
       [isLoading]="saving()"
       [disabled]="slugChecking() || slugUnique() === false"
       buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
       [showDelete]="!isNew()"
-      deleteText="Delete Event"
+      deleteText="Delete event"
       (save)="save($event)"
       (delete)="deleteEvent()"
     ></pc-detail-header>

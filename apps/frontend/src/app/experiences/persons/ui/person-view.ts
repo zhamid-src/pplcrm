@@ -23,6 +23,7 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 import { Tags } from '@experiences/tags/ui/tags';
@@ -146,6 +147,11 @@ export class PersonView {
     if (!p) return '';
     return `${p.first_name || ''} ${p.middle_names || ''} ${p.last_name || ''}`.trim();
   });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'People', route: '/people' },
+    { label: this.fullName() || 'Person' },
+  ]);
 
   // Social icons
   public socialLinks = computed<SocialLinkDef[]>(() => {

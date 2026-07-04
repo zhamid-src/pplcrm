@@ -11,16 +11,17 @@
   } @else {
   <div class="space-y-6">
     <pc-detail-header
-      [title]="isNew() ? 'Create Event Page' : detail()?.name"
+      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
       [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
-      icon="calendar"
       [form]="form"
       [isLoading]="saving()"
       [disabled]="slugChecking() || slugUnique() === false"
       buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create Event' : 'Save Event'"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
       [showDelete]="!isNew()"
-      deleteText="Delete Event"
+      deleteText="Delete event"
       (save)="save($event)"
       (delete)="deleteEvent()"
     ></pc-detail-header>

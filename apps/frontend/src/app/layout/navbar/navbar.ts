@@ -5,6 +5,7 @@ import { Swap } from '@uxcommon/components/swap/swap';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { Router, RouterLink } from '@angular/router';
 
+import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
 import { SearchService } from '../../services/api/search-service';
 import { FullScreenService } from '../../services/fullscreen.service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -26,7 +27,7 @@ type NotificationItem = {
 
 @Component({
   selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink],
+  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle],
   templateUrl: './navbar.html',
   host: {
     '(window:keydown)': 'handleKeyDown($event)',

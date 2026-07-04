@@ -13,6 +13,7 @@ import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -50,6 +51,11 @@ export class ShiftViewComponent {
   protected readonly initialized = signal(false);
   protected readonly event = signal<any | null>(null);
   protected readonly roster = signal<any[]>([]);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Shifts', route: '/events/shifts' },
+    { label: this.event()?.name || 'Volunteer event' },
+  ]);
 
   // Active tab state
   protected activeTab = signal<string>('roster');

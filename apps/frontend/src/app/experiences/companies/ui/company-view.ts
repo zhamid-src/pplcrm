@@ -13,6 +13,7 @@ import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
 
 @Component({
@@ -48,6 +49,11 @@ export class CompanyView {
 
   protected readonly company = signal<any | null>(null);
   protected readonly employeeCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Companies', route: '/companies' },
+    { label: this.company()?.name || 'Company' },
+  ]);
 
   private readonly usersResource = resource({
     loader: () => this.userService.getUsers(),

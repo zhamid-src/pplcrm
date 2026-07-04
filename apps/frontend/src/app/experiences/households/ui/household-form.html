@@ -13,14 +13,15 @@
     </div>
     } @else {
     <pc-detail-header
-      [title]="id() ? 'Edit Household Details' : 'Add New Household'"
-      icon="home"
+      [title]="id() ? 'Edit household' : 'New household'"
+      [eyebrow]="id() ? 'Editing' : 'New'"
+      [crumbs]="crumbs()"
       [form]="form"
       [isLoading]="isLoading()"
       [buttonsToShow]="household()?.id ? 'two' : 'three'"
-      [btn1Text]="household()?.id ? 'Save Household' : 'Create Household'"
+      [btn1Text]="household()?.id ? 'Save household' : 'Create household'"
       [showDelete]="!isNewMode()"
-      deleteText="Delete Household"
+      deleteText="Delete household"
       (save)="save($event)"
       (delete)="deleteHousehold()"
     ></pc-detail-header>
