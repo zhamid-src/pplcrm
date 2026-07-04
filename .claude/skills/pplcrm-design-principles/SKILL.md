@@ -1,6 +1,6 @@
 ---
 name: pplcrm-design-principles
-description: "The app-wide UI/UX doctrine for PeopleCRM — beauty as a trust signal, the three orientation questions, disclosure over suppression, guide-don't-error, the consistency contract (semantic tokens, one modal/toast/empty-state idiom, sentence case), DaisyUI-first/CSS-over-JS implementation, and the motion rules for subtle purposeful animation. USE WHEN designing or building ANY new UI (page, dialog, form, grid feature, empty state, error message), adding an animation/transition/hover effect, choosing colors or button labels, writing user-facing copy, reviewing a UI change for polish/consistency, deciding how to surface an error or disabled state, choosing between a DaisyUI component and a custom widget, or when asked to 'make it beautiful/modern/professional/fun'. EXAMPLES: 'what color should this badge be', 'how should I word this error', 'should this button be disabled?', 'flash the row after save'."
+description: "The app-wide UI/UX doctrine for PeopleCRM — beauty as a trust signal, the three orientation questions, disclosure over suppression, guide-don't-error, the consistency contract (semantic tokens, one modal/toast/empty-state idiom, sentence case), DaisyUI-first/CSS-over-JS implementation, and the motion rules for subtle purposeful animation. USE WHEN designing or building ANY new UI (page, dialog, form, grid feature, empty state, error message), adding an animation/transition/hover effect, choosing colors, fonts/type sizes/weights, or button labels, writing user-facing copy, reviewing a UI change for polish/consistency, deciding how to surface an error or disabled state, choosing between a DaisyUI component and a custom widget, or when asked to 'make it beautiful/modern/professional/fun'. EXAMPLES: 'what color should this badge be', 'how should I word this error', 'should this button be disabled?', 'flash the row after save'."
 ---
 
 # PeopleCRM design principles
@@ -203,8 +203,12 @@ name the state change an animation narrates, cut it.
 
 ## 8. Typography & hierarchy
 
-- Body type is Roboto 300 (`styles.css`); headings earn weight (600–700), so **weight is
-  hierarchy** — don't reach for size or color first.
+- App font is **Inter** (Google Fonts) at body weight 400 — Roboto 300 is retired (300 is too
+  fragile below 14px, especially in dark mode). Verified gap, July 2026: `index.html` and
+  `styles.css` still load Roboto 300/500; the Inter migration is pending — don't deepen the
+  Roboto dependency in new work.
+- Headings earn weight (600–700), so **weight is hierarchy** — don't reach for size or color
+  first. Monospace is `ui-monospace`/system mono, reserved for IDs, routes, and kbd hints.
 - Kickers/eyebrows are small uppercase tracked labels; record names are the big type.
 - Tabular numerals for counts and money so columns don't shimmy.
 - Hover states are subtle (the grid row's primary edge stripe) and never the only signal (§2).
