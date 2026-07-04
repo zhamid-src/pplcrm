@@ -16,10 +16,14 @@ controller, repository, tRPC router, service, list grid, detail view, and edit f
    Fastify **REST-only** (webhooks, OAuth callbacks, file downloads). Your new entity's router is
    registered in `apps/backend/src/app/modules/trpc.ts:34` (the `trpcRouter` object). Putting it in
    `routes.ts` does nothing.
-2. **Three separate `libs/common` files must all be touched** for the type layer — miss one and the
+2. **Four separate `libs/common` files must all be touched** for the type layer — miss one and the
    build breaks in a confusing place: the schema barrel (`lib/schema.ts`), the `z.infer` type
-   aliases (`lib/models.ts`), and the Kysely `Models` interface + table interface
-   (`lib/kysely.models.ts`).
+   aliases (`lib/models.ts`), the Kysely `Models` interface + table interface
+   (`lib/kysely.models.ts`), and the package barrel `libs/common/src/index.ts` — it uses
+   **explicit named re-export blocks**, not `export *`, so your new symbols must be added by name
+   to the `from './lib/schema'` block (ends ~`index.ts:151`) and the `from './lib/models'` block
+   (ends ~`index.ts:76`) or the backend build fails with
+   `No matching export in "libs/common/src/index.ts"`.
 3. **`modules/trpc.ts` — the `trpcRouter({...})` object (`:34-65`) is the registration that
    matters.** The re-export block below it (`:67-116`) is a convenience convention most routers
    follow, but it is not required for the endpoint to work (`ZapierRouter` is registered in the
@@ -33,10 +37,13 @@ controller, repository, tRPC router, service, list grid, detail view, and edit f
 ### 1. Zod schema triad (`libs/common/src/lib/schemas/<entity>.schema.ts`)
 
 Create `Add<Entity>Obj` and `Update<Entity>Obj` using the shared helpers from `core.schema`
-(`nameSchema`, `descriptionSchema`, `idSchema`). Real example:
+(`nameSchema`, `descriptionSchema`, `idSchema`). (The full triad adds an `XObj` read-shape, but
+teams-style entities only need Add/Update — see `pplcrm-schemas-validation`.) Real example:
 `libs/common/src/lib/schemas/teams.schema.ts:4` (`AddTeamObj`) and `:13` (`UpdateTeamObj`).
-Then export it from the barrel: add `export * from './schemas/<entity>.schema';` to
-`libs/common/src/lib/schema.ts:5`.
+Then export it twice: add `export * from './schemas/<entity>.schema';` to
+`libs/common/src/lib/schema.ts:5`, AND add `Add<Entity>Obj`/`Update<Entity>Obj` by name to the
+`from './lib/schema'` re-export block in `libs/common/src/index.ts` (it's named exports, not
+`export *` — skipping this breaks the backend build).
 → Deep dive on the triad, `.partial()` vs hand-written Update, `core.schema` helpers:
 `pplcrm-schemas-validation`.
 
@@ -44,6 +51,8 @@ Then export it from the barrel: add `export * from './schemas/<entity>.schema';`
 
 Add `export type Add<Entity>Type = z.infer<typeof Add<Entity>Obj>;` and the Update variant.
 Real example: `libs/common/src/lib/models.ts:121` (`AddTeamType`) and `:131` (`UpdateTeamType`).
+Then add both type names to the `from './lib/models'` named re-export block in
+`libs/common/src/index.ts` (same named-exports gotcha as step 1).
 
 ### 3. Kysely model (`libs/common/src/lib/kysely.models.ts`)
 
@@ -55,9 +64,12 @@ example `interface Teams` at `:242`) and add `<table>: <Entity>;` to the `Models
 
 ### 4. Migration (`apps/backend/src/app/_migrations/YYYY-MM-DD-<description>.ts`)
 
-New timestamped file exporting `up(db)` and `down(db)`. Real example:
-`apps/backend/src/app/_migrations/2026-06-27-person-opt-in.ts` (uses ``sql`...`.execute(db)``).
-Never edit an already-applied migration.
+New timestamped file exporting `up(db)` and `down(db)`. For the `up()`/`down()` shape see
+`apps/backend/src/app/_migrations/2026-06-27-person-opt-in.ts` (uses ``sql`...`.execute(db)``) —
+but note that file is an `ALTER TABLE`; a new entity needs a `CREATE TABLE` including the standard
+`RecordType` base columns (`id`, `tenant_id`, `createdby_id`, `updatedby_id`, `created_at`,
+`updated_at` — see `kysely.models.ts:158-165`, and copy a real table's DDL from
+`_migrations/schema.sql` for defaults/indexes). Never edit an already-applied migration.
 → Naming convention, the `schema.sql` baseline, the runner: `pplcrm-migrations`.
 
 ### 5. Backend module (`apps/backend/src/app/modules/<entity>/`)
@@ -87,14 +99,20 @@ add it to the convenience re-export block (`:67-116`; see `:86`) to match most e
 `@Service() class <Entity>Service extends AbstractAPIService<'<table>', Update<Entity>Type>` with
 `endpointName = '<table>'`. Derive row/detail types from `RouterOutputs` rather than re-declaring:
 `export type <Entity>Detail = RouterOutputs['<table>']['getById'];`. Real example:
-`experiences/teams/services/teams-service.ts:13-19`.
+`experiences/teams/services/teams-service.ts:13-19`. **`AbstractAPIService` is abstract with ~13
+required members** (`add`, `addMany`, `attachTag`, `count`, `detachTag`, `getAll`,
+`getAllArchived`, `getById`, `getTags`, `update`, `exportCsv`, …) — mirror how `teams-service.ts`
+implements each; several are one-line tRPC delegations or no-op stubs.
 
 ### 8. Frontend experience UI (`apps/frontend/src/app/experiences/<entity>/ui/`)
 
 Mirror teams:
 
 - List grid: `<entity>-grid.ts` (real: `teams/ui/teams-grid.ts` — provides the service via
-  `{ provide: AbstractAPIService, useExisting: <Entity>Service }` at `teams-grid.ts:30`).
+  `{ provide: AbstractAPIService, useExisting: <Entity>Service }` at `teams-grid.ts:30`). If the
+  experience needs an icon, verify the name is a real `PcIconNameType` key in
+  `libs/uxcommon/src/components/icons/icons.index.ts` before using it — invalid names silently
+  render the `unknown` fallback.
 - Detail view: `<entity>-view.ts` + `.html` (real: `teams/ui/team-view.ts`, `team-view.html`).
 - Edit/add form: `<entity>-form.ts` + `.html` (real: `teams/ui/team-form.ts`). Uses Angular's
   signal-forms `form()` from `@angular/forms/signals` (not a project-internal helper) →
