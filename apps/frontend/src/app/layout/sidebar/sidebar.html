@@ -1,7 +1,7 @@
 <ng-template #navLink let-nav>
   <a
     *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-light hover:rounded-lg !cursor-pointer"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
     [class.animate-up]="nav.justPinned"
     [class.tooltip]="isEffectivelyNarrow()"
     [class.tooltip-right]="isEffectivelyNarrow()"
@@ -32,7 +32,7 @@
 </ng-template>
 
 <div
-  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex transition-all duration-50"
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
   [class.hidden]="!this.isMobileOpen()"
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
   [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
@@ -48,13 +48,13 @@
 
   <a
     [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 cursor-pointer rounded-full p-0"
+    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
     routerLink="/summary"
     aria-label="Go to dashboard"
     i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
     (click)="this.closeMobile()"
   >
-    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
+    <span aria-hidden="true">pC</span>
   </a>
 
   @for (item of items(); track item.name) {

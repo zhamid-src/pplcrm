@@ -173,7 +173,16 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'The [Dashboard](/summary) is your daily starting point: headline numbers for your contacts and engagement, plus the current health of your response-time commitments.',
+        text: 'The [Dashboard](/summary) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
+          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
       },
       { kind: 'h2', id: 'sla', text: 'How SLA status works' },
       {

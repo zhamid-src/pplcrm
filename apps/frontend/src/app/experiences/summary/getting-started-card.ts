@@ -16,43 +16,40 @@ import { GettingStartedService } from './services/getting-started.service';
   imports: [Icon, RouterLink],
   template: `
     @if (visible()) {
-      <div class="animate-drop card border border-base-200 bg-base-100 shadow-sm">
-        <div class="card-body gap-4 p-5">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
-                Getting started · {{ doneCount() }} of {{ total() }} done
-              </div>
-              <h2 class="mt-1 text-lg font-bold text-base-content">Finish setting up your workspace</h2>
+      <div class="animate-drop card border border-line bg-base-100 shadow-sm">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-center justify-between gap-3">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+              Getting started · {{ doneCount() }} of {{ total() }} done
             </div>
             <button
               type="button"
-              class="btn btn-ghost btn-xs btn-circle"
+              class="text-xs font-medium text-base-content/50 underline underline-offset-2 hover:text-base-content"
               (click)="dismiss()"
-              aria-label="Dismiss getting started"
-              i18n-aria-label="@@gettingStarted.dismiss.ariaLabel"
+              i18n="@@gettingStarted.dismiss.label"
             >
-              <pc-icon name="x-mark" [size]="4"></pc-icon>
+              Dismiss
             </button>
           </div>
 
           <ul class="flex flex-col gap-2.5">
             @for (step of steps(); track step.id) {
-              <li class="flex items-center gap-3">
+              <li class="flex items-center gap-2.5">
                 @if (step.done) {
                   <pc-icon name="check-circle" [size]="5" class="shrink-0 text-success"></pc-icon>
-                  <span class="text-sm text-base-content/70">{{ step.label }}</span>
-                  @if (step.evidence) {
-                    <span class="ml-auto text-xs font-medium text-success">{{ step.evidence }}</span>
-                  }
-                } @else if (step.id === nextStep()?.id) {
-                  <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-primary">
-                    <span class="h-2 w-2 rounded-full bg-primary"></span>
+                  <span class="text-sm text-base-content/70"
+                    >{{ step.label }}
+                    @if (step.evidence) {
+                      — {{ step.evidence }}
+                    }
                   </span>
-                  <span class="text-sm font-medium text-base-content">{{ step.label }}</span>
-                  <a [routerLink]="step.route" class="btn btn-primary btn-sm ml-auto">{{ step.cta }}</a>
+                } @else if (step.id === nextStep()?.id) {
+                  <pc-icon name="chevron-right" [size]="5" class="shrink-0 text-primary"></pc-icon>
+                  <a [routerLink]="step.route" class="text-sm font-semibold text-primary hover:underline">{{
+                    step.label
+                  }}</a>
                 } @else {
-                  <span class="h-5 w-5 shrink-0 rounded-full border-2 border-base-300"></span>
+                  <span class="ml-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-base-300"></span>
                   <span class="text-sm text-base-content/50">{{ step.label }}</span>
                 }
               </li>

@@ -52,13 +52,22 @@ export class Navbar implements OnDestroy {
     return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
   });
 
+  /** Initials shown in the avatar circle when the user has no picture. */
+  protected readonly userInitials = computed(() => {
+    const user = this.currentUser();
+    if (!user) return '';
+    const first = (user.first_name ?? '').trim();
+    const last = (user.last_name ?? '').trim();
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
+    return (initials || user.email?.charAt(0) || '?').toUpperCase();
+  });
+
   private pollInterval?: ReturnType<typeof setInterval>;
 
   public readonly notifications = signal<NotificationItem[]>([]);
   public readonly unreadCount = signal<number>(0);
   public readonly isLoadingMore = signal<boolean>(false);
   public readonly hasMore = signal<boolean>(true);
-  public readonly isPulsing = signal<boolean>(false);
 
   protected isMobileOpen() {
     return this.sideBarSvc.isMobileOpen();
@@ -95,9 +104,6 @@ export class Navbar implements OnDestroy {
     try {
       const count = await this.notificationsSvc.getUnreadCount();
       this.unreadCount.set(count || 0);
-      if (count && count > 0) {
-        this.isPulsing.set(true);
-      }
       await this.fetchInitial();
     } catch (err) {
       console.error('Failed to initialize notifications', err);
@@ -123,7 +129,6 @@ export class Navbar implements OnDestroy {
       const oldCount = this.unreadCount();
       this.unreadCount.set(count || 0);
       if (count > oldCount) {
-        this.isPulsing.set(true);
         // Notification count increased, fetch first 5 notifications in background
         await this.fetchInitial();
       }
@@ -133,7 +138,6 @@ export class Navbar implements OnDestroy {
   }
 
   protected onNotificationOpen() {
-    this.isPulsing.set(false);
     if (this.notifications().length === 0) {
       void this.fetchInitial();
     }

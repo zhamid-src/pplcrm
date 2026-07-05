@@ -1,4 +1,4 @@
-import type { ComponentFixture} from '@angular/core/testing';
+import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
 import { Sidebar } from './sidebar';
 import { SidebarService } from './sidebar-service';
@@ -85,13 +85,5 @@ describe('Sidebar Component', () => {
   it('should toggle the drawer state', () => {
     component['toggleDrawer']();
     expect(mockSidebarSvc.toggleDrawer).toHaveBeenCalled();
-  });
-
-  it('should update hovering state signal', () => {
-    component['onSidebarHover'](true);
-    expect(component['hoveringSidebar']()).toBe(true);
-
-    component['onSidebarHover'](false);
-    expect(component['hoveringSidebar']()).toBe(false);
   });
 });

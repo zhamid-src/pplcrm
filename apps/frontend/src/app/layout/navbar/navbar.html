@@ -21,14 +21,17 @@
     ></pc-breadcrumbs>
     } }
 
-    <!-- Search bar -->
-    <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
+    <!-- Search bar — the flex-shrinking element so the icon cluster never overflows -->
+    <div
+      *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'"
+      class="min-w-0 max-w-[360px] shrink grow basis-[120px]"
+    >
       <label class="input input-primary w-full flex items-center gap-2">
         <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
         <input
           #searchInput
           type="text"
-          placeholder="Search"
+          placeholder="Search people, emails, campaigns"
           i18n-placeholder="@@navbar.search.placeholder"
           class="grow w-full"
           (blur)="onBlurSearchBar()"
@@ -36,8 +39,7 @@
           (input)="onSearchInput($event)"
           (keydown.enter)="onSearchEnter()"
         />
-        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
-        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
+        <kbd class="kbd kbd-sm hidden sm:inline-flex border-line">⌘K</kbd>
       </label>
     </div>
 
@@ -101,7 +103,7 @@
       >
         <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
         @if (unreadCount() > 0) {
-        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
+        <span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-base-100"></span>
         }
       </div>
 
@@ -176,11 +178,8 @@
                 <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
               </div>
 
-              <!-- Unread dot indicator -->
+              <!-- Unread dot indicator (static — nothing loops but a working spinner, §7) -->
               @if (!notif.read) {
-              <span
-                class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"
-              ></span>
               <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
               }
             </div>
@@ -198,7 +197,7 @@
     <div class="dropdown dropdown-end">
       <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
         <div
-          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
+          class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
         >
           @if (currentUserAvatar()) {
           <img
@@ -208,7 +207,11 @@
             class="w-full h-full object-cover"
           />
           } @else {
-          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
+          <span
+            class="flex h-full w-full items-center justify-center bg-primary/10 text-primary text-sm font-semibold select-none"
+            aria-hidden="true"
+            >{{ userInitials() }}</span
+          >
           }
         </div>
       </div>

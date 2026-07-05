@@ -328,6 +328,61 @@ export class DashboardController {
       count: Number(r.count || 0),
     }));
 
+    // 5.1 Oldest unassigned open inbox email → drives the "waiting for an owner" next-action card
+    // (age since arrival + how long until the first-response SLA is due, in working time).
+    let oldestUnassignedCreatedAt: Date | null = null;
+    for (const email of inboxEmails) {
+      if (email.status === 'open' && email.assigned_to == null) {
+        const created = new Date(email.created_at);
+        if (!oldestUnassignedCreatedAt || created < oldestUnassignedCreatedAt) {
+          oldestUnassignedCreatedAt = created;
+        }
+      }
+    }
+    let oldestUnassignedAgeHours: number | null = null;
+    let firstResponseDueHours: number | null = null;
+    if (oldestUnassignedCreatedAt) {
+      oldestUnassignedAgeHours = (nowMs - oldestUnassignedCreatedAt.getTime()) / (1000 * 60 * 60);
+      const workedMs = calculateWorkingTimeMs(
+        oldestUnassignedCreatedAt,
+        new Date(nowMs),
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      firstResponseDueHours = Math.max(0, (emailSlaMs - workedMs) / (1000 * 60 * 60));
+    }
+
+    // 5.2 Latest unsent (draft) newsletter → "ready to send" next-action card + briefing clause.
+    const draftRow = await this.db
+      .selectFrom('newsletters')
+      .select(['id', 'name', 'total_recipients'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', '=', 'pending')
+      .orderBy('updated_at', 'desc')
+      .limit(1)
+      .executeTakeFirst();
+    const draftNewsletter = draftRow
+      ? { id: String(draftRow.id), name: draftRow.name, total_recipients: Number(draftRow.total_recipients || 0) }
+      : null;
+
+    // 5.3 Upcoming volunteer events → "coming up" list (real rows only; empty state otherwise).
+    const upcomingRows = await this.db
+      .selectFrom('volunteer_events')
+      .select(['id', 'name', 'start_time', 'capacity', 'location_address'])
+      .where('tenant_id', '=', tenant_id)
+      .where('start_time', '>=', new Date(nowMs))
+      .orderBy('start_time', 'asc')
+      .limit(3)
+      .execute();
+    const upcomingEvents = upcomingRows.map((e: any) => ({
+      id: String(e.id),
+      name: e.name,
+      start_time: e.start_time,
+      capacity: e.capacity == null ? null : Number(e.capacity),
+      location_address: e.location_address ?? null,
+    }));
+
     // Build backward-compatible emailsAssigned
     const emailsAssigned = Object.values(userStatsMap)
       .filter((u) => u.openCount > 0)
@@ -381,6 +436,10 @@ export class DashboardController {
       unassignedCount,
       totalOpenCount,
       userStats,
+      oldestUnassignedAgeHours,
+      firstResponseDueHours,
+      draftNewsletter,
+      upcomingEvents,
       unassignedSlaBreaches,
       unassignedEmailSlaBreaches,
       unassignedTaskSlaBreaches,

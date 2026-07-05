@@ -1,622 +1,426 @@
-<div class="p-6 max-w-7xl mx-auto space-y-6">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="presentation-chart-line" class="text-primary" [size]="7"></pc-icon>
-        CRM Summary Dashboard
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Overview of key performance metrics, email response rates, and contact database growth.
+<div class="mx-auto max-w-7xl space-y-6 p-6">
+  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="min-w-0">
+      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
+      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
+        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ unassignedOpenCount() }} unassigned conversations</a
+        >
+        need an owner and
+        <button
+          type="button"
+          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          (click)="toggleSlaDetails('tasks')"
+        >
+          {{ totalTaskSlaBreaches() }} tasks
+        </button>
+        have breached SLA. Email response is {{ emailHealthWord() }},
+        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ activeContactsCount() }} new contacts</a
+        >
+        arrived this month@if (draftNewsletter(); as draft) {, and
+        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
+        >}.
       </p>
     </div>
+
     <button
-      class="btn btn-outline btn-sm gap-2 cursor-pointer hover:btn-primary"
+      class="btn btn-outline btn-sm shrink-0 gap-2"
       pcSpinOnClick
       (click)="loadStats()"
       [disabled]="isRefreshing()"
     >
       <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Reload Stats
+      Reload stats
     </button>
   </div>
 
-  <!-- First-run checklist — composed from real account state; self-hides when complete (§3) -->
+  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
   <pc-getting-started-card></pc-getting-started-card>
 
-  <!-- Metric Cards — always visible; show skeletons (not a spinner) on first load (§3) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-    <pc-stat-card
-      [title]="'Total Open Emails'"
-      [value]="totalOpenCount()"
-      [loading]="isInitialLoading()"
-      [description]="'All open inbox conversations'"
-      [icon]="'envelope'"
-      [valueColorClass]="'text-primary'"
-      [iconColorClass]="'text-primary'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Unassigned Open'"
-      [value]="unassignedOpenCount()"
-      [loading]="isInitialLoading()"
-      [description]="'Awaiting user assignment'"
-      [icon]="'exclamation-circle'"
-      [valueColorClass]="'text-warning'"
-      [iconColorClass]="'text-warning'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg 1st Response'"
-      [value]="avgFirstResponse()"
-      [loading]="isInitialLoading()"
-      [description]="'Time to reply or comment'"
-      [icon]="'clock'"
-      [valueColorClass]="'text-info'"
-      [iconColorClass]="'text-info'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg Time to Close'"
-      [value]="avgTimeToClose()"
-      [loading]="isInitialLoading()"
-      [description]="'From arrival to closed status'"
-      [icon]="'check-circle'"
-      [valueColorClass]="'text-success'"
-      [iconColorClass]="'text-success'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Contacts Growth'"
-      [value]="'+' + activeContactsCount()"
-      [loading]="isInitialLoading()"
-      [description]="'New contacts (last 30 days)'"
-      [icon]="'user-plus'"
-      [valueColorClass]="'text-secondary'"
-      [iconColorClass]="'text-secondary'"
-    ></pc-stat-card>
-  </div>
-
-  <!-- Loading Overlay (charts/analytics area only) -->
-  @if (isLoading() && linePoints().length === 0) {
-  <div class="flex flex-col items-center justify-center py-24">
-    <span class="loading loading-bars loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Analyzing database metrics...</p>
-  </div>
-  } @if (linePoints().length > 0) {
-  <div class="space-y-6">
-    <!-- SLA Status Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- Email SLA Card -->
-      <div
-        class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
-        [class.bg-success]="emailSlaStatus() === 'healthy'"
-        [class.text-success-content]="emailSlaStatus() === 'healthy'"
-        [class.bg-warning]="emailSlaStatus() === 'warning'"
-        [class.text-warning-content]="emailSlaStatus() === 'warning'"
-        [class.bg-error]="emailSlaStatus() === 'critical'"
-        [class.text-error-content]="emailSlaStatus() === 'critical'"
-      >
-        <div class="card-body p-5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Email SLA Status</span>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
-              (click)="toggleSlaDetails('emails')"
-            >
-              <pc-icon
-                [name]="showSlaDetails() && defaultSlaTab() === 'emails' ? 'chevron-up' : 'chevron-down'"
-                [size]="4"
-              ></pc-icon>
-              {{ showSlaDetails() && defaultSlaTab() === 'emails' ? 'Hide Details' : 'View Details' }}
-            </button>
-          </div>
-          <div class="flex items-baseline gap-2 mt-1">
-            <h3 class="text-2xl font-black">
-              {{ totalEmailSlaBreaches() === 0 ? 'Healthy' : totalEmailSlaBreaches() + ' Breached' }}
-            </h3>
-            <span class="text-xs opacity-85"> ({{ unassignedEmailSlaBreaches() }} unassigned breaches) </span>
-          </div>
-          <div class="mt-2 flex items-center justify-between text-xs opacity-75 border-t border-white/10 pt-2">
-            <span>Limit: {{ emailSlaHours() }}h response</span>
-            <span>Warning: &ge;{{ emailSlaWarningThreshold() }} • Critical: &ge;{{ emailSlaCriticalThreshold() }}</span>
-          </div>
-        </div>
+  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <!-- Task SLA -->
+    @if (totalTaskSlaBreaches() > 0) {
+    <button
+      type="button"
+      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
+      (click)="toggleSlaDetails('tasks')"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
+        <span class="text-sm font-semibold">Task SLA breaches</span>
       </div>
-
-      <!-- Task SLA Card -->
-      <div
-        class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
-        [class.bg-success]="taskSlaStatus() === 'healthy'"
-        [class.text-success-content]="taskSlaStatus() === 'healthy'"
-        [class.bg-warning]="taskSlaStatus() === 'warning'"
-        [class.text-warning-content]="taskSlaStatus() === 'warning'"
-        [class.bg-error]="taskSlaStatus() === 'critical'"
-        [class.text-error-content]="taskSlaStatus() === 'critical'"
-      >
-        <div class="card-body p-5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Task SLA Status</span>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
-              (click)="toggleSlaDetails('tasks')"
-            >
-              <pc-icon
-                [name]="showSlaDetails() && defaultSlaTab() === 'tasks' ? 'chevron-up' : 'chevron-down'"
-                [size]="4"
-              ></pc-icon>
-              {{ showSlaDetails() && defaultSlaTab() === 'tasks' ? 'Hide Details' : 'View Details' }}
-            </button>
-          </div>
-          <div class="flex items-baseline gap-2 mt-1">
-            <h3 class="text-2xl font-black">
-              {{ totalTaskSlaBreaches() === 0 ? 'Healthy' : totalTaskSlaBreaches() + ' Breached' }}
-            </h3>
-            <span class="text-xs opacity-85"> ({{ unassignedTaskSlaBreaches() }} unassigned breaches) </span>
-          </div>
-          <div class="mt-2 flex items-center justify-between text-xs opacity-75 border-t border-white/10 pt-2">
-            <span>Limit: {{ taskSlaHours() }}h resolution</span>
-            <span>Warning: &ge;{{ taskSlaWarningThreshold() }} • Critical: &ge;{{ taskSlaCriticalThreshold() }}</span>
-          </div>
-        </div>
+      <div class="mt-1 text-xs opacity-70">
+        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
       </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
+        View the {{ totalTaskSlaBreaches() }} tasks
+      </div>
+    </button>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
     </div>
-
-    <!-- SLA Details Action Center -->
-    @if (showSlaDetails()) {
-    <pc-sla-details
-      [breachedEmails]="breachedEmails()"
-      [breachedTasks]="breachedTasks()"
-      [emailSlaHours]="emailSlaHours()"
-      [taskSlaHours]="taskSlaHours()"
-      [totalEmailBreaches]="totalEmailSlaBreaches()"
-      [totalTaskBreaches]="totalTaskSlaBreaches()"
-      [hasMoreEmails]="hasMoreEmails()"
-      [hasMoreTasks]="hasMoreTasks()"
-      [isLoadingEmails]="isLoadingEmails()"
-      [isLoadingTasks]="isLoadingTasks()"
-      (loadMoreEmails)="loadMoreEmails()"
-      (loadMoreTasks)="loadMoreTasks()"
-      [(activeTab)]="defaultSlaTab"
-    />
     }
 
-    <!-- Charts Layout -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left / Main Chart: Contacts Growth Line -->
-      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-        <div class="card-body p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-              <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
-              New Contacts Growth
-            </h3>
-            <span class="text-xs text-base-content/55">Last 30 Days</span>
-          </div>
-
-          <div class="relative w-full h-[220px]">
-            <svg viewBox="0 0 600 200" class="w-full h-full overflow-visible">
-              <defs>
-                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"></stop>
-                  <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0"></stop>
-                </linearGradient>
-              </defs>
-
-              <!-- Grid Lines -->
-              <line
-                x1="20"
-                y1="20"
-                x2="580"
-                y2="20"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="60"
-                x2="580"
-                y2="60"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="100"
-                x2="580"
-                y2="100"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="140"
-                x2="580"
-                y2="140"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line x1="20" y1="180" x2="580" y2="180" stroke="currentColor" class="text-base-content/10"></line>
-
-              <!-- Y Axis Labels -->
-              @for (label of yAxisLabels(); track label.y) {
-              <text
-                [attr.x]="12"
-                [attr.y]="label.y + 3"
-                text-anchor="end"
-                class="fill-current text-base-content/40 text-[9px] font-mono"
-              >
-                {{ label.value }}
-              </text>
-              }
-
-              <!-- Line paths -->
-              <path [attr.d]="areaPath()" fill="url(#areaGrad)"></path>
-              <path
-                [attr.d]="linePath()"
-                fill="none"
-                stroke="#3b82f6"
-                stroke-width="3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              ></path>
-
-              <!-- Interactive Points -->
-              @for (p of linePoints(); track p.date; let first = $first; let last = $last) {
-              <circle
-                [attr.cx]="p.x"
-                [attr.cy]="p.y"
-                r="4.5"
-                fill="#ffffff"
-                stroke="#3b82f6"
-                stroke-width="2"
-                class="hover:scale-150 transition-all duration-150 cursor-pointer"
-                style="transform-origin: center; transform-box: fill-box"
-                (mouseenter)="hoveredPoint.set(p)"
-                (mouseleave)="hoveredPoint.set(null)"
-              ></circle>
-              }
-
-              <!-- X Axis Labels -->
-              @for (label of xAxisLabels(); track label.x) {
-              <text
-                [attr.x]="label.x"
-                [attr.y]="195"
-                text-anchor="middle"
-                class="fill-current text-base-content/40 text-[9px] font-mono"
-              >
-                {{ label.label }}
-              </text>
-              }
-            </svg>
-
-            <!-- Tooltip -->
-            @if (hoveredPoint(); as p) {
-            <div
-              class="absolute z-10 bg-base-100 border border-base-300 px-3 py-2 rounded-lg shadow-xl font-sans pointer-events-none transform -translate-x-1/2 -translate-y-full mt-[-8px] transition-all duration-100"
-              [style.left.%]="(p.x / 600) * 100"
-              [style.top.%]="(p.y / 200) * 100"
-            >
-              <div class="text-[10px] text-base-content/50 font-semibold uppercase tracking-wider">
-                {{ formatDate(p.date) }}
-              </div>
-              <div class="text-sm font-bold text-base-content mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
-                <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                +{{ p.count }} Contacts
-              </div>
-            </div>
-            }
-          </div>
-        </div>
+    <!-- Unassigned conversations -->
+    @if (unassignedOpenCount() > 0) {
+    <a
+      routerLink="/inbox"
+      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
+        <span class="text-sm font-semibold">Unassigned conversations</span>
       </div>
-
-      <!-- Right: Donut Chart - Emails Assigned -->
-      <div class="card bg-base-100 border border-base-300 shadow-xl">
-        <div class="card-body p-6 flex flex-col justify-between">
-          <div class="mb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-                <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
-                Open Conversations
-              </h3>
-              <p class="text-xs text-base-content/50 mt-0.5">Inbox emails assigned by rep</p>
-            </div>
-            <!-- Filter Radios -->
-            <div class="join join-horizontal self-start sm:self-auto border border-base-300">
-              <button
-                class="btn btn-xs join-item"
-                [class.btn-active]="showAllOpen()"
-                [class.btn-neutral]="showAllOpen()"
-                [class.btn-ghost]="!showAllOpen()"
-                (click)="showAllOpen.set(true)"
-              >
-                All Open
-              </button>
-              <button
-                class="btn btn-xs join-item"
-                [class.btn-active]="!showAllOpen()"
-                [class.btn-neutral]="!showAllOpen()"
-                [class.btn-ghost]="showAllOpen()"
-                (click)="showAllOpen.set(false)"
-              >
-                Assigned
-              </button>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-center py-4">
-            @if (assignedRepSlices().length === 0) {
-            <div class="text-sm text-base-content/40 py-10 italic">No open emails assigned.</div>
-            } @if (assignedRepSlices().length > 0) {
-            <div class="relative w-[160px] h-[160px]">
-              <svg
-                width="160"
-                height="160"
-                viewBox="0 0 160 160"
-                class="transform -rotate-90 w-full h-full overflow-visible"
-              >
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="60"
-                  fill="transparent"
-                  stroke="currentColor"
-                  class="text-base-300/30"
-                  stroke-width="14"
-                ></circle>
-                @for (slice of assignedRepSlices(); track slice.name) {
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="60"
-                  fill="transparent"
-                  [attr.stroke]="slice.color"
-                  [attr.stroke-width]="hoveredSlice()?.name === slice.name ? 18 : 14"
-                  [attr.stroke-dasharray]="slice.strokeDash"
-                  [attr.stroke-dashoffset]="slice.strokeOffset"
-                  class="cursor-pointer transition-all duration-200 origin-center"
-                  [style.opacity]="hoveredSlice() && hoveredSlice()?.name !== slice.name ? 0.45 : 1"
-                  (mouseenter)="hoveredSlice.set(slice)"
-                  (mouseleave)="hoveredSlice.set(null)"
-                ></circle>
-                }
-              </svg>
-
-              <!-- Center Text Overlay -->
-              <div
-                class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-2"
-              >
-                @if (hoveredSlice(); as hs) {
-                <span class="text-[10px] text-base-content/50 uppercase font-bold tracking-wider truncate max-w-[110px]"
-                  >{{ hs.name }}</span
-                >
-                <span class="text-xl font-extrabold text-base-content leading-none mt-1">{{ hs.count }}</span>
-                <span class="text-[10px] text-base-content/40 font-mono mt-0.5">{{ hs.percentage }}%</span>
-                } @else {
-                <span class="text-[9px] text-base-content/50 uppercase font-semibold tracking-wider">
-                  {{ showAllOpen() ? 'Total Open' : 'Total Assigned' }}
-                </span>
-                <span class="text-2xl font-extrabold text-base-content leading-none mt-1">{{ donutTotalCount() }}</span>
-                <span class="text-[9px] text-base-content/40 mt-0.5">Conversations</span>
-                }
-              </div>
-            </div>
-            }
-          </div>
-
-          <!-- Legend -->
-          <div class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
-            @for (slice of assignedRepSlices(); track slice.name) {
-            <div
-              class="flex items-center justify-between text-xs p-1 rounded-md transition-all duration-150 cursor-pointer animate-fade-in"
-              [class.bg-base-200]="hoveredSlice()?.name === slice.name"
-              (mouseenter)="hoveredSlice.set(slice)"
-              (mouseleave)="hoveredSlice.set(null)"
-            >
-              <div class="flex items-center gap-2">
-                <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="slice.color"></span>
-                <span class="font-semibold text-base-content">{{ slice.name }}</span>
-              </div>
-              <span class="text-base-content/60 font-mono">{{ slice.count }} ({{ slice.percentage }}%)</span>
-            </div>
-            }
-          </div>
-        </div>
+      <div class="mt-1 text-xs text-base-content/60">
+        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
+        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
       </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
+    </a>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
+    </div>
+    }
+
+    <!-- Draft newsletter -->
+    @if (draftNewsletter(); as draft) {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
+        <span class="text-sm font-semibold">Draft newsletter</span>
+      </div>
+      <div class="mt-1 truncate text-xs text-base-content/60">
+        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
+    </a>
+    } @else {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
+        <span class="text-sm font-semibold">Draft newsletters</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
+    </a>
+    }
+  </div>
+
+  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
+  @if (showSlaDetails()) {
+  <pc-sla-details
+    [breachedEmails]="breachedEmails()"
+    [breachedTasks]="breachedTasks()"
+    [emailSlaHours]="emailSlaHours()"
+    [taskSlaHours]="taskSlaHours()"
+    [totalEmailBreaches]="totalEmailSlaBreaches()"
+    [totalTaskBreaches]="totalTaskSlaBreaches()"
+    [hasMoreEmails]="hasMoreEmails()"
+    [hasMoreTasks]="hasMoreTasks()"
+    [isLoadingEmails]="isLoadingEmails()"
+    [isLoadingTasks]="isLoadingTasks()"
+    (loadMoreEmails)="loadMoreEmails()"
+    (loadMoreTasks)="loadMoreTasks()"
+    [(activeTab)]="defaultSlaTab"
+  />
+  }
+
+  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
+        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
     </div>
 
-    <!-- Representative Performance Table -->
-    <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-      <div class="card-body p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-            <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
-            Representative Performance & Response Stats
-          </h3>
-          <span class="text-xs text-base-content/55">Real-time stats</span>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="table table-zebra w-full text-sm">
-            <thead>
-              <tr class="bg-base-200/50">
-                <th>Representative</th>
-                <th class="text-center">Open Emails</th>
-                <th class="text-center">Closed Emails</th>
-                <th class="text-center">Total Handled</th>
-                <th class="text-center">Resolution Rate</th>
-                <th class="text-center">Avg 1st Response</th>
-                <th class="text-center">Avg Time to Close</th>
-                <th class="text-center">Email SLA Breaches</th>
-                <th class="text-center">Task SLA Breaches</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (user of userStats(); track user.user_id) {
-              <tr class="hover">
-                <td class="font-semibold text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-                <td class="text-center font-mono font-semibold text-base-content">{{ user.openCount }}</td>
-                <td class="text-center font-mono text-base-content/70">{{ user.closedCount }}</td>
-                <td class="text-center font-mono text-base-content/70">{{ user.openCount + user.closedCount }}</td>
-                <td class="text-center">
-                  <span
-                    class="badge font-semibold"
-                    [class.badge-success]="user.resolutionRate >= 75"
-                    [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                    [class.badge-error]="user.resolutionRate < 40"
-                  >
-                    {{ user.resolutionRate }}%
-                  </span>
-                </td>
-                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgFirstResponse }}</td>
-                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgTimeToClose }}</td>
-                <td class="text-center">
-                  @if (user.emailSlaBreaches > 0) {
-                  <div class="badge badge-error badge-sm font-mono font-bold animate-pulse">
-                    {{ user.emailSlaBreaches }}
-                  </div>
-                  } @else {
-                  <div class="badge badge-success badge-sm font-mono font-bold text-white">0</div>
-                  }
-                </td>
-                <td class="text-center">
-                  @if (user.taskSlaBreaches > 0) {
-                  <div class="badge badge-warning badge-sm font-mono font-bold">{{ user.taskSlaBreaches }}</div>
-                  } @else {
-                  <div class="badge badge-success badge-sm font-mono font-bold text-white">0</div>
-                  }
-                </td>
-              </tr>
-              } @empty {
-              <tr>
-                <td colspan="8" class="text-center py-6 text-base-content/40 italic">
-                  No representative performance statistics available.
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
+        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
       </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
     </div>
 
-    <!-- Bottom Chart: Closed Emails by Rep -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl">
-        <div class="card-body p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary" [size]="5"></pc-icon>
-              Emails Closed by Rep
-            </h3>
-            <span class="text-xs text-base-content/50">Performance metrics</span>
-          </div>
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
+        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
+        {{ avgFirstResponse() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
+    </div>
 
-          @if (closedRepBars().length === 0) {
-          <div class="text-sm text-base-content/40 py-16 italic text-center">No emails closed by representatives.</div>
-          } @if (closedRepBars().length > 0) {
-          <div class="relative w-full h-[180px]">
-            <svg viewBox="0 0 500 180" class="w-full h-full overflow-visible">
-              @for (bar of closedRepBars(); track bar.name; let idx = $index) {
-              <g>
-                <!-- Label -->
-                <text
-                  x="10"
-                  [attr.y]="bar.y + 14"
-                  fill="currentColor"
-                  class="text-base-content text-xs font-semibold"
-                  text-anchor="start"
-                >
-                  {{ bar.name }}
-                </text>
-                <!-- Bar Background -->
-                <rect
-                  x="130"
-                  [attr.y]="bar.y"
-                  width="360"
-                  height="18"
-                  rx="4"
-                  fill="currentColor"
-                  class="text-base-200/50"
-                ></rect>
-                <!-- Bar Foreground -->
-                <rect
-                  x="130"
-                  [attr.y]="bar.y"
-                  [attr.width]="bar.width"
-                  height="18"
-                  rx="4"
-                  fill="#10b981"
-                  class="transition-all duration-500 ease-out"
-                ></rect>
-                <!-- Value -->
-                <text
-                  [attr.x]="135 + bar.width"
-                  [attr.y]="bar.y + 13"
-                  fill="currentColor"
-                  class="text-base-content text-[11px] font-mono font-bold"
-                >
-                  {{ bar.count }}
-                </text>
-              </g>
-              }
-            </svg>
-          </div>
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
+        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
+        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
+        +{{ activeContactsCount() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
+    </div>
+  </div>
+
+  <!-- Growth chart (2fr) + Coming up (1fr) -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- New contacts line chart -->
+    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
+        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
+      </div>
+
+      @if (isInitialLoading()) {
+      <div class="skeleton h-[200px] w-full rounded-lg"></div>
+      } @else if (linePoints().length > 0) {
+      <div class="relative h-[200px] w-full">
+        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
+              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+
+          @for (label of yAxisLabels(); track label.y) {
+          <line
+            x1="20"
+            [attr.y1]="label.y"
+            x2="580"
+            [attr.y2]="label.y"
+            stroke="currentColor"
+            class="text-base-content/10"
+            stroke-dasharray="4"
+          ></line>
+          <text
+            [attr.x]="12"
+            [attr.y]="label.y + 3"
+            text-anchor="end"
+            class="fill-current text-[9px] tabular-nums text-base-content/40"
+          >
+            {{ label.value }}
+          </text>
           }
+
+          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
+          <path
+            [attr.d]="linePath()"
+            fill="none"
+            stroke="var(--color-primary)"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></path>
+
+          @for (p of linePoints(); track p.date) {
+          <circle
+            [attr.cx]="p.x"
+            [attr.cy]="p.y"
+            r="4"
+            fill="var(--color-base-100)"
+            stroke="var(--color-primary)"
+            stroke-width="2"
+            class="cursor-pointer"
+            (mouseenter)="hoveredPoint.set(p)"
+            (mouseleave)="hoveredPoint.set(null)"
+          ></circle>
+          } @for (label of xAxisLabels(); track label.x) {
+          <text
+            [attr.x]="label.x"
+            [attr.y]="195"
+            text-anchor="middle"
+            class="fill-current text-[9px] text-base-content/40"
+          >
+            {{ label.label }}
+          </text>
+          }
+        </svg>
+
+        @if (hoveredPoint(); as p) {
+        <div
+          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
+          [style.left.%]="(p.x / 600) * 100"
+          [style.top.%]="(p.y / 200) * 100"
+        >
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
+            {{ formatDate(p.date) }}
+          </div>
+          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
+            <span class="h-2 w-2 rounded-full bg-primary"></span>
+            +{{ p.count }} contacts
+          </div>
         </div>
+        }
       </div>
+      } @else {
+      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
+        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
+        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Import your people</a
+        >
+      </div>
+      }
+    </div>
 
-      <!-- Quick Info Card -->
-      <div class="card bg-base-200/40 border border-base-300 shadow-xl flex flex-col justify-between">
-        <div class="card-body p-6">
-          <h4 class="font-bold text-base-content flex items-center gap-2 mb-3">
-            <pc-icon name="information-circle" class="text-primary" [size]="5"></pc-icon>
-            Dashboard Insights
-          </h4>
+    <!-- Coming up -->
+    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
+      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
 
-          <!-- Radial Progress resolution rate -->
-          <div class="flex items-center gap-4 p-3 mb-4 rounded-xl border border-base-300 bg-base-100 shadow-xs">
-            <div
-              class="radial-progress text-success font-bold text-xs"
-              [style.--value]="resolutionRate()"
-              [style.--size]="'3.5rem'"
-              [style.--thickness]="'4px'"
-              role="progressbar"
-            >
-              {{ resolutionRate() }}%
-            </div>
-            <div>
-              <div class="text-xs font-bold text-base-content">Email Resolution Rate</div>
-              <div class="text-[10px] text-base-content/50">Closed emails vs total assigned</div>
-            </div>
-          </div>
+      @if (upcomingEvents().length > 0) {
+      <ul class="flex flex-col gap-1">
+        @for (ev of upcomingEvents(); track ev.id) {
+        <li>
+          <a
+            routerLink="/events/shifts"
+            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
+          >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
+              <span class="block text-xs text-base-content/55">
+                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
+              </span>
+            </span>
+          </a>
+        </li>
+        }
+      </ul>
+      } @else {
+      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
+        <a routerLink="/events/shifts" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Plan an event</a
+        >
+      </div>
+      }
 
-          <div class="text-xs text-base-content/70 space-y-3 leading-relaxed">
-            <p>
-              • <strong>First Response Time</strong> tracks how long representatives take to send an initial reply or
-              comment on incoming inbox messages.
-            </p>
-            <p>
-              • <strong>Time to Close</strong> measures the average life cycle of an email thread from the time it lands
-              in the inbox until it is marked closed.
-            </p>
-            <p>
-              • <strong>Contacts Growth</strong> logs database entry growth over the last 30 days to reflect outreach
-              campaigns and imports.
-            </p>
-          </div>
-          <div class="alert alert-info py-2 text-[10px] mt-4">
-            <span>Data is aggregated in real-time. Hit "Reload Stats" to fetch the latest analytics.</span>
-          </div>
-        </div>
+      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
+        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
+        below
       </div>
     </div>
   </div>
-  }
+
+  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
+  <div class="rounded-xl border border-line bg-base-100 p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
+      <span class="text-xs text-base-content/50">Real-time</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr
+            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
+          >
+            <th class="py-2 pr-4 font-medium">Representative</th>
+            <th class="py-2 pr-4 text-right font-medium">Open</th>
+            <th class="py-2 pr-4 text-right font-medium">Closed</th>
+            <th class="py-2 pr-4 font-medium">Resolution</th>
+            <th class="py-2 pr-4 font-medium">Avg first response</th>
+            <th class="py-2 font-medium">SLA breaches</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of userStats(); track user.user_id) {
+          <tr class="border-b border-line last:border-0">
+            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
+            <td class="py-2.5 pr-4">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.resolutionRate >= 75"
+                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                [class.badge-error]="user.resolutionRate < 40"
+                >{{ user.resolutionRate }}%</span
+              >
+            </td>
+            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
+            <td class="py-2.5">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
+                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
+                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
+              >
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>

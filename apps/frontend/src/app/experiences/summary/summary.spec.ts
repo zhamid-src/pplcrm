@@ -1,8 +1,10 @@
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { Summary } from './summary';
 import { DashboardService } from './services/dashboard.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AuthService } from '../../auth/auth-service';
 import { vi, describe, beforeEach, it, expect, afterEach } from 'vitest';
 
 describe('summary', () => {
@@ -43,8 +45,10 @@ describe('summary', () => {
     await TestBed.configureTestingModule({
       imports: [Summary],
       providers: [
+        provideRouter([]),
         { provide: DashboardService, useValue: mockDashboardSvc },
         { provide: AlertService, useValue: mockAlertSvc },
+        { provide: AuthService, useValue: { getUserSignal: () => () => null } },
       ],
     }).compileComponents();
   });
