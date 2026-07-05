@@ -75,8 +75,10 @@ import { FormActions } from '../form-actions/form-actions';
               </button>
               <ul
                 tabindex="0"
-                class="menu dropdown-content z-30 w-48 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
+                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
               >
+                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
+                <ng-content select="[pc-overflow-extra]"></ng-content>
                 <li>
                   <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
                     <pc-icon name="trash" [size]="4"></pc-icon>
