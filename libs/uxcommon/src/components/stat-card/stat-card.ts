@@ -15,7 +15,7 @@ import { PcIconNameType } from '@icons/icons.index';
             {{ title() }}
           </div>
         }
-        <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl" [class]="valueColorClass()">
+        <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
           {{ value() }}
         </div>
         <div class="stat-desc text-[10px] text-base-content/40 mt-1">
