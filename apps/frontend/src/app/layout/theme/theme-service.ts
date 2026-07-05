@@ -1,9 +1,14 @@
 import { signal, Service, inject, effect } from '@angular/core';
 import { SettingsService } from '../../experiences/settings/services/settings-service';
 
+/** What the user asked for; 'system' follows the OS `prefers-color-scheme`. */
+export type ThemePreference = 'light' | 'dark' | 'system';
+
 @Service()
 export class ThemeService {
   private readonly theme = signal<'light' | 'dark'>('light');
+  /** The user's stated preference (drives the settings segmented control). */
+  private readonly preference = signal<ThemePreference>('system');
   private readonly settingsSvc = inject(SettingsService, { optional: true });
   private lastDefaultTheme: string | null = null;
 
@@ -24,14 +29,25 @@ export class ThemeService {
     }
   }
 
+  /** The resolved theme actually applied to the UI. */
   public getTheme() {
     return this.theme();
   }
 
+  /** The user's stated preference: 'light', 'dark', or 'system'. */
+  public getPreference(): ThemePreference {
+    return this.preference();
+  }
+
   public toggleTheme() {
-    const next = this.theme() === 'light' ? 'dark' : 'light';
-    this.theme.set(next);
-    localStorage.setItem('pc-theme', next);
+    this.setPreference(this.theme() === 'light' ? 'dark' : 'light');
+  }
+
+  public setPreference(pref: ThemePreference) {
+    // 'system' is stored explicitly so it wins over any workspace default and
+    // follows the OS live via the matchMedia listener.
+    localStorage.setItem('pc-theme', pref);
+    this.updateTheme();
   }
 
   private updateTheme() {
@@ -48,16 +64,28 @@ export class ThemeService {
 
     const stored = localStorage.getItem('pc-theme');
     if (stored === 'light' || stored === 'dark') {
+      this.preference.set(stored);
       this.theme.set(stored);
       return;
     }
 
+    if (stored === 'system') {
+      this.preference.set('system');
+      this.theme.set(this.systemTheme());
+      return;
+    }
+
+    // No personal override: follow the workspace default, else the OS. Reported
+    // to the UI as 'system' since the user hasn't pinned a specific theme.
+    this.preference.set('system');
     if (defaultTheme === 'light' || defaultTheme === 'dark') {
       this.theme.set(defaultTheme);
       return;
     }
+    this.theme.set(this.systemTheme());
+  }
 
-    const isSystemDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
-    this.theme.set(isSystemDark ? 'dark' : 'light');
+  private systemTheme(): 'light' | 'dark' {
+    return window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
   }
 }

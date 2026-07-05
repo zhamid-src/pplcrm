@@ -8,6 +8,7 @@ import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { Router, RouterLink } from '@angular/router';
 
 import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
+import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
 import { SearchService } from '../../services/api/search-service';
 import { FullScreenService } from '../../services/fullscreen.service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -29,7 +30,16 @@ type NotificationItem = {
 
 @Component({
   selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle, Breadcrumbs],
+  imports: [
+    Icon,
+    Swap,
+    ReactiveFormsModule,
+    AnimateIfDirective,
+    RouterLink,
+    FavouriteToggle,
+    Breadcrumbs,
+    PersonalSettingsDialog,
+  ],
   templateUrl: './navbar.html',
   host: {
     '(window:keydown)': 'handleKeyDown($event)',
@@ -73,6 +83,14 @@ export class Navbar implements OnDestroy {
     return this.sideBarSvc.isMobileOpen();
   }
   protected readonly searchBarVisible = signal(false);
+
+  /** Personal Settings popup (§5a) — opened from the avatar menu. */
+  protected readonly settingsOpen = signal(false);
+
+  protected openSettings(): void {
+    this.closeDropdown();
+    this.settingsOpen.set(true);
+  }
 
   protected readonly searchStr = signal('');
   protected readonly themeSvc = inject(ThemeService);

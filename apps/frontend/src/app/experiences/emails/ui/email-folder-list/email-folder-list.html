@@ -67,18 +67,24 @@
   </ul>
 
   <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
-    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New Email">
+    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New email">
       <pc-icon name="pencil-square"></pc-icon>
-      <span [class]="buttonLabelClass()">New Email</span>
+      <span [class]="buttonLabelClass()">New email</span>
     </button>
     <button
       class="btn btn-outline btn-primary w-full"
       [disabled]="store.isSyncing()"
       (click)="store.syncEmails()"
-      title="Sync Emails"
+      title="Sync now"
     >
       <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
-      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing...' : 'Sync Emails' }} </span>
+      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing…' : 'Sync now' }} </span>
     </button>
+    <!-- Evidence line: background work narrates itself (§2) -->
+    @if (store.lastSyncedAt(); as syncedAt) {
+    <span [class]="buttonLabelClass()" class="text-center text-[10.5px] text-base-content/45">
+      Synced {{ syncedAt | timeAgo:{ style: 'long' } }}
+    </span>
+    }
   </div>
 </aside>

@@ -2,13 +2,14 @@ import { Component, OnInit, computed, inject, output, signal } from '@angular/co
 import { Icon } from '@uxcommon/components/icons/icon';
 import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
 import { Swap } from '@uxcommon/components/swap/swap';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-folder-list',
-  imports: [Swap, Icon],
+  imports: [Swap, Icon, TimeAgoPipe],
   templateUrl: 'email-folder-list.html',
 })
 export class EmailFolderList implements OnInit {
@@ -68,11 +69,8 @@ export class EmailFolderList implements OnInit {
   }
 
   public ngOnInit(): void {
-
     void this.loadOnInit();
-
   }
-
 
   private async loadOnInit(): Promise<void> {
     try {

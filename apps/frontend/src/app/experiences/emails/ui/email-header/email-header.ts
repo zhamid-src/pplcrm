@@ -169,7 +169,7 @@ export class EmailHeader {
   }
 
   protected getTrashText() {
-    return this.isFolderTrash() ? 'Delete Permanently' : 'Move to Trash';
+    return this.isFolderTrash() ? 'Delete forever' : 'Move to Trash';
   }
 
   protected handleDocumentKeydown(ev: KeyboardEvent): void {
@@ -230,7 +230,7 @@ export class EmailHeader {
   }
 
   protected markAsDoneText() {
-    return this.isClosed() ? 'Mark as Open' : 'Mark as Done';
+    return this.isClosed() ? 'Reopen' : 'Mark as done';
   }
 
   protected restoreFromTrash() {

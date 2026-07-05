@@ -73,15 +73,17 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around.',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
       },
       { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
       {
         kind: 'list',
         items: [
-          'Answer oldest first — response-time targets (SLAs) are measured per email, and the [Dashboard](/summary) rolls breaches up into a status.',
+          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/summary) rolls breaches up into a status.',
+          'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
           'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you — tune them on your [Profile](/profile).',
+          'Notifications alert you to activity that needs you — tune them under **Settings** in the avatar menu.',
         ],
       },
       {
