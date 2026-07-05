@@ -1,8 +1,11 @@
 <ng-template #navLink let-nav>
   <a
     *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="hover:text-primary flex flex-auto items-center pb-1 pl-2 font-light hover:rounded-lg !cursor-pointer"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-light hover:rounded-lg !cursor-pointer"
     [class.animate-up]="nav.justPinned"
+    [class.tooltip]="isEffectivelyNarrow()"
+    [class.tooltip-right]="isEffectivelyNarrow()"
+    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
     (click)="this.closeMobile()"
     [routerLink]="nav.route"
     routerLinkActive="!font-semibold !text-primary"
@@ -11,28 +14,32 @@
     [class.!text-primary]="pendingRoute() === nav.route"
   >
     <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span
-      class="indicator pl-2 group-hover:md:visible text-[13px] tracking-[0.03em]"
-      [class.invisible]="isEffectivelyNarrow()"
-    >
+    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
       {{ nav.name }} @if (nav.indicator) {
       <span class="indicator-item status status-primary"></span>
       }
     </span>
+    @if (nav.shortcut && !isEffectivelyNarrow()) {
+    <span
+      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
+      aria-hidden="true"
+    >
+      <kbd class="kbd kbd-xs">g</kbd>
+      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
+    </span>
+    }
   </a>
 </ng-template>
 
 <div
-  (mouseenter)="onSidebarHover(true)"
-  (mouseleave)="onSidebarHover(false)"
-  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
+  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex transition-all duration-50"
   [class.hidden]="!this.isMobileOpen()"
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
   [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
 >
   <a
     [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1 group-hover:md:block"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
     i18n-aria-label="@@sidebar.logoHomeAriaLabel"
     (click)="this.closeMobile()"
   >
@@ -41,7 +48,7 @@
 
   <a
     [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 cursor-pointer rounded-full p-0 group-hover:md:hidden"
+    class="avatar mx-2 mb-5 mt-3 w-10 cursor-pointer rounded-full p-0"
     routerLink="/summary"
     aria-label="Go to dashboard"
     i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
@@ -58,14 +65,14 @@
       (click)="toggleCollapse(item.name)"
     >
       <span class="flex-1 min-w-0">
-        @if (isEffectivelyNarrow() && !hoveringSidebar() ) { @if (!isCollapsed(item.name)) {
+        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
         <hr class="text-neutral w-6" />
         } } @else { {{ item.name }} }
       </span>
       @if (item.children?.length) {
       <pc-swap
         class="rotate-90 invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
+        [class.visible]="!isEffectivelyNarrow()"
         swapOnIcon="chevron-double-left"
         swapOffIcon="chevron-double-right"
         animation="rotate"

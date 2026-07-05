@@ -28,6 +28,16 @@ describe('SidebarItems', () => {
     expect(unique.size).toBe(routes.length);
   });
 
+  it('uses a unique single lowercase letter for every navigation shortcut', () => {
+    const withShortcut = all.filter((item) => item.shortcut != null);
+    for (const item of withShortcut) {
+      expect(item.shortcut, `item "${item.name}" has a malformed shortcut`).toMatch(/^[a-z]$/);
+      expect(item.route, `item "${item.name}" has a shortcut but no route`).toBeTruthy();
+    }
+    const keys = withShortcut.map((item) => item.shortcut);
+    expect(new Set(keys).size, 'sidebar shortcut keys must be unique').toBe(keys.length);
+  });
+
   it('marks the admin-only SYSTEM section as adminOnly', () => {
     const system = SidebarItems.find((item) => item.name === 'SYSTEM');
     expect(system?.adminOnly).toBe(true);

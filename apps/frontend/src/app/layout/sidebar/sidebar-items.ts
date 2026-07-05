@@ -15,6 +15,12 @@ export interface ISidebarItem {
   parent?: ISidebarItem;
   pathMatchExact?: boolean;
   route?: string;
+  /**
+   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
+   * A single lowercase letter, unique across all items. Rendered as a hint in the
+   * sidebar and consumed by KeyboardShortcutsService to route there.
+   */
+  shortcut?: string;
   type?: 'item' | 'subheading' | 'bookmark';
 }
 
@@ -29,6 +35,7 @@ export const SidebarItems: ISidebarItem[] = [
     route: '/summary',
     icon: 'presentation-chart-line',
     pathMatchExact: true,
+    shortcut: 'h',
   },
   {
     name: `PINS`,
@@ -43,22 +50,26 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Inbox',
         route: '/inbox',
         icon: 'envelope',
+        shortcut: 'i',
       },
       {
         name: 'Newsletters',
         route: '/newsletters',
         icon: 'megaphone',
+        shortcut: 'n',
       },
 
       {
         name: 'Lists',
         route: '/lists',
         icon: 'queue-list',
+        shortcut: 'l',
       },
       {
         name: `Automations`,
         route: '/workflows',
         icon: 'cog',
+        shortcut: 'a',
       },
     ],
   },
@@ -70,21 +81,25 @@ export const SidebarItems: ISidebarItem[] = [
         name: `People`,
         route: '/people',
         icon: 'identification',
+        shortcut: 'p',
       },
       {
         name: `Households`,
         route: '/households',
         icon: 'house-modern',
+        shortcut: 'u',
       },
       {
         name: `Companies`,
         route: '/companies',
         icon: 'briefcase',
+        shortcut: 'c',
       },
       {
         name: `Duplicates`,
         route: '/duplicates',
         icon: 'document-duplicate',
+        shortcut: 'd',
       },
     ],
   },
@@ -96,11 +111,13 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Teams',
         route: '/teams',
         icon: 'user-group',
+        shortcut: 't',
       },
       {
         name: 'Donations',
         route: '/donations',
         icon: 'currency-dollar',
+        shortcut: 'o',
       },
     ],
   },
@@ -113,21 +130,25 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Forms',
         route: '/forms',
         icon: 'clipboard-document-list',
+        shortcut: 'f',
       },
       {
         name: 'Shifts',
         route: '/events/shifts',
         icon: 'add-schedule',
+        shortcut: 's',
       },
       {
         name: 'Events',
         route: '/events/pages',
         icon: 'ticket',
+        shortcut: 'e',
       },
       {
         name: 'Fundraising',
         route: '/donation-pages',
         icon: 'currency-dollar',
+        shortcut: 'r',
       },
     ],
   },
@@ -140,16 +161,19 @@ export const SidebarItems: ISidebarItem[] = [
         name: `Tasks`,
         route: '/tasks',
         icon: 'task',
+        shortcut: 'k',
       },
       {
         name: `Task Board`,
         route: '/board',
         icon: 'view-kanban',
+        shortcut: 'b',
       },
       {
         name: 'Files',
         route: '/files',
         icon: 'document',
+        shortcut: 'm',
       },
       {
         name: 'Imports',
@@ -164,6 +188,11 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
 
+  {
+    name: 'Help',
+    route: '/help',
+    icon: 'information-circle',
+  },
   {
     name: `SYSTEM`,
     type: 'subheading',
