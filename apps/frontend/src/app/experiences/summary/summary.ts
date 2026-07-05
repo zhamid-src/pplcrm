@@ -6,9 +6,10 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
 import { SlaDetails } from './sla-details';
 import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { GettingStartedCard } from './getting-started-card';
 
 @Component({
-  imports: [Icon, SpinOnClickDirective, SlaDetails, StatCard],
+  imports: [Icon, SpinOnClickDirective, SlaDetails, StatCard, GettingStartedCard],
   selector: 'pc-summary',
   templateUrl: './summary.html',
 })
