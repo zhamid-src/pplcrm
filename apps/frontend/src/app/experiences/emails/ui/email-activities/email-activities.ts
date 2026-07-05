@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
@@ -15,10 +15,21 @@ export class EmailActivities {
   private readonly store = inject(EmailsStore);
 
   public email = input<EmailType | null>(null);
+  /** When true, render just the timeline (no toggle bar) — the parent owns the quiet tab row (§5). */
+  public readonly headerless = input<boolean>(false);
 
   protected readonly expanded = signal(false);
   protected readonly isLoading = signal(false);
   private loaded = false;
+
+  constructor() {
+    // In headerless mode the parent decides when we're shown, so load eagerly.
+    effect(() => {
+      if (this.headerless() && this.email() && !this.loaded) {
+        void this.loadActivities();
+      }
+    });
+  }
 
   protected readonly activities = computed<any[]>(() => {
     const em = this.email();

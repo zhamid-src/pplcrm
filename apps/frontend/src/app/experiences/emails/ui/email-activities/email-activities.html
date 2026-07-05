@@ -1,5 +1,12 @@
-<div class="min-h-0 flex flex-col rounded-lg bg-base-100 border border-base-300 overflow-hidden">
-  <!-- Collapsed header / toggle -->
+<div
+  class="min-h-0 flex flex-col overflow-hidden"
+  [class.rounded-lg]="!headerless()"
+  [class.bg-base-100]="!headerless()"
+  [class.border]="!headerless()"
+  [class.border-base-300]="!headerless()"
+>
+  <!-- Collapsed header / toggle — hidden when the parent owns the tab row (§5) -->
+  @if (!headerless()) {
   <button
     type="button"
     id="email-activities-toggle"
@@ -40,8 +47,7 @@
       }
     </span>
   </button>
-
-  @if (expanded()) {
+  } @if (expanded() || headerless()) {
   <div id="activities-panel" class="overflow-auto email-scrollbar max-h-72">
     @if (isLoading()) {
     <div class="flex items-center justify-center py-6">

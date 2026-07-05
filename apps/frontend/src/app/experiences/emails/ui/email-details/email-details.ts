@@ -33,7 +33,14 @@ export class EmailDetails {
     const header = this.store.getEmailHeaderById(e.id)();
     return (header as any)?.comments?.length ?? 0;
   });
-  public commentsExpanded = signal(false);
+  public activityCount = computed(() => {
+    const e = this.email();
+    if (!e) return 0;
+    return this.store.getEmailActivitiesById(e.id)()?.length ?? 0;
+  });
+
+  /** Which quiet-tab-row panel is open below the body (§5). */
+  public readonly openPanel = signal<'comments' | 'activity' | null>(null);
 
   constructor() {
     // Only fetch when header value is truly undefined (not when it's null/empty).
@@ -45,12 +52,20 @@ export class EmailDetails {
       if (typeof headerVal === 'undefined') {
         this.store.loadEmailWithHeaders(e.id).catch((err) => console.error('Failed to load email header:', err));
       }
+      // Eager-load activities so the tab row's count is honest before opening.
+      this.store.loadEmailActivities(e.id).catch(() => undefined);
     });
     this.noEmailMsgDelay.begin();
   }
 
-  public toggleComments(): void {
-    this.commentsExpanded.update((v) => !v);
+  public toggleCommentsTab(): void {
+    this.openPanel.update((p) => (p === 'comments' ? null : 'comments'));
+  }
+  public toggleActivityTab(): void {
+    this.openPanel.update((p) => (p === 'activity' ? null : 'activity'));
+  }
+  public closePanel(): void {
+    this.openPanel.set(null);
   }
 
   protected emitForward() {
