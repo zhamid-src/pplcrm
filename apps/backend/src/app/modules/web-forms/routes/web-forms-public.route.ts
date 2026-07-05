@@ -458,6 +458,24 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     return reply.send(SUCCESS_HTML);
   });
 
+  // JSON config for the SPA public page (/f/:slug). Published forms return their render config;
+  // unpublished/archived slugs return a "closed" status; unknown slugs 404.
+  fastify.get('/f/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    try {
+      const result = await webFormsController.getPublicFormBySlug(String(slug));
+      return reply.status(200).send(result);
+    } catch (err) {
+      const statusCode =
+        isRecord(err) && typeof err['statusCode'] === 'number'
+          ? err['statusCode']
+          : err && (err as any).code === 'NOT_FOUND'
+            ? 404
+            : 500;
+      return reply.status(statusCode).send({ error: 'Form not found.' });
+    }
+  });
+
   fastify.get('/view/:formId', async (req: any, reply) => {
     const { formId } = req.params;
     try {

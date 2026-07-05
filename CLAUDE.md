@@ -38,6 +38,7 @@ Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists
 - `pplcrm-datagrid` — the house-built `pc-datagrid`: DI contract, columns, inline edit, selection, grid→detail handoff, test traps
 - `pplcrm-design-principles` — the app-wide UI/UX doctrine: three orientation questions, disclosure over suppression, guide-don't-error, semantic tokens, one-idiom-per-job, DaisyUI-first/CSS-over-JS, subtle purposeful motion. **Read before designing or reviewing any UI.**
 - `pplcrm-page-layout-ux` — detail-layout/header/breadcrumbs/record-navigation/activity-log/toasts/dialogs composition
+- `pplcrm-forms` — the North Star "living funnel" Forms experience: web_forms lifecycle, `normForm()` email invariant + templates, browse/live-edit page, `form_submissions`, the cross-tenant public `/f/:slug` page, and why donation forms stay separate
 - `pplcrm-quality-gate` — the exact pre-commit-equivalent lint/build/test pipeline
 - `pplcrm-debugging` — tracing a bug end-to-end (correlationId → Pino → tRPC → Kysely → signals)
 - `pplcrm-schemas-validation` — the Zod schema triad (`AddXObj`/`UpdateXObj`/`XObj`) and `core.schema` helpers

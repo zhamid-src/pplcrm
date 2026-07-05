@@ -87,40 +87,79 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
     id: 'forms',
     category: 'engagement',
     title: 'Web forms',
-    summary: 'Publish forms that feed the CRM directly — signups, surveys, and volunteer interest, no retyping.',
-    keywords: ['form', 'web form', 'signup form', 'survey', 'embed', 'subscribe', 'submission'],
-    related: ['newsletters', 'automations', 'import'],
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
     blocks: [
       {
         kind: 'p',
-        text: 'Forms turn your audience’s interest into records. A form you build under [Forms](/forms) gets a public page you can share anywhere; submissions arrive as contacts and updates in real time, not as a spreadsheet to import on Friday.',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle — **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records — never a spreadsheet to import on Friday.',
       },
-      { kind: 'h2', id: 'build', text: 'Build and publish' },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Forms](/forms) and click +',
-            detail: 'Add the fields you actually need — short forms convert better.',
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Name it and pick a starting template — it opens as a draft in edit mode.',
           },
-          { title: 'Publish and share the link', detail: 'The form works as a standalone page.' },
           {
-            title: 'Watch submissions arrive',
-            detail: 'Each submission creates or updates a contact, ready to tag, list, and email.',
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly — there is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
           },
         ],
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new web-form subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required — it’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags — including an automatic `Source: <form name>` tag — and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site — an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Tag at the source',
-        text: 'Give each form a distinct tag for its signups and your segmentation stays effortless — you will always know who came from where. See [Tags and issues](/help/tags-issues).',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived — its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
       },
     ],
   },
