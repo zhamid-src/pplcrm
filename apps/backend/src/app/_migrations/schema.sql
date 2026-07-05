@@ -2400,18 +2400,68 @@ CREATE TABLE public.web_forms (
     redirect_url text,
     target_tags jsonb,
     target_lists jsonb,
-    status text DEFAULT 'active'::text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     fields jsonb,
     send_confirmation boolean DEFAULT true NOT NULL,
     send_alert boolean DEFAULT true NOT NULL,
     form_type text DEFAULT 'standard'::text NOT NULL,
-    CONSTRAINT chk_web_forms_status CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))
+    type text,
+    slug text,
+    submit_label text,
+    thanks_title text,
+    thanks_body text,
+    confirm_subject text,
+    confirm_body text,
+    notify_team_on boolean DEFAULT false NOT NULL,
+    archived_at timestamp with time zone,
+    CONSTRAINT chk_web_forms_status CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])))
 );
 
 
 ALTER TABLE public.web_forms OWNER TO pplcrm;
+
+--
+-- Name: form_submissions; Type: TABLE; Schema: public; Owner: pplcrm
+--
+
+CREATE TABLE public.form_submissions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    tenant_id bigint NOT NULL,
+    form_id uuid NOT NULL,
+    person_id bigint NOT NULL,
+    answers jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.form_submissions OWNER TO pplcrm;
+
+--
+-- Name: form_submissions form_submissions_pkey; Type: CONSTRAINT; Schema: public; Owner: pplcrm
+--
+
+ALTER TABLE ONLY public.form_submissions
+    ADD CONSTRAINT form_submissions_pkey PRIMARY KEY (tenant_id, id);
+
+--
+-- Name: idx_form_submissions_tenant_form; Type: INDEX; Schema: public; Owner: pplcrm
+--
+
+CREATE INDEX idx_form_submissions_tenant_form ON public.form_submissions USING btree (tenant_id, form_id, created_at DESC);
+
+--
+-- Name: idx_form_submissions_person; Type: INDEX; Schema: public; Owner: pplcrm
+--
+
+CREATE INDEX idx_form_submissions_person ON public.form_submissions USING btree (tenant_id, person_id);
+
+--
+-- Name: idx_web_forms_tenant_slug; Type: INDEX; Schema: public; Owner: pplcrm
+--
+
+CREATE UNIQUE INDEX idx_web_forms_tenant_slug ON public.web_forms USING btree (tenant_id, slug) WHERE (slug IS NOT NULL);
 
 --
 -- Name: webhook_events; Type: TABLE; Schema: public; Owner: pplcrm

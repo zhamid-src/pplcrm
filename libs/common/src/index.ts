@@ -53,6 +53,9 @@ export type {
   AddWebFormType,
   UpdateWebFormType,
   WebFormsType,
+  CreateFormType,
+  UpdateFormType,
+  FormSubmissionType,
   QueryBuilderRuleNode,
   QueryBuilderGroupNode,
   QueryBuilderNode,
@@ -127,6 +130,18 @@ export {
   AddWebFormObj,
   UpdateWebFormObj,
   WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
+  FormFieldObj,
+  FormTypeEnum,
+  FORM_TYPES,
+  FORM_STATUSES,
+  FORM_TEMPLATES,
+  FORM_STANDARD_CATALOG,
+  FORM_EMAIL_FIELD,
+  normForm,
+  fieldsForTemplate,
   WorkflowObj,
   AddWorkflowObj,
   UpdateWorkflowObj,
@@ -149,6 +164,8 @@ export {
   RELATION_TYPE_LABELS,
   relationTypeSchema,
 } from './lib/schema';
+
+export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
 
 export { debounce, escapeHtml, sleep } from './lib/utils';
 export { calculateWorkingTimeMs } from './lib/sla';

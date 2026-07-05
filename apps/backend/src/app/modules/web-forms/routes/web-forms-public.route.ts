@@ -462,7 +462,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     const { formId } = req.params;
     try {
       const form = await webFormsController.getFormPublic(formId);
-      if (!form || form.status !== 'active') {
+      if (!form || form.status !== 'published') {
         reply.status(404).type('text/html');
         return reply.send(errorHtml('Web form not found or inactive.'));
       }

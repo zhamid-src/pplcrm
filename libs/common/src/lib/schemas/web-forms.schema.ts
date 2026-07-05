@@ -4,17 +4,13 @@ import { nameSchema, descriptionSchema } from './core.schema';
 export const AddWebFormObj = z.object({
   name: nameSchema('Web Form name', 100),
   description: descriptionSchema(500),
-  redirect_url: z
-    .string()
-    .trim()
-    .url('Redirect URL must be a valid URL')
-    .or(z.literal(''))
-    .nullable()
-    .optional(),
+  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
   target_tags: z.array(z.string()).nullable().optional(),
   target_lists: z.array(z.string()).nullable().optional(),
   fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'archived']).default('active').optional(),
+  // Legacy donation/standard add path. 'active' is accepted for back-compat and mapped to
+  // 'published' by the controller; the lifecycle statuses pass through unchanged.
+  status: z.enum(['active', 'draft', 'published', 'archived']).default('active').optional(),
   send_confirmation: z.boolean().default(true).optional(),
   send_alert: z.boolean().default(true).optional(),
   form_type: z.enum(['standard', 'donation', 'recurring_donation']).default('standard').optional(),
@@ -23,17 +19,11 @@ export const AddWebFormObj = z.object({
 export const UpdateWebFormObj = z.object({
   name: nameSchema('Web Form name', 100).optional(),
   description: descriptionSchema(500).optional(),
-  redirect_url: z
-    .string()
-    .trim()
-    .url('Redirect URL must be a valid URL')
-    .or(z.literal(''))
-    .nullable()
-    .optional(),
+  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
   target_tags: z.array(z.string()).nullable().optional(),
   target_lists: z.array(z.string()).nullable().optional(),
   fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'archived']).optional(),
+  status: z.enum(['active', 'draft', 'published', 'archived']).optional(),
   send_confirmation: z.boolean().optional(),
   send_alert: z.boolean().optional(),
 });
@@ -47,7 +37,7 @@ export const WebFormsObj = z.object({
   target_tags: z.array(z.string()).nullable(),
   target_lists: z.array(z.string()).nullable(),
   fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'archived']),
+  status: z.enum(['draft', 'published', 'archived']),
   send_confirmation: z.boolean().default(true),
   send_alert: z.boolean().default(true),
   form_type: z.string(),
@@ -55,4 +45,228 @@ export const WebFormsObj = z.object({
   updatedby_id: z.string(),
   created_at: z.union([z.date(), z.string()]),
   updated_at: z.union([z.date(), z.string()]),
+});
+
+// ---------------------------------------------------------------------------
+// North Star "living funnel" lifecycle (new Forms experience).
+//
+// The five template types are creation presets + a display chip. Donation forms
+// (form_type IN donation/recurring_donation) keep the legacy string[] `fields`
+// shape and the old add/update path — they are NOT part of this model.
+// ---------------------------------------------------------------------------
+
+export const FORM_TYPES = ['signup', 'pledge', 'rsvp', 'request', 'survey'] as const;
+export type FormType = (typeof FORM_TYPES)[number];
+export const FormTypeEnum = z.enum(FORM_TYPES);
+
+export const FORM_STATUSES = ['draft', 'published', 'archived'] as const;
+export type FormStatus = (typeof FORM_STATUSES)[number];
+
+/** A single configurable field on a form. Stored as JSON in `web_forms.fields`. */
+export const FormFieldObj = z.object({
+  key: z.string().min(1),
+  label: z.string().min(1),
+  type: z.enum(['text', 'area', 'select', 'checks']),
+  options: z.array(z.string()).optional(),
+  placeholder: z.string().optional(),
+  help: z.string().optional(),
+  on: z.boolean(),
+  required: z.boolean(),
+});
+export type FormField = z.infer<typeof FormFieldObj>;
+
+/** Email is the identity key: always present, always on, always required, never editable. */
+export const FORM_EMAIL_FIELD: FormField = {
+  key: 'email',
+  label: 'Email',
+  type: 'text',
+  placeholder: 'you@example.org',
+  on: true,
+  required: true,
+};
+
+const NAME_FIELD: FormField = {
+  key: 'full_name',
+  label: 'Full name',
+  type: 'text',
+  placeholder: 'Jordan Blake',
+  on: true,
+  required: true,
+};
+
+/**
+ * Standard optional fields every form can turn on without schema work. `normForm` appends any of
+ * these that a form's own field list doesn't already define, all `on: false`.
+ */
+export const FORM_STANDARD_CATALOG: FormField[] = [
+  { key: 'mobile', label: 'Mobile phone', type: 'text', placeholder: '(555) 000-0000', on: false, required: false },
+  { key: 'street1', label: 'Street address', type: 'text', on: false, required: false },
+  { key: 'city', label: 'City', type: 'text', on: false, required: false },
+  { key: 'zip', label: 'ZIP code', type: 'text', on: false, required: false },
+];
+
+/** Creation templates — all start from name + email, then add type-specific fields. */
+export const FORM_TEMPLATES: Record<FormType, { submitLabel: string; description: string; fields: FormField[] }> = {
+  signup: {
+    submitLabel: 'Sign me up',
+    description: 'Join the team — tell us how you can help and we’ll be in touch.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      {
+        key: 'mobile',
+        label: 'Mobile phone',
+        type: 'text',
+        placeholder: '(555) 000-0000',
+        help: 'Only used for shift reminders',
+        on: true,
+        required: false,
+      },
+      {
+        key: 'availability',
+        label: 'When can you help?',
+        type: 'checks',
+        options: ['Weekday evenings', 'Weekend canvasses', 'Phone banking', 'Event day'],
+        on: true,
+        required: false,
+      },
+      {
+        key: 'notes',
+        label: 'Anything we should know?',
+        type: 'area',
+        placeholder: 'Languages, accessibility, interests…',
+        on: true,
+        required: false,
+      },
+    ],
+  },
+  pledge: {
+    submitLabel: 'Make my pledge',
+    description: 'Pledge your support — every contribution helps.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      { key: 'amount', label: 'Pledge amount', type: 'text', placeholder: 'E.g. 50', on: true, required: true },
+    ],
+  },
+  rsvp: {
+    submitLabel: 'Reserve my spot',
+    description: 'Let us know you’re coming.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      { key: 'seats', label: 'How many seats?', type: 'text', placeholder: 'E.g. 2', on: true, required: true },
+    ],
+  },
+  request: {
+    submitLabel: 'Send request',
+    description: 'Tell us what you need and where.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      { key: 'street1', label: 'Street address', type: 'text', on: true, required: true },
+      { key: 'city', label: 'City', type: 'text', on: true, required: false },
+      { key: 'zip', label: 'ZIP code', type: 'text', on: true, required: false },
+      { key: 'notes', label: 'Notes', type: 'area', placeholder: 'How can we help?', on: true, required: false },
+    ],
+  },
+  survey: {
+    submitLabel: 'Submit',
+    description: 'Your answers help shape our priorities.',
+    fields: [
+      NAME_FIELD,
+      FORM_EMAIL_FIELD,
+      {
+        key: 'issues',
+        label: 'Which issues matter most?',
+        type: 'checks',
+        options: ['Housing', 'Transit', 'Safety', 'Parks', 'Schools'],
+        on: true,
+        required: false,
+      },
+      {
+        key: 'open',
+        label: 'Anything else?',
+        type: 'area',
+        placeholder: 'Share your thoughts…',
+        on: true,
+        required: false,
+      },
+    ],
+  },
+};
+
+/**
+ * Coerces a form's stored `fields` JSON into a well-formed FormField[]: keeps only object-shaped
+ * fields (silently drops legacy string[] entries from donation forms), guarantees the name + email
+ * identity fields exist, enforces the email invariant (always on + required), and appends any
+ * standard-catalog fields the form hasn't defined. This is the single source of truth both the API
+ * and the editor use so the preview always matches what will be saved.
+ */
+export function normForm(rawFields: unknown): FormField[] {
+  const source = Array.isArray(rawFields) ? rawFields : [];
+  const fields: FormField[] = [];
+  for (const raw of source) {
+    const parsed = FormFieldObj.safeParse(raw);
+    if (parsed.success) fields.push(parsed.data);
+  }
+
+  if (!fields.some((f) => f.key === NAME_FIELD.key)) {
+    fields.unshift({ ...NAME_FIELD });
+  }
+
+  const emailIndex = fields.findIndex((f) => f.key === FORM_EMAIL_FIELD.key);
+  if (emailIndex === -1) {
+    // Slot email right after the name field.
+    fields.splice(1, 0, { ...FORM_EMAIL_FIELD });
+  } else {
+    const current = fields[emailIndex];
+    if (current) {
+      fields[emailIndex] = { ...current, on: true, required: true };
+    }
+  }
+
+  for (const catalog of FORM_STANDARD_CATALOG) {
+    if (!fields.some((f) => f.key === catalog.key)) {
+      fields.push({ ...catalog });
+    }
+  }
+
+  return fields;
+}
+
+/** Build the initial field list for a newly created form of the given template type. */
+export function fieldsForTemplate(type: FormType): FormField[] {
+  return normForm(FORM_TEMPLATES[type].fields.map((f) => ({ ...f })));
+}
+
+export const CreateFormObj = z.object({
+  name: nameSchema('Form name', 100),
+  type: FormTypeEnum,
+});
+
+/** Live-edit patch for the new Forms editor. Every field is optional (debounced partial saves). */
+export const UpdateFormObj = z.object({
+  name: nameSchema('Form name', 100).optional(),
+  description: descriptionSchema(2000).optional(),
+  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
+  submit_label: z.string().trim().max(60).optional(),
+  thanks_title: z.string().trim().max(120).optional(),
+  thanks_body: z.string().trim().max(2000).optional(),
+  confirm_email_on: z.boolean().optional(),
+  confirm_subject: z.string().trim().max(200).optional(),
+  confirm_body: z.string().trim().max(5000).optional(),
+  notify_team_on: z.boolean().optional(),
+  fields: z.array(FormFieldObj).optional(),
+  target_tags: z.array(z.string()).optional(),
+  target_lists: z.array(z.string()).optional(),
+});
+
+/** One row in the Responses tab. */
+export const FormSubmissionObj = z.object({
+  id: z.string(),
+  person_id: z.string(),
+  person_name: z.string().nullable(),
+  answers: z.record(z.string(), z.unknown()),
+  created_at: z.union([z.date(), z.string()]),
 });
