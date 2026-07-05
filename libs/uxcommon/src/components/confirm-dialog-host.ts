@@ -15,9 +15,19 @@ export class ConfirmDialogHost {
   private readonly stateSignal = this.svc.stateSignal;
   private readonly openSignal = this.svc.isOpenSignal;
   public state = this.stateSignal;
+  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
+  // default to emphasizing the cancel/keep button unless a caller opts out, and
+  // only when a cancel button is actually shown.
+  public readonly effectiveEmphasizeCancel = computed(() => {
+    const st = this.state();
+    if (!st) return false;
+    const explicit = st.emphasizeCancel;
+    const wants = explicit ?? st.variant === 'danger';
+    return wants && this.showCancel();
+  });
   public confirmBtnClass = computed(() => {
     const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
-    if (this.state()?.emphasizeCancel) {
+    if (this.effectiveEmphasizeCancel()) {
       switch (v) {
         case 'danger':
           return 'btn-ghost text-error';
