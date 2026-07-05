@@ -288,6 +288,7 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   assigned_to: string | null;
   opt_in_status: string | null;
   opt_in_confirmed_at: Timestamp | null;
+  preferred_contact: string | null;
 }
 
 interface Profiles extends RecordType, AddressType {

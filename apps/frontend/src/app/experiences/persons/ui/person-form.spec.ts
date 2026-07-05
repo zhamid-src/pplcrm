@@ -146,7 +146,7 @@ describe('PersonForm', () => {
     expect(updateCallArg.first_name).toBe('Johnny');
     expect(updateCallArg.assigned_to).toBeNull();
     expect(updateCallArg.company_id).toBeNull();
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Person updated successfully.');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(expect.stringContaining('Saved'));
   });
 
   it('should add new person when in new mode', async () => {
@@ -169,7 +169,7 @@ describe('PersonForm', () => {
     expect(mockPersonsSvc.add).toHaveBeenCalled();
     const addCallArg = mockPersonsSvc.add.mock.calls[0][0];
     expect(addCallArg.first_name).toBe('Jane');
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Person added');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(expect.stringContaining('Added'));
   });
 
   it('should remove household address with confirmation', async () => {

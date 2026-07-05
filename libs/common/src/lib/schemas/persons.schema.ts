@@ -18,6 +18,7 @@ export const PersonsObj = z.object({
   facebook: z.string().nullable().optional(),
   instagram: z.string().nullable().optional(),
   assigned_to: z.string().nullable().optional(),
+  preferred_contact: z.string().nullable().optional(),
 });
 
 export const UpdateHouseholdsObj = addressSchema.extend({
@@ -44,4 +45,5 @@ export const UpdatePersonsObj = z.object({
   facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
   instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
+  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
 });

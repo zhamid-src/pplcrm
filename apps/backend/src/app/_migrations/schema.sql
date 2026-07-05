@@ -1703,6 +1703,7 @@ CREATE TABLE public.persons (
     facebook text,
     instagram text,
     assigned_to bigint,
+    preferred_contact text,
     search_vector tsvector GENERATED ALWAYS AS ((((((setweight(to_tsvector('simple'::regconfig, COALESCE(first_name, ''::text)), 'A'::"char") || setweight(to_tsvector('simple'::regconfig, COALESCE(last_name, ''::text)), 'A'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(email2, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(mobile, ''::text)), 'B'::"char")) || setweight(to_tsvector('simple'::regconfig, COALESCE(home_phone, ''::text)), 'C'::"char"))) STORED
 );
 
