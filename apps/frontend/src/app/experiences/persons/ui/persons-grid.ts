@@ -28,7 +28,14 @@ import { DATA_TYPE, PersonsService } from '../services/persons-service';
   templateUrl: './persons-grid.html',
   providers: [
     { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
   ],
 })
 export class PersonsGrid implements OnInit {

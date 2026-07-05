@@ -15,7 +15,6 @@ export interface ISidebarItem {
   parent?: ISidebarItem;
   pathMatchExact?: boolean;
   route?: string;
-  short_name?: string;
   type?: 'item' | 'subheading' | 'bookmark';
 }
 
@@ -32,8 +31,7 @@ export const SidebarItems: ISidebarItem[] = [
     pathMatchExact: true,
   },
   {
-    name: `BOOKMARKS`,
-    short_name: 'PINS',
+    name: `PINS`,
     type: 'bookmark',
     hidden: true,
   },

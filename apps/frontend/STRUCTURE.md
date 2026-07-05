@@ -8877,69 +8877,6 @@ export class VisualNewsletterEditorComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
-
-```html
-<!-- Template for persons grid -->
-<div class="flex flex-col gap-6">
-  <pc-datagrid
-    #grid
-    [showToolbar]="!inline()"
-    [title]="getTitle()"
-    [description]="getDescription()"
-    [listId]="listId()"
-    [colDefs]="col"
-    [disableDelete]="false"
-    [disableImport]="false"
-    [disableMerge]="false"
-    [confirmDeleteOverride]="onConfirmDeleteBind"
-    addRoute="/people/add"
-    viewRoute="/people"
-    [disableView]="false"
-    [narrowTypeOptions]="narrowTypeOptions()"
-    (importCSV)="openImportDialog()"
-    [plusIcon]="getPlusIcon()"
-  ></pc-datagrid>
-</div>
-
-<dialog id="confirmAddressEdit" class="modal">
-  <div class="modal-box">
-    <h3 class="text-lg font-bold">Address Edit</h3>
-    <p class="py-2 font-light">
-      Addresses can only be edited in the Households Component. Would you like me to take you there?
-    </p>
-
-    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
-      <button class="btn btn-primary" (click)="routeToHouseholds()">
-        <pc-icon name="arrow-right-start-on-rectangle" />
-        Yes
-      </button>
-      <button class="btn">
-        <pc-icon name="x-circle" />
-        Cancel
-      </button>
-    </form>
-  </div>
-</dialog>
-
-<!-- Reusable CSV Importer with Persons-specific extras (tags) -->
-<pc-csv-importer
-  [open]="importerOpen()"
-  [title]="'Import People from CSV'"
-  [mappableFields]="mappableFields"
-  [autoMapHeader]="autoMapHeader"
-  [summary]="importSummary()"
-  (submit)="onImportSubmit($event)"
-  (close)="importerOpen.set(false); importSummary.set(null)"
-  (closeSummary)="importSummary.set(null)"
->
-  <div pc-import-extras class="grid gap-2">
-    <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
-    <input class="input input-bordered" placeholder="Comma separated e.g. donor, volunteer" [(ngModel)]="tagsInput" />
-  </div>
-</pc-csv-importer>
-```
-
 ## File: apps/frontend/src/app/experiences/profile/profile-page.html
 
 ```html
@@ -20649,6 +20586,69 @@ export class PeopleInHousehold {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
+
+```html
+<!-- Template for persons grid -->
+<div class="flex flex-col gap-6">
+  <pc-datagrid
+    #grid
+    [showToolbar]="!inline()"
+    [title]="getTitle()"
+    [description]="getDescription()"
+    [listId]="listId()"
+    [colDefs]="col"
+    [disableDelete]="false"
+    [disableImport]="false"
+    [disableMerge]="false"
+    [confirmDeleteOverride]="onConfirmDeleteBind"
+    addRoute="/people/add"
+    viewRoute="/people"
+    [disableView]="false"
+    [narrowTypeOptions]="narrowTypeOptions()"
+    (importCSV)="openImportDialog()"
+    [plusIcon]="getPlusIcon()"
+  ></pc-datagrid>
+</div>
+
+<dialog id="confirmAddressEdit" class="modal">
+  <div class="modal-box">
+    <h3 class="text-lg font-bold">Address Edit</h3>
+    <p class="py-2 font-light">
+      Addresses can only be edited in the Households Component. Would you like me to take you there?
+    </p>
+
+    <form method="dialog" class="modal-backdrop float-right flex flex-row gap-2">
+      <button class="btn btn-primary" (click)="routeToHouseholds()">
+        <pc-icon name="arrow-right-start-on-rectangle" />
+        Yes
+      </button>
+      <button class="btn">
+        <pc-icon name="x-circle" />
+        Cancel
+      </button>
+    </form>
+  </div>
+</dialog>
+
+<!-- Reusable CSV Importer with Persons-specific extras (tags) -->
+<pc-csv-importer
+  [open]="importerOpen()"
+  [title]="'Import People from CSV'"
+  [mappableFields]="mappableFields"
+  [autoMapHeader]="autoMapHeader"
+  [summary]="importSummary()"
+  (submit)="onImportSubmit($event)"
+  (close)="importerOpen.set(false); importSummary.set(null)"
+  (closeSummary)="importSummary.set(null)"
+>
+  <div pc-import-extras class="grid gap-2">
+    <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
+    <input class="input input-bordered" placeholder="Comma separated e.g. donor, volunteer" [(ngModel)]="tagsInput" />
+  </div>
+</pc-csv-importer>
+```
+
 ## File: apps/frontend/src/app/experiences/profile/profile-page.ts
 
 ```typescript
@@ -25804,6 +25804,10 @@ export interface DataGridConfig {
     exportNavigateWarning: string;
     exportFileName: string;
     exportEntity: QueueExportInputType['entity'] | '';
+
+    /** Noun used in selection & bulk-bar copy, e.g. "person"/"people". Defaults to row/rows. */
+    entityNoun?: string;
+    entityNounPlural?: string;
   };
   pageSize: number;
 }
@@ -25858,53 +25862,6 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
     exportEntity: '',
   },
 };
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
-
-```typescript
-import type { GridRow } from './types';
-
-/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
-export interface CellParams {
-  data?: GridRow;
-  value?: unknown;
-  newValue?: unknown;
-  colDef?: ColumnDef;
-}
-
-// Lightweight column definition used by DataGrid
-export interface ColumnDef {
-  cellClass?: string | ((p: CellParams) => string | undefined);
-  cellDataType?: string;
-  cellEditorParams?: unknown;
-  cellRenderer?: (p: CellParams) => CellRendererResult;
-  cellRendererParams?: unknown;
-  comparator?: (a: unknown, b: unknown) => number;
-  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
-  doorColumn?: boolean;
-  editable?: boolean;
-  equals?: (a: unknown, b: unknown) => boolean;
-  field?: string;
-  headerName?: string;
-  hide?: boolean;
-  /** Column cannot be hidden by the user (identity columns like the Name door). */
-  noHide?: boolean;
-  onCellClicked?: (event: CellParams) => void;
-  onCellDoubleClicked?: (event: CellParams) => void;
-  isCellInteractive?: (row: GridRow) => boolean;
-  tagColumn?: boolean;
-  valueFormatter?: (p: CellParams) => unknown;
-
-  // Compatibility props (ignored by current table but kept for typing)
-  valueGetter?: (p: CellParams) => unknown;
-  valueSetter?: (p: CellParams) => boolean;
-  minWidth?: number;
-}
-
-type CellRendererResult = string | HTMLElement;
-
-export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
@@ -26909,6 +26866,238 @@ export class ResumeAccountPage extends TRPCService<any> {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+
+```html
+<pc-auth-layout>
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="pt-4 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Sign in with Passkey
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
+      </button>
+    </div>
+  </div>
+  } @case ('password') { @if (verificationPending()) {
+  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+    <div class="flex flex-col gap-2 w-full">
+      <div class="flex items-center gap-2 font-semibold">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>Verification Pending</span>
+      </div>
+      <p class="text-xs text-amber-200/80">
+        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
+        inbox.
+      </p>
+      <button
+        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
+        type="button"
+        (click)="resendVerification()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
+      >
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
+  <form (submit)="signIn($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="lock-closed" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence()"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
+        </div>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('2fa') {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
+  <div class="text-neutral-200 text-center text-xs pt-2">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.ts
@@ -34817,119 +35006,6 @@ const DRAWER_STATE_KEY = 'pc-drawerState';
 const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar.html
-
-```html
-<ng-template #navLink let-nav>
-  <a
-    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="hover:text-primary flex flex-auto items-center pb-1 pl-2 font-light hover:rounded-lg !cursor-pointer"
-    [class.animate-up]="nav.justPinned"
-    (click)="this.closeMobile()"
-    [routerLink]="nav.route"
-    routerLinkActive="!font-semibold !text-primary"
-    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.!font-semibold]="pendingRoute() === nav.route"
-    [class.!text-primary]="pendingRoute() === nav.route"
-  >
-    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span
-      class="indicator pl-2 group-hover:md:visible text-[13px] tracking-[0.03em]"
-      [class.invisible]="isEffectivelyNarrow()"
-    >
-      {{ nav.name }} @if (nav.indicator) {
-      <span class="indicator-item status status-primary"></span>
-      }
-    </span>
-  </a>
-</ng-template>
-
-<div
-  (mouseenter)="onSidebarHover(true)"
-  (mouseleave)="onSidebarHover(false)"
-  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
-  [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
->
-  <a
-    [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1 group-hover:md:block"
-    routerLink="/summary"
-    aria-label="Go to dashboard"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
-    (click)="this.closeMobile()"
-  >
-    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </a>
-
-  <a
-    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 cursor-pointer rounded-full p-0 group-hover:md:hidden"
-    routerLink="/summary"
-    aria-label="Go to dashboard"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
-    (click)="this.closeMobile()"
-  >
-    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
-  </a>
-
-  @for (item of items(); track item.name) {
-  <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
-    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
-    <div
-      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
-      (click)="toggleCollapse(item.name)"
-    >
-      <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
-        @if (isEffectivelyNarrow() && !hoveringSidebar()) {
-        <hr class="border-base-300" />
-        } @else { {{ item.name }} }
-      </span>
-      @if (item.children?.length) {
-      <pc-swap
-        class="rotate-90 invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
-        swapOnIcon="chevron-double-left"
-        swapOffIcon="chevron-double-right"
-        animation="rotate"
-        [size]="4"
-        [checked]="isCollapsed(item.name)"
-        (click)="toggleCollapse(item.name)"
-        aria-label="Toggle section"
-        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
-      ></pc-swap>
-      }
-    </div>
-
-    @if (item.children && !isCollapsed(item.name)) {
-    <div class="flex flex-col space-y-1">
-      @for (child of item.children; track child.name) {
-      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
-      }
-    </div>
-    } } @else {
-    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
-    }
-  </div>
-  }
-
-  <div class="hidden flex-auto grow items-start flex-col sm:flex">
-    <span class="min-h-full grow"></span>
-    <pc-swap
-      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="arrow-right-end-on-rectangle"
-      swapOnIcon="arrow-left-start-on-rectangle"
-      [checked]="isDrawerFull()"
-      animation="flip"
-      (click)="toggleDrawer()"
-      aria-label="Toggle drawer"
-      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
-    ></pc-swap>
-  </div>
-</div>
-```
-
 ## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
 
 ```typescript
@@ -36255,6 +36331,53 @@ export class SingleselectFilterComponent {
 
   select = output<string>();
 }
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
+
+```typescript
+import type { GridRow } from './types';
+
+/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
+export interface CellParams {
+  data?: GridRow;
+  value?: unknown;
+  newValue?: unknown;
+  colDef?: ColumnDef;
+}
+
+// Lightweight column definition used by DataGrid
+export interface ColumnDef {
+  cellClass?: string | ((p: CellParams) => string | undefined);
+  cellDataType?: string;
+  cellEditorParams?: unknown;
+  cellRenderer?: (p: CellParams) => CellRendererResult;
+  cellRendererParams?: unknown;
+  comparator?: (a: unknown, b: unknown) => number;
+  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
+  doorColumn?: boolean;
+  editable?: boolean;
+  equals?: (a: unknown, b: unknown) => boolean;
+  field?: string;
+  headerName?: string;
+  hide?: boolean;
+  /** Column cannot be hidden by the user (identity columns like the Name door). */
+  noHide?: boolean;
+  onCellClicked?: (event: CellParams) => void;
+  onCellDoubleClicked?: (event: CellParams) => void;
+  isCellInteractive?: (row: GridRow) => boolean;
+  tagColumn?: boolean;
+  valueFormatter?: (p: CellParams) => unknown;
+
+  // Compatibility props (ignored by current table but kept for typing)
+  valueGetter?: (p: CellParams) => unknown;
+  valueSetter?: (p: CellParams) => boolean;
+  minWidth?: number;
+}
+
+type CellRendererResult = string | HTMLElement;
+
+export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
 ## File: apps/frontend/src/app/app.config.ts
@@ -38827,546 +38950,6 @@ export class PersonConnections implements OnInit {
     </div>
   </pc-side-drawer>
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
-  templateUrl: './persons-grid.html',
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({ messages: { exportEntity: 'persons', exportFileName: 'persons-export.csv' } }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected readonly mappableFields = [
-    'first_name',
-    'middle_names',
-    'last_name',
-    'email',
-    'email2',
-    'mobile',
-    'home_phone',
-    'street_num',
-    'street1',
-    'street2',
-    'apt',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'notes',
-  ];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'mobile', headerName: 'Mobile', editable: true },
-    { field: 'company_name', headerName: 'Company', editable: false },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  // Generic CSV importer integration
-  protected importerOpen = signal(false);
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
-  public listId = input<string | null>(null);
-
-  protected readonly narrowTypeOptions = signal<
-    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
-  >([
-    { label: 'All', value: null, tags: [] },
-    { label: 'Donors', value: 'donor', tags: ['donor'] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
-  ]);
-
-  protected tagsInput = '';
-
-  public ngOnInit() {
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadViewCounts();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Absolute per-view counts for the system-views segmented control (All / Donors /
-   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
-   * regardless of the grid's other active filters (§2).
-   */
-  private async loadViewCounts(): Promise<void> {
-    try {
-      const opts = this.narrowTypeOptions();
-      const counts = await Promise.all(
-        opts.map(async (o) => {
-          if (o.value === null) return this.personsService.count();
-          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
-          return res?.count ?? 0;
-        }),
-      );
-      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
-    } catch (err) {
-      console.error('Failed to load view counts', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  // paging/preview managed by CsvImportComponent
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // --- Import CSV Flow ---
-  protected openImportDialog() {
-    // Clear any prior summary to avoid stale dialogs
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importerOpen.set(true);
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-    const inputTags = this.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => !!t);
-    const tags = inputTags;
-
-    try {
-      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        tag: res?.tag ?? undefined,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  public autoMapHeader(h: string): string {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      firstname: 'first_name',
-      fname: 'first_name',
-      middlename: 'middle_names',
-      lastname: 'last_name',
-      lname: 'last_name',
-      name: 'first_name',
-      email: 'email',
-      emailaddress: 'email',
-      email1address: 'email',
-      email2: 'email2',
-      email2address: 'email2',
-      mobile: 'mobile',
-      mobilephone: 'mobile',
-      cellphone: 'mobile',
-      primaryphone: 'mobile',
-      businessphone: 'mobile',
-      homephone: 'home_phone',
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      homecity: 'city',
-      homestate: 'state',
-      homepostalcode: 'zip',
-      homecountry: 'country',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      businesscity: 'city',
-      businessstate: 'state',
-      businesspostalcode: 'zip',
-      businesscountry: 'country',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
@@ -42206,238 +41789,6 @@ export interface GridHost {
 }
 ```
 
-## File: apps/frontend/src/app/auth/signin-page/signin-page.html
-
-```html
-<pc-auth-layout>
-  @if (rateLimitSecondsLeft() > 0) {
-  <div class="alert alert-error text-sm mb-4">
-    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
-    <div>
-      <p class="font-semibold" i18n>Too many attempts</p>
-      <p class="text-xs mt-1 flex items-center gap-1">
-        <span i18n>Try again in</span>
-        <span class="countdown font-mono text-lg">
-          @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
-            >{{rateLimitMins()}}</span
-          >
-          m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
-            >{{rateLimitRemSecs()}}</span
-          >
-          s
-        </span>
-      </p>
-    </div>
-  </div>
-  } @switch (step()) { @case ('email') {
-  <label class="label text-neutral-100">Enter your email to sign in</label>
-  <form (submit)="continueWithEmail($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input
-          type="email"
-          placeholder="Enter your email"
-          [formField]="emailForm.email"
-          aria-label="Email"
-          autocomplete="email"
-        />
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { Continue }
-        </button>
-      </div>
-    </div>
-  </form>
-  <div class="pt-4 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @case ('passkey') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
-      <p class="text-sm text-white">{{ emailData().email }}</p>
-      @if (isLoading()) {
-      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
-      }
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="signInWithPasskey()"
-        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-      >
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Sign in with Passkey
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="usePasswordInstead()"
-        [disabled]="isLoading()"
-      >
-        Use password instead
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="goBackToEmail()"
-        [disabled]="isLoading()"
-      >
-        Back
-      </button>
-    </div>
-  </div>
-  } @case ('password') { @if (verificationPending()) {
-  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
-    <div class="flex flex-col gap-2 w-full">
-      <div class="flex items-center gap-2 font-semibold">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>Verification Pending</span>
-      </div>
-      <p class="text-xs text-amber-200/80">
-        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
-        inbox.
-      </p>
-      <button
-        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
-        type="button"
-        (click)="resendVerification()"
-        [disabled]="resending() || resendCooldownSeconds() > 0"
-      >
-        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
-        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
-      </button>
-    </div>
-  </div>
-  }
-
-  <div class="flex items-center gap-2 text-sm mb-3">
-    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
-    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
-    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
-      Change
-    </button>
-  </div>
-
-  <label class="label text-neutral-100">Enter your password</label>
-  <form (submit)="signIn($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="lock-closed" />
-        <input
-          type="password"
-          placeholder="Enter your password"
-          [formField]="passwordForm.password"
-          aria-label="Password"
-          autocomplete="current-password"
-        />
-      </label>
-
-      <div class="flex items-center justify-between pt-2">
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-sm"
-            [checked]="persistence()"
-            (change)="togglePersistence($event.target)"
-          />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
-        </div>
-        <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
-        </div>
-      </div>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { SIGN IN }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('2fa') {
-  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
-  <form (submit)="verify2FA($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="shield-exclamation" />
-        <input
-          type="text"
-          placeholder="6-digit code"
-          [formField]="otpForm.code"
-          aria-label="Verification Code"
-          autocomplete="one-time-code"
-        />
-      </label>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { VERIFY }
-        </button>
-      </div>
-
-      <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
-          Back to Sign In
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('passkey-setup') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
-        Skip for now
-      </button>
-    </div>
-  </div>
-  } }
-
-  <div class="text-neutral-200 text-center text-xs pt-2">
-    <span>
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
-```
-
 ## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
 
 ```typescript
@@ -43973,6 +43324,553 @@ export class EventFormComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  templateUrl: './persons-grid.html',
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected readonly mappableFields = [
+    'first_name',
+    'middle_names',
+    'last_name',
+    'email',
+    'email2',
+    'mobile',
+    'home_phone',
+    'street_num',
+    'street1',
+    'street2',
+    'apt',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'notes',
+  ];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    { field: 'email', headerName: 'Email', editable: true },
+    { field: 'mobile', headerName: 'Mobile', editable: true },
+    { field: 'company_name', headerName: 'Company', editable: false },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  // Generic CSV importer integration
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  public listId = input<string | null>(null);
+
+  protected readonly narrowTypeOptions = signal<
+    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
+  >([
+    { label: 'All', value: null, tags: [] },
+    { label: 'Donors', value: 'donor', tags: ['donor'] },
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+  ]);
+
+  protected tagsInput = '';
+
+  public ngOnInit() {
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadViewCounts();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Absolute per-view counts for the system-views segmented control (All / Donors /
+   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
+   * regardless of the grid's other active filters (§2).
+   */
+  private async loadViewCounts(): Promise<void> {
+    try {
+      const opts = this.narrowTypeOptions();
+      const counts = await Promise.all(
+        opts.map(async (o) => {
+          if (o.value === null) return this.personsService.count();
+          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
+          return res?.count ?? 0;
+        }),
+      );
+      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
+    } catch (err) {
+      console.error('Failed to load view counts', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  // paging/preview managed by CsvImportComponent
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // --- Import CSV Flow ---
+  protected openImportDialog() {
+    // Clear any prior summary to avoid stale dialogs
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
+    this.importerOpen.set(true);
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+    const inputTags = this.tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => !!t);
+    const tags = inputTags;
+
+    try {
+      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        tag: res?.tag ?? undefined,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  public autoMapHeader(h: string): string {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      firstname: 'first_name',
+      fname: 'first_name',
+      middlename: 'middle_names',
+      lastname: 'last_name',
+      lname: 'last_name',
+      name: 'first_name',
+      email: 'email',
+      emailaddress: 'email',
+      email1address: 'email',
+      email2: 'email2',
+      email2address: 'email2',
+      mobile: 'mobile',
+      mobilephone: 'mobile',
+      cellphone: 'mobile',
+      primaryphone: 'mobile',
+      businessphone: 'mobile',
+      homephone: 'home_phone',
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      homecity: 'city',
+      homestate: 'state',
+      homepostalcode: 'zip',
+      homecountry: 'country',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      businesscity: 'city',
+      businessstate: 'state',
+      businesspostalcode: 'zip',
+      businesscountry: 'country',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
 
 ```typescript
@@ -45016,333 +44914,342 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
+## File: apps/frontend/src/app/layout/sidebar/sidebar.html
 
 ```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
+<ng-template #navLink let-nav>
+  <a
+    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
+    class="hover:text-primary flex flex-auto items-center pb-1 pl-2 font-light hover:rounded-lg !cursor-pointer"
+    [class.animate-up]="nav.justPinned"
+    (click)="this.closeMobile()"
+    [routerLink]="nav.route"
+    routerLinkActive="!font-semibold !text-primary"
+    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
+    [class.!font-semibold]="pendingRoute() === nav.route"
+    [class.!text-primary]="pendingRoute() === nav.route"
   >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
+    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
+    <span
+      class="indicator pl-2 group-hover:md:visible text-[13px] tracking-[0.03em]"
+      [class.invisible]="isEffectivelyNarrow()"
     >
-      @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
+      {{ nav.name }} @if (nav.indicator) {
+      <span class="indicator-item status status-primary"></span>
+      }
+    </span>
+  </a>
+</ng-template>
+
+<div
+  (mouseenter)="onSidebarHover(true)"
+  (mouseleave)="onSidebarHover(false)"
+  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
+  [class.hidden]="!this.isMobileOpen()"
+  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
+  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
+>
+  <a
+    [class.hidden]="isEffectivelyNarrow()"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1 group-hover:md:block"
+    routerLink="/summary"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
+    (click)="this.closeMobile()"
+  >
+    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
+  </a>
+
+  <a
+    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
+    class="avatar mx-2 mb-5 mt-3 w-10 cursor-pointer rounded-full p-0 group-hover:md:hidden"
+    routerLink="/summary"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
+    (click)="this.closeMobile()"
+  >
+    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
+  </a>
+
+  @for (item of items(); track item.name) {
+  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
+    <div
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
+      (click)="toggleCollapse(item.name)"
+    >
+      <span class="flex-1 min-w-0">
+        @if (isEffectivelyNarrow() && !hoveringSidebar()) {
+        <hr class="text-neutral w-6" />
+        } @else {
+        <hr class="text-neutral" />
+        }
+      </span>
+      @if (item.children?.length) {
+      <pc-swap
+        class="rotate-90 invisible mr-2"
+        [class.visible]="!isEffectivelyNarrow() || hoveringSidebar()"
+        swapOnIcon="chevron-double-left"
+        swapOffIcon="chevron-double-right"
+        animation="rotate"
+        [size]="4"
+        [checked]="isCollapsed(item.name)"
+        (click)="toggleCollapse(item.name)"
+        aria-label="Toggle section"
+        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
+      ></pc-swap>
       }
     </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
 
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider my-0"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
+    @if (item.children && !isCollapsed(item.name)) {
+    <div class="flex flex-col space-y-1">
+      @for (child of item.children; track child.name) {
+      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
       }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar -->
-<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
-    [tip]="'Clone'"
-    icon="document-duplicate"
-    [hidden]="!grid.addRoute()"
-    (action)="onClone()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  @if (!grid.disableMerge()) {
-  <pc-grid-tool-btn
-    [enabled]="grid.getCountRowSelected() === 2"
-    [tip]="'Merge selected rows'"
-    icon="merge"
-    (action)="onMergeSelected()"
-  />
+    </div>
+    } } @else {
+    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
+    }
+  </div>
   }
 
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+  <div class="hidden flex-auto grow items-start flex-col sm:flex">
+    <span class="min-h-full grow"></span>
+    <pc-swap
+      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      swapOnIcon="arrow-left-start-on-rectangle"
+      [checked]="isDrawerFull()"
+      animation="flip"
+      (click)="toggleDrawer()"
+      aria-label="Toggle drawer"
+      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
+    ></pc-swap>
+  </div>
+</div>
+```
 
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-    [spinning]="grid.isRefreshing()"
-    [tip]="'Refresh the grid'"
-    icon="arrow-path"
-    (action)="onRefresh()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+## File: apps/frontend/src/app/auth/auth-service.ts
 
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+```typescript
+import { signal, Service } from '@angular/core';
+import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { TRPCService } from '../services/api/trpc-service';
+import { TRPCError } from '@trpc/server';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableImport()"
-    [tip]="'Import data from CSV'"
-    icon="arrow-up-tray"
-    (action)="onImportCsv()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableExport()"
-    [tip]="'Download as CSV'"
-    icon="arrow-down-tray"
-    (action)="onExportCsv()"
-  />
+@Service()
+export class AuthService extends TRPCService<'authusers'> {
+  private user = signal<IAuthUser | null>(null);
 
-  @if (grid.showTagFilter()) {
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-  } @if (grid.showTagFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'label'"
-    [tip]="'Filter by Tags'"
-    [active]="grid.selectedTags().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedTags().length"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by Tags'"
-      [active]="grid.selectedTags().length > 0"
-      (clear)="grid.clearTagsFilter()"
-    >
-      <pc-multiselect-filter
-        [label]="'Tags'"
-        [options]="grid.filteredAvailableTags()"
-        [selected]="grid.selectedTags()"
-        [searchQuery]="grid.tagSearchQuery()"
-        (searchQueryChange)="grid.tagSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllTags()"
-        (clearVisible)="grid.clearAllTagsVisible()"
-        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  } @if (grid.showIssueFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'shield-exclamation'"
-    [tip]="'Filter by Issues'"
-    [active]="grid.selectedIssues().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedIssues().length"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by Issues'"
-      [active]="grid.selectedIssues().length > 0"
-      (clear)="grid.clearIssuesFilter()"
-    >
-      <pc-multiselect-filter
-        [label]="'Issues'"
-        [options]="grid.filteredAvailableIssues()"
-        [selected]="grid.selectedIssues()"
-        [searchQuery]="grid.issueSearchQuery()"
-        (searchQueryChange)="grid.issueSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllIssues()"
-        (clearVisible)="grid.clearAllIssuesVisible()"
-        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  } @if (grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'queue-list'"
-    [tip]="'Filter by List'"
-    [active]="grid.selectedListId() !== null"
-    [hasDropdown]="true"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by List'"
-      [active]="grid.selectedListId() !== null"
-      (clear)="grid.clearListFilter()"
-    >
-      <pc-singleselect-filter
-        [label]="'List'"
-        [options]="listOptions()"
-        [selected]="grid.selectedListId()"
-        [radioName]="'selectedList'"
-        [maxHeight]="14"
-        (select)="grid.selectListFilter($event)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
+  public async getCurrentUser() {
+    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+    if (user) this.user.set(user);
+    return user;
   }
 
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Advanced Filters"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveAdvancedFilters()"
-    (action)="onToggleFilters()"
-  />
-  <pc-grid-tool-btn
-    icon="adjustments-horizontal"
-    tip="Advanced Query Builder"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-    (action)="grid.openAdvancedFilterBuilder()"
-  />
+  public getUser(): IAuthUser | null {
+    return this.user();
+  }
 
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+  public getUserSignal() {
+    return this.user;
+  }
 
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
+  public init() {
+    return this.getCurrentUser();
+  }
 
-  <pc-grid-tool-btn
-    [icon]="grid.archiveIcon()"
-    [tip]="grid.archiveTip()"
-    [hidden]="!grid.showArchiveIcon()"
-    [active]="grid.archiveModeState()"
-    (action)="onToggleArchive()"
-  />
-</ul>
+  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+        resolve(result.split(',')[1]!);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = (await this.api.auth.uploadAvatar.mutate({
+      dataBase64,
+      mimeType: file.type as any,
+      filename: file.name,
+    })) as { avatar_url: string };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: res.avatar_url,
+      });
+    }
+
+    return res;
+  }
+
+  public async deleteAvatar(): Promise<{ success: boolean }> {
+    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: null,
+      });
+    }
+
+    return res;
+  }
+
+  public async cancelEmailChange() {
+    const response = await this.api.auth.cancelEmailChange.mutate();
+    await this.getCurrentUser();
+    return response;
+  }
+
+  public resetPassword(input: { code: string; password: string }) {
+    // The new-password page owns the error UX for this call.
+    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public sendPasswordResetEmail(input: { email: string }) {
+    // The reset-password page owns the error UX for this call.
+    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public async signIn(
+    input: signInInputType & { rememberMe?: boolean },
+  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
+    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+
+    if (response && 'requires2FA' in response && response.requires2FA) {
+      return { requires2FA: true, email: response.email };
+    }
+
+    const user = await this.updateTokensAndGetCurrentUser(response);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { requires2FA: false, user };
+  }
+
+  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
+    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return user;
+  }
+
+  public async signOut() {
+    let apiReturn = null;
+    try {
+      apiReturn = await this.api.auth.signOut.mutate();
+    } catch (error) {
+      console.error('Error during sign out:', error);
+    }
+
+    this.user.set(null);
+    this.tokenService.clearAll();
+    void this.router.navigate(['/signin']);
+
+    return apiReturn;
+  }
+
+  public async signUp(input: signUpInputType) {
+    const token = await this.api.auth.signUp.mutate(input);
+    return this.updateTokensAndGetCurrentUser(token);
+  }
+
+  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
+    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
+  }
+
+  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
+    // Callers toast their own success/failure (and handle rate-limit countdowns).
+    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ success: boolean }>;
+  }
+
+  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
+    // The sign-in page silently falls back to the password step if this fails —
+    // a global error toast here would be noise.
+    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ hasPasskeys: boolean }>;
+  }
+
+  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
+    let response: any;
+    try {
+      response = await startAuthentication({ optionsJSON: options });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
+      throw err;
+    }
+    const token = await (
+      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
+    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { user, cancelled: false };
+  }
+
+  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
+    const options = await this.api.auth.passkeyRegistrationOptions.query();
+    const response = await startRegistration({ optionsJSON: options as any });
+    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
+      verified: boolean;
+    };
+  }
+
+  public listPasskeys() {
+    return this.api.auth.listPasskeys.query();
+  }
+
+  public deletePasskey(id: string) {
+    return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
+  }
+
+  public updatePasskeyName(id: string, friendlyName: string) {
+    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
+  }
+
+  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
+    if (!token || token instanceof TRPCError) {
+      throw token;
+    }
+    this.tokenService.set(token);
+    return this.getCurrentUser();
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
@@ -47781,321 +47688,744 @@ export class DataGridColumnsDropdownComponent {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
 
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
 
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid = inject(DataGrid);
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
+    >
+      @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
+      </div>
+      }
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
 
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider my-0"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
 
-  public onAdd() {
-    this.grid.doAdd();
+<!-- Desktop toolbar -->
+<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+    [spinning]="grid.isRefreshing()"
+    [tip]="'Refresh the grid'"
+    icon="arrow-path"
+    (action)="onRefresh()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableImport()"
+    [tip]="'Import data from CSV'"
+    icon="arrow-up-tray"
+    (action)="onImportCsv()"
+  />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableExport()"
+    [tip]="'Download as CSV'"
+    icon="arrow-down-tray"
+    (action)="onExportCsv()"
+  />
+
+  @if (grid.showTagFilter()) {
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+  } @if (grid.showTagFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'label'"
+    [tip]="'Filter by Tags'"
+    [active]="grid.selectedTags().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedTags().length"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by Tags'"
+      [active]="grid.selectedTags().length > 0"
+      (clear)="grid.clearTagsFilter()"
+    >
+      <pc-multiselect-filter
+        [label]="'Tags'"
+        [options]="grid.filteredAvailableTags()"
+        [selected]="grid.selectedTags()"
+        [searchQuery]="grid.tagSearchQuery()"
+        (searchQueryChange)="grid.tagSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllTags()"
+        (clearVisible)="grid.clearAllTagsVisible()"
+        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+      />
+      <p
+        class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+        i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
+      >
+        Checked tags combine with OR and land as one chip.
+      </p>
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  } @if (grid.showIssueFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'shield-exclamation'"
+    [tip]="'Filter by Issues'"
+    [active]="grid.selectedIssues().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedIssues().length"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by Issues'"
+      [active]="grid.selectedIssues().length > 0"
+      (clear)="grid.clearIssuesFilter()"
+    >
+      <pc-multiselect-filter
+        [label]="'Issues'"
+        [options]="grid.filteredAvailableIssues()"
+        [selected]="grid.selectedIssues()"
+        [searchQuery]="grid.issueSearchQuery()"
+        (searchQueryChange)="grid.issueSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllIssues()"
+        (clearVisible)="grid.clearAllIssuesVisible()"
+        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+      />
+      <p
+        class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+        i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
+      >
+        Checked issues combine with OR and land as one chip.
+      </p>
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  } @if (grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'queue-list'"
+    [tip]="'Filter by List'"
+    [active]="grid.selectedListId() !== null"
+    [hasDropdown]="true"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by List'"
+      [active]="grid.selectedListId() !== null"
+      (clear)="grid.clearListFilter()"
+    >
+      <pc-singleselect-filter
+        [label]="'List'"
+        [options]="listOptions()"
+        [selected]="grid.selectedListId()"
+        [radioName]="'selectedList'"
+        [maxHeight]="14"
+        (select)="grid.selectListFilter($event)"
+      />
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
   }
 
-  public onClone() {
-    this.grid.doClone();
-  }
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Advanced Filters"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveAdvancedFilters()"
+    (action)="onToggleFilters()"
+  />
+  <pc-grid-tool-btn
+    icon="adjustments-horizontal"
+    tip="Advanced Query Builder"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+    (action)="grid.openAdvancedFilterBuilder()"
+  />
 
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
 
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
 
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    void this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
-}
+  <pc-grid-tool-btn
+    [icon]="grid.archiveIcon()"
+    [tip]="grid.archiveTip()"
+    [hidden]="!grid.showArchiveIcon()"
+    [active]="grid.archiveModeState()"
+    (action)="onToggleArchive()"
+  />
+</ul>
 ```
 
-## File: apps/frontend/src/app/auth/auth-service.ts
+## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
 
 ```typescript
-import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
-import { TRPCService } from '../services/api/trpc-service';
-import { TRPCError } from '@trpc/server';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { AbstractControl, ValidatorFn } from '@angular/forms';
+import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
 
-@Service()
-export class AuthService extends TRPCService<'authusers'> {
-  private user = signal<IAuthUser | null>(null);
+import { TokenService } from '../../services/api/token-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this.user.set(user);
-    return user;
-  }
+type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
 
-  public getUser(): IAuthUser | null {
-    return this.user();
-  }
+@Component({
+  selector: 'pc-login',
+  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
+  templateUrl: './signin-page.html',
+})
+export class SignInPage implements OnInit, OnDestroy {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly suppressNavigation = signal<boolean>(false);
+  private readonly tokenService = inject(TokenService);
 
-  public getUserSignal() {
-    return this.user;
-  }
+  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
+  private _loading = createLoadingGate();
 
-  public init() {
-    return this.getCurrentUser();
-  }
+  protected readonly step = signal<SignInStep>('email');
+  protected readonly emailData = signal({ email: '' });
+  protected readonly passwordData = signal({ password: '' });
+  protected readonly otpData = signal({ code: '' });
+  protected readonly emailFor2FA = signal<string>('');
+  protected readonly pendingEmail = signal<string>('');
+  protected readonly rateLimitSecondsLeft = signal<number>(0);
+  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
+  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
+  protected readonly resending = signal<boolean>(false);
+  protected readonly resendCooldownSeconds = signal<number>(0);
+  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
+  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
+  protected readonly settingUpPasskey = signal<boolean>(false);
+  protected readonly verificationPending = signal<boolean>(false);
 
-  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
-    const dataBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
-        resolve(result.split(',')[1]!);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
+  protected isLoading = this._loading.visible;
+  protected persistence = signal(this.tokenService.getPersistence());
 
-    const res = (await this.api.auth.uploadAvatar.mutate({
-      dataBase64,
-      mimeType: file.type as any,
-      filename: file.name,
-    })) as { avatar_url: string };
+  public readonly emailForm = form(this.emailData, (p) => {
+    required(p.email);
+    email(p.email);
+  });
 
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: res.avatar_url,
-      });
-    }
+  public readonly passwordForm = form(this.passwordData, (p) => {
+    required(p.password);
+    minLength(p.password, 8);
+  });
 
-    return res;
-  }
+  public readonly otpForm = form(this.otpData, (p) => {
+    required(p.code);
+    pattern(p.code, /^\d{6}$/);
+  });
 
-  public async deleteAvatar(): Promise<{ success: boolean }> {
-    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: null,
-      });
-    }
-
-    return res;
-  }
-
-  public async cancelEmailChange() {
-    const response = await this.api.auth.cancelEmailChange.mutate();
-    await this.getCurrentUser();
-    return response;
-  }
-
-  public resetPassword(input: { code: string; password: string }) {
-    // The new-password page owns the error UX for this call.
-    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
+  constructor() {
+    effect(() => {
+      const user = this.authService.getUserSignal();
+      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
     });
   }
 
-  public sendPasswordResetEmail(input: { email: string }) {
-    // The reset-password page owns the error UX for this call.
-    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
+  public get emailField() {
+    return this.emailForm.email();
+  }
+
+  public get password() {
+    return this.passwordForm.password();
+  }
+
+  public get code() {
+    return this.otpForm.code();
+  }
+
+  public ngOnInit() {
+    const params = this.route.snapshot.queryParamMap;
+    const emailVal = params.get('email') || '';
+    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      if (emailVal) {
+        this.emailForm.email().value.set(emailVal);
+        this.step.set('password');
+      }
+    }
+  }
+
+  public ngOnDestroy() {
+    this.clearCountdown();
+    this.clearResendCooldown();
+  }
+
+  public goBackToEmail() {
+    this.step.set('email');
+    this.verificationPending.set(false);
+    this.passwordData.update((p) => ({ ...p, password: '' }));
+    this.otpData.update((o) => ({ ...o, code: '' }));
+  }
+
+  public usePasswordInstead() {
+    this.step.set('password');
+  }
+
+  public async continueWithEmail(event?: Event) {
+    event?.preventDefault();
+
+    const rawEmail = this.emailData().email;
+    const emailVal = rawEmail.trim().toLowerCase();
+
+    if (rawEmail !== emailVal) {
+      this.emailForm.email().value.set(emailVal);
+    }
+
+    this.emailForm().markAsTouched();
+
+    await submit(this.emailForm, {
+      action: async () => {
+        let hasPasskeys = false;
+        const end = this._loading.begin();
+        try {
+          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
+        } catch {
+          // network error — fall through to password
+        } finally {
+          end();
+        }
+
+        if (hasPasskeys) {
+          this.step.set('passkey');
+          await this.signInWithPasskey();
+        } else {
+          this.step.set('password');
+        }
+
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.emailForm.email();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
+      },
     });
   }
 
-  public async signIn(
-    input: signInInputType & { rememberMe?: boolean },
-  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
-    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-
-    if (response && 'requires2FA' in response && response.requires2FA) {
-      return { requires2FA: true, email: response.email };
-    }
-
-    const user = await this.updateTokensAndGetCurrentUser(response);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { requires2FA: false, user };
-  }
-
-  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
-    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return user;
-  }
-
-  public async signOut() {
-    let apiReturn = null;
+  public async signInWithPasskey() {
+    const end = this._loading.begin();
     try {
-      apiReturn = await this.api.auth.signOut.mutate();
-    } catch (error) {
-      console.error('Error during sign out:', error);
-    }
-
-    this.user.set(null);
-    this.tokenService.clearAll();
-    void this.router.navigate(['/signin']);
-
-    return apiReturn;
-  }
-
-  public async signUp(input: signUpInputType) {
-    const token = await this.api.auth.signUp.mutate(input);
-    return this.updateTokensAndGetCurrentUser(token);
-  }
-
-  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
-    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
-  }
-
-  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    // Callers toast their own success/failure (and handle rate-limit countdowns).
-    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ success: boolean }>;
-  }
-
-  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    // The sign-in page silently falls back to the password step if this fails —
-    // a global error toast here would be noise.
-    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ hasPasskeys: boolean }>;
-  }
-
-  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
-    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
-    let response: any;
-    try {
-      response = await startAuthentication({ optionsJSON: options });
+      const result = await this.authService.signInWithPasskey(this.persistence());
+      if (result.cancelled) {
+        this.step.set('password');
+        return;
+      }
+      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
     } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
-      throw err;
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        this.step.set('password');
+        return;
+      }
+      this.handleError(err);
+    } finally {
+      end();
     }
-    const token = await (
-      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
+  }
+
+  public async signIn(event?: Event) {
+    event?.preventDefault();
+
+    this.tokenService.clearAll();
+
+    const emailVal = this.emailData().email.trim().toLowerCase();
+    const passwordVal = this.passwordData().password;
+
+    this.verificationPending.set(false);
+    this.passwordForm().markAsTouched();
+
+    await submit(this.passwordForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          this.suppressNavigation.set(true);
+          const res = await this.authService.signIn({
+            email: emailVal,
+            password: passwordVal,
+            rememberMe: this.persistence(),
+          });
+          if (res.requires2FA) {
+            this.suppressNavigation.set(false);
+            this.step.set('2fa');
+            this.emailFor2FA.set(res.email || emailVal);
+            this.otpData.update((o) => ({ ...o, code: '' }));
+          } else {
+            const user = this.authService.getUser();
+            const dismissed = !!user?.passkey_setup_dismissed_at;
+            if (!dismissed) {
+              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
+              if (passkeys.length === 0) {
+                this.step.set('passkey-setup');
+                return null;
+              }
+            }
+            this.suppressNavigation.set(false);
+          }
+        } catch (err) {
+          this.suppressNavigation.set(false);
+          this.handleError(err, emailVal);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.passwordForm.password();
+        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
+        this.alertSvc.showError(
+          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
+        );
+      },
+    });
+  }
+
+  public async verify2FA(event?: Event) {
+    event?.preventDefault();
+
+    this.otpForm().markAsTouched();
+
+    await submit(this.otpForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const emailVal = this.emailFor2FA();
+          const codeVal = this.otpData().code.trim();
+          await this.authService.verify2FA({
+            email: emailVal,
+            code: codeVal,
+            rememberMe: this.persistence(),
+          });
+        } catch (err) {
+          this.handleError(err);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.otpForm.code();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
+        const msg = hasRequired
+          ? 'Verification code is required.'
+          : hasPattern
+            ? 'Verification code must be exactly 6 digits.'
+            : 'Please enter a valid verification code.';
+        this.alertSvc.showError(msg);
+      },
+    });
+  }
+
+  public async setupPasskey() {
+    this.settingUpPasskey.set(true);
+    try {
+      const result = await this.authService.registerPasskey();
+      if (result.verified) {
+        this.alertSvc.showSuccess('Passkey set up successfully!');
+      }
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
+      }
+    } finally {
+      this.settingUpPasskey.set(false);
+      this.suppressNavigation.set(false);
     }
-    return { user, cancelled: false };
   }
 
-  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
-    const options = await this.api.auth.passkeyRegistrationOptions.query();
-    const response = await startRegistration({ optionsJSON: options as any });
-    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
-      verified: boolean;
-    };
-  }
-
-  public listPasskeys() {
-    return this.api.auth.listPasskeys.query();
-  }
-
-  public deletePasskey(id: string) {
-    return this.api.auth.deletePasskey.mutate({ id });
-  }
-
-  public dismissPasskeyPrompt() {
-    return this.api.auth.dismissPasskeyPrompt.mutate();
-  }
-
-  public updatePasskeyName(id: string, friendlyName: string) {
-    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
-  }
-
-  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
-    if (!token || token instanceof TRPCError) {
-      throw token;
+  public async skipPasskeySetup() {
+    try {
+      await this.authService.dismissPasskeyPrompt();
+    } catch {
+      // non-fatal — still allow navigation
     }
-    this.tokenService.set(token);
-    return this.getCurrentUser();
+    this.suppressNavigation.set(false);
   }
+
+  public togglePersistence(target: EventTarget | null) {
+    if (!target) return;
+    const checked = (target as HTMLInputElement).checked;
+    this.tokenService.setPersistence(checked);
+    this.persistence.set(checked);
+  }
+
+  public async resendVerification() {
+    const emailVal = this.pendingEmail().trim();
+    if (!emailVal || this.resendCooldownSeconds() > 0) return;
+    this.resending.set(true);
+    try {
+      await this.authService.resendVerificationEmail(emailVal);
+      this.alertSvc.showSuccess('Verification email sent successfully!');
+      this.startResendCooldown(60);
+    } catch (err) {
+      const tRPCData = getTRPCData(err);
+      const retryAfterSec =
+        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
+      if (retryAfterSec) {
+        this.startResendCooldown(retryAfterSec);
+      } else {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
+      }
+    } finally {
+      this.resending.set(false);
+    }
+  }
+
+  private clearCountdown() {
+    if (this._countdownInterval !== null) {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+    }
+  }
+
+  private clearResendCooldown() {
+    if (this._resendCooldownInterval !== null) {
+      clearInterval(this._resendCooldownInterval);
+      this._resendCooldownInterval = null;
+    }
+  }
+
+  private startResendCooldown(seconds: number) {
+    this.clearResendCooldown();
+    this.resendCooldownSeconds.set(seconds);
+    this._resendCooldownInterval = setInterval(() => {
+      const current = this.resendCooldownSeconds();
+      if (current <= 1) {
+        this.resendCooldownSeconds.set(0);
+        this.clearResendCooldown();
+      } else {
+        this.resendCooldownSeconds.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+
+  private handleError(err: unknown, emailVal?: string) {
+    const tRPCData = getTRPCData(err);
+    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
+    const retryAfterSec =
+      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+      this.parseRetryAfterSec(message);
+    if (retryAfterSec) {
+      this.startRateLimitCountdown(retryAfterSec);
+      return;
+    }
+    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
+    if (emailVal && message.toLowerCase().includes('not verified')) {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      this.alertSvc.showError(message);
+    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
+    } else {
+      this.alertSvc.showError(message);
+    }
+  }
+
+  private parseRetryAfterSec(message: string): number | undefined {
+    const match = message?.match(/retry in (\d+) second/i);
+    return match ? parseInt(match[1]!, 10) : undefined;
+  }
+
+  private startRateLimitCountdown(seconds: number) {
+    this.clearCountdown();
+    this.rateLimitSecondsLeft.set(seconds);
+
+    this._countdownInterval = setInterval(() => {
+      const current = this.rateLimitSecondsLeft();
+      if (current < 1) {
+        this.clearCountdown();
+      } else {
+        this.rateLimitSecondsLeft.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+}
+
+export function emailSafeValidator(): ValidatorFn {
+  return (control: AbstractControl) => {
+    const v = (control.value ?? '').toString().trim();
+    return v && EMAIL_SAFE.test(v) ? null : { email: true };
+  };
+}
+
+const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
+function getTRPCData(err: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(err)) return undefined;
+  const originalError = err['originalError'];
+  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
+  return isRecord(err['data']) ? err['data'] : undefined;
 }
 ```
 
@@ -49805,1109 +50135,98 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-
-```html
-<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle()">
-  @if (displayTitle()) {
-  <pc-grid-header
-    [title]="displayTitle()!"
-    [open]="showDescription()"
-    [description]="description() || ''"
-    [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
-    [filtered]="anyFilterActive()"
-  ></pc-grid-header>
-  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
-  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
-  <div class="mb-2 flex flex-wrap items-center gap-2">
-    <div class="join border border-base-300 rounded-lg">
-      @for (opt of narrowTypeOptions(); track opt.label) {
-      <button
-        type="button"
-        class="btn btn-sm join-item border-0 font-normal gap-1.5"
-        [class.btn-primary]="selectedNarrowType() === opt.value"
-        [class.btn-ghost]="selectedNarrowType() !== opt.value"
-        (click)="selectNarrowType(opt.value)"
-      >
-        {{ opt.label }} @if (opt.count != null) {
-        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
-        }
-      </button>
-      }
-    </div>
-  </div>
-  } @if (isLoading()) {
-  <progress class="progress h-1"></progress>
-  } @if (filterChips().length) {
-  <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
-    <span
-      class="font-semibold uppercase tracking-wider text-base-content/50"
-      i18n="Datagrid|Label preceding the active filter chips@@datagrid.chips.label"
-      >Filters</span
-    >
-    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
-    <span class="badge badge-outline gap-1 border-primary/30 bg-primary/10 text-primary">
-      @if (chip.kind === 'advanced') {
-      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
-      } @else { {{ chip.label }} }
-      <button
-        type="button"
-        class="opacity-70 hover:opacity-100"
-        [attr.aria-label]="'Remove filter: ' + chip.label"
-        (click)="removeFilterChip(chip)"
-      >
-        <pc-icon name="x-mark" [size]="3"></pc-icon>
-      </button>
-    </span>
-    }
-    <span class="flex-1"></span>
-    <button
-      type="button"
-      class="link text-primary hover:no-underline"
-      (click)="clearAllFilters()"
-      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
-    >
-      Clear all
-    </button>
-  </div>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
-      >All {{ displayedCount() }} rows on this page are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="selectAllMatching()"
-      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
-      >Select all {{ totalCountAll() }} rows</a
-    >
-  </div>
-  } @if (allSelected()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
-      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="clearAllSelection()"
-      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
-      >Clear selection</a
-    >
-  </div>
-  }
-  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
-    <table #gridTable class="table w-full">
-      <thead>
-        <tr>
-          @if (enableSelection()) {
-          <th
-            class="border-r border-base-300 pl-2 selection-col"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-          </th>
-          } @for (h of leafHeaders(); track h.id) {
-          <th
-            role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative"
-            [attr.data-col-id]="h.column.id"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [draggable]="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="columnWidthPx(h.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
-          >
-            <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column.columnDef.header || h.column.id }}
-              </span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label
-                  tabindex="0"
-                  class="btn btn-xs"
-                  [class.btn-ghost]="!isColFiltered(h.column.id)"
-                  [class.btn-primary]="isColFiltered(h.column.id)"
-                  title="Column options"
-                  i18n-title="@@datagrid.columns.optionsTitle"
-                >
-                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
-                  @let col = getColDefById(h.column.id);
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
-                      track opt) {
-                      <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
-                      </li>
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      }
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li>
-                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
-                          >Sort asc</a
-                        >
-                      </li>
-                      <li>
-                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
-                          >Sort desc</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          (click)="clearSort(h)"
-                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
-                          >Clear sort</a
-                        >
-                      </li>
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
-                        >Column</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (!col?.noHide) {
-                      <li>
-                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
-                          >Hide</a
-                        >
-                      </li>
-                      }
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
-                            >Columns</span
-                          ><span>▸</span></label
-                        >
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li>
-                            <a (click)="showColumnById(cid)"
-                              ><ng-container
-                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
-                                >Show</ng-container
-                              >
-                              {{ columnLabelFor(cid) }}</a
-                            >
-                          </li>
-                          } @if (!hiddenColumns().length) {
-                          <li
-                            class="opacity-60 px-2 py-1"
-                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
-                          >
-                            None hidden
-                          </li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-              <span
-                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
-                title="Resize column"
-                i18n-title="@@datagrid.columns.resizeTitle"
-                [pcHeaderResize]="headerResizeConfig(h)"
-              ></span>
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-                >No results match your filters</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-                >Try clearing or adjusting your filters</span
-              >
-              <button
-                type="button"
-                class="btn btn-outline btn-sm mt-1"
-                (click)="clearAllFilters()"
-                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
-              >
-                Clear all filters
-              </button>
-            </div>
-          </td>
-        </tr>
-        } @else if (!visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-                >Nothing here yet</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @for (r of visibleTableRows(); let i = $index; track r.id) {
-        <tr
-          class="group hover:bg-base-300"
-          [class.cursor-pointer]="rowNavigatesToDetail()"
-          (mouseover)="onCellMouseOver(r.original)"
-          [attr.data-row-id]="toId(r.original)"
-          [class.bg-base-200]="(i % 2) === 1"
-        >
-          @if (enableSelection()) {
-          <td
-            class="sticky left-0 z-20 border-r border-base-300 pl-2"
-            [style.background]="rowBgForIndex(i)"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <div class="flex items-center gap-2">
-              @if (rowCanSelect()(r.original)) {
-              <input
-                type="checkbox"
-                class="checkbox checkbox-sm"
-                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
-                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-              />
-              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
-              <span
-                title="Open detail"
-                i18n-title="@@datagrid.rows.openDetailTitle"
-                aria-label="Open detail"
-                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
-                (click)="openEdit(rowId); $event.stopPropagation();"
-              >
-                <pc-icon
-                  name="arrow-top-right-on-square"
-                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
-                ></pc-icon>
-              </span>
-              }
-            </div>
-          </td>
-          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
-          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
-          === col.field;
-          <td
-            [pcEditable]="editableCfg(r.original, col)"
-            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
-            tabindex="0"
-            (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col)"
-            (dblclick)="handleCellDblClick(r.original, col)"
-            [class.sticky]="pinState(cell) !== false"
-            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
-            [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
-            [class.overflow-visible]="isTagColumn(col) && isEditing"
-            class="min-w-0 px-2 border-r border-base-300 relative"
-            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
-            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
-            [attr.data-col-id]="cell.column.id"
-            [style.width.px]="columnWidthPx(cell.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
-          >
-            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (isTagColumn(col)) {
-            <!-- Tag column: checkbox multi-select panel -->
-            <div
-              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
-              (click)="$event.stopPropagation()"
-            >
-              <!-- Search box — pinned, never scrolls -->
-              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
-                <input
-                  type="text"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="Search tags…"
-                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
-                  [ngModel]="tagSearch()"
-                  (ngModelChange)="tagSearch.set($event)"
-                  autofocus
-                />
-              </div>
-              <!-- Scrollable tag list -->
-              <div class="flex-1 overflow-y-auto py-1">
-                @for (tag of filteredTagChoices(col); track tag) {
-                <label
-                  tabindex="-1"
-                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="isTagChecked(tag)"
-                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
-                  />
-                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
-                </label>
-                } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2 italic">
-                  @if (tagSearch()) {
-                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
-                    >No tags match "{{ tagSearch() }}"</ng-container
-                  >
-                  } @else {
-                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
-                    >No tags available</ng-container
-                  >
-                  }
-                </div>
-                }
-              </div>
-              <!-- Done button — pinned, never scrolls -->
-              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
-                <button
-                  class="btn btn-primary btn-xs"
-                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
-                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            } @else if (editorCfg) { @if (editorCfg.multiple) {
-            <select
-              class="select select-bordered w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              multiple
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } @else {
-            <select
-              class="select select-bordered w-full select-xs"
-              [ngModel]="editingValue()"
-              (ngModelChange)="onSelectChange(r.original, col, $event)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } } @else if (textCfg.textarea) {
-            <textarea
-              class="textarea textarea-bordered textarea-sm w-full"
-              [rows]="textCfg.rows"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            ></textarea>
-            } @else {
-            <input
-              [type]="inputTypeFor(col)"
-              class="input input-bordered input-xs w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            />
-            } } @else if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
-            (isTagColumn(col) && tagList.length) {
-            <pc-tags
-              [tags]="tagList"
-              [type]="tagTypeFor(col)"
-              [readonly]="true"
-              [canDelete]="false"
-              [compact]="true"
-              [limit]="2"
-              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
-            ></pc-tags>
-            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
-            === null || formattedVal === undefined || formattedVal === '') {
-            <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) {
-            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
-            @if (rawValue) {
-            <span
-              class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
-              >{{ rawValue }}</span
-            >
-            } @else {
-            <span
-              class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
-              i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
-              >Unnamed person</span
-            >
-            } } @else if (col.field === 'address') {
-            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
-              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
-            </div>
-            } @else {
-            <span class="flex items-center gap-1 w-full">
-              @if (rawValue === null || rawValue === undefined || rawValue === '') {
-              <span class="flex-1 truncate text-base-content/30">—</span>
-              } @else {
-              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
-              }
-            </span>
-            } } }
-          </td>
-          } }
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
-    <div class="flex items-center gap-2 whitespace-nowrap">
-      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-        >Page Size:</span
-      >
-      <select
-        class="select select-bordered select-xs"
-        [ngModel]="pageSize()"
-        (ngModelChange)="onPageSizeChange($event)"
-      >
-        @if (![25,50,100].includes(pageSize())) {
-        <option [value]="pageSize()">{{ pageSize() }}</option>
-        } @for (opt of pageSizeChoices(); track opt) {
-        <option [value]="opt">{{ opt }}</option>
-        }
-      </select>
-    </div>
-    <div
-      class="whitespace-nowrap tabular-nums"
-      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-    >
-      <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
-        >{{ displayEndIndex() }}</span
-      >
-      of <span class="font-normal">{{ totalCountAll() }}</span> · Page
-      <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
-    </div>
-    <div class="join whitespace-nowrap">
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
-        [disabled]="!canPrev()"
-        (click)="firstPage()"
-      >
-        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
-        [disabled]="!canPrev()"
-        (click)="prevPage()"
-      >
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canNext() ? nextPageTitle : onLastPageTitle"
-        [disabled]="!canNext()"
-        (click)="nextPage()"
-      >
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canNext() ? lastPageTitle : onLastPageTitle"
-        [disabled]="!canNext()"
-        (click)="lastPage()"
-      >
-        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- Right-side Filter Panel -->
-@if (showFilterPanel()) {
-<pc-dg-filter-panel
-  [panelFields]="panelFields()"
-  [panelFilters]="panelFilters()"
-  [labelFor]="labelForFn"
-  [optionsFor]="optionsForFn"
-  [hasActiveFilters]="hasActiveFilters()"
-  (closePanel)="closePanel()"
-  (apply)="applyPanelFilters()"
-  (clear)="clearPanelFilters()"
-  (changeOp)="onPanelOpChange($event.field, $event.op)"
-  (changeValue)="onPanelValueChange($event.field, $event.value)"
-  (openAdvanced)="switchToAdvancedFilter()"
-/>
-}
-
-<!-- Advanced Filter Builder Modal -->
-@if (showAdvancedFilterBuilder()) {
-<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
-  <div
-    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
-  >
-    <div class="flex justify-between items-center pb-4 border-b border-base-200">
-      <div>
-        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
-          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-            >Advanced Filter Builder</ng-container
-          >
-        </h3>
-        <p
-          class="text-xs text-neutral-400 mt-1"
-          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-        >
-          Build complex matching rules with custom operators and conjunction logic.
-        </p>
-      </div>
-      <button
-        class="btn btn-ghost btn-circle btn-sm"
-        (click)="showAdvancedFilterBuilder.set(false)"
-        aria-label="Close modal"
-        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
-      >
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <!-- Scrollable Body containing the rules -->
-    <div class="flex-1 overflow-y-auto py-6">
-      <pc-query-builder
-        [group]="advFilterRoot()"
-        [fields]="advancedFilterFields()"
-        [tagSvc]="tagsSvc ?? undefined"
-        [showSummary]="true"
-        (changed)="onAdvancedFilterChanged()"
-      ></pc-query-builder>
-    </div>
-
-    <!-- Modal Footer Actions -->
-    <div class="flex justify-between items-center pt-4 border-t border-base-200">
-      <button
-        class="btn btn-outline btn-error btn-sm"
-        (click)="clearAdvancedFilter()"
-        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
-      >
-        Clear Filters
-      </button>
-      <div class="flex gap-2">
-        <button
-          class="btn btn-ghost btn-sm"
-          (click)="showAdvancedFilterBuilder.set(false)"
-          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-        >
-          Cancel
-        </button>
-        <button
-          class="btn btn-primary btn-sm px-6"
-          (click)="applyAdvancedFilter()"
-          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-}
-```
-
-## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
 
 ```typescript
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { AbstractControl, ValidatorFn } from '@angular/forms';
-import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
 import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { TokenService } from '../../services/api/token-service';
-import { getUserErrorMessage } from '../../services/api/user-message';
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
 
 @Component({
-  selector: 'pc-login',
-  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
-  templateUrl: './signin-page.html',
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
 })
-export class SignInPage implements OnInit, OnDestroy {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly suppressNavigation = signal<boolean>(false);
-  private readonly tokenService = inject(TokenService);
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
 
-  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
-  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
-  private _loading = createLoadingGate();
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
 
-  protected readonly step = signal<SignInStep>('email');
-  protected readonly emailData = signal({ email: '' });
-  protected readonly passwordData = signal({ password: '' });
-  protected readonly otpData = signal({ code: '' });
-  protected readonly emailFor2FA = signal<string>('');
-  protected readonly pendingEmail = signal<string>('');
-  protected readonly rateLimitSecondsLeft = signal<number>(0);
-  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
-  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
-  protected readonly resending = signal<boolean>(false);
-  protected readonly resendCooldownSeconds = signal<number>(0);
-  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
-  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
-  protected readonly settingUpPasskey = signal<boolean>(false);
-  protected readonly verificationPending = signal<boolean>(false);
-
-  protected isLoading = this._loading.visible;
-  protected persistence = signal(this.tokenService.getPersistence());
-
-  public readonly emailForm = form(this.emailData, (p) => {
-    required(p.email);
-    email(p.email);
-  });
-
-  public readonly passwordForm = form(this.passwordData, (p) => {
-    required(p.password);
-    minLength(p.password, 8);
-  });
-
-  public readonly otpForm = form(this.otpData, (p) => {
-    required(p.code);
-    pattern(p.code, /^\d{6}$/);
-  });
-
-  constructor() {
-    effect(() => {
-      const user = this.authService.getUserSignal();
-      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
-    });
+  public onAdd() {
+    this.grid.doAdd();
   }
 
-  public get emailField() {
-    return this.emailForm.email();
+  public onClone() {
+    this.grid.doClone();
   }
 
-  public get password() {
-    return this.passwordForm.password();
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
   }
 
-  public get code() {
-    return this.otpForm.code();
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
   }
 
-  public ngOnInit() {
-    const params = this.route.snapshot.queryParamMap;
-    const emailVal = params.get('email') || '';
-    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      if (emailVal) {
-        this.emailForm.email().value.set(emailVal);
-        this.step.set('password');
-      }
-    }
+  public onExportCsv() {
+    this.grid.doConfirmExport();
   }
 
-  public ngOnDestroy() {
-    this.clearCountdown();
-    this.clearResendCooldown();
+  public onImportCsv() {
+    this.grid.doImportCSV();
   }
 
-  public goBackToEmail() {
-    this.step.set('email');
-    this.verificationPending.set(false);
-    this.passwordData.update((p) => ({ ...p, password: '' }));
-    this.otpData.update((o) => ({ ...o, code: '' }));
+  public onRedo() {
+    this.grid.redo();
   }
 
-  public usePasswordInstead() {
-    this.step.set('password');
+  public onRefresh() {
+    void this.grid.doRefresh();
   }
 
-  public async continueWithEmail(event?: Event) {
-    event?.preventDefault();
-
-    const rawEmail = this.emailData().email;
-    const emailVal = rawEmail.trim().toLowerCase();
-
-    if (rawEmail !== emailVal) {
-      this.emailForm.email().value.set(emailVal);
-    }
-
-    this.emailForm().markAsTouched();
-
-    await submit(this.emailForm, {
-      action: async () => {
-        let hasPasskeys = false;
-        const end = this._loading.begin();
-        try {
-          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
-        } catch {
-          // network error — fall through to password
-        } finally {
-          end();
-        }
-
-        if (hasPasskeys) {
-          this.step.set('passkey');
-          await this.signInWithPasskey();
-        } else {
-          this.step.set('password');
-        }
-
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.emailForm.email();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
-      },
-    });
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
   }
 
-  public async signInWithPasskey() {
-    const end = this._loading.begin();
-    try {
-      const result = await this.authService.signInWithPasskey(this.persistence());
-      if (result.cancelled) {
-        this.step.set('password');
-        return;
-      }
-      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') {
-        this.step.set('password');
-        return;
-      }
-      this.handleError(err);
-    } finally {
-      end();
-    }
+  public onToggleFilters() {
+    this.grid.filter();
   }
 
-  public async signIn(event?: Event) {
-    event?.preventDefault();
-
-    this.tokenService.clearAll();
-
-    const emailVal = this.emailData().email.trim().toLowerCase();
-    const passwordVal = this.passwordData().password;
-
-    this.verificationPending.set(false);
-    this.passwordForm().markAsTouched();
-
-    await submit(this.passwordForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          this.suppressNavigation.set(true);
-          const res = await this.authService.signIn({
-            email: emailVal,
-            password: passwordVal,
-            rememberMe: this.persistence(),
-          });
-          if (res.requires2FA) {
-            this.suppressNavigation.set(false);
-            this.step.set('2fa');
-            this.emailFor2FA.set(res.email || emailVal);
-            this.otpData.update((o) => ({ ...o, code: '' }));
-          } else {
-            const user = this.authService.getUser();
-            const dismissed = !!user?.passkey_setup_dismissed_at;
-            if (!dismissed) {
-              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
-              if (passkeys.length === 0) {
-                this.step.set('passkey-setup');
-                return null;
-              }
-            }
-            this.suppressNavigation.set(false);
-          }
-        } catch (err) {
-          this.suppressNavigation.set(false);
-          this.handleError(err, emailVal);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.passwordForm.password();
-        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
-        this.alertSvc.showError(
-          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
-        );
-      },
-    });
+  public onUndo() {
+    this.grid.undo();
   }
 
-  public async verify2FA(event?: Event) {
-    event?.preventDefault();
-
-    this.otpForm().markAsTouched();
-
-    await submit(this.otpForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const emailVal = this.emailFor2FA();
-          const codeVal = this.otpData().code.trim();
-          await this.authService.verify2FA({
-            email: emailVal,
-            code: codeVal,
-            rememberMe: this.persistence(),
-          });
-        } catch (err) {
-          this.handleError(err);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.otpForm.code();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
-        const msg = hasRequired
-          ? 'Verification code is required.'
-          : hasPattern
-            ? 'Verification code must be exactly 6 digits.'
-            : 'Please enter a valid verification code.';
-        this.alertSvc.showError(msg);
-      },
-    });
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
   }
 
-  public async setupPasskey() {
-    this.settingUpPasskey.set(true);
-    try {
-      const result = await this.authService.registerPasskey();
-      if (result.verified) {
-        this.alertSvc.showSuccess('Passkey set up successfully!');
-      }
-    } catch (err) {
-      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
-        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
-      }
-    } finally {
-      this.settingUpPasskey.set(false);
-      this.suppressNavigation.set(false);
-    }
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
   }
 
-  public async skipPasskeySetup() {
-    try {
-      await this.authService.dismissPasskeyPrompt();
-    } catch {
-      // non-fatal — still allow navigation
-    }
-    this.suppressNavigation.set(false);
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
   }
 
-  public togglePersistence(target: EventTarget | null) {
-    if (!target) return;
-    const checked = (target as HTMLInputElement).checked;
-    this.tokenService.setPersistence(checked);
-    this.persistence.set(checked);
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
   }
-
-  public async resendVerification() {
-    const emailVal = this.pendingEmail().trim();
-    if (!emailVal || this.resendCooldownSeconds() > 0) return;
-    this.resending.set(true);
-    try {
-      await this.authService.resendVerificationEmail(emailVal);
-      this.alertSvc.showSuccess('Verification email sent successfully!');
-      this.startResendCooldown(60);
-    } catch (err) {
-      const tRPCData = getTRPCData(err);
-      const retryAfterSec =
-        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
-        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
-      if (retryAfterSec) {
-        this.startResendCooldown(retryAfterSec);
-      } else {
-        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
-      }
-    } finally {
-      this.resending.set(false);
-    }
-  }
-
-  private clearCountdown() {
-    if (this._countdownInterval !== null) {
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-    }
-  }
-
-  private clearResendCooldown() {
-    if (this._resendCooldownInterval !== null) {
-      clearInterval(this._resendCooldownInterval);
-      this._resendCooldownInterval = null;
-    }
-  }
-
-  private startResendCooldown(seconds: number) {
-    this.clearResendCooldown();
-    this.resendCooldownSeconds.set(seconds);
-    this._resendCooldownInterval = setInterval(() => {
-      const current = this.resendCooldownSeconds();
-      if (current <= 1) {
-        this.resendCooldownSeconds.set(0);
-        this.clearResendCooldown();
-      } else {
-        this.resendCooldownSeconds.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-
-  private handleError(err: unknown, emailVal?: string) {
-    const tRPCData = getTRPCData(err);
-    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
-    const retryAfterSec =
-      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
-      this.parseRetryAfterSec(message);
-    if (retryAfterSec) {
-      this.startRateLimitCountdown(retryAfterSec);
-      return;
-    }
-    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
-    if (emailVal && message.toLowerCase().includes('not verified')) {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      this.alertSvc.showError(message);
-    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
-    } else {
-      this.alertSvc.showError(message);
-    }
-  }
-
-  private parseRetryAfterSec(message: string): number | undefined {
-    const match = message?.match(/retry in (\d+) second/i);
-    return match ? parseInt(match[1]!, 10) : undefined;
-  }
-
-  private startRateLimitCountdown(seconds: number) {
-    this.clearCountdown();
-    this.rateLimitSecondsLeft.set(seconds);
-
-    this._countdownInterval = setInterval(() => {
-      const current = this.rateLimitSecondsLeft();
-      if (current < 1) {
-        this.clearCountdown();
-      } else {
-        this.rateLimitSecondsLeft.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-}
-
-export function emailSafeValidator(): ValidatorFn {
-  return (control: AbstractControl) => {
-    const v = (control.value ?? '').toString().trim();
-    return v && EMAIL_SAFE.test(v) ? null : { email: true };
-  };
-}
-
-const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
-function getTRPCData(err: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(err)) return undefined;
-  const originalError = err['originalError'];
-  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
-  return isRecord(err['data']) ? err['data'] : undefined;
 }
 ```
 
@@ -51565,6 +50884,769 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
+
+```html
+<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle()">
+  @if (displayTitle()) {
+  <pc-grid-header
+    [title]="displayTitle()!"
+    [open]="showDescription()"
+    [description]="description() || ''"
+    [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
+    [filtered]="anyFilterActive()"
+  ></pc-grid-header>
+  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
+  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
+  <div class="mb-2 flex flex-wrap items-center gap-2">
+    <div class="join border border-base-300 rounded-lg">
+      @for (opt of narrowTypeOptions(); track opt.label) {
+      <button
+        type="button"
+        class="btn btn-sm join-item border-0 font-normal gap-1.5"
+        [class.btn-primary]="selectedNarrowType() === opt.value"
+        [class.btn-ghost]="selectedNarrowType() !== opt.value"
+        (click)="selectNarrowType(opt.value)"
+      >
+        {{ opt.label }} @if (opt.count != null) {
+        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
+        }
+      </button>
+      }
+    </div>
+  </div>
+  } @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (filterChips().length) {
+  <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
+    <span
+      class="font-semibold uppercase tracking-wider text-base-content/50"
+      i18n="Datagrid|Label preceding the active filter chips@@datagrid.chips.label"
+      >Filters</span
+    >
+    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
+    <span class="badge badge-outline gap-1 border-primary/30 bg-primary/10 text-primary">
+      @if (chip.kind === 'advanced') {
+      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
+      } @else { {{ chip.label }} }
+      <button
+        type="button"
+        class="opacity-70 hover:opacity-100"
+        [attr.aria-label]="'Remove filter: ' + chip.label"
+        (click)="removeFilterChip(chip)"
+      >
+        <pc-icon name="x-mark" [size]="3"></pc-icon>
+      </button>
+    </span>
+    }
+    <span class="flex-1"></span>
+    <button
+      type="button"
+      class="link text-primary hover:no-underline"
+      (click)="clearAllFilters()"
+      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
+    >
+      Clear all
+    </button>
+  </div>
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
+      >All {{ displayedCount() }} rows on this page are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="selectAllMatching()"
+      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
+      >Select all {{ totalCountAll() }} rows</a
+    >
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
+      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="clearAllSelection()"
+      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
+      >Clear selection</a
+    >
+  </div>
+  } @if (hasSelectionState()) {
+  <!-- Bulk action bar: appears on any selection (§2) -->
+  <div
+    class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm"
+  >
+    <span class="font-semibold tabular-nums"
+      >{{ getCountRowSelected() }}
+      <ng-container i18n="Datagrid|Bulk bar selected-count suffix@@datagrid.bulk.selected">selected</ng-container></span
+    >
+    <span class="mx-1 h-4 w-px bg-base-300"></span>
+
+    @if (bulkTagOpen()) {
+    <input
+      type="text"
+      class="input input-bordered input-xs w-40"
+      placeholder="Tag name"
+      i18n-placeholder="@@datagrid.bulk.tagPlaceholder"
+      [ngModel]="bulkTagValue()"
+      (ngModelChange)="bulkTagValue.set($event)"
+      (keydown.enter)="applyBulkTag()"
+      (keydown.escape)="cancelBulkTag()"
+      autofocus
+    />
+    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
+      <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
+    </button>
+    <button class="btn btn-ghost btn-xs" (click)="cancelBulkTag()">
+      <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
+    </button>
+    } @else {
+    <button class="btn btn-ghost btn-sm gap-1.5" (click)="openBulkTag()">
+      <pc-icon name="label" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk add-tag action@@datagrid.bulk.tag">Add tag</ng-container>
+    </button>
+    @if (!disableExport()) {
+    <button class="btn btn-ghost btn-sm gap-1.5" (click)="doConfirmExport()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk export action@@datagrid.bulk.export">Export</ng-container>
+    </button>
+    } @if (!disableMerge()) {
+    <button
+      class="btn btn-ghost btn-sm gap-1.5"
+      [disabled]="getCountRowSelected() !== 2"
+      [title]="
+        getCountRowSelected() === 2
+          ? 'Merge 2 ' + entityNounPlural
+          : 'Select exactly 2 ' + entityNounPlural + ' to merge — ' + getCountRowSelected() + ' selected'
+      "
+      (click)="doConfirmMerge()"
+    >
+      <pc-icon name="merge" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk merge action@@datagrid.bulk.merge">Merge</ng-container>
+    </button>
+    } @if (!!addRoute()) {
+    <button
+      class="btn btn-ghost btn-sm gap-1.5"
+      [disabled]="!hasSingleSelection()"
+      [title]="
+        hasSingleSelection()
+          ? 'Clone this ' + entityNoun
+          : 'Select exactly 1 ' + entityNoun + ' to clone — ' + getCountRowSelected() + ' selected'
+      "
+      (click)="doClone()"
+    >
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk clone action@@datagrid.bulk.clone">Clone</ng-container>
+    </button>
+    }
+    <span class="flex-1"></span>
+    @if (!disableDelete()) {
+    <button class="btn btn-outline btn-error btn-sm gap-1.5" (click)="doConfirmDelete()">
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk delete action@@datagrid.bulk.delete">Delete</ng-container>
+      {{ getCountRowSelected() }} {{ nounFor(getCountRowSelected()) }}
+    </button>
+    } }
+  </div>
+  }
+  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
+    <table #gridTable class="table w-full">
+      <thead>
+        <tr>
+          @if (enableSelection()) {
+          <th
+            class="border-r border-base-300 pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id) {
+          <th
+            role="columnheader"
+            class="cursor-grab border-r border-base-300 pl-2 relative"
+            [attr.data-col-id]="h.column.id"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="columnWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
+          >
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+                {{ h.column.columnDef.header || h.column.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label
+                  tabindex="0"
+                  class="btn btn-xs"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li>
+                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
+                          >Sort asc</a
+                        >
+                      </li>
+                      <li>
+                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
+                          >Sort desc</a
+                        >
+                      </li>
+                      <li>
+                        <a
+                          (click)="clearSort(h)"
+                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
+                          >Clear sort</a
+                        >
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
+                        >Column</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (!col?.noHide) {
+                      <li>
+                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
+                          >Hide</a
+                        >
+                      </li>
+                      }
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
+                            >Columns</span
+                          ><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li>
+                            <a (click)="showColumnById(cid)"
+                              ><ng-container
+                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
+                                >Show</ng-container
+                              >
+                              {{ columnLabelFor(cid) }}</a
+                            >
+                          </li>
+                          } @if (!hiddenColumns().length) {
+                          <li
+                            class="opacity-60 px-2 py-1"
+                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
+                          >
+                            None hidden
+                          </li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+              <span
+                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
+                [pcHeaderResize]="headerResizeConfig(h)"
+              ></span>
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody class="bg-base-100">
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+              <button
+                type="button"
+                class="btn btn-outline btn-sm mt-1"
+                (click)="clearAllFilters()"
+                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
+              >
+                Clear all filters
+              </button>
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Add your first record using the + button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          class="group hover:bg-base-300"
+          [class.cursor-pointer]="rowNavigatesToDetail()"
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
+          @if (enableSelection()) {
+          <td
+            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
+              <span
+                title="Open detail"
+                i18n-title="@@datagrid.rows.openDetailTitle"
+                aria-label="Open detail"
+                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
+                (click)="openEdit(rowId); $event.stopPropagation();"
+              >
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
+                ></pc-icon>
+              </span>
+              }
+            </div>
+          </td>
+          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
+          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
+          === col.field;
+          <td
+            [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            (click)="handleCellClick(r.original, col)"
+            (dblclick)="handleCellDblClick(r.original, col)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            class="min-w-0 px-2 border-r border-base-300 relative"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
+            [attr.data-col-id]="cell.column.id"
+            [style.width.px]="columnWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
+          >
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
+                  [ngModel]="tagSearch()"
+                  (ngModelChange)="tagSearch.set($event)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2 italic">
+                  @if (tagSearch()) {
+                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
+                    >No tags match "{{ tagSearch() }}"</ng-container
+                  >
+                  } @else {
+                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
+                    >No tags available</ng-container
+                  >
+                  }
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              [ngModel]="editingValue()"
+              (ngModelChange)="onSelectChange(r.original, col, $event)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            ></textarea>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
+            <pc-tags
+              [tags]="tagList"
+              [type]="tagTypeFor(col)"
+              [readonly]="true"
+              [canDelete]="false"
+              [compact]="true"
+              [limit]="2"
+              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
+            ></pc-tags>
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) {
+            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
+            @if (rawValue) {
+            <span
+              class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
+              >{{ rawValue }}</span
+            >
+            } @else {
+            <span
+              class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
+              i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
+              >Unnamed person</span
+            >
+            } } @else if (col.field === 'address') {
+            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
+              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
+            </div>
+            } @else {
+            <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
+              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
+              }
+            </span>
+            } } }
+          </td>
+          } }
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
+    <div class="flex items-center gap-2 whitespace-nowrap">
+      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+        >Page Size:</span
+      >
+      <select
+        class="select select-bordered select-xs"
+        [ngModel]="pageSize()"
+        (ngModelChange)="onPageSizeChange($event)"
+      >
+        @if (![25,50,100].includes(pageSize())) {
+        <option [value]="pageSize()">{{ pageSize() }}</option>
+        } @for (opt of pageSizeChoices(); track opt) {
+        <option [value]="opt">{{ opt }}</option>
+        }
+      </select>
+    </div>
+    <div
+      class="whitespace-nowrap tabular-nums"
+      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
+    >
+      <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
+        >{{ displayEndIndex() }}</span
+      >
+      of <span class="font-normal">{{ totalCountAll() }}</span> · Page
+      <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
+    </div>
+    <div class="join whitespace-nowrap">
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
+        [disabled]="!canPrev()"
+        (click)="firstPage()"
+      >
+        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
+        [disabled]="!canPrev()"
+        (click)="prevPage()"
+      >
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        [title]="canNext() ? nextPageTitle : onLastPageTitle"
+        [disabled]="!canNext()"
+        (click)="nextPage()"
+      >
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        [title]="canNext() ? lastPageTitle : onLastPageTitle"
+        [disabled]="!canNext()"
+        (click)="lastPage()"
+      >
+        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Right-side Filter Panel -->
+@if (showFilterPanel()) {
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
+  (closePanel)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
+/>
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
+  <div
+    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
+  >
+    <div class="flex justify-between items-center pb-4 border-b border-base-200">
+      <div>
+        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
+          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
+          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+            >Advanced Filter Builder</ng-container
+          >
+        </h3>
+        <p
+          class="text-xs text-neutral-400 mt-1"
+          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
+        >
+          Build complex matching rules with custom operators and conjunction logic.
+        </p>
+      </div>
+      <button
+        class="btn btn-ghost btn-circle btn-sm"
+        (click)="showAdvancedFilterBuilder.set(false)"
+        aria-label="Close modal"
+        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
+      >
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <!-- Scrollable Body containing the rules -->
+    <div class="flex-1 overflow-y-auto py-6">
+      <pc-query-builder
+        [group]="advFilterRoot()"
+        [fields]="advancedFilterFields()"
+        [tagSvc]="tagsSvc ?? undefined"
+        [showSummary]="true"
+        (changed)="onAdvancedFilterChanged()"
+      ></pc-query-builder>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex justify-between items-center pt-4 border-t border-base-200">
+      <button
+        class="btn btn-outline btn-error btn-sm"
+        (click)="clearAdvancedFilter()"
+        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+      >
+        Clear Filters
+      </button>
+      <div class="flex gap-2">
+        <button
+          class="btn btn-ghost btn-sm"
+          (click)="showAdvancedFilterBuilder.set(false)"
+          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary btn-sm px-6"
+          (click)="applyAdvancedFilter()"
+          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
 
 ```typescript
@@ -51835,13 +51917,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       chips.push({ kind: 'narrow', key: narrow, label: `Type: ${option?.label ?? narrow}` });
     } else {
       // Tags chosen via a narrow-type preset are represented by the narrow chip alone.
-      for (const tag of this.selectedTags()) {
-        chips.push({ kind: 'tag', key: tag, label: `Tag: ${tag}` });
+      // Selected tags combine with OR and land as a single removable chip (§2).
+      const tags = this.selectedTags();
+      if (tags.length) {
+        chips.push({ kind: 'tag', key: 'tags', label: `Tags: any of ${tags.join(', ')}` });
       }
     }
 
-    for (const issue of this.selectedIssues()) {
-      chips.push({ kind: 'issue', key: issue, label: `Issue: ${issue}` });
+    // Selected issues combine with OR and land as a single removable chip (§2).
+    const issues = this.selectedIssues();
+    if (issues.length) {
+      chips.push({ kind: 'issue', key: 'issues', label: `Issues: any of ${issues.join(', ')}` });
     }
 
     const listId = this.selectedListId();
@@ -51871,10 +51957,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.selectNarrowType(null);
         break;
       case 'tag':
-        this.toggleTagFilter(chip.key, false);
+        // One chip represents all OR-ed tags — clear them together.
+        this.clearTagsFilter();
         break;
       case 'issue':
-        this.toggleIssueFilter(chip.key, false);
+        this.clearIssuesFilter();
         break;
       case 'list':
         this.clearListFilter();
@@ -51925,6 +52012,46 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly hasSingleSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() === 1 : this.selectedIdSet().size === 1,
   );
+
+  // Entity noun for selection/bulk-bar copy (e.g. "person"/"people"); defaults to row/rows.
+  public readonly entityNoun = this.config.messages.entityNoun ?? 'row';
+  public readonly entityNounPlural = this.config.messages.entityNounPlural ?? 'rows';
+  public nounFor(n: number): string {
+    return n === 1 ? this.entityNoun : this.entityNounPlural;
+  }
+
+  // Bulk "Add tag" — an inline field in the bulk action bar (§2).
+  public readonly bulkTagOpen = signal(false);
+  public readonly bulkTagValue = signal('');
+  public openBulkTag(): void {
+    this.bulkTagValue.set('');
+    this.bulkTagOpen.set(true);
+  }
+  public cancelBulkTag(): void {
+    this.bulkTagOpen.set(false);
+    this.bulkTagValue.set('');
+  }
+  public async applyBulkTag(): Promise<void> {
+    const tag = this.bulkTagValue().trim();
+    if (!tag) return;
+    const ids = this.getSelectedRows()
+      .map((r) => String((r as { id?: unknown }).id ?? ''))
+      .filter(Boolean);
+    if (!ids.length) return;
+    try {
+      for (const id of ids) {
+        await this.gridSvc.attachTag(id, tag, 'tag');
+      }
+      // Toast repeats the scale (§2 / §7.5).
+      this.alertSvc.showSuccess(`Added ${tag} to ${ids.length} ${this.nounFor(ids.length)}.`);
+      this.cancelBulkTag();
+      void this.dgTagOptionsSvc.invalidate('tag');
+      await this.loadPage(this.pageIndex());
+    } catch (err) {
+      console.error('Bulk tag failed', err);
+      this.alertSvc.showError(`Could not add "${tag}" to all selected ${this.entityNounPlural}.`);
+    }
+  }
 
   // Display range helpers (1-based)
   protected readonly displayStartIndex = computed(() => {
