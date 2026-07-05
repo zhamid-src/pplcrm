@@ -35,6 +35,9 @@ const envSchema = z.object({
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
   WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
+  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public form pages resolve
+  // the tenant from the Host header against this. Dev default is 'localhost' so `<slug>.localhost` works.
+  PUBLIC_FORMS_BASE_DOMAIN: z.string().optional().default('localhost'),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -52,6 +55,7 @@ export const env = {
   },
   apiUrl: parsedEnv.API_URL,
   appUrl: parsedEnv.APP_URL,
+  publicFormsBaseDomain: parsedEnv.PUBLIC_FORMS_BASE_DOMAIN,
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,
   msClientSecret: parsedEnv.MS_CLIENT_SECRET,

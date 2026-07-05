@@ -59,10 +59,17 @@ grid + form-editor model is gone; `forms-grid.ts` and `form-editor.ts` were dele
 - **`status` mapping.** The legacy add/update path accepts `active` and maps it to `published`
   (`mapLegacyStatus`), because the fundraising UI still sends `active`. The DB CHECK only allows
   `draft|published|archived`; the column default is `draft`.
-- **Public `/f/:slug` is cross-tenant by design.** Slug is unique **per tenant**, but the public URL
-  carries no tenant. `getBySlugAnyTenant` queries without a tenant scope and carries a justified
-  `// eslint-disable-next-line local/no-unscoped-db-query` — a public form page is inherently
-  cross-tenant and leaks no other tenant data. Don't "fix" it by adding a tenant filter.
+- **Public `/f/:slug` resolves the tenant from the subdomain, then scopes the form lookup.** Form slug
+  is unique **per tenant**; the tenant is identified by the Host (`<tenantSlug>.<baseDomain>`, base from
+  `env.publicFormsBaseDomain` / `environment.publicFormsBaseDomain`, default `localhost` in dev). The
+  route reads `?t=<tenantSlug>` (the SPA passes its own subdomain — robust across hosts) or falls back
+  to `tenantSlugFromHost(req.hostname)`, resolves it via `getTenantIdBySlug` (the `tenants` table is
+  tenant-safety allow-listed), then calls the **tenant-scoped** `getBySlugPublic(tenantId, slug)`. There
+  is no cross-tenant form query — do not reintroduce one. Tenant slugs are DNS-safe, globally unique,
+  generated at signup (`createTenant` → `generateTenantSlug`, `@common/slugifyHandle` +
+  `RESERVED_SUBDOMAINS`), exposed to the SPA via `currentUser.tenant_slug`, and used to build the
+  public URL in `forms-page` (`https://<tenantSlug>.<baseDomain>/f/<formSlug>`). Ships behind wildcard
+  DNS + cert; in dev, `<slug>.localhost` works in Chrome.
 - **`full_name` split.** New forms collect one `full_name`; `submitFormPublic` splits it on the last
   space into first/last so the person record still gets a name. The person model has no full_name.
 - **Live edit has no Save.** `forms-page` debounces `forms.updateLive`; every control mutates

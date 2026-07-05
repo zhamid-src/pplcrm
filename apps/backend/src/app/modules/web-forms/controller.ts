@@ -816,8 +816,8 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
    * plus the org name; closed (unpublished/archived) forms return a status the page shows as a
    * "closed" card. Throws NOT_FOUND when the slug doesn't exist at all.
    */
-  public async getPublicFormBySlug(slug: string) {
-    const form = await this.getRepo().getBySlugAnyTenant(slug);
+  public async getPublicFormBySlug(slug: string, tenantId: string) {
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
     if (!form) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
     }
@@ -849,6 +849,11 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         fields: normalized.fields.filter((f) => f.on),
       },
     };
+  }
+
+  /** Resolve a tenant id from its public subdomain slug (for the /f/:slug page). */
+  public resolveTenantIdBySlug(tenantSlug: string): Promise<string | null> {
+    return this.getRepo().getTenantIdBySlug(tenantSlug);
   }
 
   private async getOrgName(tenantId: string): Promise<string> {

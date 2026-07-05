@@ -176,7 +176,9 @@ export class PublicFormComponent implements OnInit {
       return;
     }
     try {
-      const res = await fetch(`${this.apiBase()}/api/forms/f/${encodeURIComponent(slug)}`);
+      const tenant = this.tenantFromHost();
+      const query = tenant ? `?t=${encodeURIComponent(tenant)}` : '';
+      const res = await fetch(`${this.apiBase()}/api/forms/f/${encodeURIComponent(slug)}${query}`);
       if (res.status === 404) {
         this.state.set('notfound');
         return;
@@ -265,5 +267,17 @@ export class PublicFormComponent implements OnInit {
 
   private apiBase(): string {
     return environment.apiUrl.replace(/\/$/, '');
+  }
+
+  /** The tenant subdomain the public page is being served on (`riverton.mydomain.com` → `riverton`). */
+  private tenantFromHost(): string | null {
+    const host = window.location.hostname.toLowerCase();
+    const base = environment.publicFormsBaseDomain.toLowerCase();
+    if (!host || host === base) return null;
+    const suffix = `.${base}`;
+    if (!host.endsWith(suffix)) return null;
+    const label = host.slice(0, -suffix.length);
+    if (!label || label.includes('.')) return null;
+    return label;
   }
 }

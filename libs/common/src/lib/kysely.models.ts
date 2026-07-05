@@ -402,6 +402,7 @@ export interface Tasks extends RecordType {
 
 interface Tenants extends RecordType, AddressType {
   name: string;
+  slug: string | null;
   admin_id: string | null;
   email: string | null;
   email2: string | null;

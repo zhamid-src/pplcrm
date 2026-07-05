@@ -1,11 +1,30 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { WebFormsController } from '../controller';
 import formBody from '@fastify/formbody';
+import { RESERVED_SUBDOMAINS } from '../../../../../../../libs/common/src';
+import { env } from '../../../../env';
 
 const webFormsController = new WebFormsController();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/**
+ * Extract a tenant subdomain label from a request Host. `riverton.mydomain.com` → `riverton` when the
+ * base domain is `mydomain.com`. Returns null for the bare/app host, reserved labels, or a mismatch.
+ */
+function tenantSlugFromHost(hostname: string | undefined): string | null {
+  if (!hostname) return null;
+  const host = hostname.split(':')[0]?.toLowerCase();
+  const base = env.publicFormsBaseDomain.toLowerCase();
+  if (!host || host === base) return null;
+  const suffix = `.${base}`;
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  // Only a single left-most label maps to a tenant (no nested subdomains).
+  if (!label || label.includes('.') || RESERVED_SUBDOMAINS.has(label)) return null;
+  return label;
 }
 
 function escapeHtml(s: string): string {
@@ -458,20 +477,25 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     return reply.send(SUCCESS_HTML);
   });
 
-  // JSON config for the SPA public page (/f/:slug). Published forms return their render config;
-  // unpublished/archived slugs return a "closed" status; unknown slugs 404.
+  // JSON config for the SPA public page (/f/:slug). The tenant is identified by its subdomain — from
+  // the explicit `?t=` param (the SPA passes its own subdomain, robust across hosts) or the Host
+  // header. Published forms return their render config; unpublished/archived slugs return a "closed"
+  // status; unknown tenant/slug 404s.
   fastify.get('/f/:slug', async (req: any, reply) => {
     const { slug } = req.params;
     try {
-      const result = await webFormsController.getPublicFormBySlug(String(slug));
+      const tenantSlug = (typeof req.query?.t === 'string' && req.query.t.trim()) || tenantSlugFromHost(req.hostname);
+      if (!tenantSlug) {
+        return reply.status(404).send({ error: 'Form not found.' });
+      }
+      const tenantId = await webFormsController.resolveTenantIdBySlug(tenantSlug);
+      if (!tenantId) {
+        return reply.status(404).send({ error: 'Form not found.' });
+      }
+      const result = await webFormsController.getPublicFormBySlug(String(slug), tenantId);
       return reply.status(200).send(result);
     } catch (err) {
-      const statusCode =
-        isRecord(err) && typeof err['statusCode'] === 'number'
-          ? err['statusCode']
-          : err && (err as any).code === 'NOT_FOUND'
-            ? 404
-            : 500;
+      const statusCode = isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : 404;
       return reply.status(statusCode).send({ error: 'Form not found.' });
     }
   });

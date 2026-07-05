@@ -530,18 +530,45 @@ describe('WebFormsController lifecycle', () => {
   it('serves a published form by slug and shows unpublished ones as closed', async () => {
     const form = await controller.createForm({ name: 'Public slug demo', type: 'signup' }, auth() as any);
 
-    const asDraft = await controller.getPublicFormBySlug(form.slug!);
+    const asDraft = await controller.getPublicFormBySlug(form.slug!, tenantId);
     expect(asDraft.status).toBe('closed');
 
     await controller.publishForm(form.id, auth() as any);
-    const asPublished = await controller.getPublicFormBySlug(form.slug!);
+    const asPublished = await controller.getPublicFormBySlug(form.slug!, tenantId);
     expect(asPublished.status).toBe('open');
     if (asPublished.status === 'open') {
       expect(asPublished.form.fields.every((f) => f.on)).toBe(true);
       expect(asPublished.form.fields.some((f) => f.key === 'email')).toBe(true);
     }
 
-    await expect(controller.getPublicFormBySlug('no-such-slug-xyz')).rejects.toThrow();
+    await expect(controller.getPublicFormBySlug('no-such-slug-xyz', tenantId)).rejects.toThrow();
+  });
+
+  it('resolves the same slug to the right tenant (no cross-tenant misrouting)', async () => {
+    const seedB = await createTestSeed(db);
+    const authB = { tenant_id: seedB.tenantId, user_id: seedB.userId, session_id: 'session-b', name: 'B' };
+    try {
+      const a = await controller.createForm({ name: 'Volunteer signup', type: 'signup' }, auth() as any);
+      const b = await controller.createForm({ name: 'Volunteer signup', type: 'signup' }, authB as any);
+      expect(a.slug).toBe('volunteer-signup');
+      expect(b.slug).toBe('volunteer-signup'); // same slug in a different tenant is allowed
+
+      await controller.publishForm(a.id, auth() as any);
+      await controller.publishForm(b.id, authB as any);
+
+      const ra = await controller.getPublicFormBySlug('volunteer-signup', tenantId);
+      const rb = await controller.getPublicFormBySlug('volunteer-signup', seedB.tenantId);
+      expect(ra.status).toBe('open');
+      expect(rb.status).toBe('open');
+      if (ra.status === 'open' && rb.status === 'open') {
+        expect(ra.form.id).toBe(a.id);
+        expect(rb.form.id).toBe(b.id);
+        expect(ra.form.id).not.toBe(rb.form.id);
+      }
+    } finally {
+      await db.deleteFrom('form_submissions').where('tenant_id', '=', seedB.tenantId).execute();
+      await cleanTenant(db, seedB.tenantId);
+    }
   });
 
   it('excludes donation forms from listForms', async () => {
