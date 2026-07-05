@@ -31,7 +31,15 @@ import { FormActions } from '../form-actions/form-actions';
             @if (eyebrow()) {
               <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">{{ eyebrow() }}</p>
             }
-            <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
+            <div class="flex min-w-0 items-center gap-2">
+              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
+              @if (statusChip()) {
+                <span
+                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
+                  >{{ statusChip() }}</span
+                >
+              }
+            </div>
             @if (dirtyFieldCount() > 0) {
               <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
                 <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
@@ -98,6 +106,8 @@ export class DetailHeader {
   /** §4: keep the primary button enabled regardless of validity/dirtiness. */
   public saveAlwaysEnabled = input<boolean>(false);
   public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
+  public statusChip = input<string | null>(null);
   public form = input<any>();
   public icon = input<PcIconNameType | null | undefined>();
   public iconSize = input<number>(5);
