@@ -475,6 +475,36 @@ export class PersonView {
     }
   }
 
+  /** Export the contact as a downloadable vCard (§3 overflow) — fully client-side. */
+  protected exportVCard(): void {
+    const p = this.person();
+    if (!p) return;
+    const esc = (v: unknown) => String(v ?? '').replace(/([,;\\])/g, '\\$1');
+    const lines = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `N:${esc(p.last_name)};${esc(p.first_name)};${esc(p.middle_names)};;`,
+      `FN:${esc(this.fullName())}`,
+    ];
+    if (p.company_name) lines.push(`ORG:${esc(p.company_name)}`);
+    if (p.email) lines.push(`EMAIL;TYPE=INTERNET,PREF:${esc(p.email)}`);
+    if (p.email2) lines.push(`EMAIL;TYPE=INTERNET:${esc(p.email2)}`);
+    if (p.mobile) lines.push(`TEL;TYPE=CELL:${esc(p.mobile)}`);
+    if (p.home_phone) lines.push(`TEL;TYPE=HOME:${esc(p.home_phone)}`);
+    const addr = this.addressString();
+    if (addr && addr !== 'No Address Assigned') lines.push(`ADR;TYPE=HOME:;;${esc(addr)};;;;`);
+    lines.push('END:VCARD');
+
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/vcard;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${this.fullName() || 'contact'}.vcf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    this.alertSvc.showSuccess(`Exported ${this.fullName()} as a vCard.`);
+  }
+
   private getFormattedAddress(address: AddressType): string {
     const parts: string[] = [];
     const streetParts = [

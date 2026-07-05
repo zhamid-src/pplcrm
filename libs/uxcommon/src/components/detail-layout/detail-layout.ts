@@ -41,6 +41,7 @@ import { DetailHeader } from '../detail-header/detail-header';
         >
           <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
           <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
+          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
         </pc-detail-header>
 
         <!-- Body/Content Area -->
