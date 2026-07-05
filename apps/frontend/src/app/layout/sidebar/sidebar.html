@@ -28,13 +28,11 @@
   class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex hover:md:w-44 transition-all duration-50"
   [class.hidden]="!this.isMobileOpen()"
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-18]="isEffectivelyNarrow() && !this.isMobileOpen()"
+  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
 >
   <a
     [class.hidden]="isEffectivelyNarrow()"
     class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1 group-hover:md:block"
-    routerLink="/summary"
-    aria-label="Go to dashboard"
     i18n-aria-label="@@sidebar.logoHomeAriaLabel"
     (click)="this.closeMobile()"
   >
@@ -53,15 +51,16 @@
   </a>
 
   @for (item of items(); track item.name) {
-  <div class="flex-none pl-2" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
     @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
     <div
       class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
       (click)="toggleCollapse(item.name)"
     >
-      <span [class.text-[10px]]="isEffectivelyNarrow() && !hoveringSidebar()">
-        @if (isEffectivelyNarrow() && !hoveringSidebar()) { {{ item.short_name || item.name }} } @else { {{ item.name }}
-        }
+      <span class="flex-1 min-w-0">
+        @if (isEffectivelyNarrow() && !hoveringSidebar() ) { @if (!isCollapsed(item.name)) {
+        <hr class="text-neutral w-6" />
+        } } @else { {{ item.name }} }
       </span>
       @if (item.children?.length) {
       <pc-swap

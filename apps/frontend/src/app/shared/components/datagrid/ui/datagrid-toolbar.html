@@ -164,27 +164,7 @@
 <!-- Desktop toolbar -->
 <ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
   <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!!grid.addRoute() && grid.hasSingleSelection()"
-    [tip]="'Clone'"
-    icon="document-duplicate"
-    [hidden]="!grid.addRoute()"
-    (action)="onClone()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  @if (!grid.disableMerge()) {
-  <pc-grid-tool-btn
-    [enabled]="grid.getCountRowSelected() === 2"
-    [tip]="'Merge selected rows'"
-    icon="merge"
-    (action)="onMergeSelected()"
-  />
-  }
+  <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
 
   <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
 
@@ -239,6 +219,12 @@
         (clearVisible)="grid.clearAllTagsVisible()"
         (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
       />
+      <p
+        class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+        i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
+      >
+        Checked tags combine with OR and land as one chip.
+      </p>
     </pc-dg-filter-dropdown>
   </pc-grid-tool-btn>
   } @if (grid.showIssueFilter()) {
@@ -265,6 +251,12 @@
         (clearVisible)="grid.clearAllIssuesVisible()"
         (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
       />
+      <p
+        class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+        i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
+      >
+        Checked issues combine with OR and land as one chip.
+      </p>
     </pc-dg-filter-dropdown>
   </pc-grid-tool-btn>
   } @if (grid.showListFilter()) {

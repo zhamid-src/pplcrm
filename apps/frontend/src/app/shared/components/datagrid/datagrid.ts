@@ -265,13 +265,17 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       chips.push({ kind: 'narrow', key: narrow, label: `Type: ${option?.label ?? narrow}` });
     } else {
       // Tags chosen via a narrow-type preset are represented by the narrow chip alone.
-      for (const tag of this.selectedTags()) {
-        chips.push({ kind: 'tag', key: tag, label: `Tag: ${tag}` });
+      // Selected tags combine with OR and land as a single removable chip (§2).
+      const tags = this.selectedTags();
+      if (tags.length) {
+        chips.push({ kind: 'tag', key: 'tags', label: `Tags: any of ${tags.join(', ')}` });
       }
     }
 
-    for (const issue of this.selectedIssues()) {
-      chips.push({ kind: 'issue', key: issue, label: `Issue: ${issue}` });
+    // Selected issues combine with OR and land as a single removable chip (§2).
+    const issues = this.selectedIssues();
+    if (issues.length) {
+      chips.push({ kind: 'issue', key: 'issues', label: `Issues: any of ${issues.join(', ')}` });
     }
 
     const listId = this.selectedListId();
@@ -301,10 +305,11 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
         this.selectNarrowType(null);
         break;
       case 'tag':
-        this.toggleTagFilter(chip.key, false);
+        // One chip represents all OR-ed tags — clear them together.
+        this.clearTagsFilter();
         break;
       case 'issue':
-        this.toggleIssueFilter(chip.key, false);
+        this.clearIssuesFilter();
         break;
       case 'list':
         this.clearListFilter();
@@ -355,6 +360,46 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public readonly hasSingleSelection = computed(() =>
     this.allSelected() ? this.allSelectedCount() === 1 : this.selectedIdSet().size === 1,
   );
+
+  // Entity noun for selection/bulk-bar copy (e.g. "person"/"people"); defaults to row/rows.
+  public readonly entityNoun = this.config.messages.entityNoun ?? 'row';
+  public readonly entityNounPlural = this.config.messages.entityNounPlural ?? 'rows';
+  public nounFor(n: number): string {
+    return n === 1 ? this.entityNoun : this.entityNounPlural;
+  }
+
+  // Bulk "Add tag" — an inline field in the bulk action bar (§2).
+  public readonly bulkTagOpen = signal(false);
+  public readonly bulkTagValue = signal('');
+  public openBulkTag(): void {
+    this.bulkTagValue.set('');
+    this.bulkTagOpen.set(true);
+  }
+  public cancelBulkTag(): void {
+    this.bulkTagOpen.set(false);
+    this.bulkTagValue.set('');
+  }
+  public async applyBulkTag(): Promise<void> {
+    const tag = this.bulkTagValue().trim();
+    if (!tag) return;
+    const ids = this.getSelectedRows()
+      .map((r) => String((r as { id?: unknown }).id ?? ''))
+      .filter(Boolean);
+    if (!ids.length) return;
+    try {
+      for (const id of ids) {
+        await this.gridSvc.attachTag(id, tag, 'tag');
+      }
+      // Toast repeats the scale (§2 / §7.5).
+      this.alertSvc.showSuccess(`Added ${tag} to ${ids.length} ${this.nounFor(ids.length)}.`);
+      this.cancelBulkTag();
+      void this.dgTagOptionsSvc.invalidate('tag');
+      await this.loadPage(this.pageIndex());
+    } catch (err) {
+      console.error('Bulk tag failed', err);
+      this.alertSvc.showError(`Could not add "${tag}" to all selected ${this.entityNounPlural}.`);
+    }
+  }
 
   // Display range helpers (1-based)
   protected readonly displayStartIndex = computed(() => {
