@@ -55,6 +55,7 @@ apps/
           2026-06-27-person-opt-in.ts
           2026-07-05-person-preferred-contact.ts
           2026-07-05-web-forms-lifecycle.ts
+          2026-07-06-tenant-slug.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -341,6 +342,116 @@ apps/
 ```
 
 # Files
+
+## File: apps/backend/src/app/\_migrations/2026-07-06-tenant-slug.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Adds a globally-unique, DNS-safe `slug` to tenants — the subdomain label that identifies a tenant
+ * on a shared domain (`<slug>.<baseDomain>`), so the public form page can resolve the tenant from the
+ * Host header instead of guessing from a per-tenant form slug.
+ *
+ * Backfill: slugify the tenant name; fall back to `t-<id>` when the name yields nothing usable or
+ * collides with a reserved label; de-duplicate collisions with a numeric suffix by id order.
+ */
+const RESERVED = [
+  'app',
+  'www',
+  'api',
+  'admin',
+  'mail',
+  'email',
+  'ftp',
+  'smtp',
+  'imap',
+  'pop',
+  'ns',
+  'ns1',
+  'ns2',
+  'dns',
+  'mx',
+  'static',
+  'assets',
+  'cdn',
+  'media',
+  'files',
+  'download',
+  'downloads',
+  'status',
+  'help',
+  'support',
+  'docs',
+  'blog',
+  'dev',
+  'staging',
+  'stage',
+  'test',
+  'demo',
+  'sandbox',
+  'portal',
+  'dashboard',
+  'account',
+  'accounts',
+  'billing',
+  'pay',
+  'payments',
+  'auth',
+  'login',
+  'logout',
+  'signup',
+  'signin',
+  'register',
+  'public',
+  'forms',
+  'f',
+  'localhost',
+  'root',
+  'system',
+];
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS slug text`.execute(db);
+
+  await sql`
+    WITH slugged AS (
+      SELECT
+        id,
+        CASE
+          WHEN base = '' OR base = ANY(${sql.val(RESERVED)}::text[]) THEN 't-' || id::text
+          ELSE base
+        END AS candidate
+      FROM (
+        SELECT
+          id,
+          regexp_replace(regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g'), '(^-+|-+$)', '', 'g') AS base
+        FROM public.tenants
+        WHERE slug IS NULL
+      ) s
+    ),
+    numbered AS (
+      SELECT id, candidate,
+        row_number() OVER (PARTITION BY candidate ORDER BY id) AS rn
+      FROM slugged
+    )
+    UPDATE public.tenants t
+    SET slug = CASE WHEN n.rn = 1 THEN n.candidate ELSE n.candidate || '-' || n.rn END
+    FROM numbered n
+    WHERE t.id = n.id
+  `.execute(db);
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_slug ON public.tenants (slug) WHERE slug IS NOT NULL
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP INDEX IF EXISTS public.idx_tenants_slug`.execute(db);
+  await sql`ALTER TABLE public.tenants DROP COLUMN IF EXISTS slug`.execute(db);
+}
+```
 
 ## File: apps/backend/src/app/lib/gis/boundaries.geojson
 
@@ -2339,6 +2450,9 @@ const envSchema = z.object({
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
   WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
+  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public form pages resolve
+  // the tenant from the Host header against this. Dev default is 'localhost' so `<slug>.localhost` works.
+  PUBLIC_FORMS_BASE_DOMAIN: z.string().optional().default('localhost'),
 });
 
 const parsedEnv = envSchema.parse(process.env);
@@ -2356,6 +2470,7 @@ export const env = {
   },
   apiUrl: parsedEnv.API_URL,
   appUrl: parsedEnv.APP_URL,
+  publicFormsBaseDomain: parsedEnv.PUBLIC_FORMS_BASE_DOMAIN,
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,
   msClientSecret: parsedEnv.MS_CLIENT_SECRET,
@@ -10255,6 +10370,7 @@ CREATE TABLE public.tenants (
     admin_id bigint,
     createdby_id bigint,
     name text NOT NULL,
+    slug text,
     mobile text,
     email text,
     email2 text,
@@ -10290,6 +10406,12 @@ CREATE TABLE public.tenants (
 
 
 ALTER TABLE public.tenants OWNER TO pplcrm;
+
+--
+-- Name: idx_tenants_slug; Type: INDEX; Schema: public; Owner: pplcrm
+--
+
+CREATE UNIQUE INDEX idx_tenants_slug ON public.tenants USING btree (slug) WHERE (slug IS NOT NULL);
 
 --
 -- Name: tenants_id_seq; Type: SEQUENCE; Schema: public; Owner: pplcrm
@@ -32117,950 +32239,6 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 export default volunteerEventsPublicRoute;
 ```
 
-## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { WebFormsController } from '../controller';
-import formBody from '@fastify/formbody';
-
-const webFormsController = new WebFormsController();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-const SUCCESS_HTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submission Successful</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --success: #2dd4bf;
-      --success-glow: rgba(45, 212, 191, 0.15);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --success: #22c55e;
-        --success-glow: rgba(34, 197, 94, 0.15);
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 300px;
-      height: 300px;
-      border-radius: 50%;
-      background: var(--accent);
-      filter: blur(120px);
-      opacity: 0.08;
-      z-index: 0;
-    }
-    body::before { top: 10%; left: 15%; }
-    body::after { bottom: 10%; right: 15%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 48px 32px;
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--success-glow);
-      border: 2px solid var(--success);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--success);
-      stroke-dasharray: 100;
-      stroke-dashoffset: 100;
-      stroke-width: 3px;
-      fill: none;
-      animation: drawCheck 0.6s 0.3s ease-out forwards;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    p {
-      color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    .btn:active {
-      transform: translateY(0);
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popIn {
-      0% {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-
-    @keyframes drawCheck {
-      to {
-        stroke-dashoffset: 0;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h1>Submission Successful</h1>
-    <p>Thank you! Your information has been successfully received and processed.</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
-  </div>
-</body>
-</html>
-`;
-
-const errorHtml = (message: string) => `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submission Error</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --error: #f37373;
-      --error-glow: rgba(243, 115, 115, 0.15);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --error: #ef4444;
-        --error-glow: rgba(239, 68, 68, 0.15);
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 300px;
-      height: 300px;
-      border-radius: 50%;
-      background: var(--error);
-      filter: blur(120px);
-      opacity: 0.08;
-      z-index: 0;
-    }
-    body::before { top: 10%; left: 15%; }
-    body::after { bottom: 10%; right: 15%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 48px 32px;
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--error), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--error-glow);
-      border: 2px solid var(--error);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--error);
-      stroke-width: 3px;
-      fill: none;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    p {
-      color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    .btn:active {
-      transform: translateY(0);
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popIn {
-      0% {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
-      </svg>
-    </div>
-    <h1>Submission Failed</h1>
-    <p>${escapeHtml(message)}</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
-  </div>
-</body>
-</html>
-`;
-
-const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Register form URL-encoded parser
-  fastify.register(formBody);
-
-  fastify.get('/success', async (req: any, reply) => {
-    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
-    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
-    // unauthenticated and every parameter (tenant_id, person_id, amount) is
-    // attacker-controlled, so it must NEVER record donations in production — real
-    // payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
-    const isProduction = process.env['NODE_ENV'] === 'production';
-    if (!isProduction && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
-      try {
-        const { DonationsController } = await import('../../donations/controller');
-        const donationsController = new DonationsController();
-        await donationsController.confirmMockDonation(
-          tenant_id,
-          user_id || '1',
-          person_id,
-          Number(amount_cents),
-          checkout_session_id,
-          province || '',
-          country || '',
-        );
-      } catch (err) {
-        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
-      }
-    }
-    reply.type('text/html');
-    return reply.send(SUCCESS_HTML);
-  });
-
-  // JSON config for the SPA public page (/f/:slug). Published forms return their render config;
-  // unpublished/archived slugs return a "closed" status; unknown slugs 404.
-  fastify.get('/f/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    try {
-      const result = await webFormsController.getPublicFormBySlug(String(slug));
-      return reply.status(200).send(result);
-    } catch (err) {
-      const statusCode =
-        isRecord(err) && typeof err['statusCode'] === 'number'
-          ? err['statusCode']
-          : err && (err as any).code === 'NOT_FOUND'
-            ? 404
-            : 500;
-      return reply.status(statusCode).send({ error: 'Form not found.' });
-    }
-  });
-
-  fastify.get('/view/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
-    try {
-      const form = await webFormsController.getFormPublic(formId);
-      if (!form || form.status !== 'published') {
-        reply.status(404).type('text/html');
-        return reply.send(errorHtml('Web form not found or inactive.'));
-      }
-
-      const formName = form.name;
-      const formDescription = form.description || '';
-
-      // Extract fields configuration, default to all fields if null/empty
-      const fields: string[] = form.fields
-        ? Array.isArray(form.fields)
-          ? (form.fields as string[])
-          : JSON.parse(String(form.fields))
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-      reply.type('text/html');
-      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
-    } catch (err) {
-      reply.status(500).type('text/html');
-      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
-    }
-  });
-
-  fastify.post('/submit/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
-    // Standard reverse-proxy header check, fallback to req.ip
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
-    const isJsonExpected =
-      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
-
-    try {
-      const body = req.body || {};
-      const result = await webFormsController.submitFormPublic(formId, body, clientIp);
-
-      if (isJsonExpected) {
-        return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
-      }
-
-      if (result.redirect_url) {
-        return reply.redirect(result.redirect_url);
-      }
-
-      return reply.redirect('/api/forms/success');
-    } catch (err) {
-      fastify.log.error(err);
-      const statusCode =
-        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
-      const message =
-        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
-
-      if (isJsonExpected) {
-        return reply.status(statusCode).send({ error: message });
-      }
-
-      reply.status(statusCode).type('text/html');
-      return reply.send(errorHtml(message));
-    }
-  });
-
-  done();
-};
-
-export default webFormsPublicRoute;
-
-const renderFormHtml = (
-  formId: string,
-  formName: string,
-  formDescription: string,
-  fields: string[],
-  formType: string,
-) => {
-  const isFieldEnabled = (name: string): boolean => {
-    if (formType === 'donation') {
-      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-      if (alwaysEnabled.includes(name)) return true;
-    }
-    return fields.includes(name) || fields.includes(`${name}:required`);
-  };
-
-  const isFieldRequired = (name: string): boolean => {
-    if (formType === 'donation') {
-      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-      if (alwaysRequired.includes(name)) return true;
-    }
-    return fields.includes(`${name}:required`);
-  };
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(formName)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --input-bg: #ffffff;
-      --input-border: #cbd5e1;
-      --input-focus-border: #0ea5e9;
-      --input-focus-ring: rgba(14, 165, 233, 0.15);
-      --label-color: #374151;
-      --placeholder-color: #9ca3af;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --input-bg: #0b1220;
-        --input-border: #1a2b45;
-        --input-focus-border: #3ea6ff;
-        --input-focus-ring: rgba(62, 166, 255, 0.25);
-        --label-color: #cbd5e1;
-        --placeholder-color: #4b5563;
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 40px 24px;
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 400px;
-      height: 400px;
-      border-radius: 50%;
-      background: var(--accent);
-      filter: blur(150px);
-      opacity: 0.08;
-      z-index: 0;
-      pointer-events: none;
-    }
-    body::before { top: 15%; left: 10%; }
-    body::after { bottom: 15%; right: 10%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border-radius: 24px;
-      padding: 40px;
-      width: 100%;
-      max-width: 480px;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-
-    h1 {
-      font-size: 26px;
-      font-weight: 500;
-      letter-spacing: -0.015em;
-      margin-bottom: 8px;
-      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .description {
-      color: var(--text-secondary);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-      position: relative;
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      color: var(--label-color);
-      letter-spacing: 0.01em;
-    }
-
-    input, textarea, select {
-      width: 100%;
-      padding: 12px 16px;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
-      border-radius: 12px;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: inherit;
-      transition: all 0.2s ease;
-      min-height: 46px;
-    }
-
-    input::placeholder, textarea::placeholder {
-      color: var(--placeholder-color);
-    }
-
-    input:hover, textarea:hover, select:hover {
-      border-color: var(--accent);
-      opacity: 0.95;
-    }
-
-    input:focus, textarea:focus, select:focus {
-      outline: none;
-      border-color: var(--input-focus-border);
-      box-shadow: 0 0 0 4px var(--input-focus-ring);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 90px;
-    }
-
-    button {
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 600;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 8px;
-      min-height: 48px;
-    }
-
-    button:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    button:active {
-      transform: translateY(0);
-    }
-
-    .hp-field {
-      display: none !important;
-    }
-
-    .footer-note {
-      text-align: center;
-      margin-top: 24px;
-      font-size: 11px;
-      color: var(--text-secondary);
-      opacity: 0.6;
-    }
-
-    .footer-note a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .footer-note a:hover {
-      text-decoration: underline;
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h1>${escapeHtml(formName)}</h1>
-      <p class="description">${escapeHtml(formDescription)}</p>
-    </div>
-
-    <form action="/api/forms/submit/${formId}" method="POST">
-      <!-- Honeypot Bot Field (leave empty!) -->
-      <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
-
-      ${
-        formType === 'donation'
-          ? `
-      <div class="form-group">
-        <label for="amount">Donation Amount ($ CAD) *</label>
-        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('first_name')
-          ? `
-      <div class="form-group">
-        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
-        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('last_name')
-          ? `
-      <div class="form-group">
-        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
-        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      <div class="form-group">
-        <label for="email">Email Address *</label>
-        <input type="email" id="email" name="email" placeholder="john@example.com" required />
-      </div>
-
-      ${
-        isFieldEnabled('street1')
-          ? `
-      <div class="form-group">
-        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
-        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('city')
-          ? `
-      <div class="form-group">
-        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
-        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('country')
-          ? `
-      <div class="form-group">
-        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
-        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
-          <option value="CA">Canada</option>
-          <option value="US">United States</option>
-          <option value="GB">United Kingdom</option>
-          <option value="AU">Australia</option>
-        </select>
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('state')
-          ? `
-      <div class="form-group">
-        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
-        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('zip')
-          ? `
-      <div class="form-group">
-        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
-        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('mobile')
-          ? `
-      <div class="form-group">
-        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
-        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('notes')
-          ? `
-      <div class="form-group">
-        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
-        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
-      </div>`
-          : ''
-      }
-
-      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
-    </form>
-
-    <div class="footer-note">
-      Powered by <a href="#" target="_blank">PeopleCRM</a>
-    </div>
-  </div>
-</body>
-</html>
-`;
-};
-```
-
 ## File: apps/backend/src/app/modules/workflows/repositories/workflows.repo.ts
 
 ```typescript
@@ -35195,195 +34373,972 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
 }
 ```
 
-## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
+## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
 
 ```typescript
-import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
+import type { FastifyPluginCallback } from 'fastify';
+import { WebFormsController } from '../controller';
+import formBody from '@fastify/formbody';
+import { RESERVED_SUBDOMAINS } from '../../../../../../../libs/common/src';
+import { env } from '../../../../env';
 
-import type { QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+const webFormsController = new WebFormsController();
 
-export class WebFormsRepo extends BaseRepository<'web_forms'> {
-  constructor() {
-    super('web_forms');
-  }
-
-  public async getByIdPublic(id: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx).selectAll().where('id', '=', id).executeTakeFirst();
-  }
-
-  /** Public lookup by slug within a known tenant. */
-  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('slug', '=', slug)
-      .executeTakeFirst();
-  }
-
-  /**
-   * Resolve a slug for the unauthenticated public page. The public URL (/f/:slug) carries no tenant
-   * context — a public form page is cross-tenant by design (anyone on the internet reaches it) — so
-   * this intentionally queries without a tenant_id scope. It only returns a public artifact (a form
-   * meant to be public) and leaks no other tenant data, so the tenant-safety rule is waived here.
-   */
-  // eslint-disable-next-line local/no-unscoped-db-query -- public /f/:slug lookup is cross-tenant by design; see doc comment.
-  public async getBySlugAnyTenant(slug: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx).selectAll().where('slug', '=', slug).orderBy('created_at', 'asc').executeTakeFirst();
-  }
-
-  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
-    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const row = await query.limit(1).executeTakeFirst();
-    return !!row;
-  }
-
-  /**
-   * Cards for the new Forms page: every non-donation form with a live submission count. Donation
-   * forms keep their own /donation-pages experience and are excluded here.
-   */
-  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
-    return this.getSelect()
-      .selectAll('web_forms')
-      .select((eb) =>
-        eb
-          .selectFrom('form_submissions')
-          .select((eb2) => eb2.fn.countAll<number>().as('c'))
-          .whereRef('form_submissions.form_id', '=', 'web_forms.id')
-          .where('form_submissions.tenant_id', '=', tenantId)
-          .as('submission_count'),
-      )
-      .where('web_forms.tenant_id', '=', tenantId)
-      .where('web_forms.form_type', 'not in', ['donation', 'recurring_donation'])
-      .orderBy('web_forms.updated_at', 'desc')
-      .execute();
-  }
-
-  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
-    const row = await this.db
-      .selectFrom('form_submissions')
-      .select((eb) => eb.fn.countAll<number>().as('c'))
-      .where('tenant_id', '=', tenantId)
-      .where('form_id', '=', formId)
-      .executeTakeFirst();
-    return Number(row?.c ?? 0);
-  }
-
-  public async getFormSubmissions(
-    tenantId: string,
-    formId: string,
-    limit: number,
-    offset: number,
-  ): Promise<Record<string, unknown>[]> {
-    return this.db
-      .selectFrom('form_submissions')
-      .leftJoin('persons', (join) =>
-        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
-      )
-      .select([
-        'form_submissions.id',
-        'form_submissions.person_id',
-        'form_submissions.answers',
-        'form_submissions.created_at',
-        'persons.first_name',
-        'persons.last_name',
-      ])
-      .where('form_submissions.tenant_id', '=', tenantId)
-      .where('form_submissions.form_id', '=', formId)
-      .orderBy('form_submissions.created_at', 'desc')
-      .limit(limit)
-      .offset(offset)
-      .execute();
-  }
-
-  public override async getAllWithCounts(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'web_forms'>;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
-
-    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
-    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
-
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
-      qb
-        .where('web_forms.tenant_id', '=', tenantId)
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-            LOWER(web_forms.name) LIKE ${text} OR
-            LOWER(web_forms.description) LIKE ${text}
-          )`,
-          );
-        })
-        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
-        .$if(!!filterModel['description']?.value, (q) =>
-          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
-        )
-        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
-
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    const rows = await applyFilters(this.getSelect(trx))
-      .select([
-        'web_forms.id',
-        'web_forms.tenant_id',
-        'web_forms.name',
-        'web_forms.description',
-        'web_forms.redirect_url',
-        'web_forms.target_tags',
-        'web_forms.target_lists',
-        'web_forms.status',
-        'web_forms.createdby_id',
-        'web_forms.updatedby_id',
-        'web_forms.created_at',
-        'web_forms.updated_at',
-        'web_forms.send_confirmation',
-        'web_forms.send_alert',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce(
-          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
-          qb,
-        ),
-      )
-      .offset(startRow)
-      .limit(endRow - startRow)
-      .execute();
-
-    const formattedRows = rows.map((row) => ({
-      ...row,
-      id: String(row['id']),
-      target_tags: Array.isArray(row['target_tags'])
-        ? row['target_tags']
-        : JSON.parse(String(row['target_tags'] || '[]')),
-      target_lists: Array.isArray(row['target_lists'])
-        ? row['target_lists']
-        : JSON.parse(String(row['target_lists'] || '[]')),
-    }));
-
-    return {
-      rows: formattedRows,
-      count,
-    };
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
+
+/**
+ * Extract a tenant subdomain label from a request Host. `riverton.mydomain.com` → `riverton` when the
+ * base domain is `mydomain.com`. Returns null for the bare/app host, reserved labels, or a mismatch.
+ */
+function tenantSlugFromHost(hostname: string | undefined): string | null {
+  if (!hostname) return null;
+  const host = hostname.split(':')[0]?.toLowerCase();
+  const base = env.publicFormsBaseDomain.toLowerCase();
+  if (!host || host === base) return null;
+  const suffix = `.${base}`;
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  // Only a single left-most label maps to a tenant (no nested subdomains).
+  if (!label || label.includes('.') || RESERVED_SUBDOMAINS.has(label)) return null;
+  return label;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const SUCCESS_HTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Successful</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --success: #2dd4bf;
+      --success-glow: rgba(45, 212, 191, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --success: #22c55e;
+        --success-glow: rgba(34, 197, 94, 0.15);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: var(--accent);
+      filter: blur(120px);
+      opacity: 0.08;
+      z-index: 0;
+    }
+    body::before { top: 10%; left: 15%; }
+    body::after { bottom: 10%; right: 15%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--success-glow);
+      border: 2px solid var(--success);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--success);
+      stroke-dasharray: 100;
+      stroke-dashoffset: 100;
+      stroke-width: 3px;
+      fill: none;
+      animation: drawCheck 0.6s 0.3s ease-out forwards;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes drawCheck {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Submission Successful</h1>
+    <p>Thank you! Your information has been successfully received and processed.</p>
+    <a href="javascript:history.back()" class="btn">Go Back</a>
+  </div>
+</body>
+</html>
+`;
+
+const errorHtml = (message: string) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Error</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --error: #f37373;
+      --error-glow: rgba(243, 115, 115, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --error: #ef4444;
+        --error-glow: rgba(239, 68, 68, 0.15);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: var(--error);
+      filter: blur(120px);
+      opacity: 0.08;
+      z-index: 0;
+    }
+    body::before { top: 10%; left: 15%; }
+    body::after { bottom: 10%; right: 15%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--error), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--error-glow);
+      border: 2px solid var(--error);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--error);
+      stroke-width: 3px;
+      fill: none;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
+      </svg>
+    </div>
+    <h1>Submission Failed</h1>
+    <p>${escapeHtml(message)}</p>
+    <a href="javascript:history.back()" class="btn">Go Back</a>
+  </div>
+</body>
+</html>
+`;
+
+const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Register form URL-encoded parser
+  fastify.register(formBody);
+
+  fastify.get('/success', async (req: any, reply) => {
+    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
+    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
+    // unauthenticated and every parameter (tenant_id, person_id, amount) is
+    // attacker-controlled, so it must NEVER record donations in production — real
+    // payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
+    const isProduction = process.env['NODE_ENV'] === 'production';
+    if (!isProduction && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
+      try {
+        const { DonationsController } = await import('../../donations/controller');
+        const donationsController = new DonationsController();
+        await donationsController.confirmMockDonation(
+          tenant_id,
+          user_id || '1',
+          person_id,
+          Number(amount_cents),
+          checkout_session_id,
+          province || '',
+          country || '',
+        );
+      } catch (err) {
+        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
+      }
+    }
+    reply.type('text/html');
+    return reply.send(SUCCESS_HTML);
+  });
+
+  // JSON config for the SPA public page (/f/:slug). The tenant is identified by its subdomain — from
+  // the explicit `?t=` param (the SPA passes its own subdomain, robust across hosts) or the Host
+  // header. Published forms return their render config; unpublished/archived slugs return a "closed"
+  // status; unknown tenant/slug 404s.
+  fastify.get('/f/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    try {
+      const tenantSlug = (typeof req.query?.t === 'string' && req.query.t.trim()) || tenantSlugFromHost(req.hostname);
+      if (!tenantSlug) {
+        return reply.status(404).send({ error: 'Form not found.' });
+      }
+      const tenantId = await webFormsController.resolveTenantIdBySlug(tenantSlug);
+      if (!tenantId) {
+        return reply.status(404).send({ error: 'Form not found.' });
+      }
+      const result = await webFormsController.getPublicFormBySlug(String(slug), tenantId);
+      return reply.status(200).send(result);
+    } catch (err) {
+      const statusCode = isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : 404;
+      return reply.status(statusCode).send({ error: 'Form not found.' });
+    }
+  });
+
+  fastify.get('/view/:formId', async (req: any, reply) => {
+    const { formId } = req.params;
+    try {
+      const form = await webFormsController.getFormPublic(formId);
+      if (!form || form.status !== 'published') {
+        reply.status(404).type('text/html');
+        return reply.send(errorHtml('Web form not found or inactive.'));
+      }
+
+      const formName = form.name;
+      const formDescription = form.description || '';
+
+      // Extract fields configuration, default to all fields if null/empty
+      const fields: string[] = form.fields
+        ? Array.isArray(form.fields)
+          ? (form.fields as string[])
+          : JSON.parse(String(form.fields))
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+      reply.type('text/html');
+      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
+    } catch (err) {
+      reply.status(500).type('text/html');
+      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
+    }
+  });
+
+  fastify.post('/submit/:formId', async (req: any, reply) => {
+    const { formId } = req.params;
+    // Standard reverse-proxy header check, fallback to req.ip
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+    const isJsonExpected =
+      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+
+    try {
+      const body = req.body || {};
+      const result = await webFormsController.submitFormPublic(formId, body, clientIp);
+
+      if (isJsonExpected) {
+        return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
+      }
+
+      if (result.redirect_url) {
+        return reply.redirect(result.redirect_url);
+      }
+
+      return reply.redirect('/api/forms/success');
+    } catch (err) {
+      fastify.log.error(err);
+      const statusCode =
+        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+      const message =
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
+
+      if (isJsonExpected) {
+        return reply.status(statusCode).send({ error: message });
+      }
+
+      reply.status(statusCode).type('text/html');
+      return reply.send(errorHtml(message));
+    }
+  });
+
+  done();
+};
+
+export default webFormsPublicRoute;
+
+const renderFormHtml = (
+  formId: string,
+  formName: string,
+  formDescription: string,
+  fields: string[],
+  formType: string,
+) => {
+  const isFieldEnabled = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysEnabled.includes(name)) return true;
+    }
+    return fields.includes(name) || fields.includes(`${name}:required`);
+  };
+
+  const isFieldRequired = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysRequired.includes(name)) return true;
+    }
+    return fields.includes(`${name}:required`);
+  };
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(formName)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --input-focus-border: #0ea5e9;
+      --input-focus-ring: rgba(14, 165, 233, 0.15);
+      --label-color: #374151;
+      --placeholder-color: #9ca3af;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --input-bg: #0b1220;
+        --input-border: #1a2b45;
+        --input-focus-border: #3ea6ff;
+        --input-focus-ring: rgba(62, 166, 255, 0.25);
+        --label-color: #cbd5e1;
+        --placeholder-color: #4b5563;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: var(--accent);
+      filter: blur(150px);
+      opacity: 0.08;
+      z-index: 0;
+      pointer-events: none;
+    }
+    body::before { top: 15%; left: 10%; }
+    body::after { bottom: 15%; right: 10%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-radius: 24px;
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 500;
+      letter-spacing: -0.015em;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .description {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--label-color);
+      letter-spacing: 0.01em;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+      min-height: 46px;
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--placeholder-color);
+    }
+
+    input:hover, textarea:hover, select:hover {
+      border-color: var(--accent);
+      opacity: 0.95;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: 0 0 0 4px var(--input-focus-ring);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 8px;
+      min-height: 48px;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .hp-field {
+      display: none !important;
+    }
+
+    .footer-note {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      opacity: 0.6;
+    }
+
+    .footer-note a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .footer-note a:hover {
+      text-decoration: underline;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>${escapeHtml(formName)}</h1>
+      <p class="description">${escapeHtml(formDescription)}</p>
+    </div>
+
+    <form action="/api/forms/submit/${formId}" method="POST">
+      <!-- Honeypot Bot Field (leave empty!) -->
+      <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
+
+      ${
+        formType === 'donation'
+          ? `
+      <div class="form-group">
+        <label for="amount">Donation Amount ($ CAD) *</label>
+        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('first_name')
+          ? `
+      <div class="form-group">
+        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('last_name')
+          ? `
+      <div class="form-group">
+        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      <div class="form-group">
+        <label for="email">Email Address *</label>
+        <input type="email" id="email" name="email" placeholder="john@example.com" required />
+      </div>
+
+      ${
+        isFieldEnabled('street1')
+          ? `
+      <div class="form-group">
+        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
+        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('city')
+          ? `
+      <div class="form-group">
+        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
+        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('country')
+          ? `
+      <div class="form-group">
+        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
+        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
+          <option value="CA">Canada</option>
+          <option value="US">United States</option>
+          <option value="GB">United Kingdom</option>
+          <option value="AU">Australia</option>
+        </select>
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('state')
+          ? `
+      <div class="form-group">
+        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
+        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('zip')
+          ? `
+      <div class="form-group">
+        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
+        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('mobile')
+          ? `
+      <div class="form-group">
+        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
+        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('notes')
+          ? `
+      <div class="form-group">
+        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
+        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
+      </div>`
+          : ''
+      }
+
+      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
+    </form>
+
+    <div class="footer-note">
+      Powered by <a href="#" target="_blank">PeopleCRM</a>
+    </div>
+  </div>
+</body>
+</html>
+`;
+};
 ```
 
 ## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
@@ -37283,1070 +37238,191 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 }
 ```
 
-## File: apps/backend/src/app/modules/web-forms/controller.ts
+## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
 
 ```typescript
-import type {
-  AddWebFormType,
-  CreateFormType,
-  FormField,
-  IAuthKeyPayload,
-  UpdateFormType,
-  UpdateWebFormType,
-} from '../../../../../../libs/common/src';
-import { FORM_TEMPLATES, fieldsForTemplate, normForm } from '../../../../../../libs/common/src';
-import { BaseController } from '../../lib/base.controller';
-import { WebFormsRepo } from './repositories/web-forms.repo';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { type Transaction, sql } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { createSigner, createVerifier } from 'fast-jwt';
-import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-import { HouseholdRepo } from '../households/repositories/households.repo';
+import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
 
-import { WorkflowsController } from '../workflows/controller';
-import { DonationsController } from '../donations/controller';
-import { logger } from '../../logger';
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-// Sliding window memory for rate-limiting
-const ipSubmissionTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
-export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+export class WebFormsRepo extends BaseRepository<'web_forms'> {
   constructor() {
-    super(new WebFormsRepo());
+    super('web_forms');
   }
 
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const form = await super.getOneById(input);
-    if (!form) return form;
-    return this.resolveCreatorAndUpdater(input.tenant_id, form);
+  public async getByIdPublic(id: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx).selectAll().where('id', '=', id).executeTakeFirst();
   }
 
-  public async getFormPublic(id: string) {
-    return this.getRepo().getByIdPublic(id);
-  }
-
-  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
-    const row = {
-      tenant_id: auth.tenant_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      redirect_url: payload.redirect_url ?? null,
-      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
-      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
-      fields: payload.fields ? JSON.stringify(payload.fields) : null,
-      status: this.mapLegacyStatus(payload.status),
-      send_confirmation: payload.send_confirmation ?? true,
-      send_alert: payload.send_alert ?? true,
-      form_type: payload.form_type ?? 'standard',
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    return this.add(row as any);
-  }
-
-  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
-    if (!existing) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found.',
-      });
-    }
-
-    const row: any = {
-      updatedby_id: auth.user_id,
-      updated_at: new Date(),
-    };
-    if (payload.name !== undefined) row.name = payload.name;
-    if (payload.description !== undefined) row.description = payload.description;
-    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
-    if (payload.target_tags !== undefined)
-      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
-    if (payload.target_lists !== undefined)
-      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
-    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
-    if (payload.status !== undefined) row.status = this.mapLegacyStatus(payload.status);
-    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
-    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
-
-    const rawPayload = payload as any;
-    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Form type cannot be changed after the form has been created.',
-      });
-    }
-
-    return this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row,
-    });
-  }
-
-  public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
-    }
-    timestamps.push(now);
-    // Prune empty keys to prevent unbounded Map growth
-    if (timestamps.length > 0) {
-      ipSubmissionTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSubmissionTimestamps.delete(clientIp);
-    }
-
-    // 2. Fetch Form by ID
-    const form = await this.getRepo().getByIdPublic(formId);
-    if (!form || form.status !== 'published') {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found or inactive.',
-      });
-    }
-
-    const tenantId = String(form.tenant_id);
-
-    // 3. Honeypot check
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
-      return { redirect_url: form.redirect_url || null };
-    }
-
-    // 4. Validate email
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Email address is required.',
-      });
-    }
-
-    // Parse configured fields. Supports both the legacy string[] shape ("mobile:required") used by
-    // donation/older forms and the new-model FormField[] objects ({ key, on, required, label }).
-    const rawFields: unknown = form.fields
-      ? Array.isArray(form.fields)
-        ? form.fields
-        : JSON.parse(String(form.fields))
-      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-    const fieldArray: unknown[] = Array.isArray(rawFields) ? rawFields : [];
-
-    // Map payload key aliases helper
-    const getPayloadValue = (key: string): string => {
-      let value = '';
-      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
-      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
-      else if (key === 'full_name' || key === 'name') value = payload['full_name'] || payload['name'] || '';
-      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
-      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
-      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
-      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
-      else value = payload[key] || '';
-      return String(value).trim();
-    };
-
-    // Validate user-configured required fields for standard forms
-    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-      const fieldLabels: Record<string, string> = {
-        first_name: 'First Name',
-        last_name: 'Last Name',
-        full_name: 'Full name',
-        mobile: 'Mobile / Phone',
-        notes: 'Notes / Message',
-        street1: 'Street Address',
-        city: 'City',
-        state: 'State / Province',
-        zip: 'Zip / Postal Code',
-        country: 'Country',
-      };
-
-      const requiredFields: { name: string; label: string }[] = [];
-      for (const raw of fieldArray) {
-        if (typeof raw === 'string') {
-          if (raw.endsWith(':required')) {
-            const name = raw.replace(':required', '');
-            requiredFields.push({ name, label: fieldLabels[name] ?? name });
-          }
-        } else if (raw && typeof raw === 'object') {
-          const obj = raw as { key?: string; on?: boolean; required?: boolean; label?: string };
-          // Email is validated separately above; skip it here.
-          if (obj.key && obj.key !== 'email' && obj.on && obj.required) {
-            requiredFields.push({ name: obj.key, label: obj.label ?? fieldLabels[obj.key] ?? obj.key });
-          }
-        }
-      }
-
-      for (const field of requiredFields) {
-        if (!getPayloadValue(field.name)) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: `${field.label} is required.` });
-        }
-      }
-    }
-
-    // Parse and validate donation fields if form is a donation or recurring_donation form
-    let amountCents = 0;
-    let monthlyAmountCents = 0;
-    let country = '';
-    let state = '';
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
-      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
-      if (!firstName || !lastName) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'First name and last name are required for donations.',
-        });
-      }
-
-      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-      const city = (payload['city'] || '').trim();
-      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-      country = (payload['country'] || payload['residency_country'] || '').trim();
-      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-      if (!street1 || !city || !zip || !country || !state) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message:
-            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
-        });
-      }
-
-      // Check if email already exists to run eligibility checks
-      const existing = await this.getRepo()
-        .db.selectFrom('persons')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where(sql`lower(email)`, '=', email.toLowerCase())
-        .executeTakeFirst();
-
-      const donationsController = new DonationsController();
-
-      if (form.form_type === 'donation') {
-        const amountStr = payload['amount'] || payload['donation_amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
-        }
-        amountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          amountCents,
-          { country, state },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
-      } else {
-        // recurring_donation
-        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
-        }
-        monthlyAmountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          monthlyAmountCents,
-          { country, state },
-          { isRecurring: true },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
-      }
-    }
-
-    // 5. Gather submission fields. New-model forms collect a single `full_name`; split it on the
-    // last space so the person record still gets a first/last name.
-    let firstName = payload['first_name'] || payload['firstName'] || null;
-    let lastName = payload['last_name'] || payload['lastName'] || null;
-    if (!firstName && !lastName) {
-      const fullName = (payload['full_name'] || payload['name'] || '').trim();
-      if (fullName) {
-        const lastSpace = fullName.lastIndexOf(' ');
-        if (lastSpace === -1) {
-          firstName = fullName;
-        } else {
-          firstName = fullName.slice(0, lastSpace).trim();
-          lastName = fullName.slice(lastSpace + 1).trim();
-        }
-      }
-    }
-    const mobile = payload['mobile'] || payload['phone'] || null;
-    const notes = payload['notes'] || payload['message'] || null;
-
-    let resolvedPersonId = '';
-    let resolvedCreatorId = '1';
-
-    // 6. Find or Create person & apply merges/tags
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        // Use the form's creator as the actor — they are the person who
-        // configured this form, which is the most correct attribution for
-        // contacts and data created via public submissions.
-        const creatorId = String(form.createdby_id);
-
-        resolvedCreatorId = creatorId;
-
-        if (!householdId) {
-          throw new Error('Tenant placeholder household is not configured.');
-        }
-
-        const campaignId = await this.getCampaignId(tenantId, trx);
-
-        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
-        // counted once they confirm via the emailed link (see confirm-subscription route).
-        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
-
-        let finalHouseholdId = householdId;
-
-        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-        const city = (payload['city'] || '').trim();
-        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-        const country = (payload['country'] || payload['residency_country'] || '').trim();
-        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-        const hasAddress = !!(street1 || city || zip || country || state);
-
-        if (hasAddress) {
-          const fp_street = fingerprintStreet({ street1 });
-          const fp_full = fingerprintFull({
-            street1,
-            city,
-            state,
-            zip,
-            country,
-          });
-
-          const householdRepo = new HouseholdRepo();
-          const existingHh = await trx
-            .selectFrom('households')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('campaign_id', '=', campaignId)
-            .where('address_fp_full', '=', fp_full)
-            .executeTakeFirst();
-
-          if (existingHh) {
-            finalHouseholdId = String(existingHh.id);
-          } else {
-            const createdHhs = await householdRepo.addMany(
-              {
-                rows: [
-                  {
-                    tenant_id: tenantId,
-                    campaign_id: campaignId,
-                    createdby_id: creatorId,
-                    updatedby_id: creatorId,
-                    street1,
-                    city,
-                    state,
-                    zip,
-                    country,
-                    address_fp_street: fp_street,
-                    address_fp_full: fp_full,
-                  } as any,
-                ],
-              },
-              trx,
-            );
-            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
-              finalHouseholdId = String(createdHhs[0].id);
-            }
-          }
-        }
-
-        // Check if email already exists
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = {
-            updatedby_id: creatorId,
-            updated_at: sql`now()`,
-          };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (form.form_type === 'donation' || hasAddress) {
-            updateRow.household_id = finalHouseholdId;
-          }
-          if (!existing.notes && notes) {
-            updateRow.notes = notes;
-          } else if (existing.notes && notes) {
-            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
-          }
-
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: finalHouseholdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            mobile: mobile,
-            notes: notes,
-            opt_in_status: doubleOptIn ? 'pending' : null,
-          };
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          // Trigger contact created workflow
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
-          }
-
-          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
-          if (doubleOptIn) {
-            await this.enqueueSubscriptionConfirmation(trx, {
-              tenantId,
-              personId,
-              email,
-              firstName,
-            });
-          }
-        }
-
-        resolvedPersonId = personId;
-
-        const workflowsController = new WorkflowsController();
-
-        // Add target custom tags & read-only system tag
-        const targetTags: string[] = Array.isArray(form.target_tags)
-          ? form.target_tags
-          : JSON.parse((form.target_tags as any) || '[]');
-        const systemTagName = `source: ${form.name}`;
-        const allTagsToApply = [...targetTags, systemTagName];
-        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-          allTagsToApply.push('donor');
-        }
-
-        for (const tagName of allTagsToApply) {
-          const normalizedTagName = tagName.trim().toLowerCase();
-          if (!normalizedTagName) continue;
-
-          let tag = await trx
-            .selectFrom('tags')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('name', '=', normalizedTagName)
-            .where('type', '=', 'tag')
-            .executeTakeFirst();
-
-          if (!tag) {
-            const insertTagRes = await trx
-              .insertInto('tags')
-              .values({
-                tenant_id: tenantId,
-                name: normalizedTagName,
-                type: 'tag',
-                deletable: true,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .returning('id')
-              .executeTakeFirstOrThrow();
-            tag = { id: insertTagRes.id };
-          }
-
-          const mapExists = await trx
-            .selectFrom('map_peoples_tags')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('tag_id', '=', tag.id)
-            .executeTakeFirst();
-
-          if (!mapExists) {
-            await trx
-              .insertInto('map_peoples_tags')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                tag_id: tag.id,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger tag_added and specialized subscriber workflows
-            try {
-              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Add target lists
-        const targetLists: string[] = Array.isArray(form.target_lists)
-          ? form.target_lists
-          : JSON.parse((form.target_lists as any) || '[]');
-        for (const listId of targetLists) {
-          if (!listId) continue;
-          const listExists = await trx
-            .selectFrom('lists')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', listId)
-            .executeTakeFirst();
-
-          if (!listExists) continue;
-
-          const inList = await trx
-            .selectFrom('map_lists_persons')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('list_id', '=', listId)
-            .executeTakeFirst();
-
-          if (!inList) {
-            await trx
-              .insertInto('map_lists_persons')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                list_id: listId,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger list joined workflows
-            try {
-              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Trigger web form submitted workflows
-        try {
-          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
-        }
-
-        // Log user activity
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: creatorId,
-            activity: 'submission',
-            entity: 'web_forms',
-            entity_id: formId,
-            quantity: 1,
-            metadata: JSON.stringify({ person_id: personId, email }),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .execute();
-
-        // Persist a durable response record (answers snapshot + person FK) for the Responses tab.
-        // Donation forms are a separate flow (Stripe/webhook) and are not part of this model.
-        if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-          const answers: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(payload)) {
-            if (key === '_hp') continue;
-            answers[key] = value;
-          }
-          await trx
-            .insertInto('form_submissions')
-            .values({
-              tenant_id: tenantId,
-              form_id: String(form.id),
-              person_id: personId,
-              answers: JSON.stringify(answers),
-            })
-            .execute();
-        }
-
-        // Queue email notification job in background
-        await trx
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'send-webform-notifications',
-              formId: String(form.id),
-              tenantId,
-              email,
-              firstName,
-              lastName,
-              mobile,
-              notes,
-            }),
-            run_at: new Date(),
-          })
-          .execute();
-      });
-
-    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const donationsController = new DonationsController();
-      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
-
-      if (form.form_type === 'donation') {
-        const checkoutSession = await donationsController.createCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          amountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      } else {
-        const checkoutSession = await donationsController.createRecurringCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          monthlyAmountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      }
-    }
-
-    return { redirect_url: form.redirect_url || null };
-  }
-
-  /**
-   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
-   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
-   */
-  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
-
-    let payload: any;
-    try {
-      payload = await verifier(token);
-    } catch {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
-    }
-
-    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
-    }
-
-    await this.getRepo()
-      .db.updateTable('persons')
-      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
-      .where('tenant_id', '=', String(payload.tenant_id))
-      .where('id', '=', String(payload.person_id))
-      .execute();
-
-    return { success: true };
-  }
-
-  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
+  /** Public lookup by slug within a known tenant. */
+  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .selectAll()
       .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'communications.double_opt_in')
+      .where('slug', '=', slug)
       .executeTakeFirst();
-
-    return row?.value === true || row?.value === 'true';
   }
 
   /**
-   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
-   * runs only if the surrounding submission transaction commits, keeping the pending person and the
-   * confirmation email consistent.
+   * Resolve a tenant id from its public subdomain slug. The public form page identifies the tenant by
+   * Host (`<slug>.<baseDomain>`), then this scopes the form lookup — no cross-tenant form query. The
+   * `tenants` table is a tenant-safety allow-listed table (you look it up *by* its own key).
    */
-  private async enqueueSubscriptionConfirmation(
-    trx: Transaction<Models>,
-    args: { tenantId: string; personId: string; email: string; firstName: string | null },
-  ): Promise<void> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
-      return;
+  public async getTenantIdBySlug(tenantSlug: string): Promise<string | null> {
+    const row = await this.db.selectFrom('tenants').select('id').where('slug', '=', tenantSlug).executeTakeFirst();
+    return row ? String(row.id) : null;
+  }
+
+  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
     }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
 
-    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
-    const token = signer({
-      tenant_id: args.tenantId,
-      person_id: args.personId,
-      email: args.email.toLowerCase().trim(),
-      purpose: 'confirm-subscription',
-    });
-    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
-
-    await trx
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: args.tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-subscription-confirmation',
-          tenantId: args.tenantId,
-          email: args.email,
-          firstName: args.firstName,
-          confirmUrl,
-        }),
-        run_at: new Date(),
-      })
+  /**
+   * Cards for the new Forms page: every non-donation form with a live submission count. Donation
+   * forms keep their own /donation-pages experience and are excluded here.
+   */
+  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
+    return this.getSelect()
+      .selectAll('web_forms')
+      .select((eb) =>
+        eb
+          .selectFrom('form_submissions')
+          .select((eb2) => eb2.fn.countAll<number>().as('c'))
+          .whereRef('form_submissions.form_id', '=', 'web_forms.id')
+          .where('form_submissions.tenant_id', '=', tenantId)
+          .as('submission_count'),
+      )
+      .where('web_forms.tenant_id', '=', tenantId)
+      .where('web_forms.form_type', 'not in', ['donation', 'recurring_donation'])
+      .orderBy('web_forms.updated_at', 'desc')
       .execute();
   }
 
-  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
+  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('form_submissions')
+      .select((eb) => eb.fn.countAll<number>().as('c'))
       .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'current_campaign')
+      .where('form_id', '=', formId)
       .executeTakeFirst();
-
-    if (row) {
-      const value = row.value;
-      if (typeof value === 'number' || typeof value === 'string') {
-        return String(value);
-      }
-      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-        const id = (value as Record<string, unknown>)['id'];
-        if (typeof id === 'number' || typeof id === 'string') {
-          return String(id);
-        }
-      }
-    }
-
-    const campaignRow = await trx
-      .selectFrom('campaigns')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (campaignRow) {
-      return String(campaignRow.id);
-    }
-
-    throw new Error('No campaign found for this tenant.');
+    return Number(row?.c ?? 0);
   }
 
-  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
-    return this.getRepo().countSubmissions(tenantId, formId);
+  public async getFormSubmissions(
+    tenantId: string,
+    formId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Record<string, unknown>[]> {
+    return this.db
+      .selectFrom('form_submissions')
+      .leftJoin('persons', (join) =>
+        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
+      )
+      .select([
+        'form_submissions.id',
+        'form_submissions.person_id',
+        'form_submissions.answers',
+        'form_submissions.created_at',
+        'persons.first_name',
+        'persons.last_name',
+      ])
+      .where('form_submissions.tenant_id', '=', tenantId)
+      .where('form_submissions.form_id', '=', formId)
+      .orderBy('form_submissions.created_at', 'desc')
+      .limit(limit)
+      .offset(offset)
+      .execute();
   }
 
-  // ---------------------------------------------------------------------------
-  // North Star "living funnel" lifecycle (new Forms experience).
-  // ---------------------------------------------------------------------------
+  public override async getAllWithCounts(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'web_forms'>;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
 
-  /** All non-donation forms as cards for the browse page, fields normalized for the preview. */
-  public async listForms(tenantId: string) {
-    const rows = await this.getRepo().listForms(tenantId);
-    return rows.map((row) => this.normalizeForm(row));
-  }
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
-  /**
-   * Public config for the unauthenticated /f/:slug page. Returns only what the public page renders,
-   * plus the org name; closed (unpublished/archived) forms return a status the page shows as a
-   * "closed" card. Throws NOT_FOUND when the slug doesn't exist at all.
-   */
-  public async getPublicFormBySlug(slug: string) {
-    const form = await this.getRepo().getBySlugAnyTenant(slug);
-    if (!form) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const orgName = await this.getOrgName(String(form.tenant_id));
-    if (form.status !== 'published') {
-      return { status: 'closed' as const, orgName, name: String(form.name) };
-    }
-    const normalized = this.normalizeForm(form) as {
-      id: string;
-      name: string;
-      description: string | null;
-      submit_label: string | null;
-      thanks_title: string | null;
-      thanks_body: string | null;
-      redirect_url: string | null;
-      fields: FormField[];
-    };
-    return {
-      status: 'open' as const,
-      orgName,
-      form: {
-        id: normalized.id,
-        name: normalized.name,
-        description: normalized.description,
-        submit_label: normalized.submit_label,
-        thanks_title: normalized.thanks_title,
-        thanks_body: normalized.thanks_body,
-        redirect_url: normalized.redirect_url,
-        fields: normalized.fields.filter((f) => f.on),
-      },
-    };
-  }
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .where('web_forms.tenant_id', '=', tenantId)
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+            LOWER(web_forms.name) LIKE ${text} OR
+            LOWER(web_forms.description) LIKE ${text}
+          )`,
+          );
+        })
+        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
+        )
+        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
 
-  private async getOrgName(tenantId: string): Promise<string> {
-    const row = await this.getRepo()
-      .db.selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    return typeof value === 'string' && value.trim() ? value : 'Our organization';
-  }
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
+      .execute();
 
-  /** Single form, fields normalized — used by the editor + preview. */
-  public async getFormForEdit(id: string, tenantId: string) {
-    const form = await this.getRepo().getOneById({ id, tenant_id: tenantId });
-    if (!form) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    return this.normalizeForm(form);
-  }
+    const count = Number(countResult[0]?.['total'] || 0);
 
-  /** Create a draft from a template. Lands the user in edit mode (frontend). */
-  public async createForm(payload: CreateFormType, auth: IAuthKeyPayload) {
-    const template = FORM_TEMPLATES[payload.type];
-    const slug = await this.uniqueSlug(auth.tenant_id, payload.name);
-    const fields = fieldsForTemplate(payload.type);
-    const row = {
-      tenant_id: auth.tenant_id,
-      name: payload.name,
-      description: template.description,
-      redirect_url: null,
-      target_tags: JSON.stringify([]),
-      target_lists: JSON.stringify([]),
-      fields: JSON.stringify(fields),
-      status: 'draft',
-      type: payload.type,
-      form_type: 'standard',
-      slug,
-      submit_label: template.submitLabel,
-      thanks_title: 'Thank you!',
-      thanks_body: 'Your response has been recorded — thanks for reaching out.',
-      confirm_subject: `Thanks for your ${payload.type}`,
-      confirm_body: 'Hi [First name],\n\nThanks for your submission — we’ve received it and will be in touch soon.',
-      send_confirmation: true,
-      send_alert: false,
-      notify_team_on: false,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    const created = await this.add(row as any);
-    return this.normalizeForm(created);
-  }
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'web_forms.id',
+        'web_forms.tenant_id',
+        'web_forms.name',
+        'web_forms.description',
+        'web_forms.redirect_url',
+        'web_forms.target_tags',
+        'web_forms.target_lists',
+        'web_forms.status',
+        'web_forms.createdby_id',
+        'web_forms.updatedby_id',
+        'web_forms.created_at',
+        'web_forms.updated_at',
+        'web_forms.send_confirmation',
+        'web_forms.send_alert',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce(
+          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
+          qb,
+        ),
+      )
+      .offset(startRow)
+      .limit(endRow - startRow)
+      .execute();
 
-  /** Live-edit patch. `normForm` guarantees the email identity-key invariant server-side. */
-  public async updateFormLive(id: string, patch: UpdateFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-
-    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
-    // Slug intentionally stays stable across renames — a published link must never break.
-    if (patch.name !== undefined) row['name'] = patch.name;
-    if (patch.description !== undefined) row['description'] = patch.description;
-    if (patch.redirect_url !== undefined) row['redirect_url'] = patch.redirect_url;
-    if (patch.submit_label !== undefined) row['submit_label'] = patch.submit_label;
-    if (patch.thanks_title !== undefined) row['thanks_title'] = patch.thanks_title;
-    if (patch.thanks_body !== undefined) row['thanks_body'] = patch.thanks_body;
-    if (patch.confirm_email_on !== undefined) row['send_confirmation'] = patch.confirm_email_on;
-    if (patch.confirm_subject !== undefined) row['confirm_subject'] = patch.confirm_subject;
-    if (patch.confirm_body !== undefined) row['confirm_body'] = patch.confirm_body;
-    if (patch.notify_team_on !== undefined) row['notify_team_on'] = patch.notify_team_on;
-    if (patch.target_tags !== undefined) row['target_tags'] = JSON.stringify(patch.target_tags);
-    if (patch.target_lists !== undefined) row['target_lists'] = JSON.stringify(patch.target_lists);
-    if (patch.fields !== undefined) {
-      row['fields'] = JSON.stringify(normForm(patch.fields));
-    }
-
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
-    return this.normalizeForm(updated);
-  }
-
-  public publishForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'published', null);
-  }
-
-  public unpublishForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'draft', null);
-  }
-
-  public archiveForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'archived', new Date());
-  }
-
-  /** Restore always lands in draft — reopening a public link is a deliberate act. */
-  public restoreForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'draft', null);
-  }
-
-  /** Hard delete is only allowed for a zero-response draft; everything else must be archived. */
-  public async deleteForm(id: string, auth: IAuthKeyPayload) {
-    const existing = (await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id })) as
-      | { status?: string }
-      | undefined;
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const count = await this.getRepo().countSubmissions(auth.tenant_id, id);
-    if (existing.status !== 'draft' || count > 0) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Only a draft with no responses can be deleted. Archive it instead — archiving is reversible.',
-      });
-    }
-    return this.delete(auth.tenant_id, id, auth.user_id);
-  }
-
-  public async getFormSubmissions(id: string, tenantId: string, cursor?: number) {
-    const limit = 25;
-    const offset = cursor ?? 0;
-    const rows = await this.getRepo().getFormSubmissions(tenantId, id, limit + 1, offset);
-    const total = await this.getRepo().countSubmissions(tenantId, id);
-    const hasMore = rows.length > limit;
-    const items = rows.slice(0, limit).map((row) => {
-      const answersRaw = row['answers'];
-      const answers =
-        typeof answersRaw === 'string'
-          ? this.safeJson(answersRaw, {})
-          : ((answersRaw as Record<string, unknown>) ?? {});
-      const name = `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim();
-      return {
-        id: String(row['id']),
-        person_id: String(row['person_id']),
-        person_name: name || null,
-        answers,
-        created_at: row['created_at'] as Date | string,
-      };
-    });
-    return { items, total, nextCursor: hasMore ? offset + limit : null };
-  }
-
-  private async setStatus(
-    id: string,
-    auth: IAuthKeyPayload,
-    status: 'draft' | 'published' | 'archived',
-    archivedAt: Date | null,
-  ) {
-    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const updated = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() } as any,
-    });
-    return this.normalizeForm(updated);
-  }
-
-  private async uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
-    const base =
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '') || 'form';
-    let slug = base;
-    let n = 2;
-    while (await this.getRepo().slugExists(tenantId, slug, excludeId)) {
-      slug = `${base}-${n++}`;
-    }
-    return slug;
-  }
-
-  /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */
-  private mapLegacyStatus(status: string | undefined): 'draft' | 'published' | 'archived' {
-    if (status === 'archived') return 'archived';
-    if (status === 'draft') return 'draft';
-    return 'published';
-  }
-
-  private safeJson<T>(value: string, fallback: T): T {
-    try {
-      return JSON.parse(value) as T;
-    } catch {
-      return fallback;
-    }
-  }
-
-  private normalizeForm(record: unknown) {
-    if (!record || typeof record !== 'object') return record;
-    const row = record as Record<string, unknown>;
-    const toArray = (value: unknown): string[] => {
-      if (Array.isArray(value)) return value as string[];
-      if (typeof value === 'string') return this.safeJson<string[]>(value, []);
-      return [];
-    };
-    const rawFields = Array.isArray(row['fields'])
-      ? row['fields']
-      : typeof row['fields'] === 'string'
-        ? this.safeJson<unknown[]>(row['fields'] as string, [])
-        : [];
-    return {
+    const formattedRows = rows.map((row) => ({
       ...row,
-      id: row['id'] != null ? String(row['id']) : row['id'],
-      tenant_id: row['tenant_id'] != null ? String(row['tenant_id']) : row['tenant_id'],
-      target_tags: toArray(row['target_tags']),
-      target_lists: toArray(row['target_lists']),
-      fields: normForm(rawFields),
-      submission_count: row['submission_count'] != null ? Number(row['submission_count']) : 0,
+      id: String(row['id']),
+      target_tags: Array.isArray(row['target_tags'])
+        ? row['target_tags']
+        : JSON.parse(String(row['target_tags'] || '[]')),
+      target_lists: Array.isArray(row['target_lists'])
+        ? row['target_lists']
+        : JSON.parse(String(row['target_lists'] || '[]')),
+    }));
+
+    return {
+      rows: formattedRows,
+      count,
     };
   }
 }
@@ -38358,6 +37434,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { signedFileDownloadUrl } from '../../lib/signed-download';
+import { RESERVED_SUBDOMAINS, slugifyHandle } from '../../../../../../libs/common/src';
 import type { QueryResult, Transaction } from 'kysely';
 
 import type {
@@ -38641,10 +37718,11 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 
       let tenant_deletion_scheduled_at: Date | null = null;
       let tenant_paused_at: Date | null = null;
+      let tenant_slug: string | null = null;
       if (auth.tenant_id) {
         const tenant = await this.getRepo()
           .db.selectFrom('tenants')
-          .select(['deletion_scheduled_at', 'paused_at'])
+          .select(['deletion_scheduled_at', 'paused_at', 'slug'])
           .where('id', '=', auth.tenant_id)
           .executeTakeFirst();
         if (tenant?.deletion_scheduled_at) {
@@ -38653,6 +37731,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         if (tenant?.paused_at) {
           tenant_paused_at = tenant.paused_at;
         }
+        tenant_slug = tenant?.slug ?? null;
       }
 
       return {
@@ -38662,6 +37741,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         passkey_setup_dismissed_at: typedUser.passkey_setup_dismissed_at ?? null,
         tenant_deletion_scheduled_at,
         tenant_paused_at,
+        tenant_slug,
       };
     } catch (err) {
       throw new InternalError('Something went wrong, please try again', undefined, { cause: err });
@@ -39982,12 +39062,37 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   }
 
   private async createTenant(trx: Transaction<Models>, name: string) {
-    const row = { name } as OperationDataType<'tenants', 'insert'>;
+    const slug = await this.generateTenantSlug(trx, name);
+    const row = { name, slug } as OperationDataType<'tenants', 'insert'>;
     const tenantAddResult = await this.tenants.add({ row }, trx);
     if (!tenantAddResult) {
       throw new InternalError('Something went wrong, please try again');
     }
     return tenantAddResult.id;
+  }
+
+  /**
+   * Produce a globally-unique, DNS-safe subdomain label for a new tenant: slugify the org name, fall
+   * back to a random `org-xxxxxx` when the name yields nothing usable or hits a reserved label, then
+   * suffix on collision. The tenant id isn't known before insert, so the fallback is random rather
+   * than id-derived.
+   */
+  private async generateTenantSlug(trx: Transaction<Models>, name: string): Promise<string> {
+    let base = slugifyHandle(name);
+    if (!base || RESERVED_SUBDOMAINS.has(base)) {
+      base = `org-${randomBytes(4).toString('hex')}`;
+    }
+    let candidate = base;
+    let n = 2;
+    while (await this.tenantSlugTaken(trx, candidate)) {
+      candidate = `${base}-${n++}`;
+    }
+    return candidate;
+  }
+
+  private async tenantSlugTaken(trx: Transaction<Models>, slug: string): Promise<boolean> {
+    const row = await trx.selectFrom('tenants').select('id').where('slug', '=', slug).executeTakeFirst();
+    return !!row;
   }
 
   private async createTokens(
@@ -41251,6 +40356,1080 @@ export class PersonsRepo extends BaseRepository<'persons'> {
 
       return { success: true };
     });
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/web-forms/controller.ts
+
+```typescript
+import type {
+  AddWebFormType,
+  CreateFormType,
+  FormField,
+  IAuthKeyPayload,
+  UpdateFormType,
+  UpdateWebFormType,
+} from '../../../../../../libs/common/src';
+import { FORM_TEMPLATES, fieldsForTemplate, normForm } from '../../../../../../libs/common/src';
+import { BaseController } from '../../lib/base.controller';
+import { WebFormsRepo } from './repositories/web-forms.repo';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { type Transaction, sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { createSigner, createVerifier } from 'fast-jwt';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import { HouseholdRepo } from '../households/repositories/households.repo';
+
+import { WorkflowsController } from '../workflows/controller';
+import { DonationsController } from '../donations/controller';
+import { logger } from '../../logger';
+
+// Sliding window memory for rate-limiting
+const ipSubmissionTimestamps = new Map<string, number[]>();
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+  constructor() {
+    super(new WebFormsRepo());
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const form = await super.getOneById(input);
+    if (!form) return form;
+    return this.resolveCreatorAndUpdater(input.tenant_id, form);
+  }
+
+  public async getFormPublic(id: string) {
+    return this.getRepo().getByIdPublic(id);
+  }
+
+  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
+    const row = {
+      tenant_id: auth.tenant_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      redirect_url: payload.redirect_url ?? null,
+      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
+      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
+      fields: payload.fields ? JSON.stringify(payload.fields) : null,
+      status: this.mapLegacyStatus(payload.status),
+      send_confirmation: payload.send_confirmation ?? true,
+      send_alert: payload.send_alert ?? true,
+      form_type: payload.form_type ?? 'standard',
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    return this.add(row as any);
+  }
+
+  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
+    if (!existing) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found.',
+      });
+    }
+
+    const row: any = {
+      updatedby_id: auth.user_id,
+      updated_at: new Date(),
+    };
+    if (payload.name !== undefined) row.name = payload.name;
+    if (payload.description !== undefined) row.description = payload.description;
+    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
+    if (payload.target_tags !== undefined)
+      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
+    if (payload.target_lists !== undefined)
+      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
+    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
+    if (payload.status !== undefined) row.status = this.mapLegacyStatus(payload.status);
+    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
+    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
+
+    const rawPayload = payload as any;
+    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Form type cannot be changed after the form has been created.',
+      });
+    }
+
+    return this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row,
+    });
+  }
+
+  public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
+    // 1. Rate limiting check
+    const now = Date.now();
+    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RATE_LIMIT_MAX) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. Please try again in a minute.',
+      });
+    }
+    timestamps.push(now);
+    // Prune empty keys to prevent unbounded Map growth
+    if (timestamps.length > 0) {
+      ipSubmissionTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSubmissionTimestamps.delete(clientIp);
+    }
+
+    // 2. Fetch Form by ID
+    const form = await this.getRepo().getByIdPublic(formId);
+    if (!form || form.status !== 'published') {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found or inactive.',
+      });
+    }
+
+    const tenantId = String(form.tenant_id);
+
+    // 3. Honeypot check
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
+      return { redirect_url: form.redirect_url || null };
+    }
+
+    // 4. Validate email
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Email address is required.',
+      });
+    }
+
+    // Parse configured fields. Supports both the legacy string[] shape ("mobile:required") used by
+    // donation/older forms and the new-model FormField[] objects ({ key, on, required, label }).
+    const rawFields: unknown = form.fields
+      ? Array.isArray(form.fields)
+        ? form.fields
+        : JSON.parse(String(form.fields))
+      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+    const fieldArray: unknown[] = Array.isArray(rawFields) ? rawFields : [];
+
+    // Map payload key aliases helper
+    const getPayloadValue = (key: string): string => {
+      let value = '';
+      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
+      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
+      else if (key === 'full_name' || key === 'name') value = payload['full_name'] || payload['name'] || '';
+      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
+      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
+      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
+      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
+      else value = payload[key] || '';
+      return String(value).trim();
+    };
+
+    // Validate user-configured required fields for standard forms
+    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+      const fieldLabels: Record<string, string> = {
+        first_name: 'First Name',
+        last_name: 'Last Name',
+        full_name: 'Full name',
+        mobile: 'Mobile / Phone',
+        notes: 'Notes / Message',
+        street1: 'Street Address',
+        city: 'City',
+        state: 'State / Province',
+        zip: 'Zip / Postal Code',
+        country: 'Country',
+      };
+
+      const requiredFields: { name: string; label: string }[] = [];
+      for (const raw of fieldArray) {
+        if (typeof raw === 'string') {
+          if (raw.endsWith(':required')) {
+            const name = raw.replace(':required', '');
+            requiredFields.push({ name, label: fieldLabels[name] ?? name });
+          }
+        } else if (raw && typeof raw === 'object') {
+          const obj = raw as { key?: string; on?: boolean; required?: boolean; label?: string };
+          // Email is validated separately above; skip it here.
+          if (obj.key && obj.key !== 'email' && obj.on && obj.required) {
+            requiredFields.push({ name: obj.key, label: obj.label ?? fieldLabels[obj.key] ?? obj.key });
+          }
+        }
+      }
+
+      for (const field of requiredFields) {
+        if (!getPayloadValue(field.name)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `${field.label} is required.` });
+        }
+      }
+    }
+
+    // Parse and validate donation fields if form is a donation or recurring_donation form
+    let amountCents = 0;
+    let monthlyAmountCents = 0;
+    let country = '';
+    let state = '';
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
+      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
+      if (!firstName || !lastName) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'First name and last name are required for donations.',
+        });
+      }
+
+      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+      const city = (payload['city'] || '').trim();
+      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+      country = (payload['country'] || payload['residency_country'] || '').trim();
+      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+      if (!street1 || !city || !zip || !country || !state) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
+        });
+      }
+
+      // Check if email already exists to run eligibility checks
+      const existing = await this.getRepo()
+        .db.selectFrom('persons')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where(sql`lower(email)`, '=', email.toLowerCase())
+        .executeTakeFirst();
+
+      const donationsController = new DonationsController();
+
+      if (form.form_type === 'donation') {
+        const amountStr = payload['amount'] || payload['donation_amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
+        }
+        amountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          amountCents,
+          { country, state },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      } else {
+        // recurring_donation
+        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
+        }
+        monthlyAmountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          monthlyAmountCents,
+          { country, state },
+          { isRecurring: true },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      }
+    }
+
+    // 5. Gather submission fields. New-model forms collect a single `full_name`; split it on the
+    // last space so the person record still gets a first/last name.
+    let firstName = payload['first_name'] || payload['firstName'] || null;
+    let lastName = payload['last_name'] || payload['lastName'] || null;
+    if (!firstName && !lastName) {
+      const fullName = (payload['full_name'] || payload['name'] || '').trim();
+      if (fullName) {
+        const lastSpace = fullName.lastIndexOf(' ');
+        if (lastSpace === -1) {
+          firstName = fullName;
+        } else {
+          firstName = fullName.slice(0, lastSpace).trim();
+          lastName = fullName.slice(lastSpace + 1).trim();
+        }
+      }
+    }
+    const mobile = payload['mobile'] || payload['phone'] || null;
+    const notes = payload['notes'] || payload['message'] || null;
+
+    let resolvedPersonId = '';
+    let resolvedCreatorId = '1';
+
+    // 6. Find or Create person & apply merges/tags
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        // Use the form's creator as the actor — they are the person who
+        // configured this form, which is the most correct attribution for
+        // contacts and data created via public submissions.
+        const creatorId = String(form.createdby_id);
+
+        resolvedCreatorId = creatorId;
+
+        if (!householdId) {
+          throw new Error('Tenant placeholder household is not configured.');
+        }
+
+        const campaignId = await this.getCampaignId(tenantId, trx);
+
+        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
+        // counted once they confirm via the emailed link (see confirm-subscription route).
+        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
+
+        let finalHouseholdId = householdId;
+
+        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+        const city = (payload['city'] || '').trim();
+        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+        const country = (payload['country'] || payload['residency_country'] || '').trim();
+        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+        const hasAddress = !!(street1 || city || zip || country || state);
+
+        if (hasAddress) {
+          const fp_street = fingerprintStreet({ street1 });
+          const fp_full = fingerprintFull({
+            street1,
+            city,
+            state,
+            zip,
+            country,
+          });
+
+          const householdRepo = new HouseholdRepo();
+          const existingHh = await trx
+            .selectFrom('households')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('campaign_id', '=', campaignId)
+            .where('address_fp_full', '=', fp_full)
+            .executeTakeFirst();
+
+          if (existingHh) {
+            finalHouseholdId = String(existingHh.id);
+          } else {
+            const createdHhs = await householdRepo.addMany(
+              {
+                rows: [
+                  {
+                    tenant_id: tenantId,
+                    campaign_id: campaignId,
+                    createdby_id: creatorId,
+                    updatedby_id: creatorId,
+                    street1,
+                    city,
+                    state,
+                    zip,
+                    country,
+                    address_fp_street: fp_street,
+                    address_fp_full: fp_full,
+                  } as any,
+                ],
+              },
+              trx,
+            );
+            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
+              finalHouseholdId = String(createdHhs[0].id);
+            }
+          }
+        }
+
+        // Check if email already exists
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = {
+            updatedby_id: creatorId,
+            updated_at: sql`now()`,
+          };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (form.form_type === 'donation' || hasAddress) {
+            updateRow.household_id = finalHouseholdId;
+          }
+          if (!existing.notes && notes) {
+            updateRow.notes = notes;
+          } else if (existing.notes && notes) {
+            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
+          }
+
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: finalHouseholdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            mobile: mobile,
+            notes: notes,
+            opt_in_status: doubleOptIn ? 'pending' : null,
+          };
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          // Trigger contact created workflow
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
+          }
+
+          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
+          if (doubleOptIn) {
+            await this.enqueueSubscriptionConfirmation(trx, {
+              tenantId,
+              personId,
+              email,
+              firstName,
+            });
+          }
+        }
+
+        resolvedPersonId = personId;
+
+        const workflowsController = new WorkflowsController();
+
+        // Add target custom tags & read-only system tag
+        const targetTags: string[] = Array.isArray(form.target_tags)
+          ? form.target_tags
+          : JSON.parse((form.target_tags as any) || '[]');
+        const systemTagName = `source: ${form.name}`;
+        const allTagsToApply = [...targetTags, systemTagName];
+        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+          allTagsToApply.push('donor');
+        }
+
+        for (const tagName of allTagsToApply) {
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
+
+          let tag = await trx
+            .selectFrom('tags')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('name', '=', normalizedTagName)
+            .where('type', '=', 'tag')
+            .executeTakeFirst();
+
+          if (!tag) {
+            const insertTagRes = await trx
+              .insertInto('tags')
+              .values({
+                tenant_id: tenantId,
+                name: normalizedTagName,
+                type: 'tag',
+                deletable: true,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            tag = { id: insertTagRes.id };
+          }
+
+          const mapExists = await trx
+            .selectFrom('map_peoples_tags')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('tag_id', '=', tag.id)
+            .executeTakeFirst();
+
+          if (!mapExists) {
+            await trx
+              .insertInto('map_peoples_tags')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                tag_id: tag.id,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger tag_added and specialized subscriber workflows
+            try {
+              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Add target lists
+        const targetLists: string[] = Array.isArray(form.target_lists)
+          ? form.target_lists
+          : JSON.parse((form.target_lists as any) || '[]');
+        for (const listId of targetLists) {
+          if (!listId) continue;
+          const listExists = await trx
+            .selectFrom('lists')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', listId)
+            .executeTakeFirst();
+
+          if (!listExists) continue;
+
+          const inList = await trx
+            .selectFrom('map_lists_persons')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('list_id', '=', listId)
+            .executeTakeFirst();
+
+          if (!inList) {
+            await trx
+              .insertInto('map_lists_persons')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                list_id: listId,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger list joined workflows
+            try {
+              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Trigger web form submitted workflows
+        try {
+          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
+        }
+
+        // Log user activity
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: creatorId,
+            activity: 'submission',
+            entity: 'web_forms',
+            entity_id: formId,
+            quantity: 1,
+            metadata: JSON.stringify({ person_id: personId, email }),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .execute();
+
+        // Persist a durable response record (answers snapshot + person FK) for the Responses tab.
+        // Donation forms are a separate flow (Stripe/webhook) and are not part of this model.
+        if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+          const answers: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(payload)) {
+            if (key === '_hp') continue;
+            answers[key] = value;
+          }
+          await trx
+            .insertInto('form_submissions')
+            .values({
+              tenant_id: tenantId,
+              form_id: String(form.id),
+              person_id: personId,
+              answers: JSON.stringify(answers),
+            })
+            .execute();
+        }
+
+        // Queue email notification job in background
+        await trx
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'send-webform-notifications',
+              formId: String(form.id),
+              tenantId,
+              email,
+              firstName,
+              lastName,
+              mobile,
+              notes,
+            }),
+            run_at: new Date(),
+          })
+          .execute();
+      });
+
+    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const donationsController = new DonationsController();
+      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
+
+      if (form.form_type === 'donation') {
+        const checkoutSession = await donationsController.createCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          amountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      } else {
+        const checkoutSession = await donationsController.createRecurringCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          monthlyAmountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      }
+    }
+
+    return { redirect_url: form.redirect_url || null };
+  }
+
+  /**
+   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
+   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
+   */
+  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
+
+    let payload: any;
+    try {
+      payload = await verifier(token);
+    } catch {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
+    }
+
+    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
+    }
+
+    await this.getRepo()
+      .db.updateTable('persons')
+      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
+      .where('tenant_id', '=', String(payload.tenant_id))
+      .where('id', '=', String(payload.person_id))
+      .execute();
+
+    return { success: true };
+  }
+
+  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'communications.double_opt_in')
+      .executeTakeFirst();
+
+    return row?.value === true || row?.value === 'true';
+  }
+
+  /**
+   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
+   * runs only if the surrounding submission transaction commits, keeping the pending person and the
+   * confirmation email consistent.
+   */
+  private async enqueueSubscriptionConfirmation(
+    trx: Transaction<Models>,
+    args: { tenantId: string; personId: string; email: string; firstName: string | null },
+  ): Promise<void> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
+      return;
+    }
+
+    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
+    const token = signer({
+      tenant_id: args.tenantId,
+      person_id: args.personId,
+      email: args.email.toLowerCase().trim(),
+      purpose: 'confirm-subscription',
+    });
+    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
+
+    await trx
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: args.tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-subscription-confirmation',
+          tenantId: args.tenantId,
+          email: args.email,
+          firstName: args.firstName,
+          confirmUrl,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+  }
+
+  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'current_campaign')
+      .executeTakeFirst();
+
+    if (row) {
+      const value = row.value;
+      if (typeof value === 'number' || typeof value === 'string') {
+        return String(value);
+      }
+      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+        const id = (value as Record<string, unknown>)['id'];
+        if (typeof id === 'number' || typeof id === 'string') {
+          return String(id);
+        }
+      }
+    }
+
+    const campaignRow = await trx
+      .selectFrom('campaigns')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (campaignRow) {
+      return String(campaignRow.id);
+    }
+
+    throw new Error('No campaign found for this tenant.');
+  }
+
+  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
+    return this.getRepo().countSubmissions(tenantId, formId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // North Star "living funnel" lifecycle (new Forms experience).
+  // ---------------------------------------------------------------------------
+
+  /** All non-donation forms as cards for the browse page, fields normalized for the preview. */
+  public async listForms(tenantId: string) {
+    const rows = await this.getRepo().listForms(tenantId);
+    return rows.map((row) => this.normalizeForm(row));
+  }
+
+  /**
+   * Public config for the unauthenticated /f/:slug page. Returns only what the public page renders,
+   * plus the org name; closed (unpublished/archived) forms return a status the page shows as a
+   * "closed" card. Throws NOT_FOUND when the slug doesn't exist at all.
+   */
+  public async getPublicFormBySlug(slug: string, tenantId: string) {
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+    if (!form) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const orgName = await this.getOrgName(String(form.tenant_id));
+    if (form.status !== 'published') {
+      return { status: 'closed' as const, orgName, name: String(form.name) };
+    }
+    const normalized = this.normalizeForm(form) as {
+      id: string;
+      name: string;
+      description: string | null;
+      submit_label: string | null;
+      thanks_title: string | null;
+      thanks_body: string | null;
+      redirect_url: string | null;
+      fields: FormField[];
+    };
+    return {
+      status: 'open' as const,
+      orgName,
+      form: {
+        id: normalized.id,
+        name: normalized.name,
+        description: normalized.description,
+        submit_label: normalized.submit_label,
+        thanks_title: normalized.thanks_title,
+        thanks_body: normalized.thanks_body,
+        redirect_url: normalized.redirect_url,
+        fields: normalized.fields.filter((f) => f.on),
+      },
+    };
+  }
+
+  /** Resolve a tenant id from its public subdomain slug (for the /f/:slug page). */
+  public resolveTenantIdBySlug(tenantSlug: string): Promise<string | null> {
+    return this.getRepo().getTenantIdBySlug(tenantSlug);
+  }
+
+  private async getOrgName(tenantId: string): Promise<string> {
+    const row = await this.getRepo()
+      .db.selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'organization.name')
+      .executeTakeFirst();
+    const value = row?.value;
+    return typeof value === 'string' && value.trim() ? value : 'Our organization';
+  }
+
+  /** Single form, fields normalized — used by the editor + preview. */
+  public async getFormForEdit(id: string, tenantId: string) {
+    const form = await this.getRepo().getOneById({ id, tenant_id: tenantId });
+    if (!form) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    return this.normalizeForm(form);
+  }
+
+  /** Create a draft from a template. Lands the user in edit mode (frontend). */
+  public async createForm(payload: CreateFormType, auth: IAuthKeyPayload) {
+    const template = FORM_TEMPLATES[payload.type];
+    const slug = await this.uniqueSlug(auth.tenant_id, payload.name);
+    const fields = fieldsForTemplate(payload.type);
+    const row = {
+      tenant_id: auth.tenant_id,
+      name: payload.name,
+      description: template.description,
+      redirect_url: null,
+      target_tags: JSON.stringify([]),
+      target_lists: JSON.stringify([]),
+      fields: JSON.stringify(fields),
+      status: 'draft',
+      type: payload.type,
+      form_type: 'standard',
+      slug,
+      submit_label: template.submitLabel,
+      thanks_title: 'Thank you!',
+      thanks_body: 'Your response has been recorded — thanks for reaching out.',
+      confirm_subject: `Thanks for your ${payload.type}`,
+      confirm_body: 'Hi [First name],\n\nThanks for your submission — we’ve received it and will be in touch soon.',
+      send_confirmation: true,
+      send_alert: false,
+      notify_team_on: false,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    const created = await this.add(row as any);
+    return this.normalizeForm(created);
+  }
+
+  /** Live-edit patch. `normForm` guarantees the email identity-key invariant server-side. */
+  public async updateFormLive(id: string, patch: UpdateFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+
+    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
+    // Slug intentionally stays stable across renames — a published link must never break.
+    if (patch.name !== undefined) row['name'] = patch.name;
+    if (patch.description !== undefined) row['description'] = patch.description;
+    if (patch.redirect_url !== undefined) row['redirect_url'] = patch.redirect_url;
+    if (patch.submit_label !== undefined) row['submit_label'] = patch.submit_label;
+    if (patch.thanks_title !== undefined) row['thanks_title'] = patch.thanks_title;
+    if (patch.thanks_body !== undefined) row['thanks_body'] = patch.thanks_body;
+    if (patch.confirm_email_on !== undefined) row['send_confirmation'] = patch.confirm_email_on;
+    if (patch.confirm_subject !== undefined) row['confirm_subject'] = patch.confirm_subject;
+    if (patch.confirm_body !== undefined) row['confirm_body'] = patch.confirm_body;
+    if (patch.notify_team_on !== undefined) row['notify_team_on'] = patch.notify_team_on;
+    if (patch.target_tags !== undefined) row['target_tags'] = JSON.stringify(patch.target_tags);
+    if (patch.target_lists !== undefined) row['target_lists'] = JSON.stringify(patch.target_lists);
+    if (patch.fields !== undefined) {
+      row['fields'] = JSON.stringify(normForm(patch.fields));
+    }
+
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
+    return this.normalizeForm(updated);
+  }
+
+  public publishForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'published', null);
+  }
+
+  public unpublishForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'draft', null);
+  }
+
+  public archiveForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'archived', new Date());
+  }
+
+  /** Restore always lands in draft — reopening a public link is a deliberate act. */
+  public restoreForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'draft', null);
+  }
+
+  /** Hard delete is only allowed for a zero-response draft; everything else must be archived. */
+  public async deleteForm(id: string, auth: IAuthKeyPayload) {
+    const existing = (await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id })) as
+      | { status?: string }
+      | undefined;
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const count = await this.getRepo().countSubmissions(auth.tenant_id, id);
+    if (existing.status !== 'draft' || count > 0) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Only a draft with no responses can be deleted. Archive it instead — archiving is reversible.',
+      });
+    }
+    return this.delete(auth.tenant_id, id, auth.user_id);
+  }
+
+  public async getFormSubmissions(id: string, tenantId: string, cursor?: number) {
+    const limit = 25;
+    const offset = cursor ?? 0;
+    const rows = await this.getRepo().getFormSubmissions(tenantId, id, limit + 1, offset);
+    const total = await this.getRepo().countSubmissions(tenantId, id);
+    const hasMore = rows.length > limit;
+    const items = rows.slice(0, limit).map((row) => {
+      const answersRaw = row['answers'];
+      const answers =
+        typeof answersRaw === 'string'
+          ? this.safeJson(answersRaw, {})
+          : ((answersRaw as Record<string, unknown>) ?? {});
+      const name = `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim();
+      return {
+        id: String(row['id']),
+        person_id: String(row['person_id']),
+        person_name: name || null,
+        answers,
+        created_at: row['created_at'] as Date | string,
+      };
+    });
+    return { items, total, nextCursor: hasMore ? offset + limit : null };
+  }
+
+  private async setStatus(
+    id: string,
+    auth: IAuthKeyPayload,
+    status: 'draft' | 'published' | 'archived',
+    archivedAt: Date | null,
+  ) {
+    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const updated = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() } as any,
+    });
+    return this.normalizeForm(updated);
+  }
+
+  private async uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
+    const base =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'form';
+    let slug = base;
+    let n = 2;
+    while (await this.getRepo().slugExists(tenantId, slug, excludeId)) {
+      slug = `${base}-${n++}`;
+    }
+    return slug;
+  }
+
+  /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */
+  private mapLegacyStatus(status: string | undefined): 'draft' | 'published' | 'archived' {
+    if (status === 'archived') return 'archived';
+    if (status === 'draft') return 'draft';
+    return 'published';
+  }
+
+  private safeJson<T>(value: string, fallback: T): T {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private normalizeForm(record: unknown) {
+    if (!record || typeof record !== 'object') return record;
+    const row = record as Record<string, unknown>;
+    const toArray = (value: unknown): string[] => {
+      if (Array.isArray(value)) return value as string[];
+      if (typeof value === 'string') return this.safeJson<string[]>(value, []);
+      return [];
+    };
+    const rawFields = Array.isArray(row['fields'])
+      ? row['fields']
+      : typeof row['fields'] === 'string'
+        ? this.safeJson<unknown[]>(row['fields'] as string, [])
+        : [];
+    return {
+      ...row,
+      id: row['id'] != null ? String(row['id']) : row['id'],
+      tenant_id: row['tenant_id'] != null ? String(row['tenant_id']) : row['tenant_id'],
+      target_tags: toArray(row['target_tags']),
+      target_lists: toArray(row['target_lists']),
+      fields: normForm(rawFields),
+      submission_count: row['submission_count'] != null ? Number(row['submission_count']) : 0,
+    };
   }
 }
 ```
