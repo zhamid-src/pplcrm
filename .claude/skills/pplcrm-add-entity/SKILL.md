@@ -143,7 +143,18 @@ Spec files live next to source, not in a separate folder. Real examples:
 `experiences/teams/ui/team-form.spec.ts`, `experiences/tags/services/tags-service.spec.ts`.
 → Runner specifics and the spec-file lint gap: `pplcrm-testing`.
 
-### 13. Verify
+### 13. Help documentation (MANDATORY for any user-facing entity)
+
+A new entity is a new user-facing feature, so the in-app Help Center must ship in the same change.
+Articles are typed TypeScript data in `apps/frontend/src/app/experiences/help/data/articles/*.ts`
+(one file per category, aggregated in `help-content.ts`). Add or extend the article that covers the
+new record type — what it is, how to create/edit/delete it, and any related flows — and wire its
+`related` ids and internal `[label](/route)` links. Inline mini-markup only: `**bold**`, backtick
+code, `[label](/internal/route)`. The integrity spec (`data/help-content.spec.ts`) fails on duplicate
+slugs, broken `related` ids, and links to unknown routes, but it does **not** catch stale or missing
+prose — write the words yourself. Run `npx vitest run src/app/experiences/help` from `apps/frontend`.
+
+### 14. Verify
 
 Run `/verify`, then the quality gate before committing → `pplcrm-quality-gate`
 (remember: green `nx lint` is necessary but not sufficient; run plain `eslint` on your changed
