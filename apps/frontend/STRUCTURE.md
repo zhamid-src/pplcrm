@@ -322,6 +322,8 @@ apps/
           summary/
             services/
               dashboard.service.ts
+              getting-started.service.ts
+            getting-started-card.ts
             sla-details.html
             sla-details.ts
             summary.html
@@ -4635,2476 +4637,6 @@ export class StandardFormsService extends FormsService {
     }
   </main>
 </div>
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const ADMIN_ARTICLES: HelpArticle[] = [
-  {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary:
-      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Administrators set workspace defaults, but your choices here are yours.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the System section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The three roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
-          '**Admin** — everything, plus the System area: users, tags, issues, configuration, and the activity log.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'integrations',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. [Settings](/settings) (avatar menu → Settings) covers your notifications and appearance. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone.',
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace configuration' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization** — your name, contact details, and mailing address.',
-          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & Access** — default role for invitations and the MFA requirement.',
-          '**SLA Configuration** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance** — default theme and date format for the workspace.',
-          '**Integrations & API** — webhook keys and connected services.',
-          '**Billing** — your plan and payment details.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity log](/activities) under System: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const CONTACTS_ARTICLES: HelpArticle[] = [
-  {
-    id: 'add-people',
-    category: 'contacts',
-    title: 'Add and edit people',
-    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
-    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
-    related: ['person-profile', 'import', 'tags-issues', 'households'],
-    blocks: [
-      { kind: 'h2', id: 'add-one', text: 'Add a person' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
-          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
-          {
-            title: 'Fill in what you know',
-            detail:
-              'Fields validate as you type — problems are explained right under the field, so you can fix them before saving.',
-          },
-          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Have a spreadsheet?',
-        text: 'Do not type hundreds of rows by hand — [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
-      },
-      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
-      {
-        kind: 'p',
-        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid — double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
-      },
-      {
-        kind: 'p',
-        text: 'If you try to leave a form with unsaved changes, PeopleCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
-      },
-      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
-      {
-        kind: 'p',
-        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
-      },
-    ],
-  },
-  {
-    id: 'person-profile',
-    category: 'contacts',
-    title: 'Inside a person profile',
-    summary:
-      'The profile gathers everything about one person — here is what each tab shows and where the numbers come from.',
-    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
-    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials — who this is and their status — and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
-      },
-      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
-      {
-        kind: 'list',
-        items: [
-          '**Activity** — the audit trail of changes and touches on this record, newest first.',
-          '**Emails** — messages exchanged with this person through the [Inbox](/inbox).',
-          '**Newsletters** — which campaigns they received.',
-          '**Volunteer** — their shift history and hours.',
-          '**Donations** — every gift on record.',
-          '**Events** — event registrations and attendance.',
-        ],
-      },
-      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
-      {
-        kind: 'p',
-        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows — use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Empty tab? That is a prompt, not a dead end',
-        text: 'Empty states name the cause and offer the next step — for example, a person with no household shows an assign action right there.',
-      },
-    ],
-  },
-  {
-    id: 'households',
-    category: 'contacts',
-    title: 'Households',
-    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
-    keywords: ['household', 'family', 'address', 'members', 'assign household', 'home'],
-    related: ['add-people', 'person-profile', 'duplicates'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a household' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Households](/households)', detail: 'The grid lists every household with its members.' },
-          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
-          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Start from the person',
-        text: 'On a profile with no household yet, the household area offers **Assign household** directly — often the fastest route.',
-      },
-      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
-      {
-        kind: 'p',
-        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them — see [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-  {
-    id: 'companies',
-    category: 'contacts',
-    title: 'Companies',
-    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
-    keywords: ['company', 'organization', 'employer', 'business', 'sponsor', 'corporate'],
-    related: ['person-profile', 'duplicates', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Companies hold the organizations in your world — employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
-      },
-      { kind: 'h2', id: 'create', text: 'Add a company' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Companies](/companies)',
-            detail: 'Browse or search existing companies first to avoid creating a twin.',
-          },
-          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
-          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Companies get the full grid toolkit — filters, tags, CSV import and export, and inline editing — plus their own view in the [Duplicates](/duplicates) finder.',
-      },
-    ],
-  },
-  {
-    id: 'teams',
-    category: 'contacts',
-    title: 'Teams',
-    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
-    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
-    related: ['events-shifts', 'tasks', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Teams turn a crowd of volunteers into working units — a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
-      },
-      { kind: 'h2', id: 'create', text: 'Set up a team' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Teams](/teams)', detail: 'The grid shows every team at a glance.' },
-          { title: 'Click the + button', detail: 'Name the team and describe its purpose.' },
-          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
-          {
-            title: 'Give it work',
-            detail: 'Attach lists to call through and tasks to complete — the team page tracks both.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Teams pair well with shifts',
-        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile — see [Events and volunteer shifts](/help/events-shifts).',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const DATA_ARTICLES: HelpArticle[] = [
-  {
-    id: 'import',
-    category: 'data',
-    title: 'Import data from CSV',
-    summary:
-      'Bring existing spreadsheets into PeopleCRM, watch progress live, and clean up afterwards with the duplicates finder.',
-    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel'],
-    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Any grid that supports it has **Import CSV** in its toolbar — [People](/people), [Companies](/companies), and more. The [Imports](/imports) page is mission control: every import you have run, its status, and its results.',
-      },
-      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
-      {
-        kind: 'list',
-        items: [
-          'Use a CSV with a header row — column names like “First name” or “Email” map naturally.',
-          'One entity per file: import people into the People grid, companies into Companies.',
-          'A quick pass in your spreadsheet first (split names, tidy emails) beats fixing records one by one after.',
-        ],
-      },
-      { kind: 'h2', id: 'run', text: 'Run the import' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Click **Import CSV** in the grid toolbar',
-            detail: 'Pick your file and follow the prompts to match your columns to fields.',
-          },
-          {
-            title: 'Let it run in the background',
-            detail: 'Big files process server-side — keep working; the [Imports](/imports) page shows live progress.',
-          },
-          {
-            title: 'Read the summary',
-            detail: 'When it finishes you get an import summary notification with the results.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'after', text: 'After the import' },
-      {
-        kind: 'list',
-        items: [
-          'Spot-check a few records against the source file.',
-          'Run the [Duplicates](/duplicates) finder — overlap with existing records is normal, and merging is painless. See [Find and merge duplicates](/help/duplicates).',
-          'Tag the cohort if you have not already, so “everyone from the spring petition” stays one filter away.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Test with ten rows first',
-        text: 'Import a ten-row slice before the full file. If the mapping is off you fix ten records, not ten thousand.',
-      },
-    ],
-  },
-  {
-    id: 'export',
-    category: 'data',
-    title: 'Export your data',
-    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
-    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
-    related: ['import', 'bulk-actions', 'filters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
-      },
-      { kind: 'h2', id: 'exports-page', text: 'The Exports page' },
-      {
-        kind: 'p',
-        text: 'Large exports are prepared in the background. The [Exports](/exports) page lists every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Filter first, export second',
-        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Exports leave the safety of the app',
-        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
-      },
-    ],
-  },
-  {
-    id: 'duplicates',
-    category: 'data',
-    title: 'Find and merge duplicates',
-    summary:
-      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
-    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
-    related: ['import', 'bulk-actions', 'households', 'companies'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. The [Duplicates](/duplicates) finder hunts them down across people, households, and companies.',
-      },
-      { kind: 'h2', id: 'review', text: 'Review and merge' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
-          {
-            title: 'Compare each group side by side',
-            detail: 'The finder surfaces likely matches; you stay the judge.',
-          },
-          {
-            title: 'Merge — or skip',
-            detail:
-              'Merging folds the duplicate into the primary record and you confirm before anything happens. Not actually the same? Skip the group.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Merges are permanent',
-        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
-      },
-      {
-        kind: 'p',
-        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Make it a habit',
-        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
-  {
-    id: 'donations',
-    category: 'engagement',
-    title: 'Donations, pledges, and fundraising pages',
-    summary:
-      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
-    keywords: ['donation', 'gift', 'pledge', 'fundraising', 'donate page', 'giving', 'contribution', 'donor'],
-    related: ['person-profile', 'forms', 'export', 'grid-basics'],
-    blocks: [
-      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
-      {
-        kind: 'p',
-        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits — see [Working in grids](/help/grid-basics).',
-      },
-      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
-      {
-        kind: 'p',
-        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest — and gives you a follow-up queue of pledges yet to convert.',
-      },
-      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Fundraising](/donation-pages) and click +',
-            detail: 'Build the giving page — your appeal, your branding.',
-          },
-          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
-          {
-            title: 'Watch gifts arrive',
-            detail: 'Donations made through the page land in the CRM attached to the right people — no retyping.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Thank fast',
-        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands — see [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'events-shifts',
-    category: 'engagement',
-    title: 'Events and volunteer shifts',
-    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
-    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
-    related: ['teams', 'automations', 'forms', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. They live side by side under Forms in the sidebar.',
-      },
-      { kind: 'h2', id: 'events', text: 'Events' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Events](/events/pages) and click +',
-            detail: 'Set the what, when, and where, and publish the event page.',
-          },
-          { title: 'Share the page', detail: 'Registrations flow straight into the CRM as people sign up.' },
-          {
-            title: 'Review turnout',
-            detail: 'Registrations and attendance appear on the event — and on each person’s **Events** tab.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
-      {
-        kind: 'p',
-        text: 'Create shifts under [Shifts](/events/shifts) with a time and a place. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Automate the follow-through',
-        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically — the trigger fires per signup.',
-      },
-    ],
-  },
-  {
-    id: 'forms',
-    category: 'engagement',
-    title: 'Web forms',
-    summary: 'Publish forms that feed the CRM directly — signups, surveys, and volunteer interest, no retyping.',
-    keywords: ['form', 'web form', 'signup form', 'survey', 'embed', 'subscribe', 'submission'],
-    related: ['newsletters', 'automations', 'import'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Forms turn your audience’s interest into records. A form you build under [Forms](/forms) gets a public page you can share anywhere; submissions arrive as contacts and updates in real time, not as a spreadsheet to import on Friday.',
-      },
-      { kind: 'h2', id: 'build', text: 'Build and publish' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Forms](/forms) and click +',
-            detail: 'Add the fields you actually need — short forms convert better.',
-          },
-          { title: 'Publish and share the link', detail: 'The form works as a standalone page.' },
-          {
-            title: 'Watch submissions arrive',
-            detail: 'Each submission creates or updates a contact, ready to tag, list, and email.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new web-form subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Tag at the source',
-        text: 'Give each form a distinct tag for its signups and your segmentation stays effortless — you will always know who came from where. See [Tags and issues](/help/tags-issues).',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
-  {
-    id: 'welcome',
-    category: 'getting-started',
-    title: 'Welcome to PeopleCRM',
-    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
-    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['getting-around', 'add-people', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
-      },
-      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
-      {
-        kind: 'list',
-        items: [
-          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Engage** — [Inbox](/inbox) for incoming email, [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, and [Automations](/workflows).',
-          '**Contacts** — [People](/people), [Households](/households), [Companies](/companies), and the [Duplicates](/duplicates) finder.',
-          '**Campaign** — [Teams](/teams) and [Donations](/donations).',
-          '**Forms** — public-facing [Forms](/forms), volunteer [Shifts](/events/shifts), [Events](/events/pages), and [Fundraising](/donation-pages) pages.',
-          '**Tools** — [Tasks](/tasks), the [Task board](/board), [Files](/files), [Imports](/imports), and [Exports](/exports).',
-          '**System** (administrators only) — [Activity log](/activities), [Tags](/tags), [Issues](/issues), [Users](/users), and the [Workspace](/configuration) configuration.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Not seeing a section?',
-        text: 'The System section only appears for administrators. If you need access to tags, users, or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
-      },
-      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [People](/people)',
-            detail:
-              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
-          },
-          {
-            title: 'Open a profile',
-            detail:
-              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
-          },
-          {
-            title: 'Organize with tags and lists',
-            detail:
-              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
-          },
-          {
-            title: 'Send your first newsletter',
-            detail:
-              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
-          },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
-      },
-    ],
-  },
-  {
-    id: 'getting-around',
-    category: 'getting-started',
-    title: 'Finding your way around',
-    summary:
-      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
-    keywords: [
-      'navigation',
-      'breadcrumbs',
-      'sidebar',
-      'pins',
-      'bookmarks',
-      'favourites',
-      'favorites',
-      'theme',
-      'dark mode',
-      'fullscreen',
-      'next record',
-      'previous record',
-    ],
-    related: ['welcome', 'search', 'shortcuts'],
-    blocks: [
-      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
-      {
-        kind: 'p',
-        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
-      },
-      {
-        kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'No pager on a record?',
-        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
-      },
-      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
-      {
-        kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
-      },
-      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
-      {
-        kind: 'list',
-        items: [
-          'Collapse any section by clicking its heading — useful for areas you rarely use.',
-          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
-          'The logo takes you back to the [Dashboard](/summary) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
-        ],
-      },
-      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
-      {
-        kind: 'list',
-        items: [
-          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
-          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'search',
-    category: 'getting-started',
-    title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
-    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
-    related: ['filters', 'shortcuts', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
-      },
-      {
-        kind: 'list',
-        items: [
-          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
-          'Search is case-insensitive and ignores extra spaces.',
-          'Clear the search box to bring every row back.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
-      },
-      {
-        kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
-      },
-      {
-        kind: 'p',
-        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
-      },
-    ],
-  },
-  {
-    id: 'dashboard',
-    category: 'getting-started',
-    title: 'The dashboard and SLA health',
-    summary:
-      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
-    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
-    related: ['welcome', 'inbox', 'tasks', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Dashboard](/summary) is your daily starting point: headline numbers for your contacts and engagement, plus the current health of your response-time commitments.',
-      },
-      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
-      {
-        kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**On track** — no open items have exceeded their target.',
-          '**Warning** — the number of breached items has reached the warning threshold.',
-          '**Critical** — breaches have reached the critical threshold and need attention now.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → SLA Configuration** — see [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
-      },
-    ],
-  },
-  {
-    id: 'shortcuts',
-    category: 'getting-started',
-    title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
-    keywords: [
-      'keyboard',
-      'shortcuts',
-      'keys',
-      'hotkeys',
-      'productivity',
-      'j',
-      'k',
-      'command k',
-      'go to',
-      'g then',
-      'question mark',
-      'palette',
-    ],
-    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Press ? anywhere',
-        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
-      },
-      { kind: 'h2', id: 'global', text: 'Anywhere' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
-          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
-          { keys: ['?'], action: 'Show the shortcuts overlay' },
-          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
-        ],
-      },
-      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
-      {
-        kind: 'p',
-        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
-      },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['g', 'h'], action: 'Dashboard (home)' },
-          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
-          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
-          { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/workflows)' },
-          { keys: ['g', 'p'], action: '[People](/people)' },
-          { keys: ['g', 'u'], action: '[Households](/households)' },
-          { keys: ['g', 'c'], action: '[Companies](/companies)' },
-          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
-          { keys: ['g', 't'], action: '[Teams](/teams)' },
-          { keys: ['g', 'o'], action: '[Donations](/donations)' },
-          { keys: ['g', 'f'], action: '[Forms](/forms)' },
-          { keys: ['g', 's'], action: '[Shifts](/events/shifts)' },
-          { keys: ['g', 'e'], action: '[Events](/events/pages)' },
-          { keys: ['g', 'r'], action: '[Fundraising](/donation-pages)' },
-          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/board)' },
-          { keys: ['g', 'm'], action: '[Files](/files)' },
-        ],
-      },
-      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['c'], action: 'Compose' },
-          { keys: ['r'], action: 'Reply' },
-          { keys: ['a'], action: 'Reply all' },
-          { keys: ['f'], action: 'Forward' },
-          { keys: ['e'], action: 'Mark done' },
-          { keys: ['s'], action: 'Star or unstar' },
-          { keys: ['Shift', 'I'], action: 'Mark as read' },
-          { keys: ['Shift', 'U'], action: 'Mark as unread' },
-          { keys: ['#'], action: 'Delete' },
-          { keys: ['J'], action: 'Next email' },
-          { keys: ['K'], action: 'Previous email' },
-          { keys: ['Enter'], action: 'Open or expand' },
-          { keys: ['U'], action: 'Back to the list' },
-        ],
-      },
-      { kind: 'h2', id: 'records', text: 'On a record page' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['J'], action: 'Next record in the filtered set you came from' },
-          { keys: ['K'], action: 'Previous record in the filtered set' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'When J and K are quiet',
-        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
-      },
-      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
-          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/grids.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const GRIDS_ARTICLES: HelpArticle[] = [
-  {
-    id: 'grid-basics',
-    category: 'grids',
-    title: 'Working in grids',
-    summary: 'Every list in PeopleCRM is the same powerful grid — learn it once and you know it everywhere.',
-    keywords: ['grid', 'table', 'columns', 'rows', 'inline edit', 'undo', 'redo', 'refresh', 'resize', 'archive'],
-    related: ['filters', 'bulk-actions', 'import', 'export'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'People, companies, tasks, donations — every collection in PeopleCRM lives in the same grid, with the same toolbar in the same order. The habits below transfer to all of them.',
-      },
-      { kind: 'h2', id: 'toolbar', text: 'The toolbar, left to right' },
-      {
-        kind: 'list',
-        items: [
-          '**+ Add** — create a record of this type.',
-          '**Refresh** — reload the grid without touching your filters.',
-          '**Undo / Redo** — step your inline edits backward and forward.',
-          '**Import CSV / Export CSV** — see [Import data from CSV](/help/import) and [Export your data](/help/export).',
-          '**Tag, issue, and list filters** — narrow to matching rows; see [Filters and the query builder](/help/filters).',
-          '**Advanced filters and the query builder** — per-column conditions or full and/or logic.',
-          '**Columns** — choose which columns are visible.',
-          '**Archive** (where offered) — flip between active and archived records.',
-        ],
-      },
-      { kind: 'h2', id: 'open-detail', text: 'Opening records' },
-      {
-        kind: 'p',
-        text: 'The first column is always a link — click the name to open the full record. The grid remembers your filters, page, and scroll position, so the breadcrumb back returns you exactly where you left off, and the record page gains previous/next arrows for the same filtered set.',
-      },
-      { kind: 'h2', id: 'inline-edit', text: 'Edit without leaving the grid' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Double-click an editable cell', detail: 'Or move to it with the arrow keys and press `Enter`.' },
-          {
-            title: 'Change the value and confirm',
-            detail: 'The cell saves immediately and flashes green so you know it landed.',
-          },
-          {
-            title: 'Change your mind?',
-            detail: 'The toolbar’s undo arrow reverses your last inline edit; redo brings it back.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cell not editable?',
-        text: 'Some columns are read-only on purpose — computed values, or fields that need the full form. Open the record to change those.',
-      },
-      { kind: 'h2', id: 'columns', text: 'Make the grid yours' },
-      {
-        kind: 'list',
-        items: [
-          'Hide columns you never use from the **Columns** menu — fewer columns, faster scanning.',
-          'Drag a column edge to resize it.',
-          'An empty grid always tells you why it is empty and what to do next — for example “No results match these filters” with a one-click **Clear all filters**.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'filters',
-    category: 'grids',
-    title: 'Filters and the query builder',
-    summary:
-      'From one-click tag filters to full and/or queries — and how active filters always stay visible as removable chips.',
-    keywords: ['filter', 'query builder', 'advanced filter', 'chips', 'conditions', 'segment', 'and or', 'narrow'],
-    related: ['grid-basics', 'lists', 'tags-issues', 'search'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Filters narrow a grid to the rows you care about — and PeopleCRM never hides what it is doing: every active filter appears as a chip above the grid, with a count of how many rows match. Remove one chip, or **Clear all** at once.',
-      },
-      { kind: 'h2', id: 'quick-filters', text: 'Quick filters: tags, issues, lists' },
-      {
-        kind: 'list',
-        items: [
-          '**Tags** — check one or more tags; checked tags combine with OR (match any) and land as a single removable chip.',
-          '**Issues** — same mechanics as tags, for issue interests.',
-          '**List** — show only the members of one [list](/help/lists).',
-        ],
-      },
-      { kind: 'h2', id: 'advanced', text: 'Per-column filters' },
-      {
-        kind: 'p',
-        text: '**Advanced Filters** opens a filter row under the column headers: type a condition per column — a name fragment here, a city there — and the grid narrows to rows matching all of them.',
-      },
-      { kind: 'h2', id: 'builder', text: 'The query builder' },
-      {
-        kind: 'p',
-        text: 'When per-column matching is not expressive enough, the **Advanced Query Builder** composes full conditions with and/or groups — “city is Springfield AND (donated this year OR volunteers)”. It is the same builder that powers dynamic lists, so a query you like can become a [list](/help/lists) that maintains itself.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Why is one of the filter buttons disabled?',
-        text: 'Per-column filters and the query builder are mutually exclusive — mixing both would make the result impossible to reason about. Clear one to use the other.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Filters follow you into records',
-        text: 'Open a record from a filtered grid and the pager reads “N of M filtered” — `J`/`K` walk exactly the set you filtered, in order.',
-      },
-    ],
-  },
-  {
-    id: 'bulk-actions',
-    category: 'grids',
-    title: 'Selection, bulk actions, and merging',
-    summary:
-      'Select rows to reveal the bulk action bar — tag, export, delete, clone, or merge many records in one motion.',
-    keywords: ['bulk', 'selection', 'select all', 'mass update', 'batch', 'clone', 'merge', 'delete many', 'bulk tag'],
-    related: ['grid-basics', 'duplicates', 'export', 'tags-issues'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tick the checkbox on one or more rows and a bulk action bar appears, always stating how many rows it will affect — no action is ever a mystery about scale.',
-      },
-      { kind: 'h2', id: 'select-all', text: 'Selecting beyond one page' },
-      {
-        kind: 'p',
-        text: 'The header checkbox selects the visible page. If more rows match your filters, the grid offers **Select all N rows** — one click extends the selection to every match, and the bar confirms “All N rows are selected.”',
-      },
-      { kind: 'h2', id: 'actions', text: 'What you can do with a selection' },
-      {
-        kind: 'list',
-        items: [
-          '**Add tag** — type a tag name and apply it to every selected row at once.',
-          '**Export** — download the selected rows as CSV.',
-          '**Delete** — remove the selected rows, after a confirmation that states the count.',
-          '**Clone** — available with exactly one row selected; duplicates it as a starting point.',
-          '**Merge** — available with exactly two rows selected; combines them into one record.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Bulk delete is permanent',
-        text: 'The confirmation dialog tells you exactly how many records are about to go. Read the number — there is no undo for delete.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Merging more than a pair?',
-        text: 'The [Duplicates](/duplicates) finder reviews likely duplicates side by side across your whole database — better than hunting pairs by hand. See [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const OUTREACH_ARTICLES: HelpArticle[] = [
-  {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations'],
-    blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Newsletters](/newsletters) and click +', detail: 'Start from a template or a blank canvas.' },
-          {
-            title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually — what you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it in the grid and its performance later.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
-        kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags — include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh — whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
-      {
-        kind: 'p',
-        text: 'Send now, or set a send date to schedule. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
-      },
-      {
-        kind: 'p',
-        text: 'After the send, the newsletter’s page tracks how it performed, and each recipient’s profile lists it under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
-      {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there — only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it — it damages trust and your sender reputation.',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first — response-time targets (SLAs) are measured per email, and the [Dashboard](/summary) rolls breaches up into a status.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you — tune them on your [Profile](/profile).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys — `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration** — see [The dashboard and SLA health](/help/dashboard).',
-      },
-    ],
-  },
-  {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own — triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Automations (under [Automations](/workflows) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after an event, the reminder before a shift.',
-      },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of a workflow' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** — what starts a run: fire it manually, or attach it to an event so signups kick it off automatically.',
-          '**Steps** — what happens, in order. Select any step on the canvas to configure it.',
-          '**Settings** — the workflow’s name and behavior.',
-        ],
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/workflows) and click +',
-            detail: 'Give it a name that says what it does — “Event signup thank-you”.',
-          },
-          { title: 'Pick the trigger', detail: 'Choose the event that should start it.' },
-          {
-            title: 'Add the steps',
-            detail: 'Keep the first version to one or two steps; add sophistication after it has run a few times.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Start manual, then automate',
-        text: 'Running a workflow manually a few times is the fastest way to trust it — once the steps behave, wire it to the trigger and let it run.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/productivity.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
-  {
-    id: 'tasks',
-    category: 'productivity',
-    title: 'Tasks and the board',
-    summary: 'Track the work — assign it, date it, and move it across a kanban board from to-do to done.',
-    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'blocked'],
-    related: ['dashboard', 'teams', 'automations'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tasks capture commitments — call this donor back, print the signs, book the room. Every task carries a status, a priority, an assignee, and a due date, and you can work them from two views of the same data.',
-      },
-      { kind: 'h2', id: 'views', text: 'Grid or board — your choice' },
-      {
-        kind: 'list',
-        items: [
-          '[Tasks](/tasks) — the grid view: filter, sort into your own order, edit inline, work in bulk.',
-          '[Task board](/board) — the kanban view: one column per status. Drag a card to a new column and its status updates instantly.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Statuses run **to do → in progress → blocked → done → canceled**. “Blocked” is worth using honestly — a column of blocked cards is a meeting agenda that writes itself.',
-      },
-      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
-      {
-        kind: 'list',
-        items: [
-          'Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
-          'If your workspace sets a task SLA, open tasks count against it and the [Dashboard](/summary) shows the rollup — see [The dashboard and SLA health](/help/dashboard).',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Tasks come from everywhere',
-        text: 'Automations can create tasks too — “new major donor” can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
-      },
-    ],
-  },
-  {
-    id: 'files',
-    category: 'productivity',
-    title: 'Files',
-    summary: 'One shared library for the documents your team actually reuses — uploaded once, findable by everyone.',
-    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'library'],
-    related: ['grid-basics', 'export'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Files](/files) area is your workspace’s shared drive inside the CRM: flyers, scripts, permits, photos — uploaded once, visible to the team, and searchable like any grid.',
-      },
-      { kind: 'h2', id: 'upload', text: 'Add and find files' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Files](/files)', detail: 'The grid lists every uploaded file with its details.' },
-          { title: 'Upload', detail: 'Pick the file and it lands in the library, ready to open or download.' },
-          {
-            title: 'Find it later',
-            detail: 'Search with `⌘K` or the grid filters — naming files descriptively pays off here.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Name for your future self',
-        text: '“2026-06 canvassing script v2.pdf” beats “final_FINAL.pdf” every time someone searches.',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/segmentation.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const SEGMENTATION_ARTICLES: HelpArticle[] = [
-  {
-    id: 'tags-issues',
-    category: 'segmentation',
-    title: 'Tags and issues',
-    summary:
-      'Tags describe who people are; issues capture what they care about. Both filter every grid and target every newsletter.',
-    keywords: ['tag', 'label', 'issue', 'interest', 'categorize', 'organize', 'bulk tag', 'remove tag'],
-    related: ['lists', 'filters', 'bulk-actions', 'newsletters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Tags are free-form labels — **volunteer**, **major-donor**, **lawn-sign** — that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful.',
-      },
-      { kind: 'h2', id: 'apply', text: 'Apply tags' },
-      {
-        kind: 'list',
-        items: [
-          'On a profile — add or remove tags directly on the record.',
-          'In bulk — select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
-          'On import — tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
-        ],
-      },
-      { kind: 'h2', id: 'use', text: 'Put them to work' },
-      {
-        kind: 'p',
-        text: 'Every grid has a tag filter and an issue filter — check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
-      },
-      { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
-      {
-        kind: 'p',
-        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the System section — rename strays, delete stale labels, and keep the set small enough that everyone uses the same words.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'A tag taxonomy that stays useful',
-        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If volunteer, Volunteers, and vol-2024 all exist, filters and audiences quietly miss people.',
-      },
-    ],
-  },
-  {
-    id: 'lists',
-    category: 'segmentation',
-    title: 'Static and dynamic lists',
-    summary:
-      'Lists are reusable audiences — fixed rosters you curate by hand, or living queries that keep themselves current.',
-    keywords: ['list', 'audience', 'segment', 'static list', 'dynamic list', 'smart list', 'membership', 'query'],
-    related: ['tags-issues', 'filters', 'newsletters'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A list is a saved group of people you can reuse anywhere — as a grid filter, a newsletter audience, or a team’s call sheet. Lists come in two flavors, and choosing the right one saves hours later.',
-      },
-      { kind: 'h2', id: 'static', text: 'Static lists: a roster you control' },
-      {
-        kind: 'p',
-        text: 'A static list is a fixed set of members — it changes only when someone adds or removes people. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
-      },
-      { kind: 'h2', id: 'dynamic', text: 'Dynamic lists: a query that stays fresh' },
-      {
-        kind: 'p',
-        text: 'A dynamic list is defined by conditions in the query builder — “everyone tagged volunteer in Springfield”. Membership updates itself as records change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a list' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Lists](/lists) and click +',
-            detail: 'Name the list something your teammates will recognize in a dropdown.',
-          },
-          { title: 'Pick static or dynamic', detail: 'Ask: should this group maintain itself? If yes, go dynamic.' },
-          {
-            title: 'Build it',
-            detail:
-              'Static: add members. Dynamic: compose conditions in the query builder and check the matching count before saving.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Lists are how good newsletters start',
-        text: 'A newsletter audience built on a dynamic list is accurate on send day by definition — see [Create and send a newsletter](/help/newsletters).',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/help-content.ts
-
-```typescript
-import { ADMIN_ARTICLES } from './articles/administration';
-import { CONTACTS_ARTICLES } from './articles/contacts';
-import { DATA_ARTICLES } from './articles/data-management';
-import { ENGAGEMENT_ARTICLES } from './articles/engagement';
-import { GETTING_STARTED_ARTICLES } from './articles/getting-started';
-import { GRIDS_ARTICLES } from './articles/grids';
-import { OUTREACH_ARTICLES } from './articles/outreach';
-import { PRODUCTIVITY_ARTICLES } from './articles/productivity';
-import { SEGMENTATION_ARTICLES } from './articles/segmentation';
-
-import type { HelpArticle, HelpCategory, HelpCategoryId } from './help-types';
-
-/** Display order of the help center's categories. */
-export const HELP_CATEGORIES: HelpCategory[] = [
-  {
-    id: 'getting-started',
-    label: 'Getting started',
-    blurb: 'Your first session: the tour, navigation habits, search, and shortcuts.',
-    icon: 'map',
-  },
-  {
-    id: 'contacts',
-    label: 'People & relationships',
-    blurb: 'People, households, companies, and teams — the heart of the CRM.',
-    icon: 'identification',
-  },
-  {
-    id: 'grids',
-    label: 'Grids & data entry',
-    blurb: 'One grid everywhere: filters, inline editing, selection, and bulk work.',
-    icon: 'table-cells',
-  },
-  {
-    id: 'segmentation',
-    label: 'Tags, issues & lists',
-    blurb: 'Describe people, capture what they care about, and build reusable audiences.',
-    icon: 'label',
-  },
-  {
-    id: 'outreach',
-    label: 'Newsletters & email',
-    blurb: 'Campaigns, the shared inbox, and automations that follow through for you.',
-    icon: 'megaphone',
-  },
-  {
-    id: 'engagement',
-    label: 'Donations, events & forms',
-    blurb: 'Raise money, run events and shifts, and collect signups from the web.',
-    icon: 'currency-dollar',
-  },
-  {
-    id: 'productivity',
-    label: 'Tasks & files',
-    blurb: 'Track the work on a board and keep shared documents one search away.',
-    icon: 'task',
-  },
-  {
-    id: 'data',
-    label: 'Import, export & data quality',
-    blurb: 'Move data in and out by CSV and keep the database free of duplicates.',
-    icon: 'arrow-up-tray',
-  },
-  {
-    id: 'admin',
-    label: 'Account & administration',
-    blurb: 'Profiles, roles and access, workspace configuration, and the audit trail.',
-    icon: 'cog-6-tooth',
-  },
-];
-
-/** Every article, in category display order. */
-export const HELP_ARTICLES: HelpArticle[] = [
-  ...GETTING_STARTED_ARTICLES,
-  ...CONTACTS_ARTICLES,
-  ...GRIDS_ARTICLES,
-  ...SEGMENTATION_ARTICLES,
-  ...OUTREACH_ARTICLES,
-  ...ENGAGEMENT_ARTICLES,
-  ...PRODUCTIVITY_ARTICLES,
-  ...DATA_ARTICLES,
-  ...ADMIN_ARTICLES,
-];
-
-/** Shown as quick links under the search box on the help home page. */
-export const POPULAR_ARTICLE_IDS: string[] = [
-  'welcome',
-  'grid-basics',
-  'filters',
-  'newsletters',
-  'import',
-  'shortcuts',
-];
-
-const ARTICLES_BY_ID: ReadonlyMap<string, HelpArticle> = new Map(HELP_ARTICLES.map((a) => [a.id, a]));
-const CATEGORIES_BY_ID: ReadonlyMap<HelpCategoryId, HelpCategory> = new Map(HELP_CATEGORIES.map((c) => [c.id, c]));
-
-export function getHelpArticle(id: string): HelpArticle | undefined {
-  return ARTICLES_BY_ID.get(id);
-}
-
-export function getHelpCategory(id: HelpCategoryId): HelpCategory | undefined {
-  return CATEGORIES_BY_ID.get(id);
-}
-
-export function articlesInCategory(id: HelpCategoryId): HelpArticle[] {
-  return HELP_ARTICLES.filter((a) => a.category === id);
-}
-
-/**
- * Related reading for an article: its hand-picked `related` ids first,
- * topped up with neighbors from the same category, capped at `limit`.
- */
-export function relatedArticles(article: HelpArticle, limit = 3): HelpArticle[] {
-  const picked: HelpArticle[] = [];
-  const seen = new Set<string>([article.id]);
-
-  for (const id of article.related ?? []) {
-    const found = ARTICLES_BY_ID.get(id);
-    if (found && !seen.has(found.id)) {
-      picked.push(found);
-      seen.add(found.id);
-    }
-  }
-  for (const neighbor of articlesInCategory(article.category)) {
-    if (picked.length >= limit) break;
-    if (!seen.has(neighbor.id)) {
-      picked.push(neighbor);
-      seen.add(neighbor.id);
-    }
-  }
-  return picked.slice(0, limit);
-}
-
-/** Previous/next article within the same category, in display order. */
-export function categoryNeighbors(article: HelpArticle): { next?: HelpArticle; prev?: HelpArticle } {
-  const siblings = articlesInCategory(article.category);
-  const index = siblings.findIndex((a) => a.id === article.id);
-  if (index === -1) return {};
-  return {
-    prev: index > 0 ? siblings[index - 1] : undefined,
-    next: index < siblings.length - 1 ? siblings[index + 1] : undefined,
-  };
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/data/help-search.ts
-
-```typescript
-import { getHelpCategory, HELP_ARTICLES } from './help-content';
-import { articleToPlainText } from './help-types';
-
-import type { HelpArticle } from './help-types';
-
-/**
- * Client-side search over the static help content. The corpus is ~30
- * articles, so a straightforward scored scan is instant and dependency-free.
- */
-
-/** A run of text, flagged when it matched a search term (for highlighting). */
-export interface HelpHighlightSegment {
-  hit: boolean;
-  text: string;
-}
-
-export interface HelpSearchResult {
-  article: HelpArticle;
-  score: number;
-  /** Summary or body excerpt around the first match, ready to highlight. */
-  snippet: HelpHighlightSegment[];
-  title: HelpHighlightSegment[];
-}
-
-const SCORE_TITLE = 40;
-const SCORE_TITLE_WORD_START = 10;
-const SCORE_KEYWORD = 25;
-const SCORE_SUMMARY = 15;
-const SCORE_CATEGORY = 10;
-const SCORE_BODY = 8;
-const SCORE_PHRASE_IN_TITLE = 30;
-const SNIPPET_RADIUS = 90;
-
-function normalize(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function termsOf(query: string): string[] {
-  return normalize(query).split(' ').filter(Boolean);
-}
-
-/** Does `haystack` contain `term` starting at a word boundary? */
-function hasWordStart(haystack: string, term: string): boolean {
-  const at = haystack.indexOf(term);
-  if (at === -1) return false;
-  if (at === 0) return true;
-  return !/[a-z0-9]/.test(haystack.charAt(at - 1));
-}
-
-/** Splits `text` into plain/hit segments for every occurrence of any term. */
-export function highlightTerms(text: string, terms: string[]): HelpHighlightSegment[] {
-  if (terms.length === 0 || text.length === 0) return [{ hit: false, text }];
-
-  const lower = text.toLowerCase();
-  const segments: HelpHighlightSegment[] = [];
-  let cursor = 0;
-
-  while (cursor < text.length) {
-    let hitStart = -1;
-    let hitLength = 0;
-    for (const term of terms) {
-      const at = lower.indexOf(term, cursor);
-      if (at !== -1 && (hitStart === -1 || at < hitStart || (at === hitStart && term.length > hitLength))) {
-        hitStart = at;
-        hitLength = term.length;
-      }
-    }
-    if (hitStart === -1) {
-      segments.push({ hit: false, text: text.slice(cursor) });
-      break;
-    }
-    if (hitStart > cursor) {
-      segments.push({ hit: false, text: text.slice(cursor, hitStart) });
-    }
-    segments.push({ hit: true, text: text.slice(hitStart, hitStart + hitLength) });
-    cursor = hitStart + hitLength;
-  }
-  return segments;
-}
-
-/** A short window of `text` around the first occurrence of any term. */
-function excerptAround(text: string, terms: string[]): string {
-  const lower = text.toLowerCase();
-  let first = -1;
-  for (const term of terms) {
-    const at = lower.indexOf(term);
-    if (at !== -1 && (first === -1 || at < first)) first = at;
-  }
-  if (first === -1) return text.slice(0, SNIPPET_RADIUS * 2);
-
-  let start = Math.max(0, first - SNIPPET_RADIUS);
-  let end = Math.min(text.length, first + SNIPPET_RADIUS);
-  // Snap to word boundaries so the excerpt doesn't shear words in half.
-  if (start > 0) {
-    const space = text.indexOf(' ', start);
-    if (space !== -1 && space < first) start = space + 1;
-  }
-  if (end < text.length) {
-    const space = text.lastIndexOf(' ', end);
-    if (space > first) end = space;
-  }
-  const prefix = start > 0 ? '…' : '';
-  const suffix = end < text.length ? '…' : '';
-  return `${prefix}${text.slice(start, end)}${suffix}`;
-}
-
-/**
- * Ranked search: every term must match somewhere in an article (title,
- * keywords, summary, category label, or body) for it to be a result.
- */
-export function searchHelp(query: string, articles: HelpArticle[] = HELP_ARTICLES): HelpSearchResult[] {
-  const terms = termsOf(query);
-  if (terms.length === 0) return [];
-  const phrase = normalize(query);
-
-  const results: HelpSearchResult[] = [];
-
-  for (const article of articles) {
-    const title = normalize(article.title);
-    const summary = normalize(article.summary);
-    const keywords = article.keywords.map(normalize);
-    const category = normalize(getHelpCategory(article.category)?.label ?? '');
-    const body = normalize(articleToPlainText(article));
-
-    let score = 0;
-    let everyTermMatched = true;
-
-    for (const term of terms) {
-      let termScore = 0;
-      if (title.includes(term)) {
-        termScore = SCORE_TITLE + (hasWordStart(title, term) ? SCORE_TITLE_WORD_START : 0);
-      } else if (keywords.some((k) => k.includes(term))) {
-        termScore = SCORE_KEYWORD;
-      } else if (summary.includes(term)) {
-        termScore = SCORE_SUMMARY;
-      } else if (category.includes(term)) {
-        termScore = SCORE_CATEGORY;
-      } else if (body.includes(term)) {
-        termScore = SCORE_BODY;
-      }
-      if (termScore === 0) {
-        everyTermMatched = false;
-        break;
-      }
-      score += termScore;
-    }
-    if (!everyTermMatched) continue;
-    if (terms.length > 1 && title.includes(phrase)) score += SCORE_PHRASE_IN_TITLE;
-
-    // Prefer the summary; fall back to a body excerpt around the first hit.
-    // Keyword/category-only matches keep the summary (no arbitrary body slice).
-    const summaryHasTerm = terms.some((t) => summary.includes(t));
-    const bodyHasTerm = terms.some((t) => body.includes(t));
-    const snippetSource = summaryHasTerm
-      ? article.summary
-      : bodyHasTerm
-        ? excerptAround(articleToPlainText(article), terms)
-        : article.summary;
-
-    results.push({
-      article,
-      score,
-      snippet: highlightTerms(snippetSource, terms),
-      title: highlightTerms(article.title, terms),
-    });
-  }
-
-  return results.sort((a, b) => b.score - a.score || a.article.title.localeCompare(b.article.title));
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/data/help-types.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-/**
- * Content model for the in-app help center.
- *
- * Articles are plain data (no HTML) rendered through typed blocks, so the
- * help content is searchable, type-checked, and immune to XSS by design.
- */
-
-export type HelpCategoryId =
-  | 'getting-started'
-  | 'contacts'
-  | 'grids'
-  | 'segmentation'
-  | 'outreach'
-  | 'engagement'
-  | 'productivity'
-  | 'data'
-  | 'admin';
-
-export interface HelpCategory {
-  /** One-sentence description shown on the category card. */
-  blurb: string;
-  icon: PcIconNameType;
-  id: HelpCategoryId;
-  label: string;
-}
-
-export interface HelpStep {
-  detail?: string;
-  title: string;
-}
-
-export interface HelpKeyRow {
-  action: string;
-  keys: string[];
-}
-
-/**
- * A single content block. Inline text in `text`, `items`, and step fields
- * supports the mini-markup parsed by `parseHelpInline`:
- * `**bold**`, `` `code` `` and `[label](/internal/route)`.
- */
-export type HelpBlock =
-  | { kind: 'callout'; tone: 'info' | 'tip' | 'warning'; title: string; text: string }
-  | { kind: 'h2'; id: string; text: string }
-  | { kind: 'keys'; rows: HelpKeyRow[] }
-  | { kind: 'list'; items: string[]; ordered?: boolean }
-  | { kind: 'p'; text: string }
-  | { kind: 'steps'; items: HelpStep[] };
-
-export interface HelpArticle {
-  blocks: HelpBlock[];
-  category: HelpCategoryId;
-  /** Stable slug used in the /help/:id route. */
-  id: string;
-  /** Extra search terms that don't appear verbatim in the copy. */
-  keywords: string[];
-  /** Ids of hand-picked related articles. */
-  related?: string[];
-  summary: string;
-  title: string;
-}
-
-export interface HelpInlineSegment {
-  kind: 'bold' | 'code' | 'link' | 'text';
-  /** Internal route, present only when kind === 'link'. */
-  route?: string;
-  text: string;
-}
-
-const INLINE_TOKEN = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g;
-
-/**
- * Parses the help mini-markup into typed segments. Unknown or unterminated
- * markers are left as plain text; only internal routes (starting with `/`)
- * become links, anything else stays literal text.
- */
-export function parseHelpInline(text: string): HelpInlineSegment[] {
-  const segments: HelpInlineSegment[] = [];
-  let cursor = 0;
-
-  INLINE_TOKEN.lastIndex = 0;
-  for (let match = INLINE_TOKEN.exec(text); match !== null; match = INLINE_TOKEN.exec(text)) {
-    if (match.index > cursor) {
-      segments.push({ kind: 'text', text: text.slice(cursor, match.index) });
-    }
-
-    const [, bold, code, linkLabel, linkTarget] = match;
-    if (bold !== undefined) {
-      segments.push({ kind: 'bold', text: bold });
-    } else if (code !== undefined) {
-      segments.push({ kind: 'code', text: code });
-    } else if (linkLabel !== undefined && linkTarget !== undefined && linkTarget.startsWith('/')) {
-      segments.push({ kind: 'link', route: linkTarget, text: linkLabel });
-    } else {
-      // Non-internal link targets are rendered as-is so nothing silently 404s.
-      segments.push({ kind: 'text', text: match[0] });
-    }
-    cursor = match.index + match[0].length;
-  }
-
-  if (cursor < text.length) {
-    segments.push({ kind: 'text', text: text.slice(cursor) });
-  }
-  return segments;
-}
-
-/** Plain text of one inline-markup string (markers stripped) for search. */
-export function stripHelpInline(text: string): string {
-  return parseHelpInline(text)
-    .map((s) => s.text)
-    .join('');
-}
-
-/** All searchable plain text of a block, headings included. */
-export function blockToPlainText(block: HelpBlock): string {
-  switch (block.kind) {
-    case 'p':
-    case 'h2':
-      return stripHelpInline(block.text);
-    case 'list':
-      return block.items.map(stripHelpInline).join(' ');
-    case 'steps':
-      return block.items.map((s) => [s.title, s.detail ?? ''].map(stripHelpInline).join(' ')).join(' ');
-    case 'callout':
-      return `${stripHelpInline(block.title)} ${stripHelpInline(block.text)}`;
-    case 'keys':
-      return block.rows.map((r) => `${r.keys.join(' ')} ${stripHelpInline(r.action)}`).join(' ');
-    default: {
-      const _exhaustive: never = block;
-      return _exhaustive;
-    }
-  }
-}
-
-/** Whole-article plain text used for search indexing. */
-export function articleToPlainText(article: HelpArticle): string {
-  return article.blocks.map(blockToPlainText).join(' ');
-}
-
-const WORDS_PER_MINUTE = 200;
-
-/** Estimated reading time in whole minutes (always at least 1). */
-export function readingMinutes(article: HelpArticle): number {
-  const words = `${article.title} ${article.summary} ${articleToPlainText(article)}`
-    .split(/\s+/)
-    .filter(Boolean).length;
-  return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-article.html
-
-```html
-<div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
-  @if (article(); as article) {
-  <pc-breadcrumbs [crumbs]="crumbs()"></pc-breadcrumbs>
-
-  <div class="mt-5 grid gap-10 xl:grid-cols-[minmax(0,1fr)_230px]">
-    <article class="min-w-0 max-w-3xl">
-      <header class="mb-7">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{{ category()?.label }}</p>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight text-base-content">{{ article.title }}</h1>
-        <p class="mt-2 text-[15px] leading-7 text-base-content/60">{{ article.summary }}</p>
-        <p class="mt-3 text-xs tabular-nums text-base-content/50">{{ minutes() }} min read</p>
-      </header>
-
-      <pc-help-blocks [blocks]="article.blocks"></pc-help-blocks>
-
-      <!-- Previous / next within the category -->
-      @if (neighbors().prev || neighbors().next) {
-      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More in this category">
-        @if (neighbors().prev; as prev) {
-        <a
-          [routerLink]="['/help', prev.id]"
-          class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
-        >
-          <div class="card-body gap-0.5 p-4">
-            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
-              <pc-icon name="chevron-left" [size]="4"></pc-icon>
-              Previous
-            </span>
-            <span class="truncate text-sm font-medium text-base-content">{{ prev.title }}</span>
-          </div>
-        </a>
-        } @else {
-        <span class="hidden sm:block" aria-hidden="true"></span>
-        } @if (neighbors().next; as next) {
-        <a
-          [routerLink]="['/help', next.id]"
-          class="card border border-base-300 bg-base-100 text-right shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
-        >
-          <div class="card-body items-end gap-0.5 p-4">
-            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
-              Next
-              <pc-icon name="chevron-right" [size]="4"></pc-icon>
-            </span>
-            <span class="truncate text-sm font-medium text-base-content">{{ next.title }}</span>
-          </div>
-        </a>
-        }
-      </nav>
-      }
-
-      <!-- Related reading -->
-      @if (related().length > 0) {
-      <section class="mt-12">
-        <h2 class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">Related articles</h2>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          @for (rel of related(); track rel.id) {
-          <a
-            [routerLink]="['/help', rel.id]"
-            class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
-          >
-            <div class="card-body gap-1 p-4">
-              <h3 class="text-sm font-semibold leading-5 text-base-content">{{ rel.title }}</h3>
-              <p class="line-clamp-2 text-xs leading-5 text-base-content/60">{{ rel.summary }}</p>
-            </div>
-          </a>
-          }
-        </div>
-      </section>
-      }
-    </article>
-
-    <!-- On this page -->
-    @if (toc().length >= 3) {
-    <aside class="hidden xl:block">
-      <nav class="sticky top-6 rounded-xl border border-base-300 bg-base-100 p-4 shadow-sm" aria-label="On this page">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">On this page</p>
-        <ul class="mt-2 space-y-0.5">
-          @for (entry of toc(); track entry.id) {
-          <li>
-            <button
-              type="button"
-              class="w-full truncate rounded-lg px-2 py-1.5 text-left text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-primary"
-              (click)="scrollTo(entry.id)"
-            >
-              {{ entry.label }}
-            </button>
-          </li>
-          }
-        </ul>
-      </nav>
-    </aside>
-    }
-  </div>
-  } @else {
-  <!-- Guided not-found state -->
-  <div class="mx-auto mt-16 flex max-w-md flex-col items-center gap-3 text-center">
-    <pc-icon name="information-circle" [size]="10" class="text-base-content/20"></pc-icon>
-    <p class="text-sm font-medium text-base-content/80">This help article doesn't exist</p>
-    <p class="text-xs leading-5 text-base-content/50">
-      It may have moved. Search the help center to find what you were looking for.
-    </p>
-    <a routerLink="/help" class="btn btn-primary btn-sm mt-1">Browse all help articles</a>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-article.ts
-
-```typescript
-import { Component, computed, effect, ElementRef, inject, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-
-import { categoryNeighbors, getHelpArticle, getHelpCategory, relatedArticles } from '../data/help-content';
-import { readingMinutes, stripHelpInline } from '../data/help-types';
-import { HelpBlocks } from './help-blocks';
-
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import type { HelpArticle, HelpBlock } from '../data/help-types';
-
-interface TocEntry {
-  id: string;
-  label: string;
-}
-
-/** One help article: header, typed content blocks, on-page TOC, related reading. */
-@Component({
-  selector: 'pc-help-article',
-  imports: [Breadcrumbs, HelpBlocks, Icon, RouterLink],
-  templateUrl: './help-article.html',
-})
-export class HelpArticlePage {
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-
-  public readonly id = input.required<string>();
-
-  protected readonly article = computed(() => getHelpArticle(this.id()));
-  protected readonly category = computed(() => {
-    const article = this.article();
-    return article ? getHelpCategory(article.category) : undefined;
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Help', route: '/help' },
-    { label: this.article()?.title ?? 'Article' },
-  ]);
-
-  protected readonly minutes = computed(() => {
-    const article = this.article();
-    return article ? readingMinutes(article) : 0;
-  });
-
-  protected readonly related = computed<HelpArticle[]>(() => {
-    const article = this.article();
-    return article ? relatedArticles(article) : [];
-  });
-
-  protected readonly neighbors = computed(() => {
-    const article = this.article();
-    return article ? categoryNeighbors(article) : {};
-  });
-
-  protected readonly toc = computed<TocEntry[]>(() => {
-    const article = this.article();
-    if (!article) return [];
-    return article.blocks
-      .filter((b): b is Extract<HelpBlock, { kind: 'h2' }> => b.kind === 'h2')
-      .map((b) => ({ id: b.id, label: stripHelpInline(b.text) }));
-  });
-
-  constructor() {
-    // Jump back to the top whenever the reader moves to another article.
-    // Optional call: jsdom (unit tests) doesn't implement scrollIntoView.
-    effect(() => {
-      this.id();
-      this.host.nativeElement.scrollIntoView?.({ block: 'start' });
-    });
-  }
-
-  protected scrollTo(anchorId: string): void {
-    document.getElementById(anchorId)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-blocks.html
-
-```html
-<div class="space-y-5">
-  @for (block of blocks(); track $index) { @switch (block.kind) { @case ('p') {
-  <p class="text-[15px] leading-7 text-base-content/80">
-    <pc-help-rich-text [text]="block.text" />
-  </p>
-  } @case ('h2') {
-  <h2 [id]="block.id" class="scroll-mt-24 pt-4 text-lg font-semibold tracking-tight text-base-content first:pt-0">
-    <pc-help-rich-text [text]="block.text" />
-  </h2>
-  } @case ('list') { @if (block.ordered) {
-  <ol class="list-decimal space-y-2 pl-6 text-[15px] leading-7 text-base-content/80 marker:text-base-content/40">
-    @for (item of block.items; track $index) {
-    <li><pc-help-rich-text [text]="item" /></li>
-    }
-  </ol>
-  } @else {
-  <ul class="list-disc space-y-2 pl-6 text-[15px] leading-7 text-base-content/80 marker:text-primary/60">
-    @for (item of block.items; track $index) {
-    <li><pc-help-rich-text [text]="item" /></li>
-    }
-  </ul>
-  } } @case ('steps') {
-  <ol class="space-y-4">
-    @for (step of block.items; track $index; let i = $index) {
-    <li class="flex items-start gap-3">
-      <span
-        class="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-xs font-semibold tabular-nums text-primary"
-        aria-hidden="true"
-        >{{ i + 1 }}</span
-      >
-      <span class="min-w-0">
-        <span class="block text-[15px] font-medium leading-6 text-base-content">
-          <pc-help-rich-text [text]="step.title" />
-        </span>
-        @if (step.detail) {
-        <span class="block text-sm leading-6 text-base-content/70">
-          <pc-help-rich-text [text]="step.detail" />
-        </span>
-        }
-      </span>
-    </li>
-    }
-  </ol>
-  } @case ('callout') {
-  <div
-    role="note"
-    class="alert alert-soft items-start"
-    [class.alert-info]="block.tone === 'info'"
-    [class.alert-success]="block.tone === 'tip'"
-    [class.alert-warning]="block.tone === 'warning'"
-  >
-    <pc-icon class="mt-0.5" [name]="calloutIcon(block.tone)" [size]="5"></pc-icon>
-    <div class="min-w-0">
-      <div class="text-sm font-semibold">{{ block.title }}</div>
-      <div class="text-sm leading-6 opacity-90">
-        <pc-help-rich-text [text]="block.text" />
-      </div>
-    </div>
-  </div>
-  } @case ('keys') {
-  <div class="overflow-x-auto rounded-xl border border-base-300 bg-base-100">
-    <table class="table table-sm">
-      <tbody>
-        @for (row of block.rows; track $index) {
-        <tr class="border-base-200">
-          <td class="w-40 whitespace-nowrap">
-            @for (key of row.keys; track $index; let last = $last) {
-            <kbd class="kbd kbd-sm">{{ key }}</kbd>@if (!last) {
-            <span class="px-0.5 text-base-content/40">+</span>
-            } }
-          </td>
-          <td class="text-sm text-base-content/80">
-            <pc-help-rich-text [text]="row.action" />
-          </td>
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  } } }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-blocks.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-import { HelpRichText } from './help-rich-text';
-
-import type { HelpBlock } from '../data/help-types';
-import type { PcIconNameType } from '@icons/icons.index';
-
-/** Renders an article's typed content blocks with the house styling. */
-@Component({
-  selector: 'pc-help-blocks',
-  imports: [HelpRichText, Icon],
-  templateUrl: './help-blocks.html',
-})
-export class HelpBlocks {
-  public readonly blocks = input.required<HelpBlock[]>();
-
-  protected calloutIcon(tone: 'info' | 'tip' | 'warning'): PcIconNameType {
-    switch (tone) {
-      case 'tip':
-        return 'check-circle';
-      case 'warning':
-        return 'exclamation-triangle';
-      case 'info':
-        return 'information-circle';
-      default: {
-        const _exhaustive: never = tone;
-        return _exhaustive;
-      }
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-home.html
-
-```html
-<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-  <!-- Hero: title + search -->
-  <div class="mx-auto max-w-2xl text-center">
-    <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Help center</p>
-    <h1 class="mt-1 text-3xl font-bold tracking-tight text-base-content">How can we help?</h1>
-    <p class="mt-2 text-sm text-base-content/60">
-      Guides for every corner of PeopleCRM — search, or browse by topic below.
-    </p>
-
-    <label class="input input-primary mt-6 flex h-12 w-full items-center gap-2.5 rounded-2xl shadow-sm">
-      <pc-icon name="magnifying-glass" [size]="5" class="opacity-50"></pc-icon>
-      <input
-        #searchBox
-        type="search"
-        class="grow text-[15px]"
-        placeholder="Search help — try “import”, “tags”, “newsletter”"
-        aria-label="Search help articles"
-        [value]="query()"
-        (input)="onSearchInput($event)"
-      />
-      @if (query()) {
-      <button type="button" class="btn btn-circle btn-ghost btn-xs" aria-label="Clear search" (click)="clearSearch()">
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-      }
-    </label>
-
-    @if (!searching()) {
-    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
-      <span class="text-base-content/50">Popular:</span>
-      @for (article of popular; track article.id) {
-      <a
-        [routerLink]="['/help', article.id]"
-        class="badge badge-outline border-base-300 text-base-content/70 transition-colors hover:border-primary hover:text-primary"
-      >
-        {{ article.title }}
-      </a>
-      }
-    </div>
-    }
-  </div>
-
-  <!-- Search results -->
-  @if (searching()) { @if (results().length > 0) {
-  <div class="mx-auto mt-8 max-w-2xl">
-    <p class="text-sm text-base-content/60">
-      {{ results().length }} {{ results().length === 1 ? 'article matches' : 'articles match' }} “{{ query().trim() }}”
-    </p>
-    <div class="mt-3 space-y-3">
-      @for (result of results(); track result.article.id) {
-      <a
-        [routerLink]="['/help', result.article.id]"
-        class="card block border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
-      >
-        <div class="card-body gap-1.5 p-4">
-          <p class="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-base-content/50">
-            <span>{{ categoryLabel(result.article) }}</span>
-            <span aria-hidden="true">·</span>
-            <span>{{ minutes(result.article) }} min read</span>
-          </p>
-          <h3 class="text-[15px] font-semibold leading-6 text-base-content">
-            @for (seg of result.title; track $index) { @if (seg.hit) {
-            <mark class="rounded bg-primary/15 px-0.5 text-primary">{{ seg.text }}</mark>
-            } @else {
-            <span>{{ seg.text }}</span>
-            } }
-          </h3>
-          <p class="text-sm leading-6 text-base-content/70">
-            @for (seg of result.snippet; track $index) { @if (seg.hit) {
-            <mark class="rounded bg-primary/15 px-0.5 font-medium text-primary">{{ seg.text }}</mark>
-            } @else {
-            <span>{{ seg.text }}</span>
-            } }
-          </p>
-        </div>
-      </a>
-      }
-    </div>
-  </div>
-  } @else {
-  <!-- Guided empty state -->
-  <div class="mx-auto mt-12 flex max-w-md flex-col items-center gap-3 text-center">
-    <pc-icon name="magnifying-glass" [size]="10" class="text-base-content/20"></pc-icon>
-    <p class="text-sm font-medium text-base-content/80">No articles match “{{ query().trim() }}”</p>
-    <p class="text-xs leading-5 text-base-content/50">
-      Try fewer or different words — search covers titles, summaries, keywords, and the full article text.
-    </p>
-    <button type="button" class="btn btn-primary btn-sm mt-1" (click)="clearSearch()">Clear search</button>
-  </div>
-  } } @else {
-  <!-- Browse by category -->
-  <div class="mt-10 grid gap-4 sm:grid-cols-2">
-    @for (section of sections; track section.category.id) {
-    <section class="card border border-base-300 bg-base-100 shadow-sm">
-      <div class="card-body gap-3 p-5">
-        <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <pc-icon [name]="section.category.icon" [size]="5"></pc-icon>
-          </div>
-          <div class="min-w-0">
-            <h2 class="truncate text-base font-semibold text-base-content">{{ section.category.label }}</h2>
-            <p class="text-xs tabular-nums text-base-content/50">
-              {{ section.articles.length }} {{ section.articles.length === 1 ? 'article' : 'articles' }}
-            </p>
-          </div>
-        </div>
-        <p class="text-sm leading-6 text-base-content/60">{{ section.category.blurb }}</p>
-        <ul class="mt-1 space-y-0.5">
-          @for (article of section.articles; track article.id) {
-          <li>
-            <a
-              [routerLink]="['/help', article.id]"
-              class="group flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm text-base-content/80 transition-colors hover:bg-base-200 hover:text-base-content"
-            >
-              <span class="truncate">{{ article.title }}</span>
-              <pc-icon
-                name="chevron-right"
-                [size]="4"
-                class="flex-none text-base-content/30 transition-colors group-hover:text-primary"
-              ></pc-icon>
-            </a>
-          </li>
-          }
-        </ul>
-      </div>
-    </section>
-    }
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-home.ts
-
-```typescript
-import { afterNextRender, Component, computed, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-
-import {
-  articlesInCategory,
-  getHelpArticle,
-  getHelpCategory,
-  HELP_CATEGORIES,
-  POPULAR_ARTICLE_IDS,
-} from '../data/help-content';
-import { searchHelp } from '../data/help-search';
-import { readingMinutes } from '../data/help-types';
-
-import type { ElementRef } from '@angular/core';
-import type { HelpArticle, HelpCategory } from '../data/help-types';
-
-interface HelpCategorySection {
-  articles: HelpArticle[];
-  category: HelpCategory;
-}
-
-/** Help center landing page: search across all articles, or browse by topic. */
-@Component({
-  selector: 'pc-help-home',
-  imports: [Icon, RouterLink],
-  templateUrl: './help-home.html',
-})
-export class HelpHomePage {
-  private readonly searchBox = viewChild<ElementRef<HTMLInputElement>>('searchBox');
-
-  protected readonly query = signal('');
-  protected readonly searching = computed(() => this.query().trim().length > 0);
-  protected readonly results = computed(() => searchHelp(this.query()));
-
-  protected readonly sections: HelpCategorySection[] = HELP_CATEGORIES.map((category) => ({
-    articles: articlesInCategory(category.id),
-    category,
-  }));
-
-  protected readonly popular: HelpArticle[] = POPULAR_ARTICLE_IDS.map(getHelpArticle).filter(
-    (a): a is HelpArticle => a !== undefined,
-  );
-
-  constructor() {
-    afterNextRender(() => this.searchBox()?.nativeElement.focus());
-  }
-
-  protected categoryLabel(article: HelpArticle): string {
-    return getHelpCategory(article.category)?.label ?? '';
-  }
-
-  protected clearSearch(): void {
-    this.query.set('');
-    this.searchBox()?.nativeElement.focus();
-  }
-
-  protected minutes(article: HelpArticle): number {
-    return readingMinutes(article);
-  }
-
-  protected onSearchInput(event: Event): void {
-    this.query.set((event.target as HTMLInputElement).value);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-rich-text.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
-
-import { parseHelpInline } from '../data/help-types';
-
-/**
- * Renders one help mini-markup string as inline content:
- * `**bold**`, `` `code` `` and `[label](/route)` links.
- * Everything is interpolated text — no HTML injection surface.
- * Segments are rendered back-to-back with no template whitespace so
- * spacing is controlled entirely by the segment text itself.
- */
-@Component({
-  selector: 'pc-help-rich-text',
-  imports: [RouterLink],
-  template: `@for (seg of segments(); track $index) {
-    @switch (seg.kind) {
-      @case ('bold') {
-        <strong class="font-semibold text-base-content">{{ seg.text }}</strong>
-      }
-      @case ('code') {
-        <code class="rounded bg-base-200 px-1 py-0.5 font-mono text-[0.85em]">{{ seg.text }}</code>
-      }
-      @case ('link') {
-        <a [routerLink]="seg.route" class="font-medium text-primary hover:underline">{{ seg.text }}</a>
-      }
-      @default {
-        <span>{{ seg.text }}</span>
-      }
-    }
-  }`,
-})
-export class HelpRichText {
-  public readonly text = input.required<string>();
-
-  protected readonly segments = computed(() => parseHelpInline(this.text()));
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/households/services/households-service.ts
@@ -12798,6 +10330,219 @@ export class DashboardService extends TRPCService<any> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/summary/services/getting-started.service.ts
+
+```typescript
+import { Injectable, computed, inject, signal } from '@angular/core';
+
+import { NewslettersService } from '../../newsletters/services/newsletters-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { SettingsService } from '../../settings/services/settings-service';
+
+/** One first-run onboarding step, composed from real account state. */
+export interface GettingStartedStep {
+  id: 'import' | 'verify-sender' | 'first-newsletter';
+  /** The step name, sentence case. */
+  label: string;
+  done: boolean;
+  /** Evidence shown when done, e.g. "5,012 imported" — null until then. */
+  evidence: string | null;
+  /** Where the primary link for this step goes. */
+  route: string;
+  /** Primary-link label when this is the next incomplete step. */
+  cta: string;
+}
+
+const DISMISS_KEY = 'pc-getting-started-dismissed';
+
+/**
+ * Drives the dashboard's first-run checklist by composing three existing signals — contact
+ * count, a verified sending address, and whether any newsletter exists. No dedicated backend
+ * endpoint: each fact comes from an endpoint that already ships. Dismissal persists locally.
+ */
+@Injectable({ providedIn: 'root' })
+export class GettingStartedService {
+  private readonly persons = inject(PersonsService);
+  private readonly newsletters = inject(NewslettersService);
+  private readonly settings = inject(SettingsService);
+
+  private readonly _steps = signal<GettingStartedStep[] | null>(null);
+  public readonly steps = this._steps.asReadonly();
+  private readonly _dismissed = signal<boolean>(this.readDismissed());
+
+  public readonly doneCount = computed(() => (this._steps() ?? []).filter((s) => s.done).length);
+  public readonly total = computed(() => this._steps()?.length ?? 0);
+  public readonly nextStep = computed<GettingStartedStep | null>(
+    () => (this._steps() ?? []).find((s) => !s.done) ?? null,
+  );
+  private readonly allDone = computed(() => this._steps() !== null && this.nextStep() === null);
+  /** Show the card only once loaded, not fully complete, and not dismissed. */
+  public readonly visible = computed(() => !this._dismissed() && this._steps() !== null && !this.allDone());
+
+  /** Fetch the three facts and (re)build the step list. No-op once dismissed. */
+  public async refresh(): Promise<void> {
+    if (this._dismissed()) return;
+
+    const [contacts, newsletters] = await Promise.all([
+      this.safeCount(() => this.persons.count()),
+      this.safeCount(() => this.newsletters.count()),
+    ]);
+    await this.settings.load().catch(() => undefined);
+    const sender = this.resolveVerifiedSender();
+
+    this._steps.set([
+      {
+        id: 'import',
+        label: 'Import your contacts',
+        done: contacts > 0,
+        evidence: contacts > 0 ? `${contacts.toLocaleString()} imported` : null,
+        route: '/imports',
+        cta: 'Import contacts',
+      },
+      {
+        id: 'verify-sender',
+        label: 'Verify a sending address',
+        done: sender !== null,
+        evidence: sender ? `${sender} verified` : null,
+        route: '/configuration/communications',
+        cta: 'Verify a sending address',
+      },
+      {
+        id: 'first-newsletter',
+        label: 'Send your first newsletter',
+        done: newsletters > 0,
+        evidence: newsletters > 0 ? `${newsletters.toLocaleString()} created` : null,
+        route: '/newsletters/add',
+        cta: 'Send your first newsletter',
+      },
+    ]);
+  }
+
+  /** Hide the card for good on this device. */
+  public dismiss(): void {
+    this._dismissed.set(true);
+    try {
+      localStorage.setItem(DISMISS_KEY, '1');
+    } catch {
+      /* private mode / storage disabled — a non-persisted dismiss is still fine for the session */
+    }
+  }
+
+  private resolveVerifiedSender(): string | null {
+    const emails = this.settings.getValue<string[]>('communications.verified_emails') ?? [];
+    if (emails.length) return emails[0] ?? null;
+    const domains =
+      this.settings.getValue<{ domain: string; status: string }[]>('communications.verified_domains') ?? [];
+    return domains.find((d) => d.status === 'verified')?.domain ?? null;
+  }
+
+  private async safeCount(fn: () => Promise<number>): Promise<number> {
+    try {
+      return (await fn()) ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private readDismissed(): boolean {
+    try {
+      return localStorage.getItem(DISMISS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { GettingStartedService } from './services/getting-started.service';
+
+/**
+ * First-run checklist card on the dashboard: "GETTING STARTED · N of 3 done". Completed steps
+ * show a success check with their evidence; the next incomplete step is a primary link. Auto-
+ * hides once all steps are done; dismissible before then (§3). All state is real (see the
+ * service) — nothing is faked.
+ */
+@Component({
+  selector: 'pc-getting-started-card',
+  imports: [Icon, RouterLink],
+  template: `
+    @if (visible()) {
+      <div class="animate-drop card border border-base-200 bg-base-100 shadow-sm">
+        <div class="card-body gap-4 p-5">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+                Getting started · {{ doneCount() }} of {{ total() }} done
+              </div>
+              <h2 class="mt-1 text-lg font-bold text-base-content">Finish setting up your workspace</h2>
+            </div>
+            <button
+              type="button"
+              class="btn btn-ghost btn-xs btn-circle"
+              (click)="dismiss()"
+              aria-label="Dismiss getting started"
+              i18n-aria-label="@@gettingStarted.dismiss.ariaLabel"
+            >
+              <pc-icon name="x-mark" [size]="4"></pc-icon>
+            </button>
+          </div>
+
+          <ul class="flex flex-col gap-2.5">
+            @for (step of steps(); track step.id) {
+              <li class="flex items-center gap-3">
+                @if (step.done) {
+                  <pc-icon name="check-circle" [size]="5" class="shrink-0 text-success"></pc-icon>
+                  <span class="text-sm text-base-content/70">{{ step.label }}</span>
+                  @if (step.evidence) {
+                    <span class="ml-auto text-xs font-medium text-success">{{ step.evidence }}</span>
+                  }
+                } @else if (step.id === nextStep()?.id) {
+                  <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-primary">
+                    <span class="h-2 w-2 rounded-full bg-primary"></span>
+                  </span>
+                  <span class="text-sm font-medium text-base-content">{{ step.label }}</span>
+                  <a [routerLink]="step.route" class="btn btn-primary btn-sm ml-auto">{{ step.cta }}</a>
+                } @else {
+                  <span class="h-5 w-5 shrink-0 rounded-full border-2 border-base-300"></span>
+                  <span class="text-sm text-base-content/50">{{ step.label }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+      </div>
+    }
+  `,
+})
+export class GettingStartedCard {
+  private readonly svc = inject(GettingStartedService);
+  private readonly alerts = inject(AlertService);
+
+  protected readonly visible = this.svc.visible;
+  protected readonly steps = this.svc.steps;
+  protected readonly doneCount = this.svc.doneCount;
+  protected readonly total = this.svc.total;
+  protected readonly nextStep = this.svc.nextStep;
+
+  constructor() {
+    void this.svc.refresh();
+  }
+
+  protected dismiss(): void {
+    this.svc.dismiss();
+    this.alerts.showInfo('Getting started hidden. It won’t appear again.');
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/summary/sla-details.html
 
 ```html
@@ -13022,630 +10767,6 @@ export class SlaDetails {
 
   public readonly activeTab = model<'emails' | 'tasks'>('emails');
 }
-```
-
-## File: apps/frontend/src/app/experiences/summary/summary.html
-
-```html
-<div class="p-6 max-w-7xl mx-auto space-y-6">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="presentation-chart-line" class="text-primary" [size]="7"></pc-icon>
-        CRM Summary Dashboard
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Overview of key performance metrics, email response rates, and contact database growth.
-      </p>
-    </div>
-    <button
-      class="btn btn-outline btn-sm gap-2 cursor-pointer hover:btn-primary"
-      pcSpinOnClick
-      (click)="loadStats()"
-      [disabled]="isRefreshing()"
-    >
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Reload Stats
-    </button>
-  </div>
-
-  <!-- Metric Cards — always visible; show skeletons (not a spinner) on first load (§3) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-    <pc-stat-card
-      [title]="'Total Open Emails'"
-      [value]="totalOpenCount()"
-      [loading]="isInitialLoading()"
-      [description]="'All open inbox conversations'"
-      [icon]="'envelope'"
-      [valueColorClass]="'text-primary'"
-      [iconColorClass]="'text-primary'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Unassigned Open'"
-      [value]="unassignedOpenCount()"
-      [loading]="isInitialLoading()"
-      [description]="'Awaiting user assignment'"
-      [icon]="'exclamation-circle'"
-      [valueColorClass]="'text-warning'"
-      [iconColorClass]="'text-warning'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg 1st Response'"
-      [value]="avgFirstResponse()"
-      [loading]="isInitialLoading()"
-      [description]="'Time to reply or comment'"
-      [icon]="'clock'"
-      [valueColorClass]="'text-info'"
-      [iconColorClass]="'text-info'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Avg Time to Close'"
-      [value]="avgTimeToClose()"
-      [loading]="isInitialLoading()"
-      [description]="'From arrival to closed status'"
-      [icon]="'check-circle'"
-      [valueColorClass]="'text-success'"
-      [iconColorClass]="'text-success'"
-    ></pc-stat-card>
-
-    <pc-stat-card
-      [title]="'Contacts Growth'"
-      [value]="'+' + activeContactsCount()"
-      [loading]="isInitialLoading()"
-      [description]="'New contacts (last 30 days)'"
-      [icon]="'user-plus'"
-      [valueColorClass]="'text-secondary'"
-      [iconColorClass]="'text-secondary'"
-    ></pc-stat-card>
-  </div>
-
-  <!-- Loading Overlay (charts/analytics area only) -->
-  @if (isLoading() && linePoints().length === 0) {
-  <div class="flex flex-col items-center justify-center py-24">
-    <span class="loading loading-bars loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Analyzing database metrics...</p>
-  </div>
-  } @if (linePoints().length > 0) {
-  <div class="space-y-6">
-    <!-- SLA Status Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- Email SLA Card -->
-      <div
-        class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
-        [class.bg-success]="emailSlaStatus() === 'healthy'"
-        [class.text-success-content]="emailSlaStatus() === 'healthy'"
-        [class.bg-warning]="emailSlaStatus() === 'warning'"
-        [class.text-warning-content]="emailSlaStatus() === 'warning'"
-        [class.bg-error]="emailSlaStatus() === 'critical'"
-        [class.text-error-content]="emailSlaStatus() === 'critical'"
-      >
-        <div class="card-body p-5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Email SLA Status</span>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
-              (click)="toggleSlaDetails('emails')"
-            >
-              <pc-icon
-                [name]="showSlaDetails() && defaultSlaTab() === 'emails' ? 'chevron-up' : 'chevron-down'"
-                [size]="4"
-              ></pc-icon>
-              {{ showSlaDetails() && defaultSlaTab() === 'emails' ? 'Hide Details' : 'View Details' }}
-            </button>
-          </div>
-          <div class="flex items-baseline gap-2 mt-1">
-            <h3 class="text-2xl font-black">
-              {{ totalEmailSlaBreaches() === 0 ? 'Healthy' : totalEmailSlaBreaches() + ' Breached' }}
-            </h3>
-            <span class="text-xs opacity-85"> ({{ unassignedEmailSlaBreaches() }} unassigned breaches) </span>
-          </div>
-          <div class="mt-2 flex items-center justify-between text-xs opacity-75 border-t border-white/10 pt-2">
-            <span>Limit: {{ emailSlaHours() }}h response</span>
-            <span>Warning: &ge;{{ emailSlaWarningThreshold() }} • Critical: &ge;{{ emailSlaCriticalThreshold() }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Task SLA Card -->
-      <div
-        class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
-        [class.bg-success]="taskSlaStatus() === 'healthy'"
-        [class.text-success-content]="taskSlaStatus() === 'healthy'"
-        [class.bg-warning]="taskSlaStatus() === 'warning'"
-        [class.text-warning-content]="taskSlaStatus() === 'warning'"
-        [class.bg-error]="taskSlaStatus() === 'critical'"
-        [class.text-error-content]="taskSlaStatus() === 'critical'"
-      >
-        <div class="card-body p-5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Task SLA Status</span>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
-              (click)="toggleSlaDetails('tasks')"
-            >
-              <pc-icon
-                [name]="showSlaDetails() && defaultSlaTab() === 'tasks' ? 'chevron-up' : 'chevron-down'"
-                [size]="4"
-              ></pc-icon>
-              {{ showSlaDetails() && defaultSlaTab() === 'tasks' ? 'Hide Details' : 'View Details' }}
-            </button>
-          </div>
-          <div class="flex items-baseline gap-2 mt-1">
-            <h3 class="text-2xl font-black">
-              {{ totalTaskSlaBreaches() === 0 ? 'Healthy' : totalTaskSlaBreaches() + ' Breached' }}
-            </h3>
-            <span class="text-xs opacity-85"> ({{ unassignedTaskSlaBreaches() }} unassigned breaches) </span>
-          </div>
-          <div class="mt-2 flex items-center justify-between text-xs opacity-75 border-t border-white/10 pt-2">
-            <span>Limit: {{ taskSlaHours() }}h resolution</span>
-            <span>Warning: &ge;{{ taskSlaWarningThreshold() }} • Critical: &ge;{{ taskSlaCriticalThreshold() }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SLA Details Action Center -->
-    @if (showSlaDetails()) {
-    <pc-sla-details
-      [breachedEmails]="breachedEmails()"
-      [breachedTasks]="breachedTasks()"
-      [emailSlaHours]="emailSlaHours()"
-      [taskSlaHours]="taskSlaHours()"
-      [totalEmailBreaches]="totalEmailSlaBreaches()"
-      [totalTaskBreaches]="totalTaskSlaBreaches()"
-      [hasMoreEmails]="hasMoreEmails()"
-      [hasMoreTasks]="hasMoreTasks()"
-      [isLoadingEmails]="isLoadingEmails()"
-      [isLoadingTasks]="isLoadingTasks()"
-      (loadMoreEmails)="loadMoreEmails()"
-      (loadMoreTasks)="loadMoreTasks()"
-      [(activeTab)]="defaultSlaTab"
-    />
-    }
-
-    <!-- Charts Layout -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left / Main Chart: Contacts Growth Line -->
-      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-        <div class="card-body p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-              <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
-              New Contacts Growth
-            </h3>
-            <span class="text-xs text-base-content/55">Last 30 Days</span>
-          </div>
-
-          <div class="relative w-full h-[220px]">
-            <svg viewBox="0 0 600 200" class="w-full h-full overflow-visible">
-              <defs>
-                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"></stop>
-                  <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0"></stop>
-                </linearGradient>
-              </defs>
-
-              <!-- Grid Lines -->
-              <line
-                x1="20"
-                y1="20"
-                x2="580"
-                y2="20"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="60"
-                x2="580"
-                y2="60"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="100"
-                x2="580"
-                y2="100"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="140"
-                x2="580"
-                y2="140"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line x1="20" y1="180" x2="580" y2="180" stroke="currentColor" class="text-base-content/10"></line>
-
-              <!-- Y Axis Labels -->
-              @for (label of yAxisLabels(); track label.y) {
-              <text
-                [attr.x]="12"
-                [attr.y]="label.y + 3"
-                text-anchor="end"
-                class="fill-current text-base-content/40 text-[9px] font-mono"
-              >
-                {{ label.value }}
-              </text>
-              }
-
-              <!-- Line paths -->
-              <path [attr.d]="areaPath()" fill="url(#areaGrad)"></path>
-              <path
-                [attr.d]="linePath()"
-                fill="none"
-                stroke="#3b82f6"
-                stroke-width="3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              ></path>
-
-              <!-- Interactive Points -->
-              @for (p of linePoints(); track p.date; let first = $first; let last = $last) {
-              <circle
-                [attr.cx]="p.x"
-                [attr.cy]="p.y"
-                r="4.5"
-                fill="#ffffff"
-                stroke="#3b82f6"
-                stroke-width="2"
-                class="hover:scale-150 transition-all duration-150 cursor-pointer"
-                style="transform-origin: center; transform-box: fill-box"
-                (mouseenter)="hoveredPoint.set(p)"
-                (mouseleave)="hoveredPoint.set(null)"
-              ></circle>
-              }
-
-              <!-- X Axis Labels -->
-              @for (label of xAxisLabels(); track label.x) {
-              <text
-                [attr.x]="label.x"
-                [attr.y]="195"
-                text-anchor="middle"
-                class="fill-current text-base-content/40 text-[9px] font-mono"
-              >
-                {{ label.label }}
-              </text>
-              }
-            </svg>
-
-            <!-- Tooltip -->
-            @if (hoveredPoint(); as p) {
-            <div
-              class="absolute z-10 bg-base-100 border border-base-300 px-3 py-2 rounded-lg shadow-xl font-sans pointer-events-none transform -translate-x-1/2 -translate-y-full mt-[-8px] transition-all duration-100"
-              [style.left.%]="(p.x / 600) * 100"
-              [style.top.%]="(p.y / 200) * 100"
-            >
-              <div class="text-[10px] text-base-content/50 font-semibold uppercase tracking-wider">
-                {{ formatDate(p.date) }}
-              </div>
-              <div class="text-sm font-bold text-base-content mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
-                <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                +{{ p.count }} Contacts
-              </div>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-
-      <!-- Right: Donut Chart - Emails Assigned -->
-      <div class="card bg-base-100 border border-base-300 shadow-xl">
-        <div class="card-body p-6 flex flex-col justify-between">
-          <div class="mb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-                <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
-                Open Conversations
-              </h3>
-              <p class="text-xs text-base-content/50 mt-0.5">Inbox emails assigned by rep</p>
-            </div>
-            <!-- Filter Radios -->
-            <div class="join join-horizontal self-start sm:self-auto border border-base-300">
-              <button
-                class="btn btn-xs join-item"
-                [class.btn-active]="showAllOpen()"
-                [class.btn-neutral]="showAllOpen()"
-                [class.btn-ghost]="!showAllOpen()"
-                (click)="showAllOpen.set(true)"
-              >
-                All Open
-              </button>
-              <button
-                class="btn btn-xs join-item"
-                [class.btn-active]="!showAllOpen()"
-                [class.btn-neutral]="!showAllOpen()"
-                [class.btn-ghost]="showAllOpen()"
-                (click)="showAllOpen.set(false)"
-              >
-                Assigned
-              </button>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-center py-4">
-            @if (assignedRepSlices().length === 0) {
-            <div class="text-sm text-base-content/40 py-10 italic">No open emails assigned.</div>
-            } @if (assignedRepSlices().length > 0) {
-            <div class="relative w-[160px] h-[160px]">
-              <svg
-                width="160"
-                height="160"
-                viewBox="0 0 160 160"
-                class="transform -rotate-90 w-full h-full overflow-visible"
-              >
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="60"
-                  fill="transparent"
-                  stroke="currentColor"
-                  class="text-base-300/30"
-                  stroke-width="14"
-                ></circle>
-                @for (slice of assignedRepSlices(); track slice.name) {
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="60"
-                  fill="transparent"
-                  [attr.stroke]="slice.color"
-                  [attr.stroke-width]="hoveredSlice()?.name === slice.name ? 18 : 14"
-                  [attr.stroke-dasharray]="slice.strokeDash"
-                  [attr.stroke-dashoffset]="slice.strokeOffset"
-                  class="cursor-pointer transition-all duration-200 origin-center"
-                  [style.opacity]="hoveredSlice() && hoveredSlice()?.name !== slice.name ? 0.45 : 1"
-                  (mouseenter)="hoveredSlice.set(slice)"
-                  (mouseleave)="hoveredSlice.set(null)"
-                ></circle>
-                }
-              </svg>
-
-              <!-- Center Text Overlay -->
-              <div
-                class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-2"
-              >
-                @if (hoveredSlice(); as hs) {
-                <span class="text-[10px] text-base-content/50 uppercase font-bold tracking-wider truncate max-w-[110px]"
-                  >{{ hs.name }}</span
-                >
-                <span class="text-xl font-extrabold text-base-content leading-none mt-1">{{ hs.count }}</span>
-                <span class="text-[10px] text-base-content/40 font-mono mt-0.5">{{ hs.percentage }}%</span>
-                } @else {
-                <span class="text-[9px] text-base-content/50 uppercase font-semibold tracking-wider">
-                  {{ showAllOpen() ? 'Total Open' : 'Total Assigned' }}
-                </span>
-                <span class="text-2xl font-extrabold text-base-content leading-none mt-1">{{ donutTotalCount() }}</span>
-                <span class="text-[9px] text-base-content/40 mt-0.5">Conversations</span>
-                }
-              </div>
-            </div>
-            }
-          </div>
-
-          <!-- Legend -->
-          <div class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
-            @for (slice of assignedRepSlices(); track slice.name) {
-            <div
-              class="flex items-center justify-between text-xs p-1 rounded-md transition-all duration-150 cursor-pointer animate-fade-in"
-              [class.bg-base-200]="hoveredSlice()?.name === slice.name"
-              (mouseenter)="hoveredSlice.set(slice)"
-              (mouseleave)="hoveredSlice.set(null)"
-            >
-              <div class="flex items-center gap-2">
-                <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="slice.color"></span>
-                <span class="font-semibold text-base-content">{{ slice.name }}</span>
-              </div>
-              <span class="text-base-content/60 font-mono">{{ slice.count }} ({{ slice.percentage }}%)</span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Representative Performance Table -->
-    <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-      <div class="card-body p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-            <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
-            Representative Performance & Response Stats
-          </h3>
-          <span class="text-xs text-base-content/55">Real-time stats</span>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="table table-zebra w-full text-sm">
-            <thead>
-              <tr class="bg-base-200/50">
-                <th>Representative</th>
-                <th class="text-center">Open Emails</th>
-                <th class="text-center">Closed Emails</th>
-                <th class="text-center">Total Handled</th>
-                <th class="text-center">Resolution Rate</th>
-                <th class="text-center">Avg 1st Response</th>
-                <th class="text-center">Avg Time to Close</th>
-                <th class="text-center">Email SLA Breaches</th>
-                <th class="text-center">Task SLA Breaches</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (user of userStats(); track user.user_id) {
-              <tr class="hover">
-                <td class="font-semibold text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-                <td class="text-center font-mono font-semibold text-base-content">{{ user.openCount }}</td>
-                <td class="text-center font-mono text-base-content/70">{{ user.closedCount }}</td>
-                <td class="text-center font-mono text-base-content/70">{{ user.openCount + user.closedCount }}</td>
-                <td class="text-center">
-                  <span
-                    class="badge font-semibold"
-                    [class.badge-success]="user.resolutionRate >= 75"
-                    [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                    [class.badge-error]="user.resolutionRate < 40"
-                  >
-                    {{ user.resolutionRate }}%
-                  </span>
-                </td>
-                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgFirstResponse }}</td>
-                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgTimeToClose }}</td>
-                <td class="text-center">
-                  @if (user.emailSlaBreaches > 0) {
-                  <div class="badge badge-error badge-sm font-mono font-bold animate-pulse">
-                    {{ user.emailSlaBreaches }}
-                  </div>
-                  } @else {
-                  <div class="badge badge-success badge-sm font-mono font-bold text-white">0</div>
-                  }
-                </td>
-                <td class="text-center">
-                  @if (user.taskSlaBreaches > 0) {
-                  <div class="badge badge-warning badge-sm font-mono font-bold">{{ user.taskSlaBreaches }}</div>
-                  } @else {
-                  <div class="badge badge-success badge-sm font-mono font-bold text-white">0</div>
-                  }
-                </td>
-              </tr>
-              } @empty {
-              <tr>
-                <td colspan="8" class="text-center py-6 text-base-content/40 italic">
-                  No representative performance statistics available.
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bottom Chart: Closed Emails by Rep -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl">
-        <div class="card-body p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary" [size]="5"></pc-icon>
-              Emails Closed by Rep
-            </h3>
-            <span class="text-xs text-base-content/50">Performance metrics</span>
-          </div>
-
-          @if (closedRepBars().length === 0) {
-          <div class="text-sm text-base-content/40 py-16 italic text-center">No emails closed by representatives.</div>
-          } @if (closedRepBars().length > 0) {
-          <div class="relative w-full h-[180px]">
-            <svg viewBox="0 0 500 180" class="w-full h-full overflow-visible">
-              @for (bar of closedRepBars(); track bar.name; let idx = $index) {
-              <g>
-                <!-- Label -->
-                <text
-                  x="10"
-                  [attr.y]="bar.y + 14"
-                  fill="currentColor"
-                  class="text-base-content text-xs font-semibold"
-                  text-anchor="start"
-                >
-                  {{ bar.name }}
-                </text>
-                <!-- Bar Background -->
-                <rect
-                  x="130"
-                  [attr.y]="bar.y"
-                  width="360"
-                  height="18"
-                  rx="4"
-                  fill="currentColor"
-                  class="text-base-200/50"
-                ></rect>
-                <!-- Bar Foreground -->
-                <rect
-                  x="130"
-                  [attr.y]="bar.y"
-                  [attr.width]="bar.width"
-                  height="18"
-                  rx="4"
-                  fill="#10b981"
-                  class="transition-all duration-500 ease-out"
-                ></rect>
-                <!-- Value -->
-                <text
-                  [attr.x]="135 + bar.width"
-                  [attr.y]="bar.y + 13"
-                  fill="currentColor"
-                  class="text-base-content text-[11px] font-mono font-bold"
-                >
-                  {{ bar.count }}
-                </text>
-              </g>
-              }
-            </svg>
-          </div>
-          }
-        </div>
-      </div>
-
-      <!-- Quick Info Card -->
-      <div class="card bg-base-200/40 border border-base-300 shadow-xl flex flex-col justify-between">
-        <div class="card-body p-6">
-          <h4 class="font-bold text-base-content flex items-center gap-2 mb-3">
-            <pc-icon name="information-circle" class="text-primary" [size]="5"></pc-icon>
-            Dashboard Insights
-          </h4>
-
-          <!-- Radial Progress resolution rate -->
-          <div class="flex items-center gap-4 p-3 mb-4 rounded-xl border border-base-300 bg-base-100 shadow-xs">
-            <div
-              class="radial-progress text-success font-bold text-xs"
-              [style.--value]="resolutionRate()"
-              [style.--size]="'3.5rem'"
-              [style.--thickness]="'4px'"
-              role="progressbar"
-            >
-              {{ resolutionRate() }}%
-            </div>
-            <div>
-              <div class="text-xs font-bold text-base-content">Email Resolution Rate</div>
-              <div class="text-[10px] text-base-content/50">Closed emails vs total assigned</div>
-            </div>
-          </div>
-
-          <div class="text-xs text-base-content/70 space-y-3 leading-relaxed">
-            <p>
-              • <strong>First Response Time</strong> tracks how long representatives take to send an initial reply or
-              comment on incoming inbox messages.
-            </p>
-            <p>
-              • <strong>Time to Close</strong> measures the average life cycle of an email thread from the time it lands
-              in the inbox until it is marked closed.
-            </p>
-            <p>
-              • <strong>Contacts Growth</strong> logs database entry growth over the last 30 days to reflect outreach
-              campaigns and imports.
-            </p>
-          </div>
-          <div class="alert alert-info py-2 text-[10px] mt-4">
-            <span>Data is aggregated in real-time. Hit "Reload Stats" to fetch the latest analytics.</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/services/tags-service.ts
@@ -16244,118 +13365,6 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
 export * from '@uxcommon/components/confirm-dialog.service';
 ```
 
-## File: apps/frontend/src/app/services/tab-title.service.ts
-
-```typescript
-import type { RouterStateSnapshot } from '@angular/router';
-import { Injectable, effect, inject, signal } from '@angular/core';
-import { Title } from '@angular/platform-browser';
-import { TitleStrategy } from '@angular/router';
-
-import type { ISidebarItem } from '../layout/sidebar/sidebar-items';
-import { SidebarItems } from '../layout/sidebar/sidebar-items';
-
-const APP_NAME = 'PeopleCRM';
-
-/**
- * Build a lookup from the first URL segment (e.g. `inbox`) to the friendly screen name the
- * sidebar already uses (e.g. `Inbox`), so the tab title and the nav never disagree.
- */
-function buildSegmentNameMap(items: ISidebarItem[]): ReadonlyMap<string, string> {
-  const map = new Map<string, string>();
-  const walk = (list: ISidebarItem[]): void => {
-    for (const item of list) {
-      if (item.route && item.type !== 'subheading' && item.type !== 'bookmark') {
-        const segment = item.route.replace(/^\//, '').split('/')[0];
-        if (segment && !map.has(segment)) {
-          map.set(segment, item.name);
-        }
-      }
-      if (item.children) {
-        walk(item.children);
-      }
-    }
-  };
-  walk(items);
-  return map;
-}
-
-function toTitleCase(segment: string): string {
-  return segment
-    .split('-')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
-/**
- * Owns `document.title`. The base screen name is set by {@link AppTitleStrategy} on every
- * navigation; screens with a live count (Inbox, etc.) call {@link setCount} so the tab reads
- * `Inbox (12) — PeopleCRM`. Composing both in one place keeps the format in a single spot.
- */
-@Injectable({ providedIn: 'root' })
-export class TabTitleService {
-  private readonly title = inject(Title);
-  private readonly screen = signal<string>('');
-  /** Live counts keyed by screen name. A plain map plus a bump signal drives recomputation. */
-  private readonly counts = new Map<string, number>();
-  private readonly countsVersion = signal(0);
-
-  constructor() {
-    effect(() => {
-      this.countsVersion();
-      const screen = this.screen();
-      if (!screen) {
-        this.title.setTitle(APP_NAME);
-        return;
-      }
-      const count = this.counts.get(screen);
-      const label = count == null ? screen : `${screen} (${count})`;
-      this.title.setTitle(`${label} — ${APP_NAME}`);
-    });
-  }
-
-  /** Set the current screen name (the part before ` — PeopleCRM`). */
-  public setScreen(screen: string): void {
-    this.screen.set(screen);
-  }
-
-  /** Set or clear (pass `null`) the live count shown beside a screen name. */
-  public setCount(screen: string, count: number | null): void {
-    if (count == null) {
-      this.counts.delete(screen);
-    } else {
-      this.counts.set(screen, count);
-    }
-    this.countsVersion.update((n) => n + 1);
-  }
-}
-
-/**
- * Derives the screen name from an explicit route `title` when present, otherwise from the URL's
- * first segment mapped through the sidebar's own labels, and hands it to {@link TabTitleService}.
- */
-@Injectable({ providedIn: 'root' })
-export class AppTitleStrategy extends TitleStrategy {
-  private readonly tabTitle = inject(TabTitleService);
-  private readonly segmentNames = buildSegmentNameMap(SidebarItems);
-
-  public override updateTitle(snapshot: RouterStateSnapshot): void {
-    const explicit = this.buildTitle(snapshot);
-    this.tabTitle.setScreen(explicit ?? this.deriveFromUrl(snapshot.url));
-  }
-
-  private deriveFromUrl(url: string): string {
-    const path = url.split(/[?#]/)[0] ?? '';
-    const segment = path.split('/').filter(Boolean)[0];
-    if (!segment) {
-      return 'Dashboard';
-    }
-    return this.segmentNames.get(segment) ?? toTitleCase(segment);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/resize-handle.directive.ts
 
 ```typescript
@@ -17235,6 +14244,119 @@ module.exports = {
 };
 ```
 
+## File: apps/frontend/project.json
+
+```json
+{
+  "name": "frontend",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "prefix": "pplcrm",
+  "sourceRoot": "apps/frontend/src",
+  "tags": [],
+  "targets": {
+    "generate-context": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx repomix --output apps/frontend/STRUCTURE.md --include \"apps/frontend/src/**/*\" --ignore \"apps/backend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/*.spec.ts\" --style markdown"
+      }
+    },
+    "build": {
+      "executor": "@angular/build:application",
+      "dependsOn": ["generate-context"],
+      "outputs": ["{options.outputPath}"],
+      "defaultConfiguration": "production",
+      "options": {
+        "outputPath": "dist/apps/frontend",
+        "index": "apps/frontend/src/index.html",
+        "browser": "apps/frontend/src/main.ts",
+        "tsConfig": "apps/frontend/tsconfig.app.json",
+        "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
+        "styles": ["apps/frontend/src/styles.css"],
+        "scripts": [],
+        "polyfills": ["@angular/localize/init"]
+      },
+      "configurations": {
+        "production": {
+          "optimization": {
+            "scripts": true,
+            "styles": {
+              "minify": true,
+              "inlineCritical": false
+            },
+            "fonts": {
+              "inline": false
+            }
+          },
+          "budgets": [
+            {
+              "type": "initial",
+              "maximumWarning": "3mb",
+              "maximumError": "4mb"
+            },
+            {
+              "type": "anyComponentStyle",
+              "maximumWarning": "2kb",
+              "maximumError": "4kb"
+            }
+          ],
+          "outputHashing": "all",
+          "fileReplacements": [
+            {
+              "replace": "apps/frontend/src/environments/environment.ts",
+              "with": "apps/frontend/src/environments/environment.prod.ts"
+            }
+          ]
+        },
+        "development": {
+          "optimization": false,
+          "extractLicenses": false,
+          "sourceMap": true
+        }
+      }
+    },
+    "serve": {
+      "executor": "@angular/build:dev-server",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "frontend:build",
+        "port": 4200
+      },
+      "configurations": {
+        "production": {
+          "buildTarget": "frontend:build:production"
+        },
+        "development": {
+          "buildTarget": "frontend:build:development"
+        }
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "outputs": ["{workspaceRoot}/coverage/apps/frontend"],
+      "options": {
+        "cwd": "apps/frontend",
+        "command": "vitest run"
+      }
+    },
+    "extract-i18n": {
+      "executor": "@angular/build:extract-i18n",
+      "options": {
+        "buildTarget": "frontend:build"
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["apps/frontend/**/*.ts", "apps/frontend/**/*.html"]
+      }
+    }
+  }
+}
+```
+
 ## File: apps/frontend/tsconfig.app.json
 
 ```json
@@ -17474,6 +14596,238 @@ import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 
 export const loginGuard: CanActivateFn = () =>
   inject(AuthService).getUser() ? inject(Router).navigateByUrl('/summary') : true;
+```
+
+## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+
+```html
+<pc-auth-layout>
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="pt-4 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Sign in with Passkey
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
+      </button>
+    </div>
+  </div>
+  } @case ('password') { @if (verificationPending()) {
+  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+    <div class="flex flex-col gap-2 w-full">
+      <div class="flex items-center gap-2 font-semibold">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>Verification Pending</span>
+      </div>
+      <p class="text-xs text-amber-200/80">
+        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
+        inbox.
+      </p>
+      <button
+        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
+        type="button"
+        (click)="resendVerification()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
+      >
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
+  <form (submit)="signIn($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="lock-closed" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence()"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
+        </div>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('2fa') {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
+  <div class="text-neutral-200 text-center text-xs pt-2">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/auth/auth-guard.ts
@@ -19684,6 +17038,2491 @@ export class FundraisingFormComponent implements OnInit {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary:
+      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Administrators set workspace defaults, but your choices here are yours.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the System section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The three roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
+          '**Admin** — everything, plus the System area: users, tags, issues, configuration, and the activity log.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. [Settings](/settings) (avatar menu → Settings) covers your notifications and appearance. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone.',
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace configuration' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization** — your name, contact details, and mailing address.',
+          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & Access** — default role for invitations and the MFA requirement.',
+          '**SLA Configuration** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance** — default theme and date format for the workspace.',
+          '**Integrations & API** — webhook keys and connected services.',
+          '**Billing** — your plan and payment details.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity log](/activities) under System: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const CONTACTS_ARTICLES: HelpArticle[] = [
+  {
+    id: 'add-people',
+    category: 'contacts',
+    title: 'Add and edit people',
+    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
+    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
+    related: ['person-profile', 'import', 'tags-issues', 'households'],
+    blocks: [
+      { kind: 'h2', id: 'add-one', text: 'Add a person' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
+          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
+          {
+            title: 'Fill in what you know',
+            detail:
+              'Fields validate as you type — problems are explained right under the field, so you can fix them before saving.',
+          },
+          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Have a spreadsheet?',
+        text: 'Do not type hundreds of rows by hand — [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
+      },
+      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
+      {
+        kind: 'p',
+        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid — double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
+      },
+      {
+        kind: 'p',
+        text: 'If you try to leave a form with unsaved changes, PeopleCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
+      },
+      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
+      {
+        kind: 'p',
+        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
+      },
+    ],
+  },
+  {
+    id: 'person-profile',
+    category: 'contacts',
+    title: 'Inside a person profile',
+    summary:
+      'The profile gathers everything about one person — here is what each tab shows and where the numbers come from.',
+    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
+    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials — who this is and their status — and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
+      },
+      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
+      {
+        kind: 'list',
+        items: [
+          '**Activity** — the audit trail of changes and touches on this record, newest first.',
+          '**Emails** — messages exchanged with this person through the [Inbox](/inbox).',
+          '**Newsletters** — which campaigns they received.',
+          '**Volunteer** — their shift history and hours.',
+          '**Donations** — every gift on record.',
+          '**Events** — event registrations and attendance.',
+        ],
+      },
+      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
+      {
+        kind: 'p',
+        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows — use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Empty tab? That is a prompt, not a dead end',
+        text: 'Empty states name the cause and offer the next step — for example, a person with no household shows an assign action right there.',
+      },
+    ],
+  },
+  {
+    id: 'households',
+    category: 'contacts',
+    title: 'Households',
+    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
+    keywords: ['household', 'family', 'address', 'members', 'assign household', 'home'],
+    related: ['add-people', 'person-profile', 'duplicates'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a household' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Households](/households)', detail: 'The grid lists every household with its members.' },
+          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
+          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Start from the person',
+        text: 'On a profile with no household yet, the household area offers **Assign household** directly — often the fastest route.',
+      },
+      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
+      {
+        kind: 'p',
+        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them — see [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+  {
+    id: 'companies',
+    category: 'contacts',
+    title: 'Companies',
+    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
+    keywords: ['company', 'organization', 'employer', 'business', 'sponsor', 'corporate'],
+    related: ['person-profile', 'duplicates', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Companies hold the organizations in your world — employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
+      },
+      { kind: 'h2', id: 'create', text: 'Add a company' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Companies](/companies)',
+            detail: 'Browse or search existing companies first to avoid creating a twin.',
+          },
+          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
+          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Companies get the full grid toolkit — filters, tags, CSV import and export, and inline editing — plus their own view in the [Duplicates](/duplicates) finder.',
+      },
+    ],
+  },
+  {
+    id: 'teams',
+    category: 'contacts',
+    title: 'Teams',
+    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
+    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
+    related: ['events-shifts', 'tasks', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Teams turn a crowd of volunteers into working units — a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
+      },
+      { kind: 'h2', id: 'create', text: 'Set up a team' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Teams](/teams)', detail: 'The grid shows every team at a glance.' },
+          { title: 'Click the + button', detail: 'Name the team and describe its purpose.' },
+          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
+          {
+            title: 'Give it work',
+            detail: 'Attach lists to call through and tasks to complete — the team page tracks both.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Teams pair well with shifts',
+        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile — see [Events and volunteer shifts](/help/events-shifts).',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const DATA_ARTICLES: HelpArticle[] = [
+  {
+    id: 'import',
+    category: 'data',
+    title: 'Import data from CSV',
+    summary:
+      'Bring existing spreadsheets into PeopleCRM, watch progress live, and clean up afterwards with the duplicates finder.',
+    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel'],
+    related: ['duplicates', 'export', 'tags-issues', 'add-people'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Any grid that supports it has **Import CSV** in its toolbar — [People](/people), [Companies](/companies), and more. The [Imports](/imports) page is mission control: every import you have run, its status, and its results.',
+      },
+      { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
+      {
+        kind: 'list',
+        items: [
+          'Use a CSV with a header row — column names like “First name” or “Email” map naturally.',
+          'One entity per file: import people into the People grid, companies into Companies.',
+          'A quick pass in your spreadsheet first (split names, tidy emails) beats fixing records one by one after.',
+        ],
+      },
+      { kind: 'h2', id: 'run', text: 'Run the import' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Click **Import CSV** in the grid toolbar',
+            detail: 'Pick your file and follow the prompts to match your columns to fields.',
+          },
+          {
+            title: 'Let it run in the background',
+            detail: 'Big files process server-side — keep working; the [Imports](/imports) page shows live progress.',
+          },
+          {
+            title: 'Read the summary',
+            detail: 'When it finishes you get an import summary notification with the results.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'after', text: 'After the import' },
+      {
+        kind: 'list',
+        items: [
+          'Spot-check a few records against the source file.',
+          'Run the [Duplicates](/duplicates) finder — overlap with existing records is normal, and merging is painless. See [Find and merge duplicates](/help/duplicates).',
+          'Tag the cohort if you have not already, so “everyone from the spring petition” stays one filter away.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Test with ten rows first',
+        text: 'Import a ten-row slice before the full file. If the mapping is off you fix ten records, not ten thousand.',
+      },
+    ],
+  },
+  {
+    id: 'export',
+    category: 'data',
+    title: 'Export your data',
+    summary: 'Download any grid — or just your selection — as CSV, and collect finished exports from one page.',
+    keywords: ['export', 'csv', 'download', 'backup', 'report', 'extract', 'spreadsheet'],
+    related: ['import', 'bulk-actions', 'filters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
+      },
+      { kind: 'h2', id: 'exports-page', text: 'The Exports page' },
+      {
+        kind: 'p',
+        text: 'Large exports are prepared in the background. The [Exports](/exports) page lists every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filter first, export second',
+        text: 'Need “donors in Springfield since January”? Build the filter in the grid, confirm the match count, then export — the CSV is your report, no spreadsheet surgery required. See [Filters and the query builder](/help/filters).',
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Exports leave the safety of the app',
+        text: 'A CSV on a laptop has none of the CRM’s access controls. Share exports deliberately and delete stale copies.',
+      },
+    ],
+  },
+  {
+    id: 'duplicates',
+    category: 'data',
+    title: 'Find and merge duplicates',
+    summary:
+      'Review likely duplicate people, households, and companies side by side, and merge each pair in one confirmed click.',
+    keywords: ['duplicate', 'merge', 'dedupe', 'clean up', 'data quality', 'double entry'],
+    related: ['import', 'bulk-actions', 'households', 'companies'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Duplicates creep in through imports, forms, and honest retyping — and they split a person’s history across two half-records. The [Duplicates](/duplicates) finder hunts them down across people, households, and companies.',
+      },
+      { kind: 'h2', id: 'review', text: 'Review and merge' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Duplicates](/duplicates)', detail: 'Choose people, households, or companies.' },
+          {
+            title: 'Compare each group side by side',
+            detail: 'The finder surfaces likely matches; you stay the judge.',
+          },
+          {
+            title: 'Merge — or skip',
+            detail:
+              'Merging folds the duplicate into the primary record and you confirm before anything happens. Not actually the same? Skip the group.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Merges are permanent',
+        text: 'The duplicate record is removed for good — the confirmation names both records so you know exactly what is merging into what. When unsure, open both profiles first.',
+      },
+      {
+        kind: 'p',
+        text: 'Caught a pair in a grid instead? Select exactly two rows and use **Merge** in the bulk action bar — same result, no trip to the finder. See [Selection, bulk actions, and merging](/help/bulk-actions).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Make it a habit',
+        text: 'A five-minute duplicates pass after every import keeps the database trustworthy — far cheaper than a heroic annual cleanup.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
+  {
+    id: 'donations',
+    category: 'engagement',
+    title: 'Donations, pledges, and fundraising pages',
+    summary:
+      'Record gifts, track promised money separately from received money, and raise online with shareable pages.',
+    keywords: ['donation', 'gift', 'pledge', 'fundraising', 'donate page', 'giving', 'contribution', 'donor'],
+    related: ['person-profile', 'forms', 'export', 'grid-basics'],
+    blocks: [
+      { kind: 'h2', id: 'donations', text: 'Donations: money received' },
+      {
+        kind: 'p',
+        text: 'The [Donations](/donations) grid is the ledger of received gifts. Each donation belongs to a person, so a donor’s full giving history is always one click away on their profile’s **Donations** tab. Like any grid, it filters, exports, and bulk-edits — see [Working in grids](/help/grid-basics).',
+      },
+      { kind: 'h2', id: 'pledges', text: 'Pledges: money promised' },
+      {
+        kind: 'p',
+        text: 'Pledges live in their own view beside donations. Keeping promised and received money separate keeps reports honest — and gives you a follow-up queue of pledges yet to convert.',
+      },
+      { kind: 'h2', id: 'pages', text: 'Fundraising pages: money online' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Fundraising](/donation-pages) and click +',
+            detail: 'Build the giving page — your appeal, your branding.',
+          },
+          { title: 'Share the link', detail: 'The page stands on its own for email, social, or QR codes.' },
+          {
+            title: 'Watch gifts arrive',
+            detail: 'Donations made through the page land in the CRM attached to the right people — no retyping.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Thank fast',
+        text: 'Gratitude is a retention strategy. Pair a page with an automation that thanks donors the moment a gift lands — see [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'events-shifts',
+    category: 'engagement',
+    title: 'Events and volunteer shifts',
+    summary: 'Publish event pages people can register for, then staff the work with scheduled volunteer shifts.',
+    keywords: ['event', 'shift', 'volunteer', 'schedule', 'signup', 'registration', 'attendance', 'rsvp'],
+    related: ['teams', 'automations', 'forms', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Two tools cover the in-person world: **Events** are the occasions people attend; **Shifts** are the volunteer slots that make them run. They live side by side under Forms in the sidebar.',
+      },
+      { kind: 'h2', id: 'events', text: 'Events' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Events](/events/pages) and click +',
+            detail: 'Set the what, when, and where, and publish the event page.',
+          },
+          { title: 'Share the page', detail: 'Registrations flow straight into the CRM as people sign up.' },
+          {
+            title: 'Review turnout',
+            detail: 'Registrations and attendance appear on the event — and on each person’s **Events** tab.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
+      {
+        kind: 'p',
+        text: 'Create shifts under [Shifts](/events/shifts) with a time and a place. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Automate the follow-through',
+        text: 'Attach an [automation](/help/automations) to an event to thank attendees or brief volunteers automatically — the trigger fires per signup.',
+      },
+    ],
+  },
+  {
+    id: 'forms',
+    category: 'engagement',
+    title: 'Web forms',
+    summary: 'Publish forms that feed the CRM directly — signups, surveys, and volunteer interest, no retyping.',
+    keywords: ['form', 'web form', 'signup form', 'survey', 'embed', 'subscribe', 'submission'],
+    related: ['newsletters', 'automations', 'import'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Forms turn your audience’s interest into records. A form you build under [Forms](/forms) gets a public page you can share anywhere; submissions arrive as contacts and updates in real time, not as a spreadsheet to import on Friday.',
+      },
+      { kind: 'h2', id: 'build', text: 'Build and publish' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Forms](/forms) and click +',
+            detail: 'Add the fields you actually need — short forms convert better.',
+          },
+          { title: 'Publish and share the link', detail: 'The form works as a standalone page.' },
+          {
+            title: 'Watch submissions arrive',
+            detail: 'Each submission creates or updates a contact, ready to tag, list, and email.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new web-form subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Tag at the source',
+        text: 'Give each form a distinct tag for its signups and your segmentation stays effortless — you will always know who came from where. See [Tags and issues](/help/tags-issues).',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
+  {
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to PeopleCRM',
+    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['getting-around', 'add-people', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
+      },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
+      {
+        kind: 'list',
+        items: [
+          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Engage** — [Inbox](/inbox) for incoming email, [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, and [Automations](/workflows).',
+          '**Contacts** — [People](/people), [Households](/households), [Companies](/companies), and the [Duplicates](/duplicates) finder.',
+          '**Campaign** — [Teams](/teams) and [Donations](/donations).',
+          '**Forms** — public-facing [Forms](/forms), volunteer [Shifts](/events/shifts), [Events](/events/pages), and [Fundraising](/donation-pages) pages.',
+          '**Tools** — [Tasks](/tasks), the [Task board](/board), [Files](/files), [Imports](/imports), and [Exports](/exports).',
+          '**System** (administrators only) — [Activity log](/activities), [Tags](/tags), [Issues](/issues), [Users](/users), and the [Workspace](/configuration) configuration.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Not seeing a section?',
+        text: 'The System section only appears for administrators. If you need access to tags, users, or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
+          },
+          {
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
+          },
+          {
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
+          },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
+      },
+    ],
+  },
+  {
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
+    summary:
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
+    keywords: [
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
+    ],
+    related: ['welcome', 'search', 'shortcuts'],
+    blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
+      {
+        kind: 'p',
+        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
+      },
+      {
+        kind: 'p',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
+      },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
+      {
+        kind: 'list',
+        items: [
+          'Collapse any section by clicking its heading — useful for areas you rarely use.',
+          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
+          'The logo takes you back to the [Dashboard](/summary) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
+        ],
+      },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
+      {
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
+  },
+  {
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/summary) is your daily starting point: headline numbers for your contacts and engagement, plus the current health of your response-time commitments.',
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track** — no open items have exceeded their target.',
+          '**Warning** — the number of breached items has reached the warning threshold.',
+          '**Critical** — breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → SLA Configuration** — see [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
+      },
+    ],
+  },
+  {
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/workflows)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 's'], action: '[Shifts](/events/shifts)' },
+          { keys: ['g', 'e'], action: '[Events](/events/pages)' },
+          { keys: ['g', 'r'], action: '[Fundraising](/donation-pages)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/board)' },
+          { keys: ['g', 'm'], action: '[Files](/files)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/grids.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const GRIDS_ARTICLES: HelpArticle[] = [
+  {
+    id: 'grid-basics',
+    category: 'grids',
+    title: 'Working in grids',
+    summary: 'Every list in PeopleCRM is the same powerful grid — learn it once and you know it everywhere.',
+    keywords: ['grid', 'table', 'columns', 'rows', 'inline edit', 'undo', 'redo', 'refresh', 'resize', 'archive'],
+    related: ['filters', 'bulk-actions', 'import', 'export'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'People, companies, tasks, donations — every collection in PeopleCRM lives in the same grid, with the same toolbar in the same order. The habits below transfer to all of them.',
+      },
+      { kind: 'h2', id: 'toolbar', text: 'The toolbar, left to right' },
+      {
+        kind: 'list',
+        items: [
+          '**+ Add** — create a record of this type.',
+          '**Refresh** — reload the grid without touching your filters.',
+          '**Undo / Redo** — step your inline edits backward and forward.',
+          '**Import CSV / Export CSV** — see [Import data from CSV](/help/import) and [Export your data](/help/export).',
+          '**Tag, issue, and list filters** — narrow to matching rows; see [Filters and the query builder](/help/filters).',
+          '**Advanced filters and the query builder** — per-column conditions or full and/or logic.',
+          '**Columns** — choose which columns are visible.',
+          '**Archive** (where offered) — flip between active and archived records.',
+        ],
+      },
+      { kind: 'h2', id: 'open-detail', text: 'Opening records' },
+      {
+        kind: 'p',
+        text: 'The first column is always a link — click the name to open the full record. The grid remembers your filters, page, and scroll position, so the breadcrumb back returns you exactly where you left off, and the record page gains previous/next arrows for the same filtered set.',
+      },
+      { kind: 'h2', id: 'inline-edit', text: 'Edit without leaving the grid' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Double-click an editable cell', detail: 'Or move to it with the arrow keys and press `Enter`.' },
+          {
+            title: 'Change the value and confirm',
+            detail: 'The cell saves immediately and flashes green so you know it landed.',
+          },
+          {
+            title: 'Change your mind?',
+            detail: 'The toolbar’s undo arrow reverses your last inline edit; redo brings it back.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cell not editable?',
+        text: 'Some columns are read-only on purpose — computed values, or fields that need the full form. Open the record to change those.',
+      },
+      { kind: 'h2', id: 'columns', text: 'Make the grid yours' },
+      {
+        kind: 'list',
+        items: [
+          'Hide columns you never use from the **Columns** menu — fewer columns, faster scanning.',
+          'Drag a column edge to resize it.',
+          'An empty grid always tells you why it is empty and what to do next — for example “No results match these filters” with a one-click **Clear all filters**.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'filters',
+    category: 'grids',
+    title: 'Filters and the query builder',
+    summary:
+      'From one-click tag filters to full and/or queries — and how active filters always stay visible as removable chips.',
+    keywords: ['filter', 'query builder', 'advanced filter', 'chips', 'conditions', 'segment', 'and or', 'narrow'],
+    related: ['grid-basics', 'lists', 'tags-issues', 'search'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Filters narrow a grid to the rows you care about — and PeopleCRM never hides what it is doing: every active filter appears as a chip above the grid, with a count of how many rows match. Remove one chip, or **Clear all** at once.',
+      },
+      { kind: 'h2', id: 'quick-filters', text: 'Quick filters: tags, issues, lists' },
+      {
+        kind: 'list',
+        items: [
+          '**Tags** — check one or more tags; checked tags combine with OR (match any) and land as a single removable chip.',
+          '**Issues** — same mechanics as tags, for issue interests.',
+          '**List** — show only the members of one [list](/help/lists).',
+        ],
+      },
+      { kind: 'h2', id: 'advanced', text: 'Per-column filters' },
+      {
+        kind: 'p',
+        text: '**Advanced Filters** opens a filter row under the column headers: type a condition per column — a name fragment here, a city there — and the grid narrows to rows matching all of them.',
+      },
+      { kind: 'h2', id: 'builder', text: 'The query builder' },
+      {
+        kind: 'p',
+        text: 'When per-column matching is not expressive enough, the **Advanced Query Builder** composes full conditions with and/or groups — “city is Springfield AND (donated this year OR volunteers)”. It is the same builder that powers dynamic lists, so a query you like can become a [list](/help/lists) that maintains itself.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Why is one of the filter buttons disabled?',
+        text: 'Per-column filters and the query builder are mutually exclusive — mixing both would make the result impossible to reason about. Clear one to use the other.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Filters follow you into records',
+        text: 'Open a record from a filtered grid and the pager reads “N of M filtered” — `J`/`K` walk exactly the set you filtered, in order.',
+      },
+    ],
+  },
+  {
+    id: 'bulk-actions',
+    category: 'grids',
+    title: 'Selection, bulk actions, and merging',
+    summary:
+      'Select rows to reveal the bulk action bar — tag, export, delete, clone, or merge many records in one motion.',
+    keywords: ['bulk', 'selection', 'select all', 'mass update', 'batch', 'clone', 'merge', 'delete many', 'bulk tag'],
+    related: ['grid-basics', 'duplicates', 'export', 'tags-issues'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tick the checkbox on one or more rows and a bulk action bar appears, always stating how many rows it will affect — no action is ever a mystery about scale.',
+      },
+      { kind: 'h2', id: 'select-all', text: 'Selecting beyond one page' },
+      {
+        kind: 'p',
+        text: 'The header checkbox selects the visible page. If more rows match your filters, the grid offers **Select all N rows** — one click extends the selection to every match, and the bar confirms “All N rows are selected.”',
+      },
+      { kind: 'h2', id: 'actions', text: 'What you can do with a selection' },
+      {
+        kind: 'list',
+        items: [
+          '**Add tag** — type a tag name and apply it to every selected row at once.',
+          '**Export** — download the selected rows as CSV.',
+          '**Delete** — remove the selected rows, after a confirmation that states the count.',
+          '**Clone** — available with exactly one row selected; duplicates it as a starting point.',
+          '**Merge** — available with exactly two rows selected; combines them into one record.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Bulk delete is permanent',
+        text: 'The confirmation dialog tells you exactly how many records are about to go. Read the number — there is no undo for delete.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Merging more than a pair?',
+        text: 'The [Duplicates](/duplicates) finder reviews likely duplicates side by side across your whole database — better than hunting pairs by hand. See [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const OUTREACH_ARTICLES: HelpArticle[] = [
+  {
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
+    related: ['lists', 'tags-issues', 'settings', 'automations'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Newsletters](/newsletters) and click +', detail: 'Start from a template or a blank canvas.' },
+          {
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually — what you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it in the grid and its performance later.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags — include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh — whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      {
+        kind: 'p',
+        text: 'Send now, or set a send date to schedule. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the newsletter’s page tracks how it performed, and each recipient’s profile lists it under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there — only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it — it damages trust and your sender reputation.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first — response-time targets (SLAs) are measured per email, and the [Dashboard](/summary) rolls breaches up into a status.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you — tune them on your [Profile](/profile).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys — `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration** — see [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own — triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/workflows) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after an event, the reminder before a shift.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of a workflow' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** — what starts a run: fire it manually, or attach it to an event so signups kick it off automatically.',
+          '**Steps** — what happens, in order. Select any step on the canvas to configure it.',
+          '**Settings** — the workflow’s name and behavior.',
+        ],
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/workflows) and click +',
+            detail: 'Give it a name that says what it does — “Event signup thank-you”.',
+          },
+          { title: 'Pick the trigger', detail: 'Choose the event that should start it.' },
+          {
+            title: 'Add the steps',
+            detail: 'Keep the first version to one or two steps; add sophistication after it has run a few times.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Start manual, then automate',
+        text: 'Running a workflow manually a few times is the fastest way to trust it — once the steps behave, wire it to the trigger and let it run.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/productivity.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tasks',
+    category: 'productivity',
+    title: 'Tasks and the board',
+    summary: 'Track the work — assign it, date it, and move it across a kanban board from to-do to done.',
+    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'blocked'],
+    related: ['dashboard', 'teams', 'automations'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tasks capture commitments — call this donor back, print the signs, book the room. Every task carries a status, a priority, an assignee, and a due date, and you can work them from two views of the same data.',
+      },
+      { kind: 'h2', id: 'views', text: 'Grid or board — your choice' },
+      {
+        kind: 'list',
+        items: [
+          '[Tasks](/tasks) — the grid view: filter, sort into your own order, edit inline, work in bulk.',
+          '[Task board](/board) — the kanban view: one column per status. Drag a card to a new column and its status updates instantly.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Statuses run **to do → in progress → blocked → done → canceled**. “Blocked” is worth using honestly — a column of blocked cards is a meeting agenda that writes itself.',
+      },
+      { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
+      {
+        kind: 'list',
+        items: [
+          'Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
+          'If your workspace sets a task SLA, open tasks count against it and the [Dashboard](/summary) shows the rollup — see [The dashboard and SLA health](/help/dashboard).',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Tasks come from everywhere',
+        text: 'Automations can create tasks too — “new major donor” can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
+      },
+    ],
+  },
+  {
+    id: 'files',
+    category: 'productivity',
+    title: 'Files',
+    summary: 'One shared library for the documents your team actually reuses — uploaded once, findable by everyone.',
+    keywords: ['file', 'upload', 'document', 'attachment', 'storage', 'pdf', 'library'],
+    related: ['grid-basics', 'export'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Files](/files) area is your workspace’s shared drive inside the CRM: flyers, scripts, permits, photos — uploaded once, visible to the team, and searchable like any grid.',
+      },
+      { kind: 'h2', id: 'upload', text: 'Add and find files' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Files](/files)', detail: 'The grid lists every uploaded file with its details.' },
+          { title: 'Upload', detail: 'Pick the file and it lands in the library, ready to open or download.' },
+          {
+            title: 'Find it later',
+            detail: 'Search with `⌘K` or the grid filters — naming files descriptively pays off here.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Name for your future self',
+        text: '“2026-06 canvassing script v2.pdf” beats “final_FINAL.pdf” every time someone searches.',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/segmentation.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const SEGMENTATION_ARTICLES: HelpArticle[] = [
+  {
+    id: 'tags-issues',
+    category: 'segmentation',
+    title: 'Tags and issues',
+    summary:
+      'Tags describe who people are; issues capture what they care about. Both filter every grid and target every newsletter.',
+    keywords: ['tag', 'label', 'issue', 'interest', 'categorize', 'organize', 'bulk tag', 'remove tag'],
+    related: ['lists', 'filters', 'bulk-actions', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Tags are free-form labels — **volunteer**, **major-donor**, **lawn-sign** — that describe a record. Issues work the same way but capture policy interests: what a supporter cares about, not what they are. Keeping the two apart keeps both useful.',
+      },
+      { kind: 'h2', id: 'apply', text: 'Apply tags' },
+      {
+        kind: 'list',
+        items: [
+          'On a profile — add or remove tags directly on the record.',
+          'In bulk — select rows in a grid and use **Add tag** to label hundreds at once; see [Selection, bulk actions, and merging](/help/bulk-actions).',
+          'On import — tag an incoming CSV so you can always find that cohort again; see [Import data from CSV](/help/import).',
+        ],
+      },
+      { kind: 'h2', id: 'use', text: 'Put them to work' },
+      {
+        kind: 'p',
+        text: 'Every grid has a tag filter and an issue filter — check several and they combine with OR (match any), landing as one removable chip. Newsletters target audiences by including and excluding tags, so disciplined tagging pays off directly in [Create and send a newsletter](/help/newsletters).',
+      },
+      { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
+      {
+        kind: 'p',
+        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the System section — rename strays, delete stale labels, and keep the set small enough that everyone uses the same words.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'A tag taxonomy that stays useful',
+        text: 'Prefer a handful of well-known tags over dozens of near-synonyms. If volunteer, Volunteers, and vol-2024 all exist, filters and audiences quietly miss people.',
+      },
+    ],
+  },
+  {
+    id: 'lists',
+    category: 'segmentation',
+    title: 'Static and dynamic lists',
+    summary:
+      'Lists are reusable audiences — fixed rosters you curate by hand, or living queries that keep themselves current.',
+    keywords: ['list', 'audience', 'segment', 'static list', 'dynamic list', 'smart list', 'membership', 'query'],
+    related: ['tags-issues', 'filters', 'newsletters'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A list is a saved group of people you can reuse anywhere — as a grid filter, a newsletter audience, or a team’s call sheet. Lists come in two flavors, and choosing the right one saves hours later.',
+      },
+      { kind: 'h2', id: 'static', text: 'Static lists: a roster you control' },
+      {
+        kind: 'p',
+        text: 'A static list is a fixed set of members — it changes only when someone adds or removes people. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
+      },
+      { kind: 'h2', id: 'dynamic', text: 'Dynamic lists: a query that stays fresh' },
+      {
+        kind: 'p',
+        text: 'A dynamic list is defined by conditions in the query builder — “everyone tagged volunteer in Springfield”. Membership updates itself as records change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a list' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Lists](/lists) and click +',
+            detail: 'Name the list something your teammates will recognize in a dropdown.',
+          },
+          { title: 'Pick static or dynamic', detail: 'Ask: should this group maintain itself? If yes, go dynamic.' },
+          {
+            title: 'Build it',
+            detail:
+              'Static: add members. Dynamic: compose conditions in the query builder and check the matching count before saving.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Lists are how good newsletters start',
+        text: 'A newsletter audience built on a dynamic list is accurate on send day by definition — see [Create and send a newsletter](/help/newsletters).',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/help-content.ts
+
+```typescript
+import { ADMIN_ARTICLES } from './articles/administration';
+import { CONTACTS_ARTICLES } from './articles/contacts';
+import { DATA_ARTICLES } from './articles/data-management';
+import { ENGAGEMENT_ARTICLES } from './articles/engagement';
+import { GETTING_STARTED_ARTICLES } from './articles/getting-started';
+import { GRIDS_ARTICLES } from './articles/grids';
+import { OUTREACH_ARTICLES } from './articles/outreach';
+import { PRODUCTIVITY_ARTICLES } from './articles/productivity';
+import { SEGMENTATION_ARTICLES } from './articles/segmentation';
+
+import type { HelpArticle, HelpCategory, HelpCategoryId } from './help-types';
+
+/** Display order of the help center's categories. */
+export const HELP_CATEGORIES: HelpCategory[] = [
+  {
+    id: 'getting-started',
+    label: 'Getting started',
+    blurb: 'Your first session: the tour, navigation habits, search, and shortcuts.',
+    icon: 'map',
+  },
+  {
+    id: 'contacts',
+    label: 'People & relationships',
+    blurb: 'People, households, companies, and teams — the heart of the CRM.',
+    icon: 'identification',
+  },
+  {
+    id: 'grids',
+    label: 'Grids & data entry',
+    blurb: 'One grid everywhere: filters, inline editing, selection, and bulk work.',
+    icon: 'table-cells',
+  },
+  {
+    id: 'segmentation',
+    label: 'Tags, issues & lists',
+    blurb: 'Describe people, capture what they care about, and build reusable audiences.',
+    icon: 'label',
+  },
+  {
+    id: 'outreach',
+    label: 'Newsletters & email',
+    blurb: 'Campaigns, the shared inbox, and automations that follow through for you.',
+    icon: 'megaphone',
+  },
+  {
+    id: 'engagement',
+    label: 'Donations, events & forms',
+    blurb: 'Raise money, run events and shifts, and collect signups from the web.',
+    icon: 'currency-dollar',
+  },
+  {
+    id: 'productivity',
+    label: 'Tasks & files',
+    blurb: 'Track the work on a board and keep shared documents one search away.',
+    icon: 'task',
+  },
+  {
+    id: 'data',
+    label: 'Import, export & data quality',
+    blurb: 'Move data in and out by CSV and keep the database free of duplicates.',
+    icon: 'arrow-up-tray',
+  },
+  {
+    id: 'admin',
+    label: 'Account & administration',
+    blurb: 'Profiles, roles and access, workspace configuration, and the audit trail.',
+    icon: 'cog-6-tooth',
+  },
+];
+
+/** Every article, in category display order. */
+export const HELP_ARTICLES: HelpArticle[] = [
+  ...GETTING_STARTED_ARTICLES,
+  ...CONTACTS_ARTICLES,
+  ...GRIDS_ARTICLES,
+  ...SEGMENTATION_ARTICLES,
+  ...OUTREACH_ARTICLES,
+  ...ENGAGEMENT_ARTICLES,
+  ...PRODUCTIVITY_ARTICLES,
+  ...DATA_ARTICLES,
+  ...ADMIN_ARTICLES,
+];
+
+/** Shown as quick links under the search box on the help home page. */
+export const POPULAR_ARTICLE_IDS: string[] = [
+  'welcome',
+  'grid-basics',
+  'filters',
+  'newsletters',
+  'import',
+  'shortcuts',
+];
+
+const ARTICLES_BY_ID: ReadonlyMap<string, HelpArticle> = new Map(HELP_ARTICLES.map((a) => [a.id, a]));
+const CATEGORIES_BY_ID: ReadonlyMap<HelpCategoryId, HelpCategory> = new Map(HELP_CATEGORIES.map((c) => [c.id, c]));
+
+export function getHelpArticle(id: string): HelpArticle | undefined {
+  return ARTICLES_BY_ID.get(id);
+}
+
+export function getHelpCategory(id: HelpCategoryId): HelpCategory | undefined {
+  return CATEGORIES_BY_ID.get(id);
+}
+
+export function articlesInCategory(id: HelpCategoryId): HelpArticle[] {
+  return HELP_ARTICLES.filter((a) => a.category === id);
+}
+
+/**
+ * Related reading for an article: its hand-picked `related` ids first,
+ * topped up with neighbors from the same category, capped at `limit`.
+ */
+export function relatedArticles(article: HelpArticle, limit = 3): HelpArticle[] {
+  const picked: HelpArticle[] = [];
+  const seen = new Set<string>([article.id]);
+
+  for (const id of article.related ?? []) {
+    const found = ARTICLES_BY_ID.get(id);
+    if (found && !seen.has(found.id)) {
+      picked.push(found);
+      seen.add(found.id);
+    }
+  }
+  for (const neighbor of articlesInCategory(article.category)) {
+    if (picked.length >= limit) break;
+    if (!seen.has(neighbor.id)) {
+      picked.push(neighbor);
+      seen.add(neighbor.id);
+    }
+  }
+  return picked.slice(0, limit);
+}
+
+/** Previous/next article within the same category, in display order. */
+export function categoryNeighbors(article: HelpArticle): { next?: HelpArticle; prev?: HelpArticle } {
+  const siblings = articlesInCategory(article.category);
+  const index = siblings.findIndex((a) => a.id === article.id);
+  if (index === -1) return {};
+  return {
+    prev: index > 0 ? siblings[index - 1] : undefined,
+    next: index < siblings.length - 1 ? siblings[index + 1] : undefined,
+  };
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/data/help-search.ts
+
+```typescript
+import { getHelpCategory, HELP_ARTICLES } from './help-content';
+import { articleToPlainText } from './help-types';
+
+import type { HelpArticle } from './help-types';
+
+/**
+ * Client-side search over the static help content. The corpus is ~30
+ * articles, so a straightforward scored scan is instant and dependency-free.
+ */
+
+/** A run of text, flagged when it matched a search term (for highlighting). */
+export interface HelpHighlightSegment {
+  hit: boolean;
+  text: string;
+}
+
+export interface HelpSearchResult {
+  article: HelpArticle;
+  score: number;
+  /** Summary or body excerpt around the first match, ready to highlight. */
+  snippet: HelpHighlightSegment[];
+  title: HelpHighlightSegment[];
+}
+
+const SCORE_TITLE = 40;
+const SCORE_TITLE_WORD_START = 10;
+const SCORE_KEYWORD = 25;
+const SCORE_SUMMARY = 15;
+const SCORE_CATEGORY = 10;
+const SCORE_BODY = 8;
+const SCORE_PHRASE_IN_TITLE = 30;
+const SNIPPET_RADIUS = 90;
+
+function normalize(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function termsOf(query: string): string[] {
+  return normalize(query).split(' ').filter(Boolean);
+}
+
+/** Does `haystack` contain `term` starting at a word boundary? */
+function hasWordStart(haystack: string, term: string): boolean {
+  const at = haystack.indexOf(term);
+  if (at === -1) return false;
+  if (at === 0) return true;
+  return !/[a-z0-9]/.test(haystack.charAt(at - 1));
+}
+
+/** Splits `text` into plain/hit segments for every occurrence of any term. */
+export function highlightTerms(text: string, terms: string[]): HelpHighlightSegment[] {
+  if (terms.length === 0 || text.length === 0) return [{ hit: false, text }];
+
+  const lower = text.toLowerCase();
+  const segments: HelpHighlightSegment[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    let hitStart = -1;
+    let hitLength = 0;
+    for (const term of terms) {
+      const at = lower.indexOf(term, cursor);
+      if (at !== -1 && (hitStart === -1 || at < hitStart || (at === hitStart && term.length > hitLength))) {
+        hitStart = at;
+        hitLength = term.length;
+      }
+    }
+    if (hitStart === -1) {
+      segments.push({ hit: false, text: text.slice(cursor) });
+      break;
+    }
+    if (hitStart > cursor) {
+      segments.push({ hit: false, text: text.slice(cursor, hitStart) });
+    }
+    segments.push({ hit: true, text: text.slice(hitStart, hitStart + hitLength) });
+    cursor = hitStart + hitLength;
+  }
+  return segments;
+}
+
+/** A short window of `text` around the first occurrence of any term. */
+function excerptAround(text: string, terms: string[]): string {
+  const lower = text.toLowerCase();
+  let first = -1;
+  for (const term of terms) {
+    const at = lower.indexOf(term);
+    if (at !== -1 && (first === -1 || at < first)) first = at;
+  }
+  if (first === -1) return text.slice(0, SNIPPET_RADIUS * 2);
+
+  let start = Math.max(0, first - SNIPPET_RADIUS);
+  let end = Math.min(text.length, first + SNIPPET_RADIUS);
+  // Snap to word boundaries so the excerpt doesn't shear words in half.
+  if (start > 0) {
+    const space = text.indexOf(' ', start);
+    if (space !== -1 && space < first) start = space + 1;
+  }
+  if (end < text.length) {
+    const space = text.lastIndexOf(' ', end);
+    if (space > first) end = space;
+  }
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < text.length ? '…' : '';
+  return `${prefix}${text.slice(start, end)}${suffix}`;
+}
+
+/**
+ * Ranked search: every term must match somewhere in an article (title,
+ * keywords, summary, category label, or body) for it to be a result.
+ */
+export function searchHelp(query: string, articles: HelpArticle[] = HELP_ARTICLES): HelpSearchResult[] {
+  const terms = termsOf(query);
+  if (terms.length === 0) return [];
+  const phrase = normalize(query);
+
+  const results: HelpSearchResult[] = [];
+
+  for (const article of articles) {
+    const title = normalize(article.title);
+    const summary = normalize(article.summary);
+    const keywords = article.keywords.map(normalize);
+    const category = normalize(getHelpCategory(article.category)?.label ?? '');
+    const body = normalize(articleToPlainText(article));
+
+    let score = 0;
+    let everyTermMatched = true;
+
+    for (const term of terms) {
+      let termScore = 0;
+      if (title.includes(term)) {
+        termScore = SCORE_TITLE + (hasWordStart(title, term) ? SCORE_TITLE_WORD_START : 0);
+      } else if (keywords.some((k) => k.includes(term))) {
+        termScore = SCORE_KEYWORD;
+      } else if (summary.includes(term)) {
+        termScore = SCORE_SUMMARY;
+      } else if (category.includes(term)) {
+        termScore = SCORE_CATEGORY;
+      } else if (body.includes(term)) {
+        termScore = SCORE_BODY;
+      }
+      if (termScore === 0) {
+        everyTermMatched = false;
+        break;
+      }
+      score += termScore;
+    }
+    if (!everyTermMatched) continue;
+    if (terms.length > 1 && title.includes(phrase)) score += SCORE_PHRASE_IN_TITLE;
+
+    // Prefer the summary; fall back to a body excerpt around the first hit.
+    // Keyword/category-only matches keep the summary (no arbitrary body slice).
+    const summaryHasTerm = terms.some((t) => summary.includes(t));
+    const bodyHasTerm = terms.some((t) => body.includes(t));
+    const snippetSource = summaryHasTerm
+      ? article.summary
+      : bodyHasTerm
+        ? excerptAround(articleToPlainText(article), terms)
+        : article.summary;
+
+    results.push({
+      article,
+      score,
+      snippet: highlightTerms(snippetSource, terms),
+      title: highlightTerms(article.title, terms),
+    });
+  }
+
+  return results.sort((a, b) => b.score - a.score || a.article.title.localeCompare(b.article.title));
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/data/help-types.ts
+
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+/**
+ * Content model for the in-app help center.
+ *
+ * Articles are plain data (no HTML) rendered through typed blocks, so the
+ * help content is searchable, type-checked, and immune to XSS by design.
+ */
+
+export type HelpCategoryId =
+  | 'getting-started'
+  | 'contacts'
+  | 'grids'
+  | 'segmentation'
+  | 'outreach'
+  | 'engagement'
+  | 'productivity'
+  | 'data'
+  | 'admin';
+
+export interface HelpCategory {
+  /** One-sentence description shown on the category card. */
+  blurb: string;
+  icon: PcIconNameType;
+  id: HelpCategoryId;
+  label: string;
+}
+
+export interface HelpStep {
+  detail?: string;
+  title: string;
+}
+
+export interface HelpKeyRow {
+  action: string;
+  keys: string[];
+}
+
+/**
+ * A single content block. Inline text in `text`, `items`, and step fields
+ * supports the mini-markup parsed by `parseHelpInline`:
+ * `**bold**`, `` `code` `` and `[label](/internal/route)`.
+ */
+export type HelpBlock =
+  | { kind: 'callout'; tone: 'info' | 'tip' | 'warning'; title: string; text: string }
+  | { kind: 'h2'; id: string; text: string }
+  | { kind: 'keys'; rows: HelpKeyRow[] }
+  | { kind: 'list'; items: string[]; ordered?: boolean }
+  | { kind: 'p'; text: string }
+  | { kind: 'steps'; items: HelpStep[] };
+
+export interface HelpArticle {
+  blocks: HelpBlock[];
+  category: HelpCategoryId;
+  /** Stable slug used in the /help/:id route. */
+  id: string;
+  /** Extra search terms that don't appear verbatim in the copy. */
+  keywords: string[];
+  /** Ids of hand-picked related articles. */
+  related?: string[];
+  summary: string;
+  title: string;
+}
+
+export interface HelpInlineSegment {
+  kind: 'bold' | 'code' | 'link' | 'text';
+  /** Internal route, present only when kind === 'link'. */
+  route?: string;
+  text: string;
+}
+
+const INLINE_TOKEN = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g;
+
+/**
+ * Parses the help mini-markup into typed segments. Unknown or unterminated
+ * markers are left as plain text; only internal routes (starting with `/`)
+ * become links, anything else stays literal text.
+ */
+export function parseHelpInline(text: string): HelpInlineSegment[] {
+  const segments: HelpInlineSegment[] = [];
+  let cursor = 0;
+
+  INLINE_TOKEN.lastIndex = 0;
+  for (let match = INLINE_TOKEN.exec(text); match !== null; match = INLINE_TOKEN.exec(text)) {
+    if (match.index > cursor) {
+      segments.push({ kind: 'text', text: text.slice(cursor, match.index) });
+    }
+
+    const [, bold, code, linkLabel, linkTarget] = match;
+    if (bold !== undefined) {
+      segments.push({ kind: 'bold', text: bold });
+    } else if (code !== undefined) {
+      segments.push({ kind: 'code', text: code });
+    } else if (linkLabel !== undefined && linkTarget !== undefined && linkTarget.startsWith('/')) {
+      segments.push({ kind: 'link', route: linkTarget, text: linkLabel });
+    } else {
+      // Non-internal link targets are rendered as-is so nothing silently 404s.
+      segments.push({ kind: 'text', text: match[0] });
+    }
+    cursor = match.index + match[0].length;
+  }
+
+  if (cursor < text.length) {
+    segments.push({ kind: 'text', text: text.slice(cursor) });
+  }
+  return segments;
+}
+
+/** Plain text of one inline-markup string (markers stripped) for search. */
+export function stripHelpInline(text: string): string {
+  return parseHelpInline(text)
+    .map((s) => s.text)
+    .join('');
+}
+
+/** All searchable plain text of a block, headings included. */
+export function blockToPlainText(block: HelpBlock): string {
+  switch (block.kind) {
+    case 'p':
+    case 'h2':
+      return stripHelpInline(block.text);
+    case 'list':
+      return block.items.map(stripHelpInline).join(' ');
+    case 'steps':
+      return block.items.map((s) => [s.title, s.detail ?? ''].map(stripHelpInline).join(' ')).join(' ');
+    case 'callout':
+      return `${stripHelpInline(block.title)} ${stripHelpInline(block.text)}`;
+    case 'keys':
+      return block.rows.map((r) => `${r.keys.join(' ')} ${stripHelpInline(r.action)}`).join(' ');
+    default: {
+      const _exhaustive: never = block;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Whole-article plain text used for search indexing. */
+export function articleToPlainText(article: HelpArticle): string {
+  return article.blocks.map(blockToPlainText).join(' ');
+}
+
+const WORDS_PER_MINUTE = 200;
+
+/** Estimated reading time in whole minutes (always at least 1). */
+export function readingMinutes(article: HelpArticle): number {
+  const words = `${article.title} ${article.summary} ${articleToPlainText(article)}`
+    .split(/\s+/)
+    .filter(Boolean).length;
+  return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-article.html
+
+```html
+<div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+  @if (article(); as article) {
+  <div class="grid gap-10 xl:grid-cols-[minmax(0,1fr)_230px]">
+    <article class="min-w-0 max-w-3xl">
+      <header class="mb-7">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{{ category()?.label }}</p>
+        <h1 class="mt-1 text-2xl font-bold tracking-tight text-base-content">{{ article.title }}</h1>
+        <p class="mt-2 text-[15px] leading-7 text-base-content/60">{{ article.summary }}</p>
+        <p class="mt-3 text-xs tabular-nums text-base-content/50">{{ minutes() }} min read</p>
+      </header>
+
+      <pc-help-blocks [blocks]="article.blocks"></pc-help-blocks>
+
+      <!-- Previous / next within the category -->
+      @if (neighbors().prev || neighbors().next) {
+      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More in this category">
+        @if (neighbors().prev; as prev) {
+        <a
+          [routerLink]="['/help', prev.id]"
+          class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+        >
+          <div class="card-body gap-0.5 p-4">
+            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
+              <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              Previous
+            </span>
+            <span class="truncate text-sm font-medium text-base-content">{{ prev.title }}</span>
+          </div>
+        </a>
+        } @else {
+        <span class="hidden sm:block" aria-hidden="true"></span>
+        } @if (neighbors().next; as next) {
+        <a
+          [routerLink]="['/help', next.id]"
+          class="card border border-base-300 bg-base-100 text-right shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+        >
+          <div class="card-body items-end gap-0.5 p-4">
+            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
+              Next
+              <pc-icon name="chevron-right" [size]="4"></pc-icon>
+            </span>
+            <span class="truncate text-sm font-medium text-base-content">{{ next.title }}</span>
+          </div>
+        </a>
+        }
+      </nav>
+      }
+
+      <!-- Related reading -->
+      @if (related().length > 0) {
+      <section class="mt-12">
+        <h2 class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">Related articles</h2>
+        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          @for (rel of related(); track rel.id) {
+          <a
+            [routerLink]="['/help', rel.id]"
+            class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+          >
+            <div class="card-body gap-1 p-4">
+              <h3 class="text-sm font-semibold leading-5 text-base-content">{{ rel.title }}</h3>
+              <p class="line-clamp-2 text-xs leading-5 text-base-content/60">{{ rel.summary }}</p>
+            </div>
+          </a>
+          }
+        </div>
+      </section>
+      }
+    </article>
+
+    <!-- On this page -->
+    @if (toc().length >= 3) {
+    <aside class="hidden xl:block">
+      <nav class="sticky top-6 rounded-xl border border-base-300 bg-base-100 p-4 shadow-sm" aria-label="On this page">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">On this page</p>
+        <ul class="mt-2 space-y-0.5">
+          @for (entry of toc(); track entry.id) {
+          <li>
+            <button
+              type="button"
+              class="w-full truncate rounded-lg px-2 py-1.5 text-left text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-primary"
+              (click)="scrollTo(entry.id)"
+            >
+              {{ entry.label }}
+            </button>
+          </li>
+          }
+        </ul>
+      </nav>
+    </aside>
+    }
+  </div>
+  } @else {
+  <!-- Guided not-found state -->
+  <div class="mx-auto mt-16 flex max-w-md flex-col items-center gap-3 text-center">
+    <pc-icon name="information-circle" [size]="10" class="text-base-content/20"></pc-icon>
+    <p class="text-sm font-medium text-base-content/80">This help article doesn't exist</p>
+    <p class="text-xs leading-5 text-base-content/50">
+      It may have moved. Search the help center to find what you were looking for.
+    </p>
+    <a routerLink="/help" class="btn btn-primary btn-sm mt-1">Browse all help articles</a>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-article.ts
+
+```typescript
+import { Component, computed, DestroyRef, effect, ElementRef, inject, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+
+import { categoryNeighbors, getHelpArticle, getHelpCategory, relatedArticles } from '../data/help-content';
+import { readingMinutes, stripHelpInline } from '../data/help-types';
+import { HelpBlocks } from './help-blocks';
+
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import type { HelpArticle, HelpBlock } from '../data/help-types';
+
+interface TocEntry {
+  id: string;
+  label: string;
+}
+
+/** One help article: header, typed content blocks, on-page TOC, related reading. */
+@Component({
+  selector: 'pc-help-article',
+  imports: [HelpBlocks, Icon, RouterLink],
+  templateUrl: './help-article.html',
+})
+export class HelpArticlePage {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
+  public readonly id = input.required<string>();
+
+  protected readonly article = computed(() => getHelpArticle(this.id()));
+  protected readonly category = computed(() => {
+    const article = this.article();
+    return article ? getHelpCategory(article.category) : undefined;
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Help', route: '/help' },
+    { label: this.article()?.title ?? 'Article' },
+  ]);
+
+  protected readonly minutes = computed(() => {
+    const article = this.article();
+    return article ? readingMinutes(article) : 0;
+  });
+
+  protected readonly related = computed<HelpArticle[]>(() => {
+    const article = this.article();
+    return article ? relatedArticles(article) : [];
+  });
+
+  protected readonly neighbors = computed(() => {
+    const article = this.article();
+    return article ? categoryNeighbors(article) : {};
+  });
+
+  protected readonly toc = computed<TocEntry[]>(() => {
+    const article = this.article();
+    if (!article) return [];
+    return article.blocks
+      .filter((b): b is Extract<HelpBlock, { kind: 'h2' }> => b.kind === 'h2')
+      .map((b) => ({ id: b.id, label: stripHelpInline(b.text) }));
+  });
+
+  constructor() {
+    // Jump back to the top whenever the reader moves to another article.
+    // Optional call: jsdom (unit tests) doesn't implement scrollIntoView.
+    effect(() => {
+      this.id();
+      this.host.nativeElement.scrollIntoView?.({ block: 'start' });
+    });
+
+    // Hoist the crumb trail into the navbar (no record pager on help pages).
+    effect(() => {
+      this.breadcrumbs.set({
+        crumbs: this.crumbs(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
+        prevLabel: 'Previous record',
+        nextLabel: 'Next record',
+        onPrev: () => undefined,
+        onNext: () => undefined,
+      });
+    });
+
+    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
+  }
+
+  protected scrollTo(anchorId: string): void {
+    document.getElementById(anchorId)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-blocks.html
+
+```html
+<div class="space-y-5">
+  @for (block of blocks(); track $index) { @switch (block.kind) { @case ('p') {
+  <p class="text-[15px] leading-7 text-base-content/80">
+    <pc-help-rich-text [text]="block.text" />
+  </p>
+  } @case ('h2') {
+  <h2 [id]="block.id" class="scroll-mt-24 pt-4 text-lg font-semibold tracking-tight text-base-content first:pt-0">
+    <pc-help-rich-text [text]="block.text" />
+  </h2>
+  } @case ('list') { @if (block.ordered) {
+  <ol class="list-decimal space-y-2 pl-6 text-[15px] leading-7 text-base-content/80 marker:text-base-content/40">
+    @for (item of block.items; track $index) {
+    <li><pc-help-rich-text [text]="item" /></li>
+    }
+  </ol>
+  } @else {
+  <ul class="list-disc space-y-2 pl-6 text-[15px] leading-7 text-base-content/80 marker:text-primary/60">
+    @for (item of block.items; track $index) {
+    <li><pc-help-rich-text [text]="item" /></li>
+    }
+  </ul>
+  } } @case ('steps') {
+  <ol class="space-y-4">
+    @for (step of block.items; track $index; let i = $index) {
+    <li class="flex items-start gap-3">
+      <span
+        class="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-primary/10 text-xs font-semibold tabular-nums text-primary"
+        aria-hidden="true"
+        >{{ i + 1 }}</span
+      >
+      <span class="min-w-0">
+        <span class="block text-[15px] font-medium leading-6 text-base-content">
+          <pc-help-rich-text [text]="step.title" />
+        </span>
+        @if (step.detail) {
+        <span class="block text-sm leading-6 text-base-content/70">
+          <pc-help-rich-text [text]="step.detail" />
+        </span>
+        }
+      </span>
+    </li>
+    }
+  </ol>
+  } @case ('callout') {
+  <div
+    role="note"
+    class="alert alert-soft items-start"
+    [class.alert-info]="block.tone === 'info'"
+    [class.alert-success]="block.tone === 'tip'"
+    [class.alert-warning]="block.tone === 'warning'"
+  >
+    <pc-icon class="mt-0.5" [name]="calloutIcon(block.tone)" [size]="5"></pc-icon>
+    <div class="min-w-0">
+      <div class="text-sm font-semibold">{{ block.title }}</div>
+      <div class="text-sm leading-6 opacity-90">
+        <pc-help-rich-text [text]="block.text" />
+      </div>
+    </div>
+  </div>
+  } @case ('keys') {
+  <div class="overflow-x-auto rounded-xl border border-base-300 bg-base-100">
+    <table class="table table-sm">
+      <tbody>
+        @for (row of block.rows; track $index) {
+        <tr class="border-base-200">
+          <td class="w-40 whitespace-nowrap">
+            @for (key of row.keys; track $index; let last = $last) {
+            <kbd class="kbd kbd-sm">{{ key }}</kbd>@if (!last) {
+            <span class="px-0.5 text-base-content/40">+</span>
+            } }
+          </td>
+          <td class="text-sm text-base-content/80">
+            <pc-help-rich-text [text]="row.action" />
+          </td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  } } }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-blocks.ts
+
+```typescript
+import { Component, input } from '@angular/core';
+import { Icon } from '@icons/icon';
+
+import { HelpRichText } from './help-rich-text';
+
+import type { HelpBlock } from '../data/help-types';
+import type { PcIconNameType } from '@icons/icons.index';
+
+/** Renders an article's typed content blocks with the house styling. */
+@Component({
+  selector: 'pc-help-blocks',
+  imports: [HelpRichText, Icon],
+  templateUrl: './help-blocks.html',
+})
+export class HelpBlocks {
+  public readonly blocks = input.required<HelpBlock[]>();
+
+  protected calloutIcon(tone: 'info' | 'tip' | 'warning'): PcIconNameType {
+    switch (tone) {
+      case 'tip':
+        return 'check-circle';
+      case 'warning':
+        return 'exclamation-triangle';
+      case 'info':
+        return 'information-circle';
+      default: {
+        const _exhaustive: never = tone;
+        return _exhaustive;
+      }
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-home.html
+
+```html
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+  <!-- Hero: title + search -->
+  <div class="mx-auto max-w-2xl text-center">
+    <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">Help center</p>
+    <h1 class="mt-1 text-3xl font-bold tracking-tight text-base-content">How can we help?</h1>
+    <p class="mt-2 text-sm text-base-content/60">
+      Guides for every corner of PeopleCRM — search, or browse by topic below.
+    </p>
+
+    <label class="input input-primary mt-6 flex h-12 w-full items-center gap-2.5 rounded-2xl shadow-sm">
+      <pc-icon name="magnifying-glass" [size]="5" class="opacity-50"></pc-icon>
+      <input
+        #searchBox
+        type="search"
+        class="grow text-[15px]"
+        placeholder="Search help — try “import”, “tags”, “newsletter”"
+        aria-label="Search help articles"
+        [value]="query()"
+        (input)="onSearchInput($event)"
+      />
+      @if (query()) {
+      <button type="button" class="btn btn-circle btn-ghost btn-xs" aria-label="Clear search" (click)="clearSearch()">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+      }
+    </label>
+
+    @if (!searching()) {
+    <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+      <span class="text-base-content/50">Popular:</span>
+      @for (article of popular; track article.id) {
+      <a
+        [routerLink]="['/help', article.id]"
+        class="badge badge-outline border-base-300 text-base-content/70 transition-colors hover:border-primary hover:text-primary"
+      >
+        {{ article.title }}
+      </a>
+      }
+    </div>
+    }
+  </div>
+
+  <!-- Search results -->
+  @if (searching()) { @if (results().length > 0) {
+  <div class="mx-auto mt-8 max-w-2xl">
+    <p class="text-sm text-base-content/60">
+      {{ results().length }} {{ results().length === 1 ? 'article matches' : 'articles match' }} “{{ query().trim() }}”
+    </p>
+    <div class="mt-3 space-y-3">
+      @for (result of results(); track result.article.id) {
+      <a
+        [routerLink]="['/help', result.article.id]"
+        class="card block border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+      >
+        <div class="card-body gap-1.5 p-4">
+          <p class="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-base-content/50">
+            <span>{{ categoryLabel(result.article) }}</span>
+            <span aria-hidden="true">·</span>
+            <span>{{ minutes(result.article) }} min read</span>
+          </p>
+          <h3 class="text-[15px] font-semibold leading-6 text-base-content">
+            @for (seg of result.title; track $index) { @if (seg.hit) {
+            <mark class="rounded bg-primary/15 px-0.5 text-primary">{{ seg.text }}</mark>
+            } @else {
+            <span>{{ seg.text }}</span>
+            } }
+          </h3>
+          <p class="text-sm leading-6 text-base-content/70">
+            @for (seg of result.snippet; track $index) { @if (seg.hit) {
+            <mark class="rounded bg-primary/15 px-0.5 font-medium text-primary">{{ seg.text }}</mark>
+            } @else {
+            <span>{{ seg.text }}</span>
+            } }
+          </p>
+        </div>
+      </a>
+      }
+    </div>
+  </div>
+  } @else {
+  <!-- Guided empty state -->
+  <div class="mx-auto mt-12 flex max-w-md flex-col items-center gap-3 text-center">
+    <pc-icon name="magnifying-glass" [size]="10" class="text-base-content/20"></pc-icon>
+    <p class="text-sm font-medium text-base-content/80">No articles match “{{ query().trim() }}”</p>
+    <p class="text-xs leading-5 text-base-content/50">
+      Try fewer or different words — search covers titles, summaries, keywords, and the full article text.
+    </p>
+    <button type="button" class="btn btn-primary btn-sm mt-1" (click)="clearSearch()">Clear search</button>
+  </div>
+  } } @else {
+  <!-- Browse by category -->
+  <div class="mt-10 grid gap-4 sm:grid-cols-2">
+    @for (section of sections; track section.category.id) {
+    <section class="card border border-base-300 bg-base-100 shadow-sm">
+      <div class="card-body gap-3 p-5">
+        <div class="flex items-center gap-3">
+          <div class="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <pc-icon [name]="section.category.icon" [size]="5"></pc-icon>
+          </div>
+          <div class="min-w-0">
+            <h2 class="truncate text-base font-semibold text-base-content">{{ section.category.label }}</h2>
+            <p class="text-xs tabular-nums text-base-content/50">
+              {{ section.articles.length }} {{ section.articles.length === 1 ? 'article' : 'articles' }}
+            </p>
+          </div>
+        </div>
+        <p class="text-sm leading-6 text-base-content/60">{{ section.category.blurb }}</p>
+        <ul class="mt-1 space-y-0.5">
+          @for (article of section.articles; track article.id) {
+          <li>
+            <a
+              [routerLink]="['/help', article.id]"
+              class="group flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-sm text-base-content/80 transition-colors hover:bg-base-200 hover:text-base-content"
+            >
+              <span class="truncate">{{ article.title }}</span>
+              <pc-icon
+                name="chevron-right"
+                [size]="4"
+                class="flex-none text-base-content/30 transition-colors group-hover:text-primary"
+              ></pc-icon>
+            </a>
+          </li>
+          }
+        </ul>
+      </div>
+    </section>
+    }
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-home.ts
+
+```typescript
+import { afterNextRender, Component, computed, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+
+import {
+  articlesInCategory,
+  getHelpArticle,
+  getHelpCategory,
+  HELP_CATEGORIES,
+  POPULAR_ARTICLE_IDS,
+} from '../data/help-content';
+import { searchHelp } from '../data/help-search';
+import { readingMinutes } from '../data/help-types';
+
+import type { ElementRef } from '@angular/core';
+import type { HelpArticle, HelpCategory } from '../data/help-types';
+
+interface HelpCategorySection {
+  articles: HelpArticle[];
+  category: HelpCategory;
+}
+
+/** Help center landing page: search across all articles, or browse by topic. */
+@Component({
+  selector: 'pc-help-home',
+  imports: [Icon, RouterLink],
+  templateUrl: './help-home.html',
+})
+export class HelpHomePage {
+  private readonly searchBox = viewChild<ElementRef<HTMLInputElement>>('searchBox');
+
+  protected readonly query = signal('');
+  protected readonly searching = computed(() => this.query().trim().length > 0);
+  protected readonly results = computed(() => searchHelp(this.query()));
+
+  protected readonly sections: HelpCategorySection[] = HELP_CATEGORIES.map((category) => ({
+    articles: articlesInCategory(category.id),
+    category,
+  }));
+
+  protected readonly popular: HelpArticle[] = POPULAR_ARTICLE_IDS.map(getHelpArticle).filter(
+    (a): a is HelpArticle => a !== undefined,
+  );
+
+  constructor() {
+    afterNextRender(() => this.searchBox()?.nativeElement.focus());
+  }
+
+  protected categoryLabel(article: HelpArticle): string {
+    return getHelpCategory(article.category)?.label ?? '';
+  }
+
+  protected clearSearch(): void {
+    this.query.set('');
+    this.searchBox()?.nativeElement.focus();
+  }
+
+  protected minutes(article: HelpArticle): number {
+    return readingMinutes(article);
+  }
+
+  protected onSearchInput(event: Event): void {
+    this.query.set((event.target as HTMLInputElement).value);
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-rich-text.ts
+
+```typescript
+import { Component, computed, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
+
+import { parseHelpInline } from '../data/help-types';
+
+/**
+ * Renders one help mini-markup string as inline content:
+ * `**bold**`, `` `code` `` and `[label](/route)` links.
+ * Everything is interpolated text — no HTML injection surface.
+ * Segments are rendered back-to-back with no template whitespace so
+ * spacing is controlled entirely by the segment text itself.
+ */
+@Component({
+  selector: 'pc-help-rich-text',
+  imports: [RouterLink],
+  template: `@for (seg of segments(); track $index) {
+    @switch (seg.kind) {
+      @case ('bold') {
+        <strong class="font-semibold text-base-content">{{ seg.text }}</strong>
+      }
+      @case ('code') {
+        <code class="rounded bg-base-200 px-1 py-0.5 font-mono text-[0.85em]">{{ seg.text }}</code>
+      }
+      @case ('link') {
+        <a [routerLink]="seg.route" class="font-medium text-primary hover:underline">{{ seg.text }}</a>
+      }
+      @default {
+        <span>{{ seg.text }}</span>
+      }
+    }
+  }`,
+})
+export class HelpRichText {
+  public readonly text = input.required<string>();
+
+  protected readonly segments = computed(() => parseHelpInline(this.text()));
 }
 ```
 
@@ -23682,420 +23521,631 @@ export class ShiftsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/summary/summary.ts
+## File: apps/frontend/src/app/experiences/summary/summary.html
 
-```typescript
-import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
-import { DashboardService } from './services/dashboard.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { SlaDetails } from './sla-details';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+```html
+<div class="p-6 max-w-7xl mx-auto space-y-6">
+  <!-- Header -->
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
+        <pc-icon name="presentation-chart-line" class="text-primary" [size]="7"></pc-icon>
+        CRM Summary Dashboard
+      </h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Overview of key performance metrics, email response rates, and contact database growth.
+      </p>
+    </div>
+    <button
+      class="btn btn-outline btn-sm gap-2 cursor-pointer hover:btn-primary"
+      pcSpinOnClick
+      (click)="loadStats()"
+      [disabled]="isRefreshing()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Reload Stats
+    </button>
+  </div>
 
-@Component({
-  imports: [Icon, SpinOnClickDirective, SlaDetails, StatCard],
-  selector: 'pc-summary',
-  templateUrl: './summary.html',
-})
-export class Summary implements OnInit {
-  private readonly dashboardSvc = inject(DashboardService);
-  private readonly alertSvc = inject(AlertService);
+  <!-- First-run checklist — composed from real account state; self-hides when complete (§3) -->
+  <pc-getting-started-card></pc-getting-started-card>
 
-  constructor() {
-    effect(() => {
-      const tab = this.defaultSlaTab();
-      const open = this.showSlaDetails();
-      if (open) {
-        if (tab === 'emails') {
-          if (this.breachedEmails().length === 0) {
-            this.emailPage.set(1);
-            void this.loadMoreEmails();
+  <!-- Metric Cards — always visible; show skeletons (not a spinner) on first load (§3) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+    <pc-stat-card
+      [title]="'Total Open Emails'"
+      [value]="totalOpenCount()"
+      [loading]="isInitialLoading()"
+      [description]="'All open inbox conversations'"
+      [icon]="'envelope'"
+      [valueColorClass]="'text-primary'"
+      [iconColorClass]="'text-primary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Unassigned Open'"
+      [value]="unassignedOpenCount()"
+      [loading]="isInitialLoading()"
+      [description]="'Awaiting user assignment'"
+      [icon]="'exclamation-circle'"
+      [valueColorClass]="'text-warning'"
+      [iconColorClass]="'text-warning'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg 1st Response'"
+      [value]="avgFirstResponse()"
+      [loading]="isInitialLoading()"
+      [description]="'Time to reply or comment'"
+      [icon]="'clock'"
+      [valueColorClass]="'text-info'"
+      [iconColorClass]="'text-info'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Time to Close'"
+      [value]="avgTimeToClose()"
+      [loading]="isInitialLoading()"
+      [description]="'From arrival to closed status'"
+      [icon]="'check-circle'"
+      [valueColorClass]="'text-success'"
+      [iconColorClass]="'text-success'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Contacts Growth'"
+      [value]="'+' + activeContactsCount()"
+      [loading]="isInitialLoading()"
+      [description]="'New contacts (last 30 days)'"
+      [icon]="'user-plus'"
+      [valueColorClass]="'text-secondary'"
+      [iconColorClass]="'text-secondary'"
+    ></pc-stat-card>
+  </div>
+
+  <!-- Loading Overlay (charts/analytics area only) -->
+  @if (isLoading() && linePoints().length === 0) {
+  <div class="flex flex-col items-center justify-center py-24">
+    <span class="loading loading-bars loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Analyzing database metrics...</p>
+  </div>
+  } @if (linePoints().length > 0) {
+  <div class="space-y-6">
+    <!-- SLA Status Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- Email SLA Card -->
+      <div
+        class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
+        [class.bg-success]="emailSlaStatus() === 'healthy'"
+        [class.text-success-content]="emailSlaStatus() === 'healthy'"
+        [class.bg-warning]="emailSlaStatus() === 'warning'"
+        [class.text-warning-content]="emailSlaStatus() === 'warning'"
+        [class.bg-error]="emailSlaStatus() === 'critical'"
+        [class.text-error-content]="emailSlaStatus() === 'critical'"
+      >
+        <div class="card-body p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Email SLA Status</span>
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
+              (click)="toggleSlaDetails('emails')"
+            >
+              <pc-icon
+                [name]="showSlaDetails() && defaultSlaTab() === 'emails' ? 'chevron-up' : 'chevron-down'"
+                [size]="4"
+              ></pc-icon>
+              {{ showSlaDetails() && defaultSlaTab() === 'emails' ? 'Hide Details' : 'View Details' }}
+            </button>
+          </div>
+          <div class="flex items-baseline gap-2 mt-1">
+            <h3 class="text-2xl font-black">
+              {{ totalEmailSlaBreaches() === 0 ? 'Healthy' : totalEmailSlaBreaches() + ' Breached' }}
+            </h3>
+            <span class="text-xs opacity-85"> ({{ unassignedEmailSlaBreaches() }} unassigned breaches) </span>
+          </div>
+          <div class="mt-2 flex items-center justify-between text-xs opacity-75 border-t border-white/10 pt-2">
+            <span>Limit: {{ emailSlaHours() }}h response</span>
+            <span>Warning: &ge;{{ emailSlaWarningThreshold() }} • Critical: &ge;{{ emailSlaCriticalThreshold() }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Task SLA Card -->
+      <div
+        class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
+        [class.bg-success]="taskSlaStatus() === 'healthy'"
+        [class.text-success-content]="taskSlaStatus() === 'healthy'"
+        [class.bg-warning]="taskSlaStatus() === 'warning'"
+        [class.text-warning-content]="taskSlaStatus() === 'warning'"
+        [class.bg-error]="taskSlaStatus() === 'critical'"
+        [class.text-error-content]="taskSlaStatus() === 'critical'"
+      >
+        <div class="card-body p-5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Task SLA Status</span>
+            <button
+              type="button"
+              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
+              (click)="toggleSlaDetails('tasks')"
+            >
+              <pc-icon
+                [name]="showSlaDetails() && defaultSlaTab() === 'tasks' ? 'chevron-up' : 'chevron-down'"
+                [size]="4"
+              ></pc-icon>
+              {{ showSlaDetails() && defaultSlaTab() === 'tasks' ? 'Hide Details' : 'View Details' }}
+            </button>
+          </div>
+          <div class="flex items-baseline gap-2 mt-1">
+            <h3 class="text-2xl font-black">
+              {{ totalTaskSlaBreaches() === 0 ? 'Healthy' : totalTaskSlaBreaches() + ' Breached' }}
+            </h3>
+            <span class="text-xs opacity-85"> ({{ unassignedTaskSlaBreaches() }} unassigned breaches) </span>
+          </div>
+          <div class="mt-2 flex items-center justify-between text-xs opacity-75 border-t border-white/10 pt-2">
+            <span>Limit: {{ taskSlaHours() }}h resolution</span>
+            <span>Warning: &ge;{{ taskSlaWarningThreshold() }} • Critical: &ge;{{ taskSlaCriticalThreshold() }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SLA Details Action Center -->
+    @if (showSlaDetails()) {
+    <pc-sla-details
+      [breachedEmails]="breachedEmails()"
+      [breachedTasks]="breachedTasks()"
+      [emailSlaHours]="emailSlaHours()"
+      [taskSlaHours]="taskSlaHours()"
+      [totalEmailBreaches]="totalEmailSlaBreaches()"
+      [totalTaskBreaches]="totalTaskSlaBreaches()"
+      [hasMoreEmails]="hasMoreEmails()"
+      [hasMoreTasks]="hasMoreTasks()"
+      [isLoadingEmails]="isLoadingEmails()"
+      [isLoadingTasks]="isLoadingTasks()"
+      (loadMoreEmails)="loadMoreEmails()"
+      (loadMoreTasks)="loadMoreTasks()"
+      [(activeTab)]="defaultSlaTab"
+    />
+    }
+
+    <!-- Charts Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left / Main Chart: Contacts Growth Line -->
+      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
+        <div class="card-body p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+              <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
+              New Contacts Growth
+            </h3>
+            <span class="text-xs text-base-content/55">Last 30 Days</span>
+          </div>
+
+          <div class="relative w-full h-[220px]">
+            <svg viewBox="0 0 600 200" class="w-full h-full overflow-visible">
+              <defs>
+                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"></stop>
+                  <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0"></stop>
+                </linearGradient>
+              </defs>
+
+              <!-- Grid Lines -->
+              <line
+                x1="20"
+                y1="20"
+                x2="580"
+                y2="20"
+                stroke="currentColor"
+                class="text-base-content/5"
+                stroke-dasharray="4"
+              ></line>
+              <line
+                x1="20"
+                y1="60"
+                x2="580"
+                y2="60"
+                stroke="currentColor"
+                class="text-base-content/5"
+                stroke-dasharray="4"
+              ></line>
+              <line
+                x1="20"
+                y1="100"
+                x2="580"
+                y2="100"
+                stroke="currentColor"
+                class="text-base-content/5"
+                stroke-dasharray="4"
+              ></line>
+              <line
+                x1="20"
+                y1="140"
+                x2="580"
+                y2="140"
+                stroke="currentColor"
+                class="text-base-content/5"
+                stroke-dasharray="4"
+              ></line>
+              <line x1="20" y1="180" x2="580" y2="180" stroke="currentColor" class="text-base-content/10"></line>
+
+              <!-- Y Axis Labels -->
+              @for (label of yAxisLabels(); track label.y) {
+              <text
+                [attr.x]="12"
+                [attr.y]="label.y + 3"
+                text-anchor="end"
+                class="fill-current text-base-content/40 text-[9px] font-mono"
+              >
+                {{ label.value }}
+              </text>
+              }
+
+              <!-- Line paths -->
+              <path [attr.d]="areaPath()" fill="url(#areaGrad)"></path>
+              <path
+                [attr.d]="linePath()"
+                fill="none"
+                stroke="#3b82f6"
+                stroke-width="3"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+
+              <!-- Interactive Points -->
+              @for (p of linePoints(); track p.date; let first = $first; let last = $last) {
+              <circle
+                [attr.cx]="p.x"
+                [attr.cy]="p.y"
+                r="4.5"
+                fill="#ffffff"
+                stroke="#3b82f6"
+                stroke-width="2"
+                class="hover:scale-150 transition-all duration-150 cursor-pointer"
+                style="transform-origin: center; transform-box: fill-box"
+                (mouseenter)="hoveredPoint.set(p)"
+                (mouseleave)="hoveredPoint.set(null)"
+              ></circle>
+              }
+
+              <!-- X Axis Labels -->
+              @for (label of xAxisLabels(); track label.x) {
+              <text
+                [attr.x]="label.x"
+                [attr.y]="195"
+                text-anchor="middle"
+                class="fill-current text-base-content/40 text-[9px] font-mono"
+              >
+                {{ label.label }}
+              </text>
+              }
+            </svg>
+
+            <!-- Tooltip -->
+            @if (hoveredPoint(); as p) {
+            <div
+              class="absolute z-10 bg-base-100 border border-base-300 px-3 py-2 rounded-lg shadow-xl font-sans pointer-events-none transform -translate-x-1/2 -translate-y-full mt-[-8px] transition-all duration-100"
+              [style.left.%]="(p.x / 600) * 100"
+              [style.top.%]="(p.y / 200) * 100"
+            >
+              <div class="text-[10px] text-base-content/50 font-semibold uppercase tracking-wider">
+                {{ formatDate(p.date) }}
+              </div>
+              <div class="text-sm font-bold text-base-content mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
+                <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
+                +{{ p.count }} Contacts
+              </div>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Donut Chart - Emails Assigned -->
+      <div class="card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-6 flex flex-col justify-between">
+          <div class="mb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+                <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
+                Open Conversations
+              </h3>
+              <p class="text-xs text-base-content/50 mt-0.5">Inbox emails assigned by rep</p>
+            </div>
+            <!-- Filter Radios -->
+            <div class="join join-horizontal self-start sm:self-auto border border-base-300">
+              <button
+                class="btn btn-xs join-item"
+                [class.btn-active]="showAllOpen()"
+                [class.btn-neutral]="showAllOpen()"
+                [class.btn-ghost]="!showAllOpen()"
+                (click)="showAllOpen.set(true)"
+              >
+                All Open
+              </button>
+              <button
+                class="btn btn-xs join-item"
+                [class.btn-active]="!showAllOpen()"
+                [class.btn-neutral]="!showAllOpen()"
+                [class.btn-ghost]="showAllOpen()"
+                (click)="showAllOpen.set(false)"
+              >
+                Assigned
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-center py-4">
+            @if (assignedRepSlices().length === 0) {
+            <div class="text-sm text-base-content/40 py-10 italic">No open emails assigned.</div>
+            } @if (assignedRepSlices().length > 0) {
+            <div class="relative w-[160px] h-[160px]">
+              <svg
+                width="160"
+                height="160"
+                viewBox="0 0 160 160"
+                class="transform -rotate-90 w-full h-full overflow-visible"
+              >
+                <circle
+                  cx="80"
+                  cy="80"
+                  r="60"
+                  fill="transparent"
+                  stroke="currentColor"
+                  class="text-base-300/30"
+                  stroke-width="14"
+                ></circle>
+                @for (slice of assignedRepSlices(); track slice.name) {
+                <circle
+                  cx="80"
+                  cy="80"
+                  r="60"
+                  fill="transparent"
+                  [attr.stroke]="slice.color"
+                  [attr.stroke-width]="hoveredSlice()?.name === slice.name ? 18 : 14"
+                  [attr.stroke-dasharray]="slice.strokeDash"
+                  [attr.stroke-dashoffset]="slice.strokeOffset"
+                  class="cursor-pointer transition-all duration-200 origin-center"
+                  [style.opacity]="hoveredSlice() && hoveredSlice()?.name !== slice.name ? 0.45 : 1"
+                  (mouseenter)="hoveredSlice.set(slice)"
+                  (mouseleave)="hoveredSlice.set(null)"
+                ></circle>
+                }
+              </svg>
+
+              <!-- Center Text Overlay -->
+              <div
+                class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-2"
+              >
+                @if (hoveredSlice(); as hs) {
+                <span class="text-[10px] text-base-content/50 uppercase font-bold tracking-wider truncate max-w-[110px]"
+                  >{{ hs.name }}</span
+                >
+                <span class="text-xl font-extrabold text-base-content leading-none mt-1">{{ hs.count }}</span>
+                <span class="text-[10px] text-base-content/40 font-mono mt-0.5">{{ hs.percentage }}%</span>
+                } @else {
+                <span class="text-[9px] text-base-content/50 uppercase font-semibold tracking-wider">
+                  {{ showAllOpen() ? 'Total Open' : 'Total Assigned' }}
+                </span>
+                <span class="text-2xl font-extrabold text-base-content leading-none mt-1">{{ donutTotalCount() }}</span>
+                <span class="text-[9px] text-base-content/40 mt-0.5">Conversations</span>
+                }
+              </div>
+            </div>
+            }
+          </div>
+
+          <!-- Legend -->
+          <div class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
+            @for (slice of assignedRepSlices(); track slice.name) {
+            <div
+              class="flex items-center justify-between text-xs p-1 rounded-md transition-all duration-150 cursor-pointer animate-fade-in"
+              [class.bg-base-200]="hoveredSlice()?.name === slice.name"
+              (mouseenter)="hoveredSlice.set(slice)"
+              (mouseleave)="hoveredSlice.set(null)"
+            >
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="slice.color"></span>
+                <span class="font-semibold text-base-content">{{ slice.name }}</span>
+              </div>
+              <span class="text-base-content/60 font-mono">{{ slice.count }} ({{ slice.percentage }}%)</span>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Representative Performance Table -->
+    <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
+      <div class="card-body p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+            <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
+            Representative Performance & Response Stats
+          </h3>
+          <span class="text-xs text-base-content/55">Real-time stats</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="table table-zebra w-full text-sm">
+            <thead>
+              <tr class="bg-base-200/50">
+                <th>Representative</th>
+                <th class="text-center">Open Emails</th>
+                <th class="text-center">Closed Emails</th>
+                <th class="text-center">Total Handled</th>
+                <th class="text-center">Resolution Rate</th>
+                <th class="text-center">Avg 1st Response</th>
+                <th class="text-center">Avg Time to Close</th>
+                <th class="text-center">Email SLA Breaches</th>
+                <th class="text-center">Task SLA Breaches</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (user of userStats(); track user.user_id) {
+              <tr class="hover">
+                <td class="font-semibold text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+                <td class="text-center font-mono font-semibold text-base-content">{{ user.openCount }}</td>
+                <td class="text-center font-mono text-base-content/70">{{ user.closedCount }}</td>
+                <td class="text-center font-mono text-base-content/70">{{ user.openCount + user.closedCount }}</td>
+                <td class="text-center">
+                  <span
+                    class="badge font-semibold"
+                    [class.badge-success]="user.resolutionRate >= 75"
+                    [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                    [class.badge-error]="user.resolutionRate < 40"
+                  >
+                    {{ user.resolutionRate }}%
+                  </span>
+                </td>
+                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgFirstResponse }}</td>
+                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgTimeToClose }}</td>
+                <td class="text-center">
+                  @if (user.emailSlaBreaches > 0) {
+                  <div class="badge badge-error badge-sm font-mono font-bold animate-pulse">
+                    {{ user.emailSlaBreaches }}
+                  </div>
+                  } @else {
+                  <div class="badge badge-success badge-sm font-mono font-bold text-white">0</div>
+                  }
+                </td>
+                <td class="text-center">
+                  @if (user.taskSlaBreaches > 0) {
+                  <div class="badge badge-warning badge-sm font-mono font-bold">{{ user.taskSlaBreaches }}</div>
+                  } @else {
+                  <div class="badge badge-success badge-sm font-mono font-bold text-white">0</div>
+                  }
+                </td>
+              </tr>
+              } @empty {
+              <tr>
+                <td colspan="8" class="text-center py-6 text-base-content/40 italic">
+                  No representative performance statistics available.
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Chart: Closed Emails by Rep -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl">
+        <div class="card-body p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
+              <pc-icon name="check-circle" class="text-primary" [size]="5"></pc-icon>
+              Emails Closed by Rep
+            </h3>
+            <span class="text-xs text-base-content/50">Performance metrics</span>
+          </div>
+
+          @if (closedRepBars().length === 0) {
+          <div class="text-sm text-base-content/40 py-16 italic text-center">No emails closed by representatives.</div>
+          } @if (closedRepBars().length > 0) {
+          <div class="relative w-full h-[180px]">
+            <svg viewBox="0 0 500 180" class="w-full h-full overflow-visible">
+              @for (bar of closedRepBars(); track bar.name; let idx = $index) {
+              <g>
+                <!-- Label -->
+                <text
+                  x="10"
+                  [attr.y]="bar.y + 14"
+                  fill="currentColor"
+                  class="text-base-content text-xs font-semibold"
+                  text-anchor="start"
+                >
+                  {{ bar.name }}
+                </text>
+                <!-- Bar Background -->
+                <rect
+                  x="130"
+                  [attr.y]="bar.y"
+                  width="360"
+                  height="18"
+                  rx="4"
+                  fill="currentColor"
+                  class="text-base-200/50"
+                ></rect>
+                <!-- Bar Foreground -->
+                <rect
+                  x="130"
+                  [attr.y]="bar.y"
+                  [attr.width]="bar.width"
+                  height="18"
+                  rx="4"
+                  fill="#10b981"
+                  class="transition-all duration-500 ease-out"
+                ></rect>
+                <!-- Value -->
+                <text
+                  [attr.x]="135 + bar.width"
+                  [attr.y]="bar.y + 13"
+                  fill="currentColor"
+                  class="text-base-content text-[11px] font-mono font-bold"
+                >
+                  {{ bar.count }}
+                </text>
+              </g>
+              }
+            </svg>
+          </div>
           }
-        } else {
-          if (this.breachedTasks().length === 0) {
-            this.taskPage.set(1);
-            void this.loadMoreTasks();
-          }
-        }
-      }
-    });
+        </div>
+      </div>
+
+      <!-- Quick Info Card -->
+      <div class="card bg-base-200/40 border border-base-300 shadow-xl flex flex-col justify-between">
+        <div class="card-body p-6">
+          <h4 class="font-bold text-base-content flex items-center gap-2 mb-3">
+            <pc-icon name="information-circle" class="text-primary" [size]="5"></pc-icon>
+            Dashboard Insights
+          </h4>
+
+          <!-- Radial Progress resolution rate -->
+          <div class="flex items-center gap-4 p-3 mb-4 rounded-xl border border-base-300 bg-base-100 shadow-xs">
+            <div
+              class="radial-progress text-success font-bold text-xs"
+              [style.--value]="resolutionRate()"
+              [style.--size]="'3.5rem'"
+              [style.--thickness]="'4px'"
+              role="progressbar"
+            >
+              {{ resolutionRate() }}%
+            </div>
+            <div>
+              <div class="text-xs font-bold text-base-content">Email Resolution Rate</div>
+              <div class="text-[10px] text-base-content/50">Closed emails vs total assigned</div>
+            </div>
+          </div>
+
+          <div class="text-xs text-base-content/70 space-y-3 leading-relaxed">
+            <p>
+              • <strong>First Response Time</strong> tracks how long representatives take to send an initial reply or
+              comment on incoming inbox messages.
+            </p>
+            <p>
+              • <strong>Time to Close</strong> measures the average life cycle of an email thread from the time it lands
+              in the inbox until it is marked closed.
+            </p>
+            <p>
+              • <strong>Contacts Growth</strong> logs database entry growth over the last 30 days to reflect outreach
+              campaigns and imports.
+            </p>
+          </div>
+          <div class="alert alert-info py-2 text-[10px] mt-4">
+            <span>Data is aggregated in real-time. Hit "Reload Stats" to fetch the latest analytics.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   }
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly isRefreshing = signal(false);
-
-  // KPIs
-  protected readonly totalAssignedCount = signal(0);
-  protected readonly unassignedOpenCount = signal(0);
-  protected readonly totalOpenCount = signal(0);
-  protected readonly avgFirstResponse = signal('—');
-  protected readonly avgTimeToClose = signal('—');
-  protected readonly activeContactsCount = signal(0);
-  protected readonly resolutionRate = signal(0);
-
-  // SLA Signals
-  protected readonly unassignedEmailSlaBreaches = signal(0);
-  protected readonly unassignedTaskSlaBreaches = signal(0);
-  protected readonly totalEmailSlaBreaches = signal(0);
-  protected readonly totalTaskSlaBreaches = signal(0);
-
-  protected readonly breachedEmails = signal<any[]>([]);
-  protected readonly breachedTasks = signal<any[]>([]);
-  protected readonly emailPage = signal(1);
-  protected readonly taskPage = signal(1);
-  protected readonly hasMoreEmails = signal(false);
-  protected readonly hasMoreTasks = signal(false);
-  protected readonly isLoadingEmails = signal(false);
-  protected readonly isLoadingTasks = signal(false);
-
-  protected readonly emailSlaHours = signal(24);
-  protected readonly taskSlaHours = signal(24);
-  protected readonly emailSlaWarningThreshold = signal(1);
-  protected readonly emailSlaCriticalThreshold = signal(4);
-  protected readonly taskSlaWarningThreshold = signal(1);
-  protected readonly taskSlaCriticalThreshold = signal(4);
-  protected readonly showSlaDetails = signal(false);
-  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
-
-  protected readonly emailSlaStatus = computed(() => {
-    const breaches = this.totalEmailSlaBreaches();
-    const warning = this.emailSlaWarningThreshold();
-    const critical = this.emailSlaCriticalThreshold();
-    if (breaches === 0) return 'healthy';
-    if (breaches >= critical) return 'critical';
-    if (breaches >= warning) return 'warning';
-    return 'healthy';
-  });
-
-  protected readonly taskSlaStatus = computed(() => {
-    const breaches = this.totalTaskSlaBreaches();
-    const warning = this.taskSlaWarningThreshold();
-    const critical = this.taskSlaCriticalThreshold();
-    if (breaches === 0) return 'healthy';
-    if (breaches >= critical) return 'critical';
-    if (breaches >= warning) return 'warning';
-    return 'healthy';
-  });
-
-  // SVG Chart data
-  protected readonly linePath = signal('');
-  protected readonly areaPath = signal('');
-  protected readonly linePoints = signal<any[]>([]);
-  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
-  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
-  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
-  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
-  protected readonly closedRepBars = signal<any[]>([]);
-  private readonly rawEmailsAssigned = signal<any[]>([]);
-  private readonly rawUnassignedCount = signal<number>(0);
-  protected readonly showAllOpen = signal<boolean>(true);
-
-  protected readonly donutTotalCount = computed(() => {
-    return this.showAllOpen() ? this.totalOpenCount() : this.totalAssignedCount();
-  });
-
-  protected readonly assignedRepSlices = computed(() => {
-    const assigned = this.rawEmailsAssigned();
-    const unassignedCount = this.rawUnassignedCount();
-    const showAll = this.showAllOpen();
-
-    const slicesData: { name: string; count: number; isUnassigned: boolean }[] = [
-      ...assigned.map((a: any) => ({
-        name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
-        count: Number(a.count || 0),
-        isUnassigned: false,
-      })),
-    ];
-
-    if (showAll && unassignedCount > 0) {
-      slicesData.push({
-        name: 'Unassigned',
-        count: unassignedCount,
-        isUnassigned: true,
-      });
-    }
-
-    const total = slicesData.reduce((acc, cur) => acc + cur.count, 0);
-
-    const radius = 60;
-    const circ = 2 * Math.PI * radius;
-    let cumulativeCount = 0;
-    const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#ef4444', '#ec4899', '#06b6d4'];
-    const unassignedColor = '#64748b'; // Slate gray for Unassigned
-
-    return slicesData.map((s: any, i: number) => {
-      const countVal = s.count;
-      const pct = total > 0 ? countVal / total : 0;
-      const sliceCirc = pct * circ;
-      const strokeDash = `${sliceCirc} ${circ}`;
-      const strokeOffset = -(cumulativeCount / total) * circ;
-      cumulativeCount += countVal;
-      return {
-        name: s.name,
-        count: countVal,
-        percentage: Math.round(pct * 100),
-        strokeDash,
-        strokeOffset,
-        color: s.isUnassigned ? unassignedColor : colors[i % colors.length],
-      };
-    });
-  });
-
-  protected readonly userStats = signal<any[]>([]);
-  protected readonly hoveredPoint = signal<any | null>(null);
-  protected readonly hoveredSlice = signal<any | null>(null);
-
-  public ngOnInit() {
-    void this.loadStats();
-  }
-
-  protected async loadStats() {
-    if (this.isRefreshing()) return;
-    this.isRefreshing.set(true);
-    const start = Date.now();
-    const end = this._loading.begin();
-    try {
-      const stats = await this.dashboardSvc.getStats();
-
-      // Set KPIs
-      const totalAssigned = (stats.emailsAssigned || []).reduce(
-        (acc: number, cur: any) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.totalAssignedCount.set(totalAssigned);
-      this.unassignedOpenCount.set(stats.unassignedCount || 0);
-      this.totalOpenCount.set(stats.totalOpenCount || 0);
-
-      const respHours = stats.avgFirstResponseHours;
-      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
-
-      const closeHours = stats.avgTimeToCloseHours;
-      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
-
-      const totalNewContacts = (stats.contactsGrowth || []).reduce(
-        (acc: number, cur: any) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.activeContactsCount.set(totalNewContacts);
-
-      const totalClosed = (stats.emailsClosed || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
-      const totalEmails = totalAssigned + totalClosed;
-      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
-      this.resolutionRate.set(Math.round(rate));
-
-      // Set SLA breaches
-      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
-      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
-      this.unassignedEmailSlaBreaches.set(unassignedEmails);
-      this.unassignedTaskSlaBreaches.set(unassignedTasks);
-
-      const assignedEmailSla = (stats.userStats || []).reduce(
-        (acc: number, cur: any) => acc + Number(cur.emailSlaBreaches || 0),
-        0,
-      );
-      const assignedTaskSla = (stats.userStats || []).reduce(
-        (acc: number, cur: any) => acc + Number(cur.taskSlaBreaches || 0),
-        0,
-      );
-
-      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
-      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
-
-      // Set settings configurations (breached lists loaded on demand)
-      if (this.showSlaDetails()) {
-        if (this.defaultSlaTab() === 'emails') {
-          this.breachedEmails.set([]);
-          this.emailPage.set(1);
-        } else {
-          this.breachedTasks.set([]);
-          this.taskPage.set(1);
-        }
-      } else {
-        this.breachedEmails.set([]);
-        this.emailPage.set(1);
-        this.hasMoreEmails.set(false);
-
-        this.breachedTasks.set([]);
-        this.taskPage.set(1);
-        this.hasMoreTasks.set(false);
-      }
-
-      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
-      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
-      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
-      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
-      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
-      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
-
-      // Map representative stats
-      const formattedUserStats = (stats.userStats || []).map((u: any) => ({
-        ...u,
-        avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
-        avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
-        emailSlaBreaches: u.emailSlaBreaches || 0,
-        taskSlaBreaches: u.taskSlaBreaches || 0,
-      }));
-      this.userStats.set(formattedUserStats);
-
-      // Line Chart: Contacts Growth (last 30 days)
-      const growth = stats.contactsGrowth || [];
-      const maxCount = Math.max(...growth.map((g: any) => g.count), 1);
-      const width = 600;
-      const height = 200;
-      const padding = 20;
-
-      const points = growth.map((g: any, i: number) => {
-        const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
-        const y = height - padding - (g.count / maxCount) * (height - padding * 2);
-        return { x, y, date: g.date, count: g.count };
-      });
-      this.linePoints.set(points);
-
-      if (points.length > 0) {
-        const lPath = points.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-        this.linePath.set(lPath);
-        const firstX = points[0].x;
-        const lastX = points[points.length - 1].x;
-        this.areaPath.set(`${lPath} L ${lastX} ${height - padding} L ${firstX} ${height - padding} Z`);
-      } else {
-        this.linePath.set('');
-        this.areaPath.set('');
-      }
-
-      // Calculate Y axis labels
-      const yLabels = [
-        { y: 20, value: maxCount },
-        { y: 60, value: Math.round(maxCount * 0.75) },
-        { y: 100, value: Math.round(maxCount * 0.5) },
-        { y: 140, value: Math.round(maxCount * 0.25) },
-        { y: 180, value: 0 },
-      ];
-      this.yAxisLabels.set(yLabels);
-
-      // Calculate X axis labels (approx. 5 labels across the timeline)
-      const xLabels: { x: number; label: string }[] = [];
-      if (points.length > 0) {
-        const indices = [
-          0,
-          Math.floor(points.length * 0.25),
-          Math.floor(points.length * 0.5),
-          Math.floor(points.length * 0.75),
-          points.length - 1,
-        ];
-        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
-        for (const idx of uniqueIndices) {
-          const pt = points[idx];
-          let dateStr = pt.date;
-          try {
-            const dateObj = new Date(pt.date);
-            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-          } catch (_e) {}
-          xLabels.push({ x: pt.x, label: dateStr });
-        }
-      }
-      this.xAxisLabels.set(xLabels);
-
-      // Bar Chart: Closed Emails by Rep
-      const closed = stats.emailsClosed || [];
-      const maxClosed = Math.max(...closed.map((c: any) => c.count), 1);
-      const barMaxWidth = 360;
-      this.closedRepBars.set(
-        closed.map((c: any, i: number) => ({
-          name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
-          count: c.count,
-          width: (c.count / maxClosed) * barMaxWidth,
-          y: i * 40 + 10,
-        })),
-      );
-
-      // Set raw data for Donut Chart (assignedRepSlices will compute reactively)
-      this.rawEmailsAssigned.set(stats.emailsAssigned || []);
-      this.rawUnassignedCount.set(stats.unassignedCount || 0);
-    } catch (_err: unknown) {
-      this.alertSvc.showError('Failed to load dashboard metrics');
-    } finally {
-      end();
-      const elapsed = Date.now() - start;
-      const minSpin = 1000; // spin at least once (1 second minimum)
-      if (elapsed < minSpin) {
-        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
-      }
-      this.isRefreshing.set(false);
-    }
-  }
-
-  private formatHours(hours: number): string {
-    if (hours < 1) {
-      const minutes = Math.round(hours * 60);
-      return `${minutes}m`;
-    }
-    if (hours >= 24) {
-      const days = Math.floor(hours / 24);
-      const remainingHours = Math.round(hours % 24);
-      return `${days}d ${remainingHours}h`;
-    }
-    return `${hours.toFixed(1)}h`;
-  }
-
-  protected formatDate(dateStr: string): string {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    } catch (_e) {
-      return dateStr;
-    }
-  }
-
-  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
-    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
-      this.showSlaDetails.set(false);
-    } else {
-      this.defaultSlaTab.set(tab);
-      this.showSlaDetails.set(true);
-    }
-  }
-
-  protected async loadMoreEmails() {
-    if (this.isLoadingEmails()) return;
-    this.isLoadingEmails.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
-      if (this.emailPage() === 1) {
-        this.breachedEmails.set(res.items);
-      } else {
-        this.breachedEmails.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreEmails.set(res.hasMore);
-      this.emailPage.update((p) => p + 1);
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load breached emails');
-    } finally {
-      this.isLoadingEmails.set(false);
-    }
-  }
-
-  protected async loadMoreTasks() {
-    if (this.isLoadingTasks()) return;
-    this.isLoadingTasks.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
-      if (this.taskPage() === 1) {
-        this.breachedTasks.set(res.items);
-      } else {
-        this.breachedTasks.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreTasks.set(res.hasMore);
-      this.taskPage.update((p) => p + 1);
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load breached tasks');
-    } finally {
-      this.isLoadingTasks.set(false);
-    }
-  }
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-grid.ts
@@ -25071,149 +25121,6 @@ export class KeyboardShortcutsHelp {
 
   protected close(): void {
     this.shortcuts.closeHelp();
-  }
-}
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
-
-```typescript
-import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NgTemplateOutlet } from '@angular/common';
-import {
-  NavigationCancel,
-  NavigationError,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterLinkActive,
-} from '@angular/router';
-import { filter, map } from 'rxjs';
-import { Icon } from '@icons/icon';
-import { Swap } from '@uxcommon/components/swap/swap';
-
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { ISidebarItem } from './sidebar-items';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-@Component({
-  selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
-  templateUrl: './sidebar.html',
-  styles: [
-    `
-      .tooltip:before {
-        z-index: 100 !important;
-      }
-    `,
-  ],
-})
-export class Sidebar {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-
-  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
-  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
-  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
-
-  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
-  protected readonly isEffectivelyNarrow = computed(
-    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
-  );
-
-  protected readonly pendingRoute = toSignal(
-    this.router.events.pipe(
-      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
-      map((e) => (e instanceof NavigationStart ? e.url : null)),
-    ),
-    { initialValue: null },
-  );
-
-  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
-
-  protected readonly items = computed(() => {
-    const role = this.auth.getUser()?.role;
-    const allItems = this.sidebarSvc.getItems()();
-    if (role === 'user') {
-      return allItems.map((item) => {
-        if (item.children) {
-          return {
-            ...item,
-            children: item.children.filter((child) => !child.adminOnly),
-          };
-        }
-        return item;
-      });
-    }
-    return allItems;
-  });
-
-  constructor() {
-    if (this._mql) {
-      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
-      this._mql.addEventListener('change', handler);
-      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
-    }
-
-    effect(() => {
-      const flatItems = this.flattenItems(this.items());
-      for (const item of flatItems) {
-        const key = this.getItemKey(item);
-        const visible = !item.hidden && !item.hiddenByFavourite;
-        const existing = this.visibilitySignals.get(key);
-        if (existing) {
-          existing.set(visible);
-        } else {
-          this.visibilitySignals.set(key, signal(visible));
-        }
-      }
-    });
-  }
-
-  protected closeMobile() {
-    this.sidebarSvc.closeMobile();
-  }
-
-  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
-    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
-  }
-
-  private getItemKey(item: ISidebarItem): string {
-    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
-    return prefix + item.name + (item.route ?? '');
-  }
-
-  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
-    const key = this.getItemKey(item);
-    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
-  }
-
-  protected isCollapsed(name: string): boolean {
-    return this.sidebarSvc.isCollapsed(name);
-  }
-
-  protected isDrawerFull() {
-    return this.sidebarSvc.isFull();
-  }
-
-  protected isDrawerHalf() {
-    return this.sidebarSvc.isHalf();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected toggleCollapse(name: string) {
-    this.sidebarSvc.toggleCollapsed(name);
-  }
-
-  protected toggleDrawer() {
-    return this.sidebarSvc.toggleDrawer();
   }
 }
 ```
@@ -26224,6 +26131,118 @@ function isStoredRecordNavContext(value: unknown): value is StoredRecordNavConte
     candidate['ids'].every((id) => typeof id === 'string') &&
     typeof candidate['total'] === 'number'
   );
+}
+```
+
+## File: apps/frontend/src/app/services/tab-title.service.ts
+
+```typescript
+import type { RouterStateSnapshot } from '@angular/router';
+import { Injectable, effect, inject, signal } from '@angular/core';
+import { Title } from '@angular/platform-browser';
+import { TitleStrategy } from '@angular/router';
+
+import type { ISidebarItem } from '../layout/sidebar/sidebar-items';
+import { SidebarItems } from '../layout/sidebar/sidebar-items';
+
+const APP_NAME = 'PeopleCRM';
+
+/**
+ * Build a lookup from the first URL segment (e.g. `inbox`) to the friendly screen name the
+ * sidebar already uses (e.g. `Inbox`), so the tab title and the nav never disagree.
+ */
+function buildSegmentNameMap(items: ISidebarItem[]): ReadonlyMap<string, string> {
+  const map = new Map<string, string>();
+  const walk = (list: ISidebarItem[]): void => {
+    for (const item of list) {
+      if (item.route && item.type !== 'subheading' && item.type !== 'bookmark') {
+        const segment = item.route.replace(/^\//, '').split('/')[0];
+        if (segment && !map.has(segment)) {
+          map.set(segment, item.name);
+        }
+      }
+      if (item.children) {
+        walk(item.children);
+      }
+    }
+  };
+  walk(items);
+  return map;
+}
+
+function toTitleCase(segment: string): string {
+  return segment
+    .split('-')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/**
+ * Owns `document.title`. The base screen name is set by {@link AppTitleStrategy} on every
+ * navigation; screens with a live count (Inbox, etc.) call {@link setCount} so the tab reads
+ * `Inbox (12) — PeopleCRM`. Composing both in one place keeps the format in a single spot.
+ */
+@Injectable({ providedIn: 'root' })
+export class TabTitleService {
+  private readonly title = inject(Title);
+  private readonly screen = signal<string>('');
+  /** Live counts keyed by screen name. A plain map plus a bump signal drives recomputation. */
+  private readonly counts = new Map<string, number>();
+  private readonly countsVersion = signal(0);
+
+  constructor() {
+    effect(() => {
+      this.countsVersion();
+      const screen = this.screen();
+      if (!screen) {
+        this.title.setTitle(APP_NAME);
+        return;
+      }
+      const count = this.counts.get(screen);
+      const label = count == null ? screen : `${screen} (${count})`;
+      this.title.setTitle(`${label} — ${APP_NAME}`);
+    });
+  }
+
+  /** Set the current screen name (the part before ` — PeopleCRM`). */
+  public setScreen(screen: string): void {
+    this.screen.set(screen);
+  }
+
+  /** Set or clear (pass `null`) the live count shown beside a screen name. */
+  public setCount(screen: string, count: number | null): void {
+    if (count == null) {
+      this.counts.delete(screen);
+    } else {
+      this.counts.set(screen, count);
+    }
+    this.countsVersion.update((n) => n + 1);
+  }
+}
+
+/**
+ * Derives the screen name from an explicit route `title` when present, otherwise from the URL's
+ * first segment mapped through the sidebar's own labels, and hands it to {@link TabTitleService}.
+ */
+@Injectable({ providedIn: 'root' })
+export class AppTitleStrategy extends TitleStrategy {
+  private readonly tabTitle = inject(TabTitleService);
+  private readonly segmentNames = buildSegmentNameMap(SidebarItems);
+
+  public override updateTitle(snapshot: RouterStateSnapshot): void {
+    const explicit = this.buildTitle(snapshot);
+    this.tabTitle.setScreen(explicit ?? this.deriveFromUrl(snapshot.url));
+  }
+
+  private deriveFromUrl(url: string): string {
+    const path = url.split(/[?#]/)[0] ?? '';
+    const segment = path.split('/').filter(Boolean)[0];
+    if (!segment) {
+      return 'Dashboard';
+    }
+    return this.segmentNames.get(segment) ?? toTitleCase(segment);
+  }
 }
 ```
 
@@ -28347,117 +28366,64 @@ module.exports = [
 ];
 ```
 
-## File: apps/frontend/project.json
+## File: apps/frontend/vite.config.ts
 
-```json
-{
-  "name": "frontend",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "projectType": "application",
-  "prefix": "pplcrm",
-  "sourceRoot": "apps/frontend/src",
-  "tags": [],
-  "targets": {
-    "generate-context": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "npx repomix --output apps/frontend/STRUCTURE.md --include \"apps/frontend/src/**/*\" --ignore \"apps/backend/**,apps/libs/**,libs/**,**/STRUCTURE.md,**/*.spec.ts\" --style markdown"
-      }
+```typescript
+/// <reference types='vitest' />
+import { defineConfig } from 'vite';
+import angular from '@analogjs/vite-plugin-angular';
+
+export default defineConfig(() => ({
+  root: __dirname,
+  cacheDir: '../../node_modules/.vite/apps/frontend',
+  resolve: {
+    tsconfigPaths: true,
+    alias: {
+      'apps/frontend/src': __dirname + '/src',
     },
-    "build": {
-      "executor": "@angular/build:application",
-      "dependsOn": ["generate-context"],
-      "outputs": ["{options.outputPath}"],
-      "defaultConfiguration": "production",
-      "options": {
-        "outputPath": "dist/apps/frontend",
-        "index": "apps/frontend/src/index.html",
-        "browser": "apps/frontend/src/main.ts",
-        "tsConfig": "apps/frontend/tsconfig.app.json",
-        "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
-        "styles": ["apps/frontend/src/styles.css"],
-        "scripts": [],
-        "polyfills": ["@angular/localize/init"]
+  },
+  server: {
+    watch: {
+      ignored: ['**/node_modules/**', '**/.angular/**'],
+    },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
       },
-      "configurations": {
-        "production": {
-          "optimization": {
-            "scripts": true,
-            "styles": {
-              "minify": true,
-              "inlineCritical": false
-            },
-            "fonts": {
-              "inline": false
-            }
-          },
-          "budgets": [
-            {
-              "type": "initial",
-              "maximumWarning": "3mb",
-              "maximumError": "4mb"
-            },
-            {
-              "type": "anyComponentStyle",
-              "maximumWarning": "2kb",
-              "maximumError": "4kb"
-            }
-          ],
-          "outputHashing": "all",
-          "fileReplacements": [
-            {
-              "replace": "apps/frontend/src/environments/environment.ts",
-              "with": "apps/frontend/src/environments/environment.prod.ts"
-            }
-          ]
-        },
-        "development": {
-          "optimization": false,
-          "extractLicenses": false,
-          "sourceMap": true
-        }
-      }
     },
-    "serve": {
-      "executor": "@angular/build:dev-server",
-      "defaultConfiguration": "development",
-      "options": {
-        "buildTarget": "frontend:build",
-        "port": 4200
+  },
+  plugins: [angular()],
+  test: {
+    name: 'frontend',
+    watch: false,
+    globals: true,
+    passWithNoTests: true,
+    environment: 'jsdom',
+    setupFiles: ['src/test-setup.ts'],
+    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/apps/frontend',
+      provider: 'v8' as const,
+      // Coverage ratchet: set just under the measured baseline (2026-07-04:
+      // 55.49% stmts / 37.15% branch / 54.85% funcs / 55.75% lines). These may
+      // only ever be raised, never lowered — if your change drops coverage
+      // below them, add tests rather than editing the thresholds.
+      thresholds: {
+        statements: 54,
+        branches: 36,
+        functions: 53,
+        lines: 54,
       },
-      "configurations": {
-        "production": {
-          "buildTarget": "frontend:build:production"
-        },
-        "development": {
-          "buildTarget": "frontend:build:development"
-        }
-      }
     },
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/apps/frontend"],
-      "options": {
-        "cwd": "apps/frontend",
-        "command": "vitest run"
-      }
+    // Suppress NG0914: Angular fires this when provideZonelessChangeDetection() is used
+    // alongside Zone.js (which the Angular testing harness always loads). It's harmless.
+    onConsoleLog(log: string) {
+      if (log.includes('NG0914')) return false;
     },
-    "extract-i18n": {
-      "executor": "@angular/build:extract-i18n",
-      "options": {
-        "buildTarget": "frontend:build"
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["apps/frontend/**/*.ts", "apps/frontend/**/*.html"]
-      }
-    }
-  }
-}
+  },
+}));
 ```
 
 ## File: apps/frontend/src/app/auth/resume-account-page/resume-account-page.ts
@@ -28509,238 +28475,6 @@ export class ResumeAccountPage extends TRPCService<any> {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/auth/signin-page/signin-page.html
-
-```html
-<pc-auth-layout>
-  @if (rateLimitSecondsLeft() > 0) {
-  <div class="alert alert-error text-sm mb-4">
-    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
-    <div>
-      <p class="font-semibold" i18n>Too many attempts</p>
-      <p class="text-xs mt-1 flex items-center gap-1">
-        <span i18n>Try again in</span>
-        <span class="countdown font-mono text-lg">
-          @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
-            >{{rateLimitMins()}}</span
-          >
-          m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
-            >{{rateLimitRemSecs()}}</span
-          >
-          s
-        </span>
-      </p>
-    </div>
-  </div>
-  } @switch (step()) { @case ('email') {
-  <label class="label text-neutral-100">Enter your email to sign in</label>
-  <form (submit)="continueWithEmail($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input
-          type="email"
-          placeholder="Enter your email"
-          [formField]="emailForm.email"
-          aria-label="Email"
-          autocomplete="email"
-        />
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { Continue }
-        </button>
-      </div>
-    </div>
-  </form>
-  <div class="pt-4 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @case ('passkey') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
-      <p class="text-sm text-white">{{ emailData().email }}</p>
-      @if (isLoading()) {
-      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
-      }
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="signInWithPasskey()"
-        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-      >
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Sign in with Passkey
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="usePasswordInstead()"
-        [disabled]="isLoading()"
-      >
-        Use password instead
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="goBackToEmail()"
-        [disabled]="isLoading()"
-      >
-        Back
-      </button>
-    </div>
-  </div>
-  } @case ('password') { @if (verificationPending()) {
-  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
-    <div class="flex flex-col gap-2 w-full">
-      <div class="flex items-center gap-2 font-semibold">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>Verification Pending</span>
-      </div>
-      <p class="text-xs text-amber-200/80">
-        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
-        inbox.
-      </p>
-      <button
-        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
-        type="button"
-        (click)="resendVerification()"
-        [disabled]="resending() || resendCooldownSeconds() > 0"
-      >
-        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
-        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
-      </button>
-    </div>
-  </div>
-  }
-
-  <div class="flex items-center gap-2 text-sm mb-3">
-    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
-    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
-    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
-      Change
-    </button>
-  </div>
-
-  <label class="label text-neutral-100">Enter your password</label>
-  <form (submit)="signIn($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="lock-closed" />
-        <input
-          type="password"
-          placeholder="Enter your password"
-          [formField]="passwordForm.password"
-          aria-label="Password"
-          autocomplete="current-password"
-        />
-      </label>
-
-      <div class="flex items-center justify-between pt-2">
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-sm"
-            [checked]="persistence()"
-            (change)="togglePersistence($event.target)"
-          />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
-        </div>
-        <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
-        </div>
-      </div>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { SIGN IN }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('2fa') {
-  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
-  <form (submit)="verify2FA($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="shield-exclamation" />
-        <input
-          type="text"
-          placeholder="6-digit code"
-          [formField]="otpForm.code"
-          aria-label="Verification Code"
-          autocomplete="one-time-code"
-        />
-      </label>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { VERIFY }
-        </button>
-      </div>
-
-      <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
-          Back to Sign In
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('passkey-setup') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
-        Skip for now
-      </button>
-    </div>
-  </div>
-  } }
-
-  <div class="text-neutral-200 text-center text-xs pt-2">
-    <span>
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
 ```
 
 ## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.ts
@@ -30636,522 +30370,6 @@ export class EmailBody {
   </div>
   }
 </section>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
-
-```html
-<header class="border-b border-base-300 px-4 pb-4">
-  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
-    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
-  </div>
-  <div class="flex items-start gap-3 mt-2">
-    <pc-email-assign [email]="email()"></pc-email-assign>
-    <div class="min-w-0 flex-1"></div>
-
-    <div class="flex items-center gap-1 text-sm text-base-content/70">
-      <span class="whitespace-nowrap pr-2">
-        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
-      </span>
-
-      <div class="border-t border-base-300 my-1 h-0"></div>
-      <div class="hidden md:block">
-        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
-        <div class="dropdown dropdown-end inline-block align-middle">
-          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
-            <pc-icon name="reply" [size]="4"></pc-icon>
-            <pc-icon name="chevron-down" [size]="3"></pc-icon>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
-          >
-            <li>
-              <a
-                (click)="handleReply()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleReplyAll()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleForward()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        @if (!isFolderTrash()) {
-        <!-- Star/Favorite -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Toggle favourite"
-          aria-label="Star"
-          data-testid="favorite-button"
-          (click)="toggleFavourite()"
-        >
-          <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
-        </button>
-
-        <!-- Close/Mark as Done -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="markAsDoneText()"
-          aria-label="Mark as Done"
-          (click)="toggleClosed()"
-        >
-          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
-        </button>
-        } @else {
-        <!-- Restore from Trash -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Restore from Trash"
-          aria-label="Restore from Trash"
-          (click)="restoreFromTrash()"
-        >
-          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
-        </button>
-        }
-
-        <!-- Delete -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="getTrashText()"
-          [attr.aria-label]="getTrashText()"
-          (click)="deleteEmail()"
-        >
-          @if (isFolderTrash()) {
-          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
-          } @else {
-          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
-          }
-        </button>
-      </div>
-      <!-- More Actions Dropdown -->
-      <div class="dropdown dropdown-end">
-        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
-          <svg viewBox="0 0 24 24" class="h-5 w-5">
-            <path
-              fill="currentColor"
-              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
-            />
-          </svg>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
-        >
-          <li>
-            <a
-              (click)="handleCreateTask()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
-            </a>
-          </li>
-          <div class="border-t border-base-300 my-1 h-0"></div>
-          <li>
-            <a
-              (click)="handleReply()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleReplyAll()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleForward()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
-          <li>
-            <a
-              (click)="markAsSpam()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
-            </a>
-          </li>
-          } @else {
-          <li>
-            <a
-              (click)="moveToInbox()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
-            </a>
-          </li>
-          } }
-          <li>
-            <a
-              (click)="handleMarkAsUnread()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              (click)="toggleFavourite()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                [name]="getFavouriteIcon()"
-                [size]="4"
-                [class.text-amber-500]="isFavourite()"
-                [class.text-base-content/60]="!isFavourite()"
-              ></pc-icon>
-              {{ isFavourite() ? 'Unstar' : 'Star' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="toggleClosed()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                name="check-circle"
-                [size]="4"
-                [class.text-success]="isClosed()"
-                [class.text-base-content/60]="!isClosed()"
-              ></pc-icon>
-              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="deleteEmail()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="mt-3 flex items-center gap-3">
-    <div class="avatar">
-      @if (headerData()?.person; as person) {
-      <a
-        [routerLink]="['/people', person.id]"
-        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
-      >
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </a>
-      } @else {
-      <div class="w-10 rounded-full bg-base-200">
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </div>
-      }
-    </div>
-
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-1.5 min-w-0">
-        @if (headerData()?.person; as person) {
-        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
-          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
-          (email()!.from_name || email()!.from_email) }}
-        </a>
-        <div class="dropdown dropdown-bottom inline-block">
-          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
-            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
-          </button>
-          <div
-            tabindex="0"
-            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="avatar placeholder">
-                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
-                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
-                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
-                  @if (person.company_name) {
-                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
-                  }
-                </div>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-2 text-xs">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span class="truncate">{{ person.email }}</span>
-                </div>
-                @if (person.mobile) {
-                <div class="flex items-center gap-2">
-                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span>{{ person.mobile }}</span>
-                </div>
-                } @if (person.notes) {
-                <div class="flex flex-col gap-1 mt-1">
-                  <span class="font-semibold text-base-content/60">Notes:</span>
-                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
-                    {{ person.notes }}
-                  </p>
-                </div>
-                }
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-3">
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Tags:</span
-                  >
-                  <pc-tags
-                    [tags]="personTags()"
-                    [type]="'tag'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add tag...'"
-                    (tagAdded)="onTagAdded($event)"
-                    (tagRemoved)="onTagRemoved($event)"
-                  ></pc-tags>
-                  @if (!personTags().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
-                  }
-                </div>
-
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Issues:</span
-                  >
-                  <pc-tags
-                    [tags]="personIssues()"
-                    [type]="'issue'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add issue...'"
-                    (tagAdded)="onIssueAdded($event)"
-                    (tagRemoved)="onIssueRemoved($event)"
-                  ></pc-tags>
-                  @if (!personIssues().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @else {
-        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
-        }
-        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
-      </div>
-
-      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
-      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
-        @for (tag of person.tags; track tag.name) {
-        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        } @for (issue of person.issues; track issue.name) {
-        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        }
-      </div>
-      } }
-
-      <div class="text-xs text-base-content/60 mt-1">
-        to
-        <div class="dropdown inline-block">
-          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
-            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
-            (getToRecipients().length > 1) {
-            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
-            } } @else { {{ email()!.to_email }} }
-            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
-              />
-            </svg>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
-          >
-            <!-- Recipients Section -->
-            <li class="menu-title text-xs">Recipients</li>
-
-            @if (getToRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">To:</li>
-            @for (recipient of getToRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getCcRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">CC:</li>
-            @for (recipient of getCcRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getBccRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">BCC:</li>
-            @for (recipient of getBccRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
-            0) {
-            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
-            }
-
-            <!-- Email Details Section -->
-            <li class="divider mt-3"></li>
-            <li class="menu-title text-xs">Email Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Subject:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Date:</span>
-                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">From:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Reply-To:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
-                </div>
-              </div>
-            </li>
-
-            <!-- Technical Details Section -->
-            <li class="divider mt-2"></li>
-            <li class="menu-title text-xs">Technical Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Message-ID:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Mailed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Security:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Signed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Return-Path:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="flex items-center gap-1">
-      <pc-icon
-        class="hover:text-primary tooltip tooltip-left cursor-pointer"
-        [attr.data-tip]="'Expand email body'"
-        name="expand-content"
-        [size]="4"
-        (click)="toggleExpand()"
-      ></pc-icon>
-    </div>
-  </div>
-</header>
-
-<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
@@ -34110,6 +33328,423 @@ export class DonationsSettingsComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/summary/summary.ts
+
+```typescript
+import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
+import { DashboardService } from './services/dashboard.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { SlaDetails } from './sla-details';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { GettingStartedCard } from './getting-started-card';
+
+@Component({
+  imports: [Icon, SpinOnClickDirective, SlaDetails, StatCard, GettingStartedCard],
+  selector: 'pc-summary',
+  templateUrl: './summary.html',
+})
+export class Summary implements OnInit {
+  private readonly dashboardSvc = inject(DashboardService);
+  private readonly alertSvc = inject(AlertService);
+
+  constructor() {
+    effect(() => {
+      const tab = this.defaultSlaTab();
+      const open = this.showSlaDetails();
+      if (open) {
+        if (tab === 'emails') {
+          if (this.breachedEmails().length === 0) {
+            this.emailPage.set(1);
+            void this.loadMoreEmails();
+          }
+        } else {
+          if (this.breachedTasks().length === 0) {
+            this.taskPage.set(1);
+            void this.loadMoreTasks();
+          }
+        }
+      }
+    });
+  }
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly isRefreshing = signal(false);
+
+  // KPIs
+  protected readonly totalAssignedCount = signal(0);
+  protected readonly unassignedOpenCount = signal(0);
+  protected readonly totalOpenCount = signal(0);
+  protected readonly avgFirstResponse = signal('—');
+  protected readonly avgTimeToClose = signal('—');
+  protected readonly activeContactsCount = signal(0);
+  protected readonly resolutionRate = signal(0);
+
+  // SLA Signals
+  protected readonly unassignedEmailSlaBreaches = signal(0);
+  protected readonly unassignedTaskSlaBreaches = signal(0);
+  protected readonly totalEmailSlaBreaches = signal(0);
+  protected readonly totalTaskSlaBreaches = signal(0);
+
+  protected readonly breachedEmails = signal<any[]>([]);
+  protected readonly breachedTasks = signal<any[]>([]);
+  protected readonly emailPage = signal(1);
+  protected readonly taskPage = signal(1);
+  protected readonly hasMoreEmails = signal(false);
+  protected readonly hasMoreTasks = signal(false);
+  protected readonly isLoadingEmails = signal(false);
+  protected readonly isLoadingTasks = signal(false);
+
+  protected readonly emailSlaHours = signal(24);
+  protected readonly taskSlaHours = signal(24);
+  protected readonly emailSlaWarningThreshold = signal(1);
+  protected readonly emailSlaCriticalThreshold = signal(4);
+  protected readonly taskSlaWarningThreshold = signal(1);
+  protected readonly taskSlaCriticalThreshold = signal(4);
+  protected readonly showSlaDetails = signal(false);
+  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
+
+  protected readonly emailSlaStatus = computed(() => {
+    const breaches = this.totalEmailSlaBreaches();
+    const warning = this.emailSlaWarningThreshold();
+    const critical = this.emailSlaCriticalThreshold();
+    if (breaches === 0) return 'healthy';
+    if (breaches >= critical) return 'critical';
+    if (breaches >= warning) return 'warning';
+    return 'healthy';
+  });
+
+  protected readonly taskSlaStatus = computed(() => {
+    const breaches = this.totalTaskSlaBreaches();
+    const warning = this.taskSlaWarningThreshold();
+    const critical = this.taskSlaCriticalThreshold();
+    if (breaches === 0) return 'healthy';
+    if (breaches >= critical) return 'critical';
+    if (breaches >= warning) return 'warning';
+    return 'healthy';
+  });
+
+  // SVG Chart data
+  protected readonly linePath = signal('');
+  protected readonly areaPath = signal('');
+  protected readonly linePoints = signal<any[]>([]);
+  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
+  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
+  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
+  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
+  protected readonly closedRepBars = signal<any[]>([]);
+  private readonly rawEmailsAssigned = signal<any[]>([]);
+  private readonly rawUnassignedCount = signal<number>(0);
+  protected readonly showAllOpen = signal<boolean>(true);
+
+  protected readonly donutTotalCount = computed(() => {
+    return this.showAllOpen() ? this.totalOpenCount() : this.totalAssignedCount();
+  });
+
+  protected readonly assignedRepSlices = computed(() => {
+    const assigned = this.rawEmailsAssigned();
+    const unassignedCount = this.rawUnassignedCount();
+    const showAll = this.showAllOpen();
+
+    const slicesData: { name: string; count: number; isUnassigned: boolean }[] = [
+      ...assigned.map((a: any) => ({
+        name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
+        count: Number(a.count || 0),
+        isUnassigned: false,
+      })),
+    ];
+
+    if (showAll && unassignedCount > 0) {
+      slicesData.push({
+        name: 'Unassigned',
+        count: unassignedCount,
+        isUnassigned: true,
+      });
+    }
+
+    const total = slicesData.reduce((acc, cur) => acc + cur.count, 0);
+
+    const radius = 60;
+    const circ = 2 * Math.PI * radius;
+    let cumulativeCount = 0;
+    const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#ef4444', '#ec4899', '#06b6d4'];
+    const unassignedColor = '#64748b'; // Slate gray for Unassigned
+
+    return slicesData.map((s: any, i: number) => {
+      const countVal = s.count;
+      const pct = total > 0 ? countVal / total : 0;
+      const sliceCirc = pct * circ;
+      const strokeDash = `${sliceCirc} ${circ}`;
+      const strokeOffset = -(cumulativeCount / total) * circ;
+      cumulativeCount += countVal;
+      return {
+        name: s.name,
+        count: countVal,
+        percentage: Math.round(pct * 100),
+        strokeDash,
+        strokeOffset,
+        color: s.isUnassigned ? unassignedColor : colors[i % colors.length],
+      };
+    });
+  });
+
+  protected readonly userStats = signal<any[]>([]);
+  protected readonly hoveredPoint = signal<any | null>(null);
+  protected readonly hoveredSlice = signal<any | null>(null);
+
+  public ngOnInit() {
+    void this.loadStats();
+  }
+
+  protected async loadStats() {
+    if (this.isRefreshing()) return;
+    this.isRefreshing.set(true);
+    const start = Date.now();
+    const end = this._loading.begin();
+    try {
+      const stats = await this.dashboardSvc.getStats();
+
+      // Set KPIs
+      const totalAssigned = (stats.emailsAssigned || []).reduce(
+        (acc: number, cur: any) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.totalAssignedCount.set(totalAssigned);
+      this.unassignedOpenCount.set(stats.unassignedCount || 0);
+      this.totalOpenCount.set(stats.totalOpenCount || 0);
+
+      const respHours = stats.avgFirstResponseHours;
+      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
+
+      const closeHours = stats.avgTimeToCloseHours;
+      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
+
+      const totalNewContacts = (stats.contactsGrowth || []).reduce(
+        (acc: number, cur: any) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.activeContactsCount.set(totalNewContacts);
+
+      const totalClosed = (stats.emailsClosed || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
+      const totalEmails = totalAssigned + totalClosed;
+      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
+      this.resolutionRate.set(Math.round(rate));
+
+      // Set SLA breaches
+      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
+      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
+      this.unassignedEmailSlaBreaches.set(unassignedEmails);
+      this.unassignedTaskSlaBreaches.set(unassignedTasks);
+
+      const assignedEmailSla = (stats.userStats || []).reduce(
+        (acc: number, cur: any) => acc + Number(cur.emailSlaBreaches || 0),
+        0,
+      );
+      const assignedTaskSla = (stats.userStats || []).reduce(
+        (acc: number, cur: any) => acc + Number(cur.taskSlaBreaches || 0),
+        0,
+      );
+
+      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
+      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
+
+      // Set settings configurations (breached lists loaded on demand)
+      if (this.showSlaDetails()) {
+        if (this.defaultSlaTab() === 'emails') {
+          this.breachedEmails.set([]);
+          this.emailPage.set(1);
+        } else {
+          this.breachedTasks.set([]);
+          this.taskPage.set(1);
+        }
+      } else {
+        this.breachedEmails.set([]);
+        this.emailPage.set(1);
+        this.hasMoreEmails.set(false);
+
+        this.breachedTasks.set([]);
+        this.taskPage.set(1);
+        this.hasMoreTasks.set(false);
+      }
+
+      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
+      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
+      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
+      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
+      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
+      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
+
+      // Map representative stats
+      const formattedUserStats = (stats.userStats || []).map((u: any) => ({
+        ...u,
+        avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
+        avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
+        emailSlaBreaches: u.emailSlaBreaches || 0,
+        taskSlaBreaches: u.taskSlaBreaches || 0,
+      }));
+      this.userStats.set(formattedUserStats);
+
+      // Line Chart: Contacts Growth (last 30 days)
+      const growth = stats.contactsGrowth || [];
+      const maxCount = Math.max(...growth.map((g: any) => g.count), 1);
+      const width = 600;
+      const height = 200;
+      const padding = 20;
+
+      const points = growth.map((g: any, i: number) => {
+        const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
+        const y = height - padding - (g.count / maxCount) * (height - padding * 2);
+        return { x, y, date: g.date, count: g.count };
+      });
+      this.linePoints.set(points);
+
+      if (points.length > 0) {
+        const lPath = points.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        this.linePath.set(lPath);
+        const firstX = points[0].x;
+        const lastX = points[points.length - 1].x;
+        this.areaPath.set(`${lPath} L ${lastX} ${height - padding} L ${firstX} ${height - padding} Z`);
+      } else {
+        this.linePath.set('');
+        this.areaPath.set('');
+      }
+
+      // Calculate Y axis labels
+      const yLabels = [
+        { y: 20, value: maxCount },
+        { y: 60, value: Math.round(maxCount * 0.75) },
+        { y: 100, value: Math.round(maxCount * 0.5) },
+        { y: 140, value: Math.round(maxCount * 0.25) },
+        { y: 180, value: 0 },
+      ];
+      this.yAxisLabels.set(yLabels);
+
+      // Calculate X axis labels (approx. 5 labels across the timeline)
+      const xLabels: { x: number; label: string }[] = [];
+      if (points.length > 0) {
+        const indices = [
+          0,
+          Math.floor(points.length * 0.25),
+          Math.floor(points.length * 0.5),
+          Math.floor(points.length * 0.75),
+          points.length - 1,
+        ];
+        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
+        for (const idx of uniqueIndices) {
+          const pt = points[idx];
+          let dateStr = pt.date;
+          try {
+            const dateObj = new Date(pt.date);
+            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+          } catch (_e) {}
+          xLabels.push({ x: pt.x, label: dateStr });
+        }
+      }
+      this.xAxisLabels.set(xLabels);
+
+      // Bar Chart: Closed Emails by Rep
+      const closed = stats.emailsClosed || [];
+      const maxClosed = Math.max(...closed.map((c: any) => c.count), 1);
+      const barMaxWidth = 360;
+      this.closedRepBars.set(
+        closed.map((c: any, i: number) => ({
+          name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+          count: c.count,
+          width: (c.count / maxClosed) * barMaxWidth,
+          y: i * 40 + 10,
+        })),
+      );
+
+      // Set raw data for Donut Chart (assignedRepSlices will compute reactively)
+      this.rawEmailsAssigned.set(stats.emailsAssigned || []);
+      this.rawUnassignedCount.set(stats.unassignedCount || 0);
+    } catch (_err: unknown) {
+      this.alertSvc.showError('Failed to load dashboard metrics');
+    } finally {
+      end();
+      const elapsed = Date.now() - start;
+      const minSpin = 1000; // spin at least once (1 second minimum)
+      if (elapsed < minSpin) {
+        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
+      }
+      this.isRefreshing.set(false);
+    }
+  }
+
+  private formatHours(hours: number): string {
+    if (hours < 1) {
+      const minutes = Math.round(hours * 60);
+      return `${minutes}m`;
+    }
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = Math.round(hours % 24);
+      return `${days}d ${remainingHours}h`;
+    }
+    return `${hours.toFixed(1)}h`;
+  }
+
+  protected formatDate(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    } catch (_e) {
+      return dateStr;
+    }
+  }
+
+  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
+    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
+      this.showSlaDetails.set(false);
+    } else {
+      this.defaultSlaTab.set(tab);
+      this.showSlaDetails.set(true);
+    }
+  }
+
+  protected async loadMoreEmails() {
+    if (this.isLoadingEmails()) return;
+    this.isLoadingEmails.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
+      if (this.emailPage() === 1) {
+        this.breachedEmails.set(res.items);
+      } else {
+        this.breachedEmails.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreEmails.set(res.hasMore);
+      this.emailPage.update((p) => p + 1);
+    } catch (_err) {
+      this.alertSvc.showError('Failed to load breached emails');
+    } finally {
+      this.isLoadingEmails.set(false);
+    }
+  }
+
+  protected async loadMoreTasks() {
+    if (this.isLoadingTasks()) return;
+    this.isLoadingTasks.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
+      if (this.taskPage() === 1) {
+        this.breachedTasks.set(res.items);
+      } else {
+        this.breachedTasks.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreTasks.set(res.hasMore);
+      this.taskPage.update((p) => p + 1);
+    } catch (_err) {
+      this.alertSvc.showError('Failed to load breached tasks');
+    } finally {
+      this.isLoadingTasks.set(false);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
 
 ```typescript
@@ -35573,6 +35208,149 @@ type DrawerStates = 'full' | 'half';
 
 const DRAWER_STATE_KEY = 'pc-drawerState';
 const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
+
+```typescript
+import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  NavigationCancel,
+  NavigationError,
+  NavigationStart,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+} from '@angular/router';
+import { filter, map } from 'rxjs';
+import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { ISidebarItem } from './sidebar-items';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
+@Component({
+  selector: 'pc-sidebar',
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  templateUrl: './sidebar.html',
+  styles: [
+    `
+      .tooltip:before {
+        z-index: 100 !important;
+      }
+    `,
+  ],
+})
+export class Sidebar {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
+  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
+  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
+  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
+
+  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
+  protected readonly isEffectivelyNarrow = computed(
+    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
+  );
+
+  protected readonly pendingRoute = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
+      map((e) => (e instanceof NavigationStart ? e.url : null)),
+    ),
+    { initialValue: null },
+  );
+
+  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
+
+  protected readonly items = computed(() => {
+    const role = this.auth.getUser()?.role;
+    const allItems = this.sidebarSvc.getItems()();
+    if (role === 'user') {
+      return allItems.map((item) => {
+        if (item.children) {
+          return {
+            ...item,
+            children: item.children.filter((child) => !child.adminOnly),
+          };
+        }
+        return item;
+      });
+    }
+    return allItems;
+  });
+
+  constructor() {
+    if (this._mql) {
+      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
+      this._mql.addEventListener('change', handler);
+      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
+    }
+
+    effect(() => {
+      const flatItems = this.flattenItems(this.items());
+      for (const item of flatItems) {
+        const key = this.getItemKey(item);
+        const visible = !item.hidden && !item.hiddenByFavourite;
+        const existing = this.visibilitySignals.get(key);
+        if (existing) {
+          existing.set(visible);
+        } else {
+          this.visibilitySignals.set(key, signal(visible));
+        }
+      }
+    });
+  }
+
+  protected closeMobile() {
+    this.sidebarSvc.closeMobile();
+  }
+
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
+  }
+
+  private getItemKey(item: ISidebarItem): string {
+    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
+    return prefix + item.name + (item.route ?? '');
+  }
+
+  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
+    const key = this.getItemKey(item);
+    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
+  }
+
+  protected isCollapsed(name: string): boolean {
+    return this.sidebarSvc.isCollapsed(name);
+  }
+
+  protected isDrawerFull() {
+    return this.sidebarSvc.isFull();
+  }
+
+  protected isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  protected toggleCollapse(name: string) {
+    this.sidebarSvc.toggleCollapsed(name);
+  }
+
+  protected toggleDrawer() {
+    return this.sidebarSvc.toggleDrawer();
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
@@ -37047,1004 +36825,6 @@ type CellRendererResult = string | HTMLElement;
 export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
-## File: apps/frontend/src/app/app.config.ts
-
-```typescript
-import type { ApplicationConfig } from '@angular/core';
-import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
-import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
-import { ENVIRONMENT } from './environment-token';
-import { RouteReuseStrategy, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { Loader } from '@googlemaps/js-api-loader';
-import { environment } from '../environments/environment';
-
-import { appRoutes } from './app.routes';
-import { AppTitleStrategy } from './services/tab-title.service';
-import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { jsendInterceptor } from './services/jsend.interceptor';
-import { GlobalErrorHandler } from './services/global-error-handler';
-
-export function initSession(authService: AuthService) {
-  return async () => {
-    await authService.init();
-  };
-}
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    { provide: ENVIRONMENT, useValue: environment },
-    provideTanStackQuery(new QueryClient()),
-    {
-      provide: Loader,
-      useFactory: () => {
-        const env = inject(ENVIRONMENT);
-        return new Loader({
-          apiKey: env.googleMapsApiKey,
-          libraries: ['places'],
-        });
-      },
-    },
-
-    {
-      provide: RouteReuseStrategy,
-      useClass: CustomRouteReuseStrategy,
-    },
-    {
-      provide: TitleStrategy,
-      useClass: AppTitleStrategy,
-    },
-    provideRouter(appRoutes, withComponentInputBinding()),
-
-    provideZonelessChangeDetection(),
-
-    provideAppInitializer(() => {
-      const initializerFn = initSession(inject(AuthService));
-      return initializerFn();
-    }),
-
-    provideHttpClient(withInterceptors([jsendInterceptor])),
-
-    { provide: ErrorHandler, useClass: GlobalErrorHandler },
-  ],
-};
-```
-
-## File: apps/frontend/src/app/dashboard.routes.ts
-
-```typescript
-import type { Routes } from '@angular/router';
-import { roleGuard } from './auth/role-guard';
-import { unsavedChangesGuard } from './services/unsaved-changes-guard';
-
-export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
-
-  {
-    path: 'summary',
-    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
-  },
-
-  {
-    path: 'people',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'persongridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-
-  {
-    path: 'households',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
-        data: { shouldReuse: true, key: 'householdsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'duplicates',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
-      },
-      {
-        path: 'people',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
-      },
-      {
-        path: 'households',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
-      },
-      {
-        path: 'companies',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
-      },
-    ],
-  },
-  {
-    path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
-        data: { shouldReuse: true, key: 'tagsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
-  },
-
-  {
-    path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
-        data: { shouldReuse: true, key: 'issuesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
-  },
-
-  {
-    path: 'lists',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
-        data: { shouldReuse: true, key: 'listsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit' },
-      },
-    ],
-  },
-
-  {
-    path: 'newsletters',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'newslettersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'workflows',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'workflowsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'events',
-    children: [
-      {
-        path: '',
-        redirectTo: 'pages',
-        pathMatch: 'full',
-      },
-      {
-        path: 'shifts',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
-            data: { shouldReuse: true, key: 'eventsgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-      {
-        path: 'pages',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
-            data: { shouldReuse: true, key: 'eventpagesgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-    ],
-  },
-
-  {
-    path: 'donations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
-        data: { shouldReuse: true, key: 'donationsgridroot' },
-      },
-      {
-        path: 'pledges',
-        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot' },
-      },
-    ],
-  },
-
-  {
-    path: 'inbox',
-    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
-  },
-  {
-    path: 'tasks',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
-        data: { shouldReuse: true, key: 'tasksgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
-      },
-    ],
-  },
-  {
-    path: 'board',
-    loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-  },
-
-  {
-    path: 'teams',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
-        data: { shouldReuse: true, key: 'teamsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'users',
-    canActivate: [roleGuard],
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
-        data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'forms',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/forms/ui/forms-grid').then((m) => m.FormsGridComponent),
-        data: { shouldReuse: true, key: 'formsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'donation-pages',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
-        data: { shouldReuse: true, key: 'donationpagesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donation-pages' },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'settings',
-    children: [
-      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'settings' },
-      },
-    ],
-  },
-  {
-    path: 'configuration',
-    canActivate: [roleGuard],
-    children: [
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'configuration' },
-      },
-    ],
-  },
-  {
-    path: 'billing',
-    redirectTo: '/configuration/billing',
-    pathMatch: 'full',
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
-  },
-  {
-    path: 'imports',
-    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
-  },
-  {
-    path: 'exports',
-    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
-  },
-  {
-    path: 'companies',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
-        data: { shouldReuse: true, key: 'companiesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'files',
-    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
-  },
-  {
-    path: 'activities',
-    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
-  },
-  {
-    path: 'help',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/styles.css
-
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
-
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #0ea5e9;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #0c506e;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: #efeeeeff;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-warning: #e5c963;
-  --color-error: #f37373;
-  --color-error-content: #f0f0f0;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
-}
-
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
-}
-
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #f0f6ff; /* light text on blue */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #d1d5db #f3f4f6;
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 400 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
-
-/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
-   Semantic primary token so it survives theme switch (design §5). */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
-   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-
-/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-```
-
-## File: apps/frontend/vite.config.ts
-
-```typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-import angular from '@analogjs/vite-plugin-angular';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/apps/frontend',
-  resolve: {
-    tsconfigPaths: true,
-    alias: {
-      'apps/frontend/src': __dirname + '/src',
-    },
-  },
-  server: {
-    watch: {
-      ignored: ['**/node_modules/**', '**/.angular/**'],
-    },
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-    },
-  },
-  plugins: [angular()],
-  test: {
-    name: 'frontend',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'jsdom',
-    setupFiles: ['src/test-setup.ts'],
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/apps/frontend',
-      provider: 'v8' as const,
-      // Coverage ratchet: set just under the measured baseline (2026-07-04:
-      // 55.49% stmts / 37.15% branch / 54.85% funcs / 55.75% lines). These may
-      // only ever be raised, never lowered — if your change drops coverage
-      // below them, add tests rather than editing the thresholds.
-      thresholds: {
-        statements: 54,
-        branches: 36,
-        functions: 53,
-        lines: 54,
-      },
-    },
-    // Suppress NG0914: Angular fires this when provideZonelessChangeDetection() is used
-    // alongside Zone.js (which the Angular testing harness always loads). It's harmless.
-    onConsoleLog(log: string) {
-      if (log.includes('NG0914')) return false;
-    },
-  },
-}));
-```
-
 ## File: apps/frontend/src/app/auth/cancel-deletion-page/cancel-deletion-page.ts
 
 ```typescript
@@ -38401,6 +37181,426 @@ export class ResetPasswordPage {
       },
     });
   }
+}
+```
+
+## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
+
+```typescript
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { AbstractControl, ValidatorFn } from '@angular/forms';
+import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { TokenService } from '../../services/api/token-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
+
+@Component({
+  selector: 'pc-login',
+  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
+  templateUrl: './signin-page.html',
+})
+export class SignInPage implements OnInit, OnDestroy {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly suppressNavigation = signal<boolean>(false);
+  private readonly tokenService = inject(TokenService);
+
+  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
+  private _loading = createLoadingGate();
+
+  protected readonly step = signal<SignInStep>('email');
+  protected readonly emailData = signal({ email: '' });
+  protected readonly passwordData = signal({ password: '' });
+  protected readonly otpData = signal({ code: '' });
+  protected readonly emailFor2FA = signal<string>('');
+  protected readonly pendingEmail = signal<string>('');
+  protected readonly rateLimitSecondsLeft = signal<number>(0);
+  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
+  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
+  protected readonly resending = signal<boolean>(false);
+  protected readonly resendCooldownSeconds = signal<number>(0);
+  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
+  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
+  protected readonly settingUpPasskey = signal<boolean>(false);
+  protected readonly verificationPending = signal<boolean>(false);
+
+  protected isLoading = this._loading.visible;
+  protected persistence = signal(this.tokenService.getPersistence());
+
+  public readonly emailForm = form(this.emailData, (p) => {
+    required(p.email);
+    email(p.email);
+  });
+
+  public readonly passwordForm = form(this.passwordData, (p) => {
+    required(p.password);
+    minLength(p.password, 8);
+  });
+
+  public readonly otpForm = form(this.otpData, (p) => {
+    required(p.code);
+    pattern(p.code, /^\d{6}$/);
+  });
+
+  constructor() {
+    effect(() => {
+      const user = this.authService.getUserSignal();
+      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
+    });
+  }
+
+  public get emailField() {
+    return this.emailForm.email();
+  }
+
+  public get password() {
+    return this.passwordForm.password();
+  }
+
+  public get code() {
+    return this.otpForm.code();
+  }
+
+  public ngOnInit() {
+    const params = this.route.snapshot.queryParamMap;
+    const emailVal = params.get('email') || '';
+    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      if (emailVal) {
+        this.emailForm.email().value.set(emailVal);
+        this.step.set('password');
+      }
+    }
+  }
+
+  public ngOnDestroy() {
+    this.clearCountdown();
+    this.clearResendCooldown();
+  }
+
+  public goBackToEmail() {
+    this.step.set('email');
+    this.verificationPending.set(false);
+    this.passwordData.update((p) => ({ ...p, password: '' }));
+    this.otpData.update((o) => ({ ...o, code: '' }));
+  }
+
+  public usePasswordInstead() {
+    this.step.set('password');
+  }
+
+  public async continueWithEmail(event?: Event) {
+    event?.preventDefault();
+
+    const rawEmail = this.emailData().email;
+    const emailVal = rawEmail.trim().toLowerCase();
+
+    if (rawEmail !== emailVal) {
+      this.emailForm.email().value.set(emailVal);
+    }
+
+    this.emailForm().markAsTouched();
+
+    await submit(this.emailForm, {
+      action: async () => {
+        let hasPasskeys = false;
+        const end = this._loading.begin();
+        try {
+          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
+        } catch {
+          // network error — fall through to password
+        } finally {
+          end();
+        }
+
+        if (hasPasskeys) {
+          this.step.set('passkey');
+          await this.signInWithPasskey();
+        } else {
+          this.step.set('password');
+        }
+
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.emailForm.email();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
+      },
+    });
+  }
+
+  public async signInWithPasskey() {
+    const end = this._loading.begin();
+    try {
+      const result = await this.authService.signInWithPasskey(this.persistence());
+      if (result.cancelled) {
+        this.step.set('password');
+        return;
+      }
+      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        this.step.set('password');
+        return;
+      }
+      this.handleError(err);
+    } finally {
+      end();
+    }
+  }
+
+  public async signIn(event?: Event) {
+    event?.preventDefault();
+
+    this.tokenService.clearAll();
+
+    const emailVal = this.emailData().email.trim().toLowerCase();
+    const passwordVal = this.passwordData().password;
+
+    this.verificationPending.set(false);
+    this.passwordForm().markAsTouched();
+
+    await submit(this.passwordForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          this.suppressNavigation.set(true);
+          const res = await this.authService.signIn({
+            email: emailVal,
+            password: passwordVal,
+            rememberMe: this.persistence(),
+          });
+          if (res.requires2FA) {
+            this.suppressNavigation.set(false);
+            this.step.set('2fa');
+            this.emailFor2FA.set(res.email || emailVal);
+            this.otpData.update((o) => ({ ...o, code: '' }));
+          } else {
+            const user = this.authService.getUser();
+            const dismissed = !!user?.passkey_setup_dismissed_at;
+            if (!dismissed) {
+              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
+              if (passkeys.length === 0) {
+                this.step.set('passkey-setup');
+                return null;
+              }
+            }
+            this.suppressNavigation.set(false);
+          }
+        } catch (err) {
+          this.suppressNavigation.set(false);
+          this.handleError(err, emailVal);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.passwordForm.password();
+        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
+        this.alertSvc.showError(
+          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
+        );
+      },
+    });
+  }
+
+  public async verify2FA(event?: Event) {
+    event?.preventDefault();
+
+    this.otpForm().markAsTouched();
+
+    await submit(this.otpForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const emailVal = this.emailFor2FA();
+          const codeVal = this.otpData().code.trim();
+          await this.authService.verify2FA({
+            email: emailVal,
+            code: codeVal,
+            rememberMe: this.persistence(),
+          });
+        } catch (err) {
+          this.handleError(err);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.otpForm.code();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
+        const msg = hasRequired
+          ? 'Verification code is required.'
+          : hasPattern
+            ? 'Verification code must be exactly 6 digits.'
+            : 'Please enter a valid verification code.';
+        this.alertSvc.showError(msg);
+      },
+    });
+  }
+
+  public async setupPasskey() {
+    this.settingUpPasskey.set(true);
+    try {
+      const result = await this.authService.registerPasskey();
+      if (result.verified) {
+        this.alertSvc.showSuccess('Passkey set up successfully!');
+      }
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
+      }
+    } finally {
+      this.settingUpPasskey.set(false);
+      this.suppressNavigation.set(false);
+    }
+  }
+
+  public async skipPasskeySetup() {
+    try {
+      await this.authService.dismissPasskeyPrompt();
+    } catch {
+      // non-fatal — still allow navigation
+    }
+    this.suppressNavigation.set(false);
+  }
+
+  public togglePersistence(target: EventTarget | null) {
+    if (!target) return;
+    const checked = (target as HTMLInputElement).checked;
+    this.tokenService.setPersistence(checked);
+    this.persistence.set(checked);
+  }
+
+  public async resendVerification() {
+    const emailVal = this.pendingEmail().trim();
+    if (!emailVal || this.resendCooldownSeconds() > 0) return;
+    this.resending.set(true);
+    try {
+      await this.authService.resendVerificationEmail(emailVal);
+      this.alertSvc.showSuccess('Verification email sent successfully!');
+      this.startResendCooldown(60);
+    } catch (err) {
+      const tRPCData = getTRPCData(err);
+      const retryAfterSec =
+        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
+      if (retryAfterSec) {
+        this.startResendCooldown(retryAfterSec);
+      } else {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
+      }
+    } finally {
+      this.resending.set(false);
+    }
+  }
+
+  private clearCountdown() {
+    if (this._countdownInterval !== null) {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+    }
+  }
+
+  private clearResendCooldown() {
+    if (this._resendCooldownInterval !== null) {
+      clearInterval(this._resendCooldownInterval);
+      this._resendCooldownInterval = null;
+    }
+  }
+
+  private startResendCooldown(seconds: number) {
+    this.clearResendCooldown();
+    this.resendCooldownSeconds.set(seconds);
+    this._resendCooldownInterval = setInterval(() => {
+      const current = this.resendCooldownSeconds();
+      if (current <= 1) {
+        this.resendCooldownSeconds.set(0);
+        this.clearResendCooldown();
+      } else {
+        this.resendCooldownSeconds.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+
+  private handleError(err: unknown, emailVal?: string) {
+    const tRPCData = getTRPCData(err);
+    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
+    const retryAfterSec =
+      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+      this.parseRetryAfterSec(message);
+    if (retryAfterSec) {
+      this.startRateLimitCountdown(retryAfterSec);
+      return;
+    }
+    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
+    if (emailVal && message.toLowerCase().includes('not verified')) {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      this.alertSvc.showError(message);
+    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
+    } else {
+      this.alertSvc.showError(message);
+    }
+  }
+
+  private parseRetryAfterSec(message: string): number | undefined {
+    const match = message?.match(/retry in (\d+) second/i);
+    return match ? parseInt(match[1]!, 10) : undefined;
+  }
+
+  private startRateLimitCountdown(seconds: number) {
+    this.clearCountdown();
+    this.rateLimitSecondsLeft.set(seconds);
+
+    this._countdownInterval = setInterval(() => {
+      const current = this.rateLimitSecondsLeft();
+      if (current < 1) {
+        this.clearCountdown();
+      } else {
+        this.rateLimitSecondsLeft.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+}
+
+export function emailSafeValidator(): ValidatorFn {
+  return (control: AbstractControl) => {
+    const v = (control.value ?? '').toString().trim();
+    return v && EMAIL_SAFE.test(v) ? null : { email: true };
+  };
+}
+
+const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
+function getTRPCData(err: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(err)) return undefined;
+  const originalError = err['originalError'];
+  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
+  return isRecord(err['data']) ? err['data'] : undefined;
 }
 ```
 
@@ -38966,6 +38166,512 @@ export class EmailFolderList implements OnInit {
     return String(folder.id) === String(this.store.currentSelectedFolderId());
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
+
+```html
+<header class="border-b border-base-300 px-4 pb-4">
+  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
+    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
+  </div>
+  <div class="flex items-start gap-3 mt-2">
+    <pc-email-assign [email]="email()"></pc-email-assign>
+    <div class="min-w-0 flex-1"></div>
+
+    <div class="flex items-center gap-1 text-sm text-base-content/70">
+      <span class="whitespace-nowrap pr-2">
+        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+      </span>
+
+      <div class="border-t border-base-300 my-1 h-0"></div>
+      <div class="hidden md:block">
+        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
+        <div class="dropdown dropdown-end inline-block align-middle">
+          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
+            <pc-icon name="reply" [size]="4"></pc-icon>
+            <pc-icon name="chevron-down" [size]="3"></pc-icon>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+          >
+            <li>
+              <a
+                (click)="handleReply()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleReplyAll()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleForward()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        @if (!isFolderTrash()) {
+
+        <!-- Close/Mark as Done -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="markAsDoneText()"
+          aria-label="Mark as Done"
+          (click)="toggleClosed()"
+        >
+          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+        </button>
+        } @else {
+        <!-- Restore from Trash -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Restore from Trash"
+          aria-label="Restore from Trash"
+          (click)="restoreFromTrash()"
+        >
+          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+        </button>
+        }
+
+        <!-- Delete -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="getTrashText()"
+          [attr.aria-label]="getTrashText()"
+          (click)="deleteEmail()"
+        >
+          @if (isFolderTrash()) {
+          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+          } @else {
+          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+          }
+        </button>
+      </div>
+      <!-- More Actions Dropdown -->
+      <div class="dropdown dropdown-end">
+        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+          <svg viewBox="0 0 24 24" class="h-5 w-5">
+            <path
+              fill="currentColor"
+              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
+            />
+          </svg>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+        >
+          <li>
+            <a
+              (click)="handleCreateTask()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
+            </a>
+          </li>
+          <div class="border-t border-base-300 my-1 h-0"></div>
+          <li>
+            <a
+              (click)="handleReply()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleReplyAll()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleForward()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
+          <li>
+            <a
+              (click)="markAsSpam()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
+            </a>
+          </li>
+          } @else {
+          <li>
+            <a
+              (click)="moveToInbox()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
+            </a>
+          </li>
+          } }
+          <li>
+            <a
+              (click)="handleMarkAsUnread()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              (click)="toggleFavourite()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                [name]="getFavouriteIcon()"
+                [size]="4"
+                [class.text-amber-500]="isFavourite()"
+                [class.text-base-content/60]="!isFavourite()"
+              ></pc-icon>
+              {{ isFavourite() ? 'Unstar' : 'Star' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="toggleClosed()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                name="check-circle"
+                [size]="4"
+                [class.text-success]="isClosed()"
+                [class.text-base-content/60]="!isClosed()"
+              ></pc-icon>
+              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="deleteEmail()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3 flex items-center gap-3">
+    <div class="avatar">
+      @if (headerData()?.person; as person) {
+      <a
+        [routerLink]="['/people', person.id]"
+        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
+      >
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </a>
+      } @else {
+      <div class="w-10 rounded-full bg-base-200">
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </div>
+      }
+    </div>
+
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        @if (headerData()?.person; as person) {
+        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
+          (email()!.from_name || email()!.from_email) }}
+        </a>
+        <div class="dropdown dropdown-bottom inline-block">
+          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
+            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+          </button>
+          <div
+            tabindex="0"
+            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
+                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
+                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
+                  @if (person.company_name) {
+                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
+                  }
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span class="truncate">{{ person.email }}</span>
+                </div>
+                @if (person.mobile) {
+                <div class="flex items-center gap-2">
+                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span>{{ person.mobile }}</span>
+                </div>
+                } @if (person.notes) {
+                <div class="flex flex-col gap-1 mt-1">
+                  <span class="font-semibold text-base-content/60">Notes:</span>
+                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
+                    {{ person.notes }}
+                  </p>
+                </div>
+                }
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-3">
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Tags:</span
+                  >
+                  <pc-tags
+                    [tags]="personTags()"
+                    [type]="'tag'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add tag...'"
+                    (tagAdded)="onTagAdded($event)"
+                    (tagRemoved)="onTagRemoved($event)"
+                  ></pc-tags>
+                  @if (!personTags().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
+                  }
+                </div>
+
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Issues:</span
+                  >
+                  <pc-tags
+                    [tags]="personIssues()"
+                    [type]="'issue'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add issue...'"
+                    (tagAdded)="onIssueAdded($event)"
+                    (tagRemoved)="onIssueRemoved($event)"
+                  ></pc-tags>
+                  @if (!personIssues().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @else {
+        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
+        }
+        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
+      </div>
+
+      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
+      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
+        @for (tag of person.tags; track tag.name) {
+        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        } @for (issue of person.issues; track issue.name) {
+        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        }
+      </div>
+      } }
+
+      <div class="text-xs text-base-content/60 mt-1">
+        to
+        <div class="dropdown inline-block">
+          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
+            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
+            (getToRecipients().length > 1) {
+            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
+            } } @else { {{ email()!.to_email }} }
+            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
+              />
+            </svg>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+          >
+            <!-- Recipients Section -->
+            <li class="menu-title text-xs">Recipients</li>
+
+            @if (getToRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">To:</li>
+            @for (recipient of getToRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getCcRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">CC:</li>
+            @for (recipient of getCcRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getBccRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">BCC:</li>
+            @for (recipient of getBccRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
+            0) {
+            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
+            }
+
+            <!-- Email Details Section -->
+            <li class="divider mt-3"></li>
+            <li class="menu-title text-xs">Email Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Subject:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Date:</span>
+                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">From:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Reply-To:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
+                </div>
+              </div>
+            </li>
+
+            <!-- Technical Details Section -->
+            <li class="divider mt-2"></li>
+            <li class="menu-title text-xs">Technical Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Message-ID:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Mailed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Security:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Signed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Return-Path:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1">
+      <pc-icon
+        class="hover:text-primary tooltip tooltip-left cursor-pointer"
+        [attr.data-tip]="'Expand email body'"
+        name="expand-content"
+        [size]="4"
+        (click)="toggleExpand()"
+      ></pc-icon>
+    </div>
+  </div>
+</header>
+
+<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
@@ -43384,257 +43090,14 @@ export class FavouriteToggle {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.html
-
-```html
-<!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg relative">
-  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
-    <pc-icon name="bars-4"></pc-icon>
-  </div>
-
-  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
-    <!-- Search bar -->
-    <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
-      <label class="input input-primary w-full flex items-center gap-2">
-        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
-        <input
-          #searchInput
-          type="text"
-          placeholder="Search"
-          i18n-placeholder="@@navbar.search.placeholder"
-          class="grow w-full"
-          (blur)="onBlurSearchBar()"
-          [value]="searchStr()"
-          (input)="onSearchInput($event)"
-          (keydown.enter)="onSearchEnter()"
-        />
-        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
-        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
-      </label>
-    </div>
-
-    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
-    <span
-      class="tooltip tooltip-bottom"
-      [class.hidden]="searchBarVisible()"
-      data-tip="Search ⌘K · Command palette ⌘⇧K"
-      i18n-data-tip="@@navbar.search.tooltip"
-    >
-      <pc-icon
-        class="hover:text-primary text-base-400 cursor-pointer"
-        (click)="showSearchBar()"
-        name="magnifying-glass"
-      ></pc-icon>
-    </span>
-
-    <pc-swap
-      class="hover:text-primary text-base-400 cursor-pointer"
-      swapOnIcon="arrows-pointing-out"
-      swapOffIcon="arrows-pointing-in"
-      [checked]="!isFullScreenMode()"
-      (click)="toggleFullScreen()"
-      aria-label="Toggle full screen"
-      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
-    ></pc-swap>
-
-    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
-    <pc-favourite-toggle></pc-favourite-toggle>
-
-    <!-- light / dark theme switcher -->
-    <pc-swap
-      swapOnIcon="sun"
-      swapOffIcon="moon"
-      [checked]="themeSvc.getTheme() === 'light'"
-      (click)="toggleTheme()"
-      aria-label="Toggle theme"
-      i18n-aria-label="@@navbar.theme.ariaLabel"
-    ></pc-swap>
-
-    <!-- email sending status indicator -->
-    @if (emailActions.sendingCount() > 0) {
-    <div
-      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
-    >
-      <span class="loading loading-spinner loading-xs text-primary"></span>
-      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
-        >Sending ({{ emailActions.sendingCount() }})...</span
-      >
-    </div>
-    }
-
-    <!-- notifications drop down -->
-    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-ghost btn-circle relative"
-        aria-label="Notifications"
-        i18n-aria-label="@@navbar.notifications.ariaLabel"
-      >
-        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
-        @if (unreadCount() > 0) {
-        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
-        }
-      </div>
-
-      <!-- Notifications list -->
-      <div
-        tabindex="0"
-        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
-      >
-        <div class="card-body p-0">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
-            <h3
-              class="font-semibold text-sm"
-              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
-            >
-              Notifications
-            </h3>
-            @if (unreadCount() > 0) {
-            <button
-              class="text-xs text-primary hover:underline font-medium"
-              (click)="markAllAsRead($event)"
-              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
-            >
-              Mark all read
-            </button>
-            }
-          </div>
-
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
-            @if (notifications().length === 0) {
-            <div class="flex flex-col items-center justify-center py-8 text-base-400">
-              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
-              <p
-                class="text-xs font-light"
-                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
-              >
-                All caught up!
-              </p>
-            </div>
-            } @else { @for (notif of notifications(); track notif.id) {
-            <div
-              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
-              [class.bg-primary/5]="!notif.read"
-              (click)="clickNotification(notif)"
-            >
-              <!-- Icon Based on Type -->
-              <div class="flex-shrink-0">
-                <div
-                  class="w-8 h-8 rounded-lg flex items-center justify-center"
-                  [class.bg-info/10]="notif.type === 'info'"
-                  [class.text-info]="notif.type === 'info'"
-                  [class.bg-primary/10]="notif.type === 'email'"
-                  [class.text-primary]="notif.type === 'email'"
-                  [class.bg-warning/10]="notif.type === 'task'"
-                  [class.text-warning]="notif.type === 'task'"
-                >
-                  @if (notif.type === 'email') {
-                  <pc-icon name="envelope"></pc-icon>
-                  } @else if (notif.type === 'task') {
-                  <pc-icon name="clipboard-document-list"></pc-icon>
-                  } @else {
-                  <pc-icon name="information-circle"></pc-icon>
-                  }
-                </div>
-              </div>
-
-              <!-- Message Details -->
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-start gap-1">
-                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
-                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
-                </div>
-                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
-              </div>
-
-              <!-- Unread dot indicator -->
-              @if (!notif.read) {
-              <span
-                class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"
-              ></span>
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
-              }
-            </div>
-            } } @if (isLoadingMore()) {
-            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
-              <span class="loading loading-spinner loading-xs text-primary"></span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- profile drop down -->
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
-        <div
-          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
-        >
-          @if (currentUserAvatar()) {
-          <img
-            [src]="currentUserAvatar()!"
-            alt="User Profile Picture"
-            i18n-alt="@@navbar.profile.avatarAlt"
-            class="w-full h-full object-cover"
-          />
-          } @else {
-          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
-          }
-        </div>
-      </div>
-
-      <!-- Menu -->
-      <ul
-        tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow"
-        (click)="closeDropdown()"
-      >
-        <li class="hover:text-primary">
-          <a routerLink="/profile">
-            <pc-icon name="user-circle"></pc-icon>
-            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/settings">
-            <pc-icon name="cog-6-tooth"></pc-icon>
-            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/help">
-            <pc-icon name="information-circle"></pc-icon>
-            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary" (click)="signOut()">
-          <a>
-            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
-            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
-          </a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Background email sending progress bar -->
-  @if (emailActions.sendingCount() > 0) {
-  <progress
-    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
-  ></progress>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/layout/navbar/navbar.ts
 
 ```typescript
 import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
+import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { Swap } from '@uxcommon/components/swap/swap';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { Router, RouterLink } from '@angular/router';
@@ -43661,7 +43124,7 @@ type NotificationItem = {
 
 @Component({
   selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle],
+  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle, Breadcrumbs],
   templateUrl: './navbar.html',
   host: {
     '(window:keydown)': 'handleKeyDown($event)',
@@ -43669,6 +43132,7 @@ type NotificationItem = {
 })
 export class Navbar implements OnDestroy {
   protected readonly emailActions = inject(EmailActionsStore);
+  protected readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
   private readonly fullscreen = inject(FullScreenService);
@@ -44009,423 +43473,941 @@ export interface GridHost {
 }
 ```
 
-## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
+## File: apps/frontend/src/app/app.config.ts
 
 ```typescript
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { AbstractControl, ValidatorFn } from '@angular/forms';
-import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
+import type { ApplicationConfig } from '@angular/core';
+import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
+import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
+import { ENVIRONMENT } from './environment-token';
+import { RouteReuseStrategy, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { Loader } from '@googlemaps/js-api-loader';
+import { environment } from '../environments/environment';
 
-import { TokenService } from '../../services/api/token-service';
-import { getUserErrorMessage } from '../../services/api/user-message';
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { appRoutes } from './app.routes';
+import { AppTitleStrategy } from './services/tab-title.service';
+import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { jsendInterceptor } from './services/jsend.interceptor';
+import { GlobalErrorHandler } from './services/global-error-handler';
 
-type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
-
-@Component({
-  selector: 'pc-login',
-  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
-  templateUrl: './signin-page.html',
-})
-export class SignInPage implements OnInit, OnDestroy {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly suppressNavigation = signal<boolean>(false);
-  private readonly tokenService = inject(TokenService);
-
-  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
-  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
-  private _loading = createLoadingGate();
-
-  protected readonly step = signal<SignInStep>('email');
-  protected readonly emailData = signal({ email: '' });
-  protected readonly passwordData = signal({ password: '' });
-  protected readonly otpData = signal({ code: '' });
-  protected readonly emailFor2FA = signal<string>('');
-  protected readonly pendingEmail = signal<string>('');
-  protected readonly rateLimitSecondsLeft = signal<number>(0);
-  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
-  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
-  protected readonly resending = signal<boolean>(false);
-  protected readonly resendCooldownSeconds = signal<number>(0);
-  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
-  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
-  protected readonly settingUpPasskey = signal<boolean>(false);
-  protected readonly verificationPending = signal<boolean>(false);
-
-  protected isLoading = this._loading.visible;
-  protected persistence = signal(this.tokenService.getPersistence());
-
-  public readonly emailForm = form(this.emailData, (p) => {
-    required(p.email);
-    email(p.email);
-  });
-
-  public readonly passwordForm = form(this.passwordData, (p) => {
-    required(p.password);
-    minLength(p.password, 8);
-  });
-
-  public readonly otpForm = form(this.otpData, (p) => {
-    required(p.code);
-    pattern(p.code, /^\d{6}$/);
-  });
-
-  constructor() {
-    effect(() => {
-      const user = this.authService.getUserSignal();
-      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
-    });
-  }
-
-  public get emailField() {
-    return this.emailForm.email();
-  }
-
-  public get password() {
-    return this.passwordForm.password();
-  }
-
-  public get code() {
-    return this.otpForm.code();
-  }
-
-  public ngOnInit() {
-    const params = this.route.snapshot.queryParamMap;
-    const emailVal = params.get('email') || '';
-    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      if (emailVal) {
-        this.emailForm.email().value.set(emailVal);
-        this.step.set('password');
-      }
-    }
-  }
-
-  public ngOnDestroy() {
-    this.clearCountdown();
-    this.clearResendCooldown();
-  }
-
-  public goBackToEmail() {
-    this.step.set('email');
-    this.verificationPending.set(false);
-    this.passwordData.update((p) => ({ ...p, password: '' }));
-    this.otpData.update((o) => ({ ...o, code: '' }));
-  }
-
-  public usePasswordInstead() {
-    this.step.set('password');
-  }
-
-  public async continueWithEmail(event?: Event) {
-    event?.preventDefault();
-
-    const rawEmail = this.emailData().email;
-    const emailVal = rawEmail.trim().toLowerCase();
-
-    if (rawEmail !== emailVal) {
-      this.emailForm.email().value.set(emailVal);
-    }
-
-    this.emailForm().markAsTouched();
-
-    await submit(this.emailForm, {
-      action: async () => {
-        let hasPasskeys = false;
-        const end = this._loading.begin();
-        try {
-          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
-        } catch {
-          // network error — fall through to password
-        } finally {
-          end();
-        }
-
-        if (hasPasskeys) {
-          this.step.set('passkey');
-          await this.signInWithPasskey();
-        } else {
-          this.step.set('password');
-        }
-
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.emailForm.email();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
-      },
-    });
-  }
-
-  public async signInWithPasskey() {
-    const end = this._loading.begin();
-    try {
-      const result = await this.authService.signInWithPasskey(this.persistence());
-      if (result.cancelled) {
-        this.step.set('password');
-        return;
-      }
-      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') {
-        this.step.set('password');
-        return;
-      }
-      this.handleError(err);
-    } finally {
-      end();
-    }
-  }
-
-  public async signIn(event?: Event) {
-    event?.preventDefault();
-
-    this.tokenService.clearAll();
-
-    const emailVal = this.emailData().email.trim().toLowerCase();
-    const passwordVal = this.passwordData().password;
-
-    this.verificationPending.set(false);
-    this.passwordForm().markAsTouched();
-
-    await submit(this.passwordForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          this.suppressNavigation.set(true);
-          const res = await this.authService.signIn({
-            email: emailVal,
-            password: passwordVal,
-            rememberMe: this.persistence(),
-          });
-          if (res.requires2FA) {
-            this.suppressNavigation.set(false);
-            this.step.set('2fa');
-            this.emailFor2FA.set(res.email || emailVal);
-            this.otpData.update((o) => ({ ...o, code: '' }));
-          } else {
-            const user = this.authService.getUser();
-            const dismissed = !!user?.passkey_setup_dismissed_at;
-            if (!dismissed) {
-              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
-              if (passkeys.length === 0) {
-                this.step.set('passkey-setup');
-                return null;
-              }
-            }
-            this.suppressNavigation.set(false);
-          }
-        } catch (err) {
-          this.suppressNavigation.set(false);
-          this.handleError(err, emailVal);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.passwordForm.password();
-        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
-        this.alertSvc.showError(
-          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
-        );
-      },
-    });
-  }
-
-  public async verify2FA(event?: Event) {
-    event?.preventDefault();
-
-    this.otpForm().markAsTouched();
-
-    await submit(this.otpForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const emailVal = this.emailFor2FA();
-          const codeVal = this.otpData().code.trim();
-          await this.authService.verify2FA({
-            email: emailVal,
-            code: codeVal,
-            rememberMe: this.persistence(),
-          });
-        } catch (err) {
-          this.handleError(err);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.otpForm.code();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
-        const msg = hasRequired
-          ? 'Verification code is required.'
-          : hasPattern
-            ? 'Verification code must be exactly 6 digits.'
-            : 'Please enter a valid verification code.';
-        this.alertSvc.showError(msg);
-      },
-    });
-  }
-
-  public async setupPasskey() {
-    this.settingUpPasskey.set(true);
-    try {
-      const result = await this.authService.registerPasskey();
-      if (result.verified) {
-        this.alertSvc.showSuccess('Passkey set up successfully!');
-      }
-    } catch (err) {
-      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
-        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
-      }
-    } finally {
-      this.settingUpPasskey.set(false);
-      this.suppressNavigation.set(false);
-    }
-  }
-
-  public async skipPasskeySetup() {
-    try {
-      await this.authService.dismissPasskeyPrompt();
-    } catch {
-      // non-fatal — still allow navigation
-    }
-    this.suppressNavigation.set(false);
-  }
-
-  public togglePersistence(target: EventTarget | null) {
-    if (!target) return;
-    const checked = (target as HTMLInputElement).checked;
-    this.tokenService.setPersistence(checked);
-    this.persistence.set(checked);
-  }
-
-  public async resendVerification() {
-    const emailVal = this.pendingEmail().trim();
-    if (!emailVal || this.resendCooldownSeconds() > 0) return;
-    this.resending.set(true);
-    try {
-      await this.authService.resendVerificationEmail(emailVal);
-      this.alertSvc.showSuccess('Verification email sent successfully!');
-      this.startResendCooldown(60);
-    } catch (err) {
-      const tRPCData = getTRPCData(err);
-      const retryAfterSec =
-        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
-        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
-      if (retryAfterSec) {
-        this.startResendCooldown(retryAfterSec);
-      } else {
-        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
-      }
-    } finally {
-      this.resending.set(false);
-    }
-  }
-
-  private clearCountdown() {
-    if (this._countdownInterval !== null) {
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-    }
-  }
-
-  private clearResendCooldown() {
-    if (this._resendCooldownInterval !== null) {
-      clearInterval(this._resendCooldownInterval);
-      this._resendCooldownInterval = null;
-    }
-  }
-
-  private startResendCooldown(seconds: number) {
-    this.clearResendCooldown();
-    this.resendCooldownSeconds.set(seconds);
-    this._resendCooldownInterval = setInterval(() => {
-      const current = this.resendCooldownSeconds();
-      if (current <= 1) {
-        this.resendCooldownSeconds.set(0);
-        this.clearResendCooldown();
-      } else {
-        this.resendCooldownSeconds.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-
-  private handleError(err: unknown, emailVal?: string) {
-    const tRPCData = getTRPCData(err);
-    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
-    const retryAfterSec =
-      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
-      this.parseRetryAfterSec(message);
-    if (retryAfterSec) {
-      this.startRateLimitCountdown(retryAfterSec);
-      return;
-    }
-    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
-    if (emailVal && message.toLowerCase().includes('not verified')) {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      this.alertSvc.showError(message);
-    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
-    } else {
-      this.alertSvc.showError(message);
-    }
-  }
-
-  private parseRetryAfterSec(message: string): number | undefined {
-    const match = message?.match(/retry in (\d+) second/i);
-    return match ? parseInt(match[1]!, 10) : undefined;
-  }
-
-  private startRateLimitCountdown(seconds: number) {
-    this.clearCountdown();
-    this.rateLimitSecondsLeft.set(seconds);
-
-    this._countdownInterval = setInterval(() => {
-      const current = this.rateLimitSecondsLeft();
-      if (current < 1) {
-        this.clearCountdown();
-      } else {
-        this.rateLimitSecondsLeft.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-}
-
-export function emailSafeValidator(): ValidatorFn {
-  return (control: AbstractControl) => {
-    const v = (control.value ?? '').toString().trim();
-    return v && EMAIL_SAFE.test(v) ? null : { email: true };
+export function initSession(authService: AuthService) {
+  return async () => {
+    await authService.init();
   };
 }
 
-const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+export const appConfig: ApplicationConfig = {
+  providers: [
+    { provide: ENVIRONMENT, useValue: environment },
+    provideTanStackQuery(new QueryClient()),
+    {
+      provide: Loader,
+      useFactory: () => {
+        const env = inject(ENVIRONMENT);
+        return new Loader({
+          apiKey: env.googleMapsApiKey,
+          libraries: ['places'],
+        });
+      },
+    },
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+    {
+      provide: RouteReuseStrategy,
+      useClass: CustomRouteReuseStrategy,
+    },
+    {
+      provide: TitleStrategy,
+      useClass: AppTitleStrategy,
+    },
+    provideRouter(appRoutes, withComponentInputBinding()),
+
+    provideZonelessChangeDetection(),
+
+    provideAppInitializer(() => {
+      const initializerFn = initSession(inject(AuthService));
+      return initializerFn();
+    }),
+
+    provideHttpClient(withInterceptors([jsendInterceptor])),
+
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
+  ],
+};
+```
+
+## File: apps/frontend/src/app/dashboard.routes.ts
+
+```typescript
+import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
+import { unsavedChangesGuard } from './services/unsaved-changes-guard';
+
+export const dashboardRoutes: Routes = [
+  { path: '', redirectTo: 'summary', pathMatch: 'full' },
+
+  {
+    path: 'summary',
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+  },
+
+  {
+    path: 'people',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'persongridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+
+  {
+    path: 'households',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
+        data: { shouldReuse: true, key: 'householdsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'duplicates',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+      },
+    ],
+  },
+  {
+    path: 'tags',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
+        data: { shouldReuse: true, key: 'tagsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
+      },
+    ],
+  },
+
+  {
+    path: 'issues',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
+        data: { shouldReuse: true, key: 'issuesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
+      },
+    ],
+  },
+
+  {
+    path: 'lists',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
+        data: { shouldReuse: true, key: 'listsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'new' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'edit' },
+      },
+    ],
+  },
+
+  {
+    path: 'newsletters',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'workflows',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'events',
+    children: [
+      {
+        path: '',
+        redirectTo: 'pages',
+        pathMatch: 'full',
+      },
+      {
+        path: 'shifts',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
+            data: { shouldReuse: true, key: 'eventsgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+      {
+        path: 'pages',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
+            data: { shouldReuse: true, key: 'eventpagesgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot' },
+      },
+    ],
+  },
+
+  {
+    path: 'inbox',
+    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+  },
+  {
+    path: 'tasks',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
+        data: { shouldReuse: true, key: 'tasksgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
+  },
+  {
+    path: 'board',
+    loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
+  },
+
+  {
+    path: 'teams',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'new' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'users',
+    canActivate: [roleGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'forms',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/forms/ui/forms-grid').then((m) => m.FormsGridComponent),
+        data: { shouldReuse: true, key: 'formsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
+        data: { shouldReuse: true, key: 'donationpagesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donation-pages' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'settings',
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
+  },
+  {
+    path: 'configuration',
+    canActivate: [roleGuard],
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'configuration' },
+      },
+    ],
+  },
+  {
+    path: 'billing',
+    redirectTo: '/configuration/billing',
+    pathMatch: 'full',
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+  },
+  {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+  },
+  {
+    path: 'exports',
+    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
+  },
+  {
+    path: 'companies',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'files',
+    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
+  },
+  {
+    path: 'activities',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+  },
+  {
+    path: 'help',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/styles.css
+
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
+
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
+
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #0ea5e9;
+  --color-secondary: #14e8a6;
+  --color-secondary-content: #1f2937;
+  --color-accent: #0c506e;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: #efeeeeff;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-warning: #e5c963;
+  --color-error: #f37373;
+  --color-error-content: #f0f0f0;
+
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
 }
 
-/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
-function getTRPCData(err: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(err)) return undefined;
-  const originalError = err['originalError'];
-  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
-  return isRecord(err['data']) ? err['data'] : undefined;
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
+
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
+
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #f0f6ff; /* light text on blue */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f3f4f6;
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
+  }
+
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
+  }
+
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
+  }
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
+  }
+}
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
+
+/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
+   Semantic primary token so it survives theme switch (design §5). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
+   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 ```
 
@@ -47798,6 +47780,268 @@ export class TeamFormComponent implements OnInit {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
+```
+
+## File: apps/frontend/src/app/layout/navbar/navbar.html
+
+```html
+<!-- Navigation bar template with search, theme toggle, and user actions -->
+<div class="navbar bg-base-100 shadow-lg relative">
+  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
+    <pc-icon name="bars-4"></pc-icon>
+  </div>
+
+  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
+    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
+    <pc-breadcrumbs
+      class="hidden min-w-0 flex-1"
+      [class.sm:block]="!searchBarVisible()"
+      [crumbs]="trail.crumbs"
+      [positionLabel]="trail.positionLabel"
+      [hasPrev]="trail.hasPrev"
+      [hasNext]="trail.hasNext"
+      [prevLabel]="trail.prevLabel"
+      [nextLabel]="trail.nextLabel"
+      (prev)="trail.onPrev()"
+      (next)="trail.onNext()"
+    ></pc-breadcrumbs>
+    } }
+
+    <!-- Search bar -->
+    <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
+      <label class="input input-primary w-full flex items-center gap-2">
+        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
+        <input
+          #searchInput
+          type="text"
+          placeholder="Search"
+          i18n-placeholder="@@navbar.search.placeholder"
+          class="grow w-full"
+          (blur)="onBlurSearchBar()"
+          [value]="searchStr()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="onSearchEnter()"
+        />
+        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
+        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
+      </label>
+    </div>
+
+    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
+    <span
+      class="tooltip tooltip-bottom"
+      [class.hidden]="searchBarVisible()"
+      data-tip="Search ⌘K · Command palette ⌘⇧K"
+      i18n-data-tip="@@navbar.search.tooltip"
+    >
+      <pc-icon
+        class="hover:text-primary text-base-400 cursor-pointer"
+        (click)="showSearchBar()"
+        name="magnifying-glass"
+      ></pc-icon>
+    </span>
+
+    <pc-swap
+      class="hover:text-primary text-base-400 cursor-pointer"
+      swapOnIcon="arrows-pointing-out"
+      swapOffIcon="arrows-pointing-in"
+      [checked]="!isFullScreenMode()"
+      (click)="toggleFullScreen()"
+      aria-label="Toggle full screen"
+      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
+    ></pc-swap>
+
+    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
+    <pc-favourite-toggle></pc-favourite-toggle>
+
+    <!-- light / dark theme switcher -->
+    <pc-swap
+      swapOnIcon="sun"
+      swapOffIcon="moon"
+      [checked]="themeSvc.getTheme() === 'light'"
+      (click)="toggleTheme()"
+      aria-label="Toggle theme"
+      i18n-aria-label="@@navbar.theme.ariaLabel"
+    ></pc-swap>
+
+    <!-- email sending status indicator -->
+    @if (emailActions.sendingCount() > 0) {
+    <div
+      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
+    >
+      <span class="loading loading-spinner loading-xs text-primary"></span>
+      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
+        >Sending ({{ emailActions.sendingCount() }})...</span
+      >
+    </div>
+    }
+
+    <!-- notifications drop down -->
+    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-ghost btn-circle relative"
+        aria-label="Notifications"
+        i18n-aria-label="@@navbar.notifications.ariaLabel"
+      >
+        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+        @if (unreadCount() > 0) {
+        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
+        }
+      </div>
+
+      <!-- Notifications list -->
+      <div
+        tabindex="0"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+      >
+        <div class="card-body p-0">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
+            <h3
+              class="font-semibold text-sm"
+              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
+            >
+              Notifications
+            </h3>
+            @if (unreadCount() > 0) {
+            <button
+              class="text-xs text-primary hover:underline font-medium"
+              (click)="markAllAsRead($event)"
+              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
+            >
+              Mark all read
+            </button>
+            }
+          </div>
+
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
+            @if (notifications().length === 0) {
+            <div class="flex flex-col items-center justify-center py-8 text-base-400">
+              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
+              <p
+                class="text-xs font-light"
+                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
+              >
+                All caught up!
+              </p>
+            </div>
+            } @else { @for (notif of notifications(); track notif.id) {
+            <div
+              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
+              [class.bg-primary/5]="!notif.read"
+              (click)="clickNotification(notif)"
+            >
+              <!-- Icon Based on Type -->
+              <div class="flex-shrink-0">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center"
+                  [class.bg-info/10]="notif.type === 'info'"
+                  [class.text-info]="notif.type === 'info'"
+                  [class.bg-primary/10]="notif.type === 'email'"
+                  [class.text-primary]="notif.type === 'email'"
+                  [class.bg-warning/10]="notif.type === 'task'"
+                  [class.text-warning]="notif.type === 'task'"
+                >
+                  @if (notif.type === 'email') {
+                  <pc-icon name="envelope"></pc-icon>
+                  } @else if (notif.type === 'task') {
+                  <pc-icon name="clipboard-document-list"></pc-icon>
+                  } @else {
+                  <pc-icon name="information-circle"></pc-icon>
+                  }
+                </div>
+              </div>
+
+              <!-- Message Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start gap-1">
+                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
+                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
+                </div>
+                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
+              </div>
+
+              <!-- Unread dot indicator -->
+              @if (!notif.read) {
+              <span
+                class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"
+              ></span>
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
+              }
+            </div>
+            } } @if (isLoadingMore()) {
+            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- profile drop down -->
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
+        <div
+          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
+        >
+          @if (currentUserAvatar()) {
+          <img
+            [src]="currentUserAvatar()!"
+            alt="User Profile Picture"
+            i18n-alt="@@navbar.profile.avatarAlt"
+            class="w-full h-full object-cover"
+          />
+          } @else {
+          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
+          }
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <ul
+        tabindex="0"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
+        (click)="closeDropdown()"
+      >
+        <li class="hover:text-primary">
+          <a routerLink="/profile">
+            <pc-icon name="user-circle"></pc-icon>
+            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/settings">
+            <pc-icon name="cog-6-tooth"></pc-icon>
+            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/help">
+            <pc-icon name="information-circle"></pc-icon>
+            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
+          </a>
+        </li>
+        <li class="base-neutral px-0 mx-0"></li>
+        <li class="hover:text-primary" (click)="signOut()">
+          <a>
+            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
+            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Background email sending progress bar -->
+  @if (emailActions.sendingCount() > 0) {
+  <progress
+    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
+  ></progress>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
@@ -51708,240 +51952,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
-  justPinned?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  /**
-   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
-   * A single lowercase letter, unique across all items. Rendered as a hint in the
-   * sidebar and consumed by KeyboardShortcutsService to route there.
-   */
-  shortcut?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/summary',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-    shortcut: 'h',
-  },
-  {
-    name: `PINS`,
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `ENGAGE`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-        shortcut: 'i',
-      },
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'megaphone',
-        shortcut: 'n',
-      },
-
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-        shortcut: 'l',
-      },
-      {
-        name: `Automations`,
-        route: '/workflows',
-        icon: 'cog',
-        shortcut: 'a',
-      },
-    ],
-  },
-  {
-    name: `CONTACTS`,
-    type: 'subheading',
-    children: [
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-        shortcut: 'p',
-      },
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-        shortcut: 'u',
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-        shortcut: 'c',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-        shortcut: 'd',
-      },
-    ],
-  },
-  {
-    name: `CAMPAIGN`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-        shortcut: 't',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-        shortcut: 'o',
-      },
-    ],
-  },
-  {
-    name: 'FORMS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-        shortcut: 'f',
-      },
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-        shortcut: 's',
-      },
-      {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-        shortcut: 'e',
-      },
-      {
-        name: 'Fundraising',
-        route: '/donation-pages',
-        icon: 'currency-dollar',
-        shortcut: 'r',
-      },
-    ],
-  },
-  {
-    name: 'TOOLS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-        shortcut: 'k',
-      },
-      {
-        name: `Task Board`,
-        route: '/board',
-        icon: 'view-kanban',
-        shortcut: 'b',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-        shortcut: 'm',
-      },
-      {
-        name: 'Imports',
-        route: '/imports',
-        icon: 'arrow-up-tray',
-      },
-      {
-        name: 'Exports',
-        route: '/exports',
-        icon: 'arrow-down-tray',
-      },
-    ],
-  },
-
-  {
-    name: 'Help',
-    route: '/help',
-    icon: 'information-circle',
-  },
-  {
-    name: `SYSTEM`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Activity Log',
-        route: '/activities',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'shield-exclamation',
-      },
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Workspace',
-        route: '/configuration',
-        icon: 'wrench-screwdriver',
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
 
 ```typescript
@@ -53218,6 +53228,239 @@ export class ListsGridComponent implements OnDestroy {
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
+
+```typescript
+import type { PcIconNameType } from '@icons/icons.index';
+
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
+  justPinned?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  /**
+   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
+   * A single lowercase letter, unique across all items. Rendered as a hint in the
+   * sidebar and consumed by KeyboardShortcutsService to route there.
+   */
+  shortcut?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
+}
+
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/summary',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+    shortcut: 'h',
+  },
+  {
+    name: `PINS`,
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `ENGAGE`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+        shortcut: 'i',
+      },
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'megaphone',
+        shortcut: 'n',
+      },
+
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+        shortcut: 'l',
+      },
+      {
+        name: `Automations`,
+        route: '/workflows',
+        icon: 'cog',
+        shortcut: 'a',
+      },
+    ],
+  },
+  {
+    name: `CONTACTS`,
+    type: 'subheading',
+    children: [
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+        shortcut: 'p',
+      },
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+        shortcut: 'u',
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+        shortcut: 'c',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+        shortcut: 'd',
+      },
+    ],
+  },
+  {
+    name: `CAMPAIGN`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+        shortcut: 't',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+        shortcut: 'o',
+      },
+    ],
+  },
+  {
+    name: 'FORMS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+        shortcut: 'f',
+      },
+      {
+        name: 'Shifts',
+        route: '/events/shifts',
+        icon: 'add-schedule',
+        shortcut: 's',
+      },
+      {
+        name: 'Events',
+        route: '/events/pages',
+        icon: 'ticket',
+        shortcut: 'e',
+      },
+      {
+        name: 'Fundraising',
+        route: '/donation-pages',
+        icon: 'currency-dollar',
+        shortcut: 'r',
+      },
+    ],
+  },
+  {
+    name: 'TOOLS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+        shortcut: 'k',
+      },
+      {
+        name: `Task Board`,
+        route: '/board',
+        icon: 'view-kanban',
+        shortcut: 'b',
+      },
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+        shortcut: 'm',
+      },
+      {
+        name: 'Imports',
+        route: '/imports',
+        icon: 'arrow-up-tray',
+      },
+      {
+        name: 'Exports',
+        route: '/exports',
+        icon: 'arrow-down-tray',
+      },
+    ],
+  },
+  {
+    name: `SYSTEM`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Activity Log',
+        route: '/activities',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'shield-exclamation',
+      },
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Workspace',
+        route: '/configuration',
+        icon: 'wrench-screwdriver',
+      },
+      {
+        name: 'Help',
+        route: '/help',
+        icon: 'information-circle',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.html
@@ -55764,6 +56007,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 import {
   AfterViewInit,
   Component,
+  DestroyRef,
   ElementRef,
   OnDestroy,
   OnInit,
@@ -55804,6 +56048,7 @@ import {
 // Context available for future slices/controllers (not yet used here)
 // import { GridContextService } from './state/grid-context.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DateFormatService } from '../../services/date-format.service';
 
@@ -55931,6 +56176,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Injected Services
   public readonly alertSvc = inject(AlertService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly dateFormatSvc = inject(DateFormatService);
   private readonly columnsSvc = inject(DataGridColumnsService);
   private readonly dataSvc = inject(DataGridDataService);
@@ -56506,6 +56752,32 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.store) {
       this.store.grid = this;
     }
+
+    // Top-level grid pages publish a first-level crumb (e.g. "People") into the navbar.
+    // Only when the toolbar is shown — embedded/inline grids sit inside a detail page
+    // that owns its own trail, so they must not overwrite it. Cleared on destroy via
+    // DestroyRef (ngOnDestroy early-returns when there's no store).
+    let publishedCrumb = false;
+    effect(() => {
+      const title = this.title();
+      if (this.showToolbar() && title) {
+        this.breadcrumbs.set({
+          crumbs: [{ label: title }],
+          positionLabel: null,
+          hasPrev: false,
+          hasNext: false,
+          prevLabel: 'Previous record',
+          nextLabel: 'Next record',
+          onPrev: () => undefined,
+          onNext: () => undefined,
+        });
+        publishedCrumb = true;
+      }
+    });
+    inject(DestroyRef).onDestroy(() => {
+      if (publishedCrumb) this.breadcrumbs.clear();
+    });
+
     effect(() => {
       const count = this.gridSvc.refreshCount();
       if (count > 0) {
