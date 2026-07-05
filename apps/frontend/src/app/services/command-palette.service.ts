@@ -57,8 +57,8 @@ export class CommandPaletteService {
       id: 'goto-workspace',
       label: 'Go to Workspace settings',
       icon: 'cog-6-tooth',
-      keywords: 'configuration admin',
-      run: () => this.go('/configuration'),
+      keywords: 'configuration workspace admin',
+      run: () => this.go('/workspace'),
     },
     {
       id: 'create-newsletter',

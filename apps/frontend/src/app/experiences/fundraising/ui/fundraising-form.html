@@ -26,9 +26,7 @@
       <div class="skeleton h-12 w-full"></div>
       <div class="skeleton h-24 w-full"></div>
     </div>
-    } @else {
-
-    @if (!hasStripeKey()) {
+    } @else { @if (!hasStripeKey()) {
     <div class="mx-auto max-w-5xl mb-6">
       <div class="alert alert-warning shadow-sm">
         <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
@@ -36,14 +34,12 @@
           <span class="font-bold">Stripe Keys Required</span>
           <p class="text-sm mt-0.5">
             Donation pages require Stripe to process payments.
-            <a href="/configuration/donations" class="link link-primary font-bold">Configure Stripe</a>
+            <a href="/workspace/donations" class="link link-primary font-bold">Configure Stripe</a>
           </p>
         </div>
       </div>
     </div>
-    }
-
-    @if (error()) {
+    } @if (error()) {
     <div class="mx-auto max-w-5xl mb-6">
       <div class="alert alert-error shadow-sm">
         <pc-icon name="shield-exclamation" [size]="6"></pc-icon>
@@ -58,7 +54,6 @@
         <div class="space-y-6 md:col-span-7">
           <form (submit)="save($event)">
             <pc-card title="Page Settings">
-
               <!-- Donation Type -->
               <div class="form-control">
                 <label class="label text-xs font-semibold py-1">Donation Type</label>
@@ -267,11 +262,7 @@
         <!-- Right Column: Preview & Snippet -->
         <div class="space-y-6 md:col-span-5">
           <!-- Live Form Preview -->
-          <pc-card
-            title="Live Form Preview"
-            subtitle="Real-time preview of the donation page layout."
-            icon="eye"
-          >
+          <pc-card title="Live Form Preview" subtitle="Real-time preview of the donation page layout." icon="eye">
             <div class="rounded-2xl border border-base-200 bg-base-200/30 p-6 mt-1 relative">
               <div class="text-center mb-6">
                 <h4

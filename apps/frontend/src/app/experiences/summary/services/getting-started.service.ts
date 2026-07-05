@@ -69,7 +69,7 @@ export class GettingStartedService {
         label: 'Verify a sending address',
         done: sender !== null,
         evidence: sender ? `${sender} verified` : null,
-        route: '/configuration/communications',
+        route: '/workspace/communications',
         cta: 'Verify a sending address',
       },
       {

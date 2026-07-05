@@ -338,27 +338,8 @@ export const dashboardRoutes: Routes = [
   },
   {
     path: 'forms',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/forms/ui/forms-grid').then((m) => m.FormsGridComponent),
-        data: { shouldReuse: true, key: 'formsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/forms/ui/form-editor').then((m) => m.FormEditorComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
+    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
+    data: { shouldReuse: true, key: 'formspageroot' },
   },
   {
     path: 'donation-pages',
@@ -399,20 +380,26 @@ export const dashboardRoutes: Routes = [
     ],
   },
   {
-    path: 'configuration',
+    path: 'workspace',
     canActivate: [roleGuard],
     children: [
       { path: '', redirectTo: 'organization', pathMatch: 'full' },
       {
         path: ':section',
         loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'configuration' },
+        data: { mode: 'workspace' },
       },
     ],
   },
+  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
+  {
+    path: 'configuration',
+    redirectTo: '/workspace',
+    pathMatch: 'prefix',
+  },
   {
     path: 'billing',
-    redirectTo: '/configuration/billing',
+    redirectTo: '/workspace/billing',
     pathMatch: 'full',
   },
   {
