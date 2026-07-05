@@ -25,13 +25,19 @@
       </label>
     </div>
 
-    <!-- Search icon -->
-    <pc-icon
-      class="hover:text-primary text-base-400 cursor-pointer"
+    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
+    <span
+      class="tooltip tooltip-bottom"
       [class.hidden]="searchBarVisible()"
-      (click)="showSearchBar()"
-      name="magnifying-glass"
-    ></pc-icon>
+      data-tip="Search ⌘K · Command palette ⌘⇧K"
+      i18n-data-tip="@@navbar.search.tooltip"
+    >
+      <pc-icon
+        class="hover:text-primary text-base-400 cursor-pointer"
+        (click)="showSearchBar()"
+        name="magnifying-glass"
+      ></pc-icon>
+    </span>
 
     <pc-swap
       class="hover:text-primary text-base-400 cursor-pointer"
@@ -207,6 +213,12 @@
           <a routerLink="/settings">
             <pc-icon name="cog-6-tooth"></pc-icon>
             <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/help">
+            <pc-icon name="information-circle"></pc-icon>
+            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
           </a>
         </li>
         <li class="hover:text-primary" (click)="signOut()">

@@ -227,10 +227,104 @@ export class EmailClient {
   }
 
   protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    // Existing behaviour: Escape collapses an expanded body first.
     if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
       this.store.toggleBodyExpanded();
       ev.preventDefault();
       ev.stopPropagation();
+      return;
     }
+
+    // Stay out of the way while composing, typing into a field, or when a
+    // command/ctrl/alt modifier is held (Cmd+K search, the global `g` chord…).
+    if (this.isComposing() || this.isTypingTarget(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) {
+      return;
+    }
+
+    // Shortcuts that work without a selection.
+    switch (ev.key) {
+      case 'c':
+        ev.preventDefault();
+        this.openCompose();
+        return;
+      case 'j':
+        ev.preventDefault();
+        this.selectRelative(1);
+        return;
+      case 'k':
+        ev.preventDefault();
+        this.selectRelative(-1);
+        return;
+    }
+
+    // Everything below acts on the currently selected email.
+    const email = this.selectedEmail();
+    if (!email) return;
+
+    switch (ev.key) {
+      case 'r':
+        ev.preventDefault();
+        this.onReply(email);
+        return;
+      case 'a':
+        ev.preventDefault();
+        void this.onReplyAll(email);
+        return;
+      case 'f':
+        ev.preventDefault();
+        this.onForward(email);
+        return;
+      case 'e':
+        ev.preventDefault();
+        void this.store.updateEmailStatus(email.id, 'closed');
+        return;
+      case 's':
+        ev.preventDefault();
+        void this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+        return;
+      case 'I': // Shift+I — mark as read
+        ev.preventDefault();
+        void this.store.toggleEmailReadStatus(email.id, true);
+        return;
+      case 'U': // Shift+U — mark as unread
+        ev.preventDefault();
+        void this.store.toggleEmailReadStatus(email.id, false);
+        return;
+      case '#':
+        ev.preventDefault();
+        void this.store.deleteEmail(email.id);
+        return;
+      case 'Enter':
+      case 'o':
+        ev.preventDefault();
+        this.toggleExpanded();
+        return;
+      case 'u':
+        ev.preventDefault();
+        this.store.selectEmail(null);
+        this.mobileView.set('list');
+        return;
+    }
+  }
+
+  /** Move the selection to the next (`delta > 0`) or previous email in the folder. */
+  private selectRelative(delta: number): void {
+    const list = this.emails();
+    if (!list.length) return;
+    const current = this.selectedEmail();
+    const currentIdx = current ? list.findIndex((e) => String(e.id) === String(current.id)) : -1;
+    const nextIdx = currentIdx === -1 ? (delta > 0 ? 0 : list.length - 1) : currentIdx + delta;
+    const next = list[nextIdx];
+    if (!next) return;
+    void this.onEmail(next);
+  }
+
+  /** True when the event originates from a field the user is typing into. */
+  private isTypingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (target.isContentEditable) return true;
+    return target.getAttribute('role') === 'textbox';
   }
 }

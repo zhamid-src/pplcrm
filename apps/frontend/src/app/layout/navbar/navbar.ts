@@ -222,7 +222,8 @@ export class Navbar implements OnDestroy {
     const isCtrlOrCmd = event.ctrlKey || event.metaKey;
     const isK = event?.key?.toLowerCase() === 'k';
 
-    if (isCtrlOrCmd && isK) {
+    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
+    if (isCtrlOrCmd && isK && !event.shiftKey) {
       event.preventDefault();
 
       this.showSearchBar();

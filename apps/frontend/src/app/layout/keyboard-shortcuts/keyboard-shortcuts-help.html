@@ -1,0 +1,39 @@
+@if (shortcuts.helpVisible()) {
+<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" (click)="close()">
+  <div class="modal-box max-w-3xl" (click)="$event.stopPropagation()">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-xl font-bold flex items-center gap-2">
+        <pc-icon name="queue-list" [size]="5" class="text-primary"></pc-icon>
+        Keyboard shortcuts
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="close()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 gap-x-10 gap-y-6 sm:grid-cols-2">
+      @for (section of shortcuts.sections(); track section.title) {
+      <section>
+        <h4 class="text-xs font-semibold uppercase tracking-[0.08em] text-base-content/50 mb-2">{{ section.title }}</h4>
+        <ul class="space-y-1.5">
+          @for (row of section.rows; track row.label) {
+          <li class="flex items-center justify-between gap-4 text-sm">
+            <span class="text-base-content/80">{{ row.label }}</span>
+            <span class="flex flex-none items-center gap-1">
+              @for (key of row.keys; track $index) {
+              <kbd class="kbd kbd-sm">{{ key }}</kbd>
+              }
+            </span>
+          </li>
+          }
+        </ul>
+      </section>
+      }
+    </div>
+
+    <p class="mt-6 text-xs text-base-content/50">
+      Tip: press <kbd class="kbd kbd-xs">g</kbd> then a section key to jump anywhere.
+    </p>
+  </div>
+</div>
+}
