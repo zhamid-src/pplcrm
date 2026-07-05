@@ -342,150 +342,6 @@ apps/
 
 # Files
 
-## File: apps/backend/src/app/\_migrations/2026-07-05-web-forms-lifecycle.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Forms "living-funnel" rebuild (North Star). Extends `web_forms` from the old active|archived
- * editor model to a draft→published→archived lifecycle with a public slug, per-form distribution
- * copy (submit label, thank-you card, confirmation email), and a team-notify toggle. Also adds
- * `form_submissions` so each response is a durable record (answers + person FK) rather than only a
- * `user_activity` count.
- *
- * Donation forms (`form_type IN ('donation','recurring_donation')`) are intentionally left on the
- * existing server-rendered path — they keep `type = NULL` and are filtered out of the new Forms page.
- */
-export async function up(db: Kysely<any>): Promise<void> {
-  // 1. New columns (idempotent).
-  await sql`
-    ALTER TABLE public.web_forms
-      ADD COLUMN IF NOT EXISTS type            text,
-      ADD COLUMN IF NOT EXISTS slug            text,
-      ADD COLUMN IF NOT EXISTS submit_label    text,
-      ADD COLUMN IF NOT EXISTS thanks_title    text,
-      ADD COLUMN IF NOT EXISTS thanks_body     text,
-      ADD COLUMN IF NOT EXISTS confirm_subject text,
-      ADD COLUMN IF NOT EXISTS confirm_body    text,
-      ADD COLUMN IF NOT EXISTS notify_team_on  boolean NOT NULL DEFAULT false,
-      ADD COLUMN IF NOT EXISTS archived_at     timestamptz
-  `.execute(db);
-
-  // 2. Status: replace the active|archived CHECK with draft|published|archived, mapping active→published.
-  await sql`ALTER TABLE public.web_forms DROP CONSTRAINT IF EXISTS chk_web_forms_status`.execute(db);
-  await sql`UPDATE public.web_forms SET status = 'published' WHERE status = 'active'`.execute(db);
-  await sql`ALTER TABLE public.web_forms ALTER COLUMN status SET DEFAULT 'draft'`.execute(db);
-  await sql`
-    ALTER TABLE public.web_forms
-      ADD CONSTRAINT chk_web_forms_status
-      CHECK (status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text]))
-  `.execute(db);
-
-  // 3. Backfill the new columns for existing non-donation forms.
-  await sql`
-    UPDATE public.web_forms
-    SET type = 'signup'
-    WHERE type IS NULL
-      AND form_type NOT IN ('donation', 'recurring_donation')
-  `.execute(db);
-
-  await sql`
-    UPDATE public.web_forms
-    SET notify_team_on = send_alert,
-        submit_label    = COALESCE(submit_label, 'Submit'),
-        thanks_title    = COALESCE(thanks_title, 'Thank you!'),
-        thanks_body     = COALESCE(thanks_body, 'Your response has been recorded.'),
-        confirm_subject = COALESCE(confirm_subject, 'Thanks for your submission'),
-        confirm_body    = COALESCE(confirm_body, 'Hi [First name],' || chr(10) || chr(10) ||
-                                   'Thanks for your submission — we''ve received it and will be in touch.')
-  `.execute(db);
-
-  // 4. Generate a slug per form, unique within a tenant. Duplicates within a tenant get a numeric
-  //    suffix by creation order; blank/symbol-only names fall back to a short id-derived slug.
-  await sql`
-    WITH slugged AS (
-      SELECT
-        id,
-        tenant_id,
-        COALESCE(
-          NULLIF(lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g'), '(^-+|-+$)', '', 'g')), ''),
-          'form-' || substring(id::text from 1 for 8)
-        ) AS base,
-        row_number() OVER (
-          PARTITION BY tenant_id,
-            COALESCE(
-              NULLIF(lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g'), '(^-+|-+$)', '', 'g')), ''),
-              'form-' || substring(id::text from 1 for 8)
-            )
-          ORDER BY created_at, id
-        ) AS rn
-      FROM public.web_forms
-      WHERE slug IS NULL
-    )
-    UPDATE public.web_forms w
-    SET slug = CASE WHEN s.rn = 1 THEN s.base ELSE s.base || '-' || s.rn END
-    FROM slugged s
-    WHERE w.id = s.id
-  `.execute(db);
-
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_web_forms_tenant_slug
-      ON public.web_forms (tenant_id, slug)
-      WHERE slug IS NOT NULL
-  `.execute(db);
-
-  // 5. Durable submission records: answers snapshot + person FK.
-  await sql`
-    CREATE TABLE IF NOT EXISTS public.form_submissions (
-      id         uuid        DEFAULT gen_random_uuid() NOT NULL,
-      tenant_id  bigint      NOT NULL,
-      form_id    uuid        NOT NULL,
-      person_id  bigint      NOT NULL,
-      answers    jsonb       NOT NULL DEFAULT '{}'::jsonb,
-      created_at timestamptz NOT NULL DEFAULT now(),
-      PRIMARY KEY (tenant_id, id)
-    )
-  `.execute(db);
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_form_submissions_tenant_form
-      ON public.form_submissions (tenant_id, form_id, created_at DESC)
-  `.execute(db);
-
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_form_submissions_person
-      ON public.form_submissions (tenant_id, person_id)
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TABLE IF EXISTS public.form_submissions`.execute(db);
-  await sql`DROP INDEX IF EXISTS public.idx_web_forms_tenant_slug`.execute(db);
-  await sql`ALTER TABLE public.web_forms DROP CONSTRAINT IF EXISTS chk_web_forms_status`.execute(db);
-  await sql`UPDATE public.web_forms SET status = 'active' WHERE status IN ('published', 'draft')`.execute(db);
-  await sql`ALTER TABLE public.web_forms ALTER COLUMN status SET DEFAULT 'active'`.execute(db);
-  await sql`
-    ALTER TABLE public.web_forms
-      ADD CONSTRAINT chk_web_forms_status
-      CHECK (status = ANY (ARRAY['active'::text, 'archived'::text]))
-  `.execute(db);
-  await sql`
-    ALTER TABLE public.web_forms
-      DROP COLUMN IF EXISTS type,
-      DROP COLUMN IF EXISTS slug,
-      DROP COLUMN IF EXISTS submit_label,
-      DROP COLUMN IF EXISTS thanks_title,
-      DROP COLUMN IF EXISTS thanks_body,
-      DROP COLUMN IF EXISTS confirm_subject,
-      DROP COLUMN IF EXISTS confirm_body,
-      DROP COLUMN IF EXISTS notify_team_on,
-      DROP COLUMN IF EXISTS archived_at
-  `.execute(db);
-}
-```
-
 ## File: apps/backend/src/app/lib/gis/boundaries.geojson
 
 ```
@@ -2933,6 +2789,5273 @@ export async function down(db: Kysely<any>): Promise<void> {
     ALTER TABLE public.persons
       DROP COLUMN IF EXISTS preferred_contact
   `.execute(db);
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-07-05-web-forms-lifecycle.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Forms "living-funnel" rebuild (North Star). Extends `web_forms` from the old active|archived
+ * editor model to a draft→published→archived lifecycle with a public slug, per-form distribution
+ * copy (submit label, thank-you card, confirmation email), and a team-notify toggle. Also adds
+ * `form_submissions` so each response is a durable record (answers + person FK) rather than only a
+ * `user_activity` count.
+ *
+ * Donation forms (`form_type IN ('donation','recurring_donation')`) are intentionally left on the
+ * existing server-rendered path — they keep `type = NULL` and are filtered out of the new Forms page.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  // 1. New columns (idempotent).
+  await sql`
+    ALTER TABLE public.web_forms
+      ADD COLUMN IF NOT EXISTS type            text,
+      ADD COLUMN IF NOT EXISTS slug            text,
+      ADD COLUMN IF NOT EXISTS submit_label    text,
+      ADD COLUMN IF NOT EXISTS thanks_title    text,
+      ADD COLUMN IF NOT EXISTS thanks_body     text,
+      ADD COLUMN IF NOT EXISTS confirm_subject text,
+      ADD COLUMN IF NOT EXISTS confirm_body    text,
+      ADD COLUMN IF NOT EXISTS notify_team_on  boolean NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS archived_at     timestamptz
+  `.execute(db);
+
+  // 2. Status: replace the active|archived CHECK with draft|published|archived, mapping active→published.
+  await sql`ALTER TABLE public.web_forms DROP CONSTRAINT IF EXISTS chk_web_forms_status`.execute(db);
+  await sql`UPDATE public.web_forms SET status = 'published' WHERE status = 'active'`.execute(db);
+  await sql`ALTER TABLE public.web_forms ALTER COLUMN status SET DEFAULT 'draft'`.execute(db);
+  await sql`
+    ALTER TABLE public.web_forms
+      ADD CONSTRAINT chk_web_forms_status
+      CHECK (status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text]))
+  `.execute(db);
+
+  // 3. Backfill the new columns for existing non-donation forms.
+  await sql`
+    UPDATE public.web_forms
+    SET type = 'signup'
+    WHERE type IS NULL
+      AND form_type NOT IN ('donation', 'recurring_donation')
+  `.execute(db);
+
+  await sql`
+    UPDATE public.web_forms
+    SET notify_team_on = send_alert,
+        submit_label    = COALESCE(submit_label, 'Submit'),
+        thanks_title    = COALESCE(thanks_title, 'Thank you!'),
+        thanks_body     = COALESCE(thanks_body, 'Your response has been recorded.'),
+        confirm_subject = COALESCE(confirm_subject, 'Thanks for your submission'),
+        confirm_body    = COALESCE(confirm_body, 'Hi [First name],' || chr(10) || chr(10) ||
+                                   'Thanks for your submission — we''ve received it and will be in touch.')
+  `.execute(db);
+
+  // 4. Generate a slug per form, unique within a tenant. Duplicates within a tenant get a numeric
+  //    suffix by creation order; blank/symbol-only names fall back to a short id-derived slug.
+  await sql`
+    WITH slugged AS (
+      SELECT
+        id,
+        tenant_id,
+        COALESCE(
+          NULLIF(lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g'), '(^-+|-+$)', '', 'g')), ''),
+          'form-' || substring(id::text from 1 for 8)
+        ) AS base,
+        row_number() OVER (
+          PARTITION BY tenant_id,
+            COALESCE(
+              NULLIF(lower(regexp_replace(regexp_replace(name, '[^a-zA-Z0-9]+', '-', 'g'), '(^-+|-+$)', '', 'g')), ''),
+              'form-' || substring(id::text from 1 for 8)
+            )
+          ORDER BY created_at, id
+        ) AS rn
+      FROM public.web_forms
+      WHERE slug IS NULL
+    )
+    UPDATE public.web_forms w
+    SET slug = CASE WHEN s.rn = 1 THEN s.base ELSE s.base || '-' || s.rn END
+    FROM slugged s
+    WHERE w.id = s.id
+  `.execute(db);
+
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_web_forms_tenant_slug
+      ON public.web_forms (tenant_id, slug)
+      WHERE slug IS NOT NULL
+  `.execute(db);
+
+  // 5. Durable submission records: answers snapshot + person FK.
+  await sql`
+    CREATE TABLE IF NOT EXISTS public.form_submissions (
+      id         uuid        DEFAULT gen_random_uuid() NOT NULL,
+      tenant_id  bigint      NOT NULL,
+      form_id    uuid        NOT NULL,
+      person_id  bigint      NOT NULL,
+      answers    jsonb       NOT NULL DEFAULT '{}'::jsonb,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (tenant_id, id)
+    )
+  `.execute(db);
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_form_submissions_tenant_form
+      ON public.form_submissions (tenant_id, form_id, created_at DESC)
+  `.execute(db);
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_form_submissions_person
+      ON public.form_submissions (tenant_id, person_id)
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP TABLE IF EXISTS public.form_submissions`.execute(db);
+  await sql`DROP INDEX IF EXISTS public.idx_web_forms_tenant_slug`.execute(db);
+  await sql`ALTER TABLE public.web_forms DROP CONSTRAINT IF EXISTS chk_web_forms_status`.execute(db);
+  await sql`UPDATE public.web_forms SET status = 'active' WHERE status IN ('published', 'draft')`.execute(db);
+  await sql`ALTER TABLE public.web_forms ALTER COLUMN status SET DEFAULT 'active'`.execute(db);
+  await sql`
+    ALTER TABLE public.web_forms
+      ADD CONSTRAINT chk_web_forms_status
+      CHECK (status = ANY (ARRAY['active'::text, 'archived'::text]))
+  `.execute(db);
+  await sql`
+    ALTER TABLE public.web_forms
+      DROP COLUMN IF EXISTS type,
+      DROP COLUMN IF EXISTS slug,
+      DROP COLUMN IF EXISTS submit_label,
+      DROP COLUMN IF EXISTS thanks_title,
+      DROP COLUMN IF EXISTS thanks_body,
+      DROP COLUMN IF EXISTS confirm_subject,
+      DROP COLUMN IF EXISTS confirm_body,
+      DROP COLUMN IF EXISTS notify_team_on,
+      DROP COLUMN IF EXISTS archived_at
+  `.execute(db);
+}
+```
+
+## File: apps/backend/src/app/config/email-folders.config.ts
+
+```typescript
+import type { EmailFolderConfig } from '../../../../../libs/common/src';
+import { EMAIL_FOLDERS } from '../../../../../libs/common/src';
+
+export function getAllEmailFolders(): EmailFolderConfig[] {
+  return [...EMAIL_FOLDERS].filter((folder: any) => !folder.is_hidden).sort((a, b) => a.sort_order - b.sort_order);
+}
+
+export function getEmailFolderById(id: string): EmailFolderConfig | undefined {
+  return EMAIL_FOLDERS.find((folder) => folder.id === id);
+}
+
+export function getRegularFolders(): EmailFolderConfig[] {
+  return EMAIL_FOLDERS.filter((folder) => !folder.is_virtual);
+}
+
+export function getVirtualFolders(): EmailFolderConfig[] {
+  return EMAIL_FOLDERS.filter((folder) => folder.is_virtual);
+}
+
+export function isVirtualFolder(folderId: string): boolean {
+  const folder = getEmailFolderById(folderId);
+  return folder?.is_virtual || false;
+}
+```
+
+## File: apps/backend/src/app/errors/app-errors.ts
+
+```typescript
+// Lightweight, transport-agnostic error types you can throw from controllers/services.
+export abstract class AppError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly code: string,
+    public readonly data?: unknown,
+    opts?: { cause?: unknown },
+  ) {
+    super(message, { cause: opts?.cause });
+    this.name = new.target.name;
+    Error.captureStackTrace?.(this, new.target);
+  }
+}
+
+export class BadRequestError extends AppError {
+  constructor(message = 'Bad request', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 400, 'BAD_REQUEST', data, opts);
+  }
+}
+
+export class ConflictError extends AppError {
+  constructor(message = 'Conflict', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 409, 'CONFLICT', data, opts);
+  }
+}
+
+export class ForbiddenError extends AppError {
+  constructor(message = 'Forbidden', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 403, 'FORBIDDEN', data, opts);
+  }
+}
+
+export class InternalError extends AppError {
+  constructor(message = 'Something went wrong, please try again', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 500, 'INTERNAL_SERVER_ERROR', data, opts);
+  }
+}
+
+export class NotFoundError extends AppError {
+  constructor(message = 'Not found', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 404, 'NOT_FOUND', data, opts);
+  }
+}
+
+export class PreconditionFailedError extends AppError {
+  constructor(message = 'Precondition failed', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 412, 'PRECONDITION_FAILED', data, opts);
+  }
+}
+
+export class ServerMisconfigError extends AppError {
+  constructor(message = 'Server misconfiguration', data?: unknown) {
+    super(message, 500, 'INTERNAL_SERVER_ERROR', data);
+  }
+}
+
+export class TooManyRequestsError extends AppError {
+  constructor(message = 'Too many requests', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 429, 'TOO_MANY_REQUESTS', data, opts);
+  }
+}
+
+export class UnauthorizedError extends AppError {
+  constructor(message = 'User is not authenticated. Please sign in', data?: unknown, opts?: { cause?: unknown }) {
+    super(message, 401, 'UNAUTHORIZED', data, opts);
+  }
+}
+```
+
+## File: apps/backend/src/app/errors/to-trpc-errors.ts
+
+```typescript
+import { TRPCError } from '@trpc/server';
+
+import { AppError } from './app-errors';
+
+export function toTRPCError(err: unknown): TRPCError {
+  if (err instanceof TRPCError) return err;
+
+  const isDevOrTest = process.env['NODE_ENV'] !== 'production';
+
+  if (err instanceof AppError) {
+    // Status -> TRPC code
+    const code =
+      err.status === 400
+        ? 'BAD_REQUEST'
+        : err.status === 401
+          ? 'UNAUTHORIZED'
+          : err.status === 403
+            ? 'FORBIDDEN'
+            : err.status === 404
+              ? 'NOT_FOUND'
+              : err.status === 409
+                ? 'CONFLICT'
+                : err.status === 412
+                  ? 'PRECONDITION_FAILED'
+                  : err.status === 413
+                    ? 'PAYLOAD_TOO_LARGE'
+                    : err.status === 422
+                      ? 'BAD_REQUEST'
+                      : err.status === 429
+                        ? 'TOO_MANY_REQUESTS'
+                        : /* default */ 'INTERNAL_SERVER_ERROR';
+
+    let message = err.message;
+    if (isDevOrTest && err.cause instanceof Error) {
+      message = `${err.message} (Cause: ${err.cause.message})`;
+    } else if (isDevOrTest && typeof err.cause === 'string') {
+      message = `${err.message} (Cause: ${err.cause})`;
+    }
+
+    return new TRPCError({
+      code,
+      message,
+      cause: err,
+    });
+  }
+
+  // Unknown/unexpected -> internal
+  let message = 'Something went wrong, please try again';
+  if (isDevOrTest && err instanceof Error) {
+    message = `Something went wrong, please try again (Cause: ${err.message})`;
+  } else if (isDevOrTest && typeof err === 'string') {
+    message = `Something went wrong, please try again (Cause: ${err})`;
+  }
+
+  return new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message,
+    cause: err,
+  });
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/billing.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+export async function handleZapierTrigger(payload: JobPayloadOf<'zapier_trigger'>): Promise<void> {
+  const { ZapierService } = await import('../../../modules/zapier/zapier.service');
+  const zapierService = new ZapierService();
+  await zapierService.fireTrigger(payload.tenant_id, payload.event_type, payload.data);
+}
+
+export async function handleCheckUsageLimits(
+  payload: JobPayloadOf<'check_usage_limits'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { checkTenantUsage } = await import('../../../modules/billing/usage-limits');
+  await checkTenantUsage(payload.tenant_id, db);
+}
+
+export async function handleCheckAllUsageLimits(db: Kysely<Models>): Promise<void> {
+  const { checkAllUsageLimits } = await import('../../../modules/billing/usage-limits');
+  await checkAllUsageLimits(db);
+  await scheduleNextRun(db, 'check_all_usage_limits', DAY_MS);
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/deletions.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const mailService = new TransactionalEmailService();
+
+const COMPLETED_JOB_RETENTION_DAYS = 7;
+
+export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+
+  const expiredUsers = await db
+    .selectFrom('authusers')
+    .select('id')
+    .where('deletion_scheduled_at', '<=', now)
+    .execute();
+
+  for (const user of expiredUsers) {
+    const userId = String(user.id);
+    await db.transaction().execute(async (trx) => {
+      await trx.deleteFrom('sessions').where('user_id', '=', userId).execute();
+      await trx.deleteFrom('profiles').where('auth_id', '=', userId).execute();
+      await trx.deleteFrom('authusers').where('id', '=', userId).execute();
+    });
+  }
+
+  const expiredTenants = await db
+    .selectFrom('tenants')
+    .select('id')
+    .where('deletion_scheduled_at', '<=', now)
+    .execute();
+
+  for (const tenant of expiredTenants) {
+    const tenantId = String(tenant.id);
+
+    // Capture owner emails before deletion — background_jobs is wiped inside the transaction
+    const ownerUsers = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('role', '=', 'owner')
+      .execute();
+
+    logger.info(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
+    await db.transaction().execute(async (trx) => {
+      const tid = tenantId;
+
+      // ── Collaboration ─────────────────────────────────────────────────
+      await trx.deleteFrom('task_attachments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('task_comments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('task_subtasks').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tasks').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_teams_lists').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_teams_persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('teams').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_lists_persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_lists_households').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('lists').where('tenant_id', '=', tid).execute();
+
+      // ── Email & Marketing ──────────────────────────────────────────────
+      await trx.deleteFrom('workflow_enrollments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('workflow_steps').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('workflows').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('newsletter_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('newsletters').where('tenant_id', '=', tid).execute();
+
+      // ── Ops & Platform ─────────────────────────────────────────────────
+      await trx.deleteFrom('notifications').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('user_activity').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('potential_duplicates').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('data_imports').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('data_exports').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('web_forms').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('background_jobs').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('zapier_subscriptions').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('event_ticket_types').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('events').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('files').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tid).execute();
+
+      // ── Email inbox ────────────────────────────────────────────────────
+      await trx.deleteFrom('email_read_states').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_comments').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_drafts').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('emails').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('email_folders').where('tenant_id', '=', tid).execute();
+
+      // ── CRM Core ───────────────────────────────────────────────────────
+      await trx.deleteFrom('map_campaigns_users').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_peoples_tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('map_households_tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('companies').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('persons').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('households').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('campaigns').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tags').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('settings').where('tenant_id', '=', tid).execute();
+
+      // ── Auth & Identity (last) ─────────────────────────────────────────
+      // Null out FK references on tenants before deleting authusers
+      await trx.updateTable('tenants').set({ admin_id: null }).where('id', '=', tid).execute();
+      await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
+      await trx.deleteFrom('tenants').where('id', '=', tid).execute();
+
+      logger.info(`Tenant ${tenantId} fully hard-deleted.`);
+    });
+
+    // Send confirmation emails after the transaction commits (outside the wiped tenant scope)
+    for (const owner of ownerUsers) {
+      if (owner.email) {
+        await mailService.sendMail({
+          to: owner.email,
+          subject: 'Your account data has been permanently deleted',
+          text: `Hi ${owner.first_name},\n\nAll data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using PeopleCRM.`,
+          html: `<h2>Account Data Deleted</h2>
+<p>Hi ${owner.first_name},</p>
+<p>All data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
+<p>Thank you for using PeopleCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
+        });
+      }
+    }
+  }
+
+  // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth
+  const retentionCutoff = new Date(Date.now() - COMPLETED_JOB_RETENTION_DAYS * DAY_MS);
+  await db
+    .deleteFrom('background_jobs')
+    .where('status', '=', 'completed')
+    .where('updated_at', '<=', retentionCutoff)
+    .execute();
+
+  await scheduleNextRun(db, 'perform_scheduled_deletions', DAY_MS);
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/export.handlers.ts
+
+```typescript
+import type { ExpressionBuilder, Kysely } from 'kysely';
+import { sql } from 'kysely';
+import { Readable } from 'stream';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { ExportsRepo } from '../../../modules/exports/repositories/exports.repo';
+import { CsvTransformStream } from '../../csv-stream';
+import { StorageService } from '../../storage.service';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { JobPayloadOf } from '../job-payloads';
+
+const storageService = new StorageService();
+const mailService = new TransactionalEmailService();
+
+const ALLOWED_EXPORT_TABLES = [
+  'persons',
+  'households',
+  'companies',
+  'forms',
+  'workflows',
+  'teams',
+  'events',
+  'newsletters',
+  'tasks',
+  'tags',
+  'issues',
+  'users',
+  'user_activity',
+];
+
+export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: Kysely<Models>): Promise<void> {
+  const exportsRepo = new ExportsRepo();
+  const exportId = payload.export_id;
+  const tenantId = payload.tenant_id;
+  try {
+    // Make sure we're exporting one of the allowed tables
+    const table = payload.table || payload.entity || '';
+    if (!ALLOWED_EXPORT_TABLES.includes(table)) throw new Error('Invalid export entity');
+
+    // Mark as processing
+    await exportsRepo.updateStatus(exportId, tenantId, 'processing');
+
+    // Fetch all rows for the entity
+    const opts = payload.options;
+    // The export query is assembled dynamically across heterogeneous tables and joins,
+    // which Kysely cannot express statically — the builder is intentionally untyped here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query: any;
+
+    if (table === 'user_activity') {
+      query = db
+        .selectFrom('user_activity')
+        .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
+        .select([
+          'user_activity.id',
+          'user_activity.created_at',
+          sql`TRIM(CONCAT(authusers.first_name, ' ', COALESCE(authusers.last_name, '')))::text`.as('user'),
+          'authusers.email',
+          'user_activity.activity',
+          'user_activity.entity',
+          'user_activity.entity_id',
+          'user_activity.quantity',
+          'user_activity.metadata',
+        ])
+        .where('user_activity.tenant_id', '=', tenantId);
+
+      if (opts.userId) {
+        query = query.where('user_activity.user_id', '=', opts.userId);
+      }
+      if (opts.entity) {
+        query = query.where('user_activity.entity', 'in', getEntityFilterValues(opts.entity));
+      }
+      if (opts.activity) {
+        query = query.where('user_activity.activity', '=', opts.activity);
+      }
+      if (opts.searchStr) {
+        const search = `%${opts.searchStr.trim().toLowerCase()}%`;
+        query = query.where((eb: ExpressionBuilder<Models, 'user_activity' | 'authusers'>) =>
+          eb.or([
+            eb('authusers.first_name', 'ilike', search),
+            eb('authusers.last_name', 'ilike', search),
+            eb('user_activity.entity', 'ilike', search),
+            eb('user_activity.activity', 'ilike', search),
+          ]),
+        );
+      }
+    } else {
+      query = db
+        .selectFrom(table as keyof Models)
+        .selectAll()
+        .where('tenant_id', '=', tenantId);
+
+      // Issues are tags with type='issue'
+      if (payload.entity === 'issues') {
+        query = query.where('type', '=', 'issue');
+      }
+
+      // Apply search string if provided
+      if (opts.searchStr) {
+        const like = `%${opts.searchStr}%`;
+        // Best-effort: try name, first_name/last_name depending on table
+        if (table === 'persons') {
+          query = query.where((eb: ExpressionBuilder<Models, 'persons'>) =>
+            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
+          );
+        } else if (table === 'households') {
+          query = query.where((eb: ExpressionBuilder<Models, 'households'>) =>
+            eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)]),
+          );
+        } else {
+          query = query.where('name', 'ilike', like);
+        }
+      }
+    }
+
+    // Apply sort
+    if (opts.sortModel?.length) {
+      for (const s of opts.sortModel) {
+        if (s?.colId) {
+          query = query.orderBy(s.colId, s.sort === 'desc' ? 'desc' : 'asc');
+        }
+      }
+    } else {
+      const sortCol = table === 'user_activity' ? 'user_activity.created_at' : 'created_at';
+      query = query.orderBy(sortCol, 'desc');
+    }
+
+    // Determine columns
+    const requestedCols: string[] = payload.columns?.length ? payload.columns : [];
+
+    const storageKey = `exports/${tenantId}/${exportId}.csv`;
+
+    // Stream the query results using query.stream()
+    const dbStream = Readable.from(query.stream());
+    const csvStream = new CsvTransformStream(requestedCols);
+
+    await storageService.uploadStream(storageKey, dbStream.pipe(csvStream), 'text/csv');
+
+    const count = csvStream.rowCount;
+
+    // If no rows were processed, clean up by deleting the empty file if created
+    if (count === 0) {
+      await storageService.delete(storageKey);
+    }
+
+    await exportsRepo.updateStatus(exportId, tenantId, 'completed', {
+      rowCount: count,
+      storageKey: count > 0 ? storageKey : undefined,
+    });
+
+    logger.info(`Export job ${exportId} completed: ${count} rows exported.`);
+
+    // Notify the user who requested the export
+    if (payload.user_id) {
+      try {
+        const user = await db
+          .selectFrom('authusers')
+          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+          .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+          .where('authusers.id', '=', payload.user_id)
+          .executeTakeFirst();
+
+        if (user) {
+          let emailOptedIn = true;
+          let inAppOptedIn = true;
+          const profileJson = user.profile_json;
+          if (profileJson) {
+            try {
+              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+              if (json?.notifications?.export_ready === false) {
+                emailOptedIn = false;
+              }
+              if (json?.notifications?.export_ready_in_app === false) {
+                inAppOptedIn = false;
+              }
+            } catch (e) {
+              logger.error({ err: e }, 'Failed to parse profile json for export notifications');
+            }
+          }
+
+          const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
+          const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
+
+          if (inAppOptedIn) {
+            const { NotificationsRepo } =
+              await import('../../../modules/notifications/repositories/notifications.repo');
+            const notificationsRepo = new NotificationsRepo();
+            await notificationsRepo.pushNotification({
+              tenant_id: tenantId,
+              user_id: payload.user_id,
+              title: 'Export Ready',
+              message: `Your export of ${count} records from ${displayLabel} is complete.`,
+              type: 'export',
+              link: '/exports',
+            });
+          }
+
+          if (emailOptedIn && user.email) {
+            await mailService.sendMail({
+              to: user.email,
+              subject: `Your Export is Ready: ${payload.file_name || 'export.csv'}`,
+              text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile Name: ${payload.file_name || 'export.csv'}\nDownload from the Exports page: ${env.appUrl}/exports`,
+              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p><p><strong>File Name:</strong> ${payload.file_name || 'export.csv'}<br><strong>Download Link:</strong> <a href="${env.appUrl}/exports">Go to Exports Page</a></p>`,
+            });
+          }
+        }
+      } catch (notifErr) {
+        logger.error({ err: notifErr }, `Failed to send notifications for export job ${exportId}`);
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, `Export job ${exportId} failed`);
+    const message = err instanceof Error ? err.message : String(err);
+    await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
+      error: message.substring(0, 500),
+    });
+    throw err;
+  }
+}
+
+function getEntityFilterValues(entityFilter: string): string[] {
+  const ent = entityFilter.toLowerCase();
+  if (ent === 'persons' || ent === 'person' || ent === 'people') {
+    return ['person', 'persons'];
+  }
+  if (ent === 'households' || ent === 'household') {
+    return ['household', 'households'];
+  }
+  if (ent === 'companies' || ent === 'company') {
+    return ['company', 'companies'];
+  }
+  if (ent === 'tasks' || ent === 'task') {
+    return ['task', 'tasks', 'tasks_archived'];
+  }
+  if (ent === 'emails' || ent === 'email') {
+    return ['email', 'emails'];
+  }
+  if (ent === 'volunteer_events' || ent === 'volunteer_event') {
+    return ['volunteer_event', 'volunteer_events'];
+  }
+  if (ent === 'volunteer_shifts' || ent === 'volunteer_shift') {
+    return ['volunteer_shift', 'volunteer_shifts'];
+  }
+  if (ent === 'web_forms' || ent === 'web_form' || ent === 'forms' || ent === 'form') {
+    return ['web_form', 'web_forms', 'form', 'forms'];
+  }
+  if (ent === 'tags' || ent === 'tag') {
+    return ['tag', 'tags'];
+  }
+  return [ent];
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { CompaniesController } from '../../../modules/companies/controller';
+import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo';
+import { PersonsService } from '../../../modules/persons/services/persons.service';
+import { TasksController } from '../../../modules/tasks/controller';
+import { StorageService } from '../../storage.service';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { LegacyImportJobPayload } from '../job-payloads';
+
+const storageService = new StorageService();
+const importsRepo = new ImportsRepo();
+const mailService = new TransactionalEmailService();
+
+export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysely<Models>): Promise<void> {
+  // 1. Mark import status as 'processing' in data_imports
+  await importsRepo.update({
+    tenant_id: payload.tenant_id,
+    id: payload.import_id,
+    row: {
+      status: 'processing',
+      updated_at: new Date(),
+    },
+  });
+
+  // 2. Download mapping payload from storage
+  const buffer = await storageService.download(payload.storage_key);
+  const rows = JSON.parse(buffer.toString('utf8'));
+
+  // 3. Process the import rows in chunks
+  if (payload.source === 'companies') {
+    const companiesController = new CompaniesController();
+    await companiesController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else if (payload.source === 'tasks') {
+    const tasksController = new TasksController();
+    await tasksController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else {
+    const personsService = new PersonsService();
+    await personsService.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      payload.campaign_id ?? '',
+      payload.tags ?? [],
+      Number(payload.skipped || 0),
+      rows,
+    );
+  }
+
+  // 4. Update import status to 'completed'
+  await importsRepo.update({
+    tenant_id: payload.tenant_id,
+    id: payload.import_id,
+    row: {
+      status: 'completed',
+      processed_at: new Date(),
+      updated_at: new Date(),
+    },
+  });
+
+  try {
+    await storageService.delete(payload.storage_key);
+  } catch (storageErr) {
+    logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
+  }
+
+  try {
+    const user = await db
+      .selectFrom('authusers')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .where('authusers.id', '=', payload.user_id)
+      .executeTakeFirst();
+
+    if (user && user.email) {
+      let optedIn = true;
+      if (user.profile_json) {
+        try {
+          const json = typeof user.profile_json === 'string' ? JSON.parse(user.profile_json) : user.profile_json;
+          if (json?.notifications?.import_summary === false) {
+            optedIn = false;
+          }
+        } catch (e) {
+          logger.error({ err: e }, 'Failed to parse profile json for import summary check');
+        }
+      }
+
+      if (optedIn) {
+        const importRecord = await db
+          .selectFrom('data_imports')
+          .select(['inserted_count', 'error_count', 'skipped_count'])
+          .where('id', '=', payload.import_id)
+          .where('tenant_id', '=', payload.tenant_id)
+          .executeTakeFirst();
+
+        if (importRecord) {
+          const inserted = importRecord.inserted_count || 0;
+          const errors = importRecord.error_count || 0;
+          const skipped = importRecord.skipped_count || 0;
+
+          await mailService.sendMail({
+            to: user.email,
+            subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
+            text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
+            html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
+          });
+        }
+      }
+    }
+  } catch (mailErr) {
+    logger.error({ err: mailErr }, 'Failed to send import completion summary email');
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/maintenance.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { fingerprintFull, fingerprintStreet } from '../../address-normalize';
+import { geocodeAndMapHousehold } from '../../gis/geocoding';
+import { logger } from '../../../logger';
+import { ActivityController } from '../../../modules/activity/controller';
+import { ListsController } from '../../../modules/lists/controller';
+import { DuplicateMaintenanceService } from '../../../modules/persons/services/duplicate-maintenance.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+export async function handleRefreshList(payload: JobPayloadOf<'refresh_list'>): Promise<void> {
+  const listsController = new ListsController();
+  await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
+}
+
+export async function handleEnrichCompanyGoogle(
+  payload: JobPayloadOf<'enrich_company_google'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { CompaniesEnrichmentService } =
+    await import('../../../modules/companies/services/companies-enrichment.service');
+  const enrichmentSvc = new CompaniesEnrichmentService(db);
+  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
+}
+
+export async function handleRefreshCompaniesGoogle(
+  payload: JobPayloadOf<'refresh_companies_google'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { CompaniesEnrichmentService } =
+    await import('../../../modules/companies/services/companies-enrichment.service');
+  const enrichmentSvc = new CompaniesEnrichmentService(db);
+  await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id ?? undefined);
+
+  // Only the global (cron-style) run reschedules itself.
+  if (!payload.tenant_id) {
+    await scheduleNextRun(db, 'refresh_companies_google', DAY_MS);
+  }
+}
+
+export async function handleCleanupActivities(db: Kysely<Models>): Promise<void> {
+  const activityController = new ActivityController();
+  await activityController.deleteOldActivities();
+
+  await scheduleNextRun(db, 'cleanup_activities', DAY_MS);
+}
+
+export async function handleRecomputeAllDuplicates(db: Kysely<Models>): Promise<void> {
+  const lastJob = await db
+    .selectFrom('background_jobs')
+    .select(['updated_at'])
+    .where('status', '=', 'completed')
+    .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+    .orderBy('updated_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+
+  const tenants = await db.selectFrom('tenants').select('id').execute();
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
+
+  for (const tenant of tenants) {
+    try {
+      let shouldRecompute = true;
+
+      if (lastRunTime) {
+        const personChanged = await db
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        const householdChanged = await db
+          .selectFrom('households')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        const companyChanged = await db
+          .selectFrom('companies')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (!personChanged && !householdChanged && !companyChanged) {
+          shouldRecompute = false;
+        }
+      }
+
+      if (shouldRecompute) {
+        await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
+      }
+    } catch (tenantErr) {
+      logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
+    }
+  }
+
+  await scheduleNextRun(db, 'recompute_all_duplicates', DAY_MS);
+}
+
+export async function handleRecomputeAddressFingerprints(
+  payload: JobPayloadOf<'recompute_address_fingerprints'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const tenantIds: string[] = [];
+  if (payload.tenant_id) {
+    tenantIds.push(payload.tenant_id);
+  } else {
+    const tenants = await db.selectFrom('tenants').select('id').execute();
+    for (const tenant of tenants) {
+      tenantIds.push(String(tenant.id));
+    }
+  }
+
+  for (const tenantId of tenantIds) {
+    try {
+      await recomputeTenantAddressFingerprints(tenantId, db);
+    } catch (tenantErr) {
+      logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
+    }
+  }
+
+  // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
+  if (!payload.tenant_id) {
+    await scheduleNextRun(db, 'recompute_address_fingerprints', DAY_MS);
+  }
+}
+
+export async function handleGeocodeHousehold(
+  payload: JobPayloadOf<'geocode_household'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
+}
+
+async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
+  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
+
+  for (const hh of households) {
+    const fp_street = fingerprintStreet({
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: hh.apt,
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+      city: hh.city,
+      state: hh.state,
+      zip: hh.zip,
+      country: hh.country,
+    });
+
+    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
+      await db
+        .updateTable('households')
+        .set({
+          address_fp_street: fp_street,
+          address_fp_full: fp_full,
+          updated_at: new Date(),
+        })
+        .where('id', '=', hh.id)
+        .where('tenant_id', '=', tenantId)
+        .execute();
+    }
+  }
+
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  await maintenanceSvc.recomputeAllDuplicates(tenantId);
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
+
+```typescript
+import type { ExpressionBuilder, Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
+import { UserActivityRepo } from '../../user-activity.repo';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const NEWSLETTER_BATCH_SIZE = 500;
+const BATCH_DELAY_MS = 1000;
+
+export async function handleSendNewsletter(
+  payload: JobPayloadOf<'send-newsletter'>,
+  db: Kysely<Models>,
+  jobId?: string,
+): Promise<void> {
+  const newsletterMailSvc = new NewsletterEmailService();
+  const { tenantId, newsletterId, userId } = payload;
+
+  // 1. Fetch newsletter to get settings, targets, segments, and content
+  const newsletter = await db
+    .selectFrom('newsletters')
+    .selectAll()
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .executeTakeFirst();
+
+  if (!newsletter) {
+    logger.warn(`Newsletter ${newsletterId} not found.`);
+    return;
+  }
+
+  // 2. Build the recipient query using NewslettersController
+  const { NewslettersController } = await import('../../../modules/newsletters/controller');
+  const controller = new NewslettersController();
+  const baseQuery = controller.buildRecipientQuery(tenantId, newsletter);
+
+  // 3. Count total recipients
+  let offset = payload.offset ?? 0;
+  let deliveredCount = payload.deliveredCount ?? 0;
+
+  const countResult = await baseQuery
+    .select(({ fn }: ExpressionBuilder<Models, 'persons'>) => fn.count(sql`DISTINCT persons.email`).as('count'))
+    .executeTakeFirst();
+  const totalRecipients = Number(countResult?.count || 0);
+
+  if (offset === 0) {
+    await db
+      .updateTable('newsletters')
+      .set({
+        status: 'sending',
+        total_recipients: totalRecipients,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', newsletterId)
+      .execute();
+  }
+
+  // Load communications/settings from database
+  const settingsRows = await db
+    .selectFrom('settings')
+    .select(['key', 'value'])
+    .where('tenant_id', '=', tenantId)
+    .where('key', 'in', [
+      'communications.sendgrid_api_key',
+      'communications.sendgrid_subuser_username',
+      'communications.default_from_name',
+      'communications.default_from_email',
+      'communications.reply_to',
+      'communications.footer_disclaimer',
+      'communications.verified_emails',
+      'organization.address',
+    ])
+    .execute();
+
+  const settingsMap: Record<string, string> = {};
+  let verifiedEmails: string[] = [];
+  for (const row of settingsRows) {
+    if (typeof row.value === 'string') {
+      settingsMap[row.key] = row.value;
+    } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
+      verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
+    }
+  }
+
+  const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+  const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
+  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
+
+  // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
+  const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
+  const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
+
+  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
+  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
+  const footer = buildNewsletterFooter(
+    settingsMap['organization.address'],
+    settingsMap['communications.footer_disclaimer'],
+  );
+
+  while (offset < totalRecipients) {
+    // Query a chunk of recipients dynamically using LIMIT and OFFSET
+    // We order by persons.email asc to ensure consistent pagination ordering
+    const chunkRows = await baseQuery
+      .select(['persons.email'])
+      .distinct()
+      .orderBy('persons.email', 'asc')
+      .limit(NEWSLETTER_BATCH_SIZE)
+      .offset(offset)
+      .execute();
+
+    const chunk: string[] = Array.from(
+      new Set(chunkRows.map((r: { email: string | null }) => r.email?.trim()).filter(Boolean)),
+    );
+
+    if (chunk.length === 0) {
+      break;
+    }
+
+    const batchDelivered = await newsletterMailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients: chunk,
+      subject: newsletter.subject || 'Newsletter',
+      html: (newsletter.html_content || '') + footer.html,
+      text: newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined,
+      sendgridApiKey,
+      subuserUsername,
+      newsletterId,
+      tenantId,
+    });
+
+    deliveredCount += batchDelivered;
+    offset += chunkRows.length;
+
+    // Update progress in the background job payload (no recipients array!)
+    if (jobId) {
+      await db
+        .updateTable('background_jobs')
+        .set({
+          payload: JSON.stringify({
+            type: 'send-newsletter',
+            newsletterId,
+            tenantId,
+            userId,
+            offset,
+            deliveredCount,
+          }),
+          updated_at: new Date(),
+        })
+        .where('id', '=', jobId)
+        .execute();
+    }
+
+    // Add a small delay between batches to respect rate limits
+    if (offset < totalRecipients) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+    }
+  }
+
+  // Update newsletter status to 'sent'
+  await db
+    .updateTable('newsletters')
+    .set({
+      status: 'sent',
+      delivered_count: deliveredCount,
+      send_date: new Date(),
+      updatedby_id: userId,
+      updated_at: new Date(),
+    })
+    .where('tenant_id', '=', tenantId)
+    .where('id', '=', newsletterId)
+    .execute();
+
+  // Log user activity
+  const userActivity = new UserActivityRepo();
+  await userActivity.log({
+    tenant_id: tenantId,
+    user_id: userId,
+    activity: 'send',
+    entity: 'newsletters',
+    entity_id: newsletterId,
+    quantity: totalRecipients,
+    metadata: { recipientsCount: totalRecipients, deliveredCount },
+  });
+
+  const { queueUsageLimitCheck } = await import('../../../modules/billing/usage-limits');
+  await queueUsageLimitCheck(tenantId, db);
+}
+
+export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
+  await pruneNewsletterEvents(db);
+  await scheduleNextRun(db, 'prune_newsletter_events', DAY_MS);
+}
+
+// Event types that warrant keeping a per-newsletter engagement record.
+// Delivery-only events (delivered, deferred, processed) are not stored.
+const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
+
+async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
+  const tenants: { id: string; subscription_plan: string | null }[] = await db
+    .selectFrom('tenants')
+    .select(['id', 'subscription_plan'])
+    .execute();
+
+  for (const tenant of tenants) {
+    try {
+      const plan = tenant.subscription_plan ?? 'free';
+      const retentionDays =
+        plan.toLowerCase() === 'representative' ? 90 : plan.toLowerCase() === 'grassroots' ? 30 : 15;
+
+      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      const tenantId = String(tenant.id);
+
+      // Fetch events older than the retention window that are engagement events.
+      const expiringEvents: {
+        newsletter_id: string;
+        email: string;
+        event_type: string;
+        timestamp: Date;
+      }[] = await db
+        .selectFrom('newsletter_events')
+        .select(['newsletter_id', 'email', 'event_type', 'timestamp'])
+        .where('tenant_id', '=', tenantId)
+        .where('created_at', '<', cutoff)
+        .execute();
+
+      // Group by (newsletter_id, email) to produce one upsert per recipient.
+      const grouped = new Map<
+        string,
+        {
+          newsletter_id: string;
+          email: string;
+          open_count: number;
+          click_count: number;
+          has_unsubscribed: boolean;
+          hard_bounced: boolean;
+          soft_bounced: boolean;
+          first_opened_at: Date | null;
+          last_opened_at: Date | null;
+          first_clicked_at: Date | null;
+          last_clicked_at: Date | null;
+          bounced_at: Date | null;
+          unsubscribed_at: Date | null;
+        }
+      >();
+
+      for (const ev of expiringEvents) {
+        if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
+
+        const key = `${ev.newsletter_id}::${ev.email}`;
+        let agg = grouped.get(key);
+        if (!agg) {
+          agg = {
+            newsletter_id: ev.newsletter_id,
+            email: ev.email,
+            open_count: 0,
+            click_count: 0,
+            has_unsubscribed: false,
+            hard_bounced: false,
+            soft_bounced: false,
+            first_opened_at: null,
+            last_opened_at: null,
+            first_clicked_at: null,
+            last_clicked_at: null,
+            bounced_at: null,
+            unsubscribed_at: null,
+          };
+          grouped.set(key, agg);
+        }
+        const ts = new Date(ev.timestamp);
+
+        if (ev.event_type === 'open') {
+          agg.open_count++;
+          if (!agg.first_opened_at || ts < agg.first_opened_at) agg.first_opened_at = ts;
+          if (!agg.last_opened_at || ts > agg.last_opened_at) agg.last_opened_at = ts;
+        } else if (ev.event_type === 'click') {
+          agg.click_count++;
+          if (!agg.first_clicked_at || ts < agg.first_clicked_at) agg.first_clicked_at = ts;
+          if (!agg.last_clicked_at || ts > agg.last_clicked_at) agg.last_clicked_at = ts;
+        } else if (ev.event_type === 'unsubscribe' || ev.event_type === 'group_unsubscribe') {
+          agg.has_unsubscribed = true;
+          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
+        } else if (ev.event_type === 'bounce') {
+          // SendGrid bounce events don't carry a sub-type in this table;
+          // treat all as hard bounce (the webhook handler can refine this).
+          agg.hard_bounced = true;
+          if (!agg.bounced_at) agg.bounced_at = ts;
+        } else if (ev.event_type === 'spamreport') {
+          agg.has_unsubscribed = true;
+          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
+        }
+      }
+
+      // Upsert aggregated rows, then delete the raw events.
+      if (grouped.size > 0) {
+        await db.transaction().execute(async (trx) => {
+          for (const row of grouped.values()) {
+            await trx
+              .insertInto('person_newsletter_engagements')
+              .values({
+                tenant_id: tenantId,
+                newsletter_id: row.newsletter_id,
+                email: row.email,
+                open_count: row.open_count,
+                click_count: row.click_count,
+                has_unsubscribed: row.has_unsubscribed,
+                hard_bounced: row.hard_bounced,
+                soft_bounced: row.soft_bounced,
+                first_opened_at: row.first_opened_at,
+                last_opened_at: row.last_opened_at,
+                first_clicked_at: row.first_clicked_at,
+                last_clicked_at: row.last_clicked_at,
+                bounced_at: row.bounced_at,
+                unsubscribed_at: row.unsubscribed_at,
+              })
+              .onConflict((oc) =>
+                oc.columns(['tenant_id', 'newsletter_id', 'email']).doUpdateSet((eb) => ({
+                  open_count: sql`person_newsletter_engagements.open_count + ${eb.ref('excluded.open_count')}`,
+                  click_count: sql`person_newsletter_engagements.click_count + ${eb.ref('excluded.click_count')}`,
+                  has_unsubscribed: sql`person_newsletter_engagements.has_unsubscribed OR excluded.has_unsubscribed`,
+                  hard_bounced: sql`person_newsletter_engagements.hard_bounced OR excluded.hard_bounced`,
+                  soft_bounced: sql`person_newsletter_engagements.soft_bounced OR excluded.soft_bounced`,
+                  first_opened_at: sql`LEAST(person_newsletter_engagements.first_opened_at, excluded.first_opened_at)`,
+                  last_opened_at: sql`GREATEST(person_newsletter_engagements.last_opened_at, excluded.last_opened_at)`,
+                  first_clicked_at: sql`LEAST(person_newsletter_engagements.first_clicked_at, excluded.first_clicked_at)`,
+                  last_clicked_at: sql`GREATEST(person_newsletter_engagements.last_clicked_at, excluded.last_clicked_at)`,
+                  bounced_at: sql`COALESCE(person_newsletter_engagements.bounced_at, excluded.bounced_at)`,
+                  unsubscribed_at: sql`COALESCE(person_newsletter_engagements.unsubscribed_at, excluded.unsubscribed_at)`,
+                })),
+              )
+              .execute();
+          }
+
+          await trx
+            .deleteFrom('newsletter_events')
+            .where('tenant_id', '=', tenantId)
+            .where('created_at', '<', cutoff)
+            .execute();
+        });
+      } else {
+        // No engagement events to aggregate — still prune non-engagement events.
+        await db
+          .deleteFrom('newsletter_events')
+          .where('tenant_id', '=', tenantId)
+          .where('created_at', '<', cutoff)
+          .execute();
+      }
+    } catch (err) {
+      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
+    }
+  }
+}
+
+/**
+ * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
+ * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
+ * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
+ * subscription tracking is enabled.
+ */
+function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
+  const esc = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  const htmlParts: string[] = [];
+  const textParts: string[] = [];
+
+  const addr = (address || '').trim();
+  if (addr) {
+    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(addr);
+  }
+
+  const disc = (disclaimer || '').trim();
+  if (disc) {
+    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
+    textParts.push(disc);
+  }
+
+  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
+  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
+  textParts.push('Unsubscribe: <% unsubscribe %>');
+
+  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
+  const text = `\n\n----\n${textParts.join('\n')}`;
+
+  return { html, text };
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+const mailService = new TransactionalEmailService();
+
+export async function handleSendFormNotifications(
+  payload: JobPayloadOf<'send-form-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const event = await db
+    .selectFrom('volunteer_events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_signup_confirmation',
+      'send_volunteer_alert',
+    ])
+    .where('id', '=', payload.eventId)
+    .executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (event.send_signup_confirmation !== false) {
+    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
+    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
+
+    const coordEmailHtml = event.contact_email
+      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
+      : '';
+    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
+    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
+
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Volunteer Signup Confirmation: ${event.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
+  if (event.send_volunteer_alert !== false) {
+    let alertRecipient = event.contact_email || null;
+
+    if (!alertRecipient) {
+      const admin = await db
+        .selectFrom('authusers')
+        .select('email')
+        .where('tenant_id', '=', payload.tenantId)
+        .limit(1)
+        .executeTakeFirst();
+      if (admin && admin.email) {
+        alertRecipient = admin.email;
+      }
+    }
+
+    if (alertRecipient) {
+      await mailService.sendMail({
+        to: alertRecipient,
+        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
+        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
+        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendShiftReminder(
+  payload: JobPayloadOf<'send-shift-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const shift = await db
+    .selectFrom('volunteer_shifts')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.shiftId)
+    .executeTakeFirst();
+
+  if (!shift) {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
+    return;
+  }
+
+  // Covers cancelled and no-show shifts as well.
+  if (shift.status !== 'signed_up') {
+    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
+    return;
+  }
+
+  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
+
+  if (!event) {
+    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
+    return;
+  }
+
+  if (event.send_reminder === false) {
+    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
+    return;
+  }
+
+  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
+
+  if (!person) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
+    return;
+  }
+
+  if (!person.email) {
+    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
+
+  const subject = `Volunteer Shift Reminder: ${event.name}`;
+  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
+
+  const html = `
+<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
+  <p>Hi ${person.first_name || 'there'},</p>
+  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
+  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
+    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
+    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
+    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
+    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
+  </div>
+  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
+</div>`;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject,
+    text,
+    html,
+  });
+
+  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
+}
+
+export async function handleSendWebformNotifications(
+  payload: JobPayloadOf<'send-webform-notifications'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const form = await db
+    .selectFrom('web_forms')
+    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
+    .where('id', '=', payload.formId)
+    .executeTakeFirst();
+
+  if (!form) {
+    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
+    return;
+  }
+
+  // 1. Send Confirmation Email to the Constituent (if enabled)
+  if (form.send_confirmation !== false) {
+    await mailService.sendMail({
+      to: payload.email,
+      subject: `Thank you for your submission to ${form.name}`,
+      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
+      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
+    });
+  }
+
+  // 2. Send Alert Email to the Tenant Admin (if enabled)
+  if (form.send_alert !== false) {
+    const admin = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name'])
+      .where('tenant_id', '=', form.tenant_id)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (admin && admin.email) {
+      await mailService.sendMail({
+        to: admin.email,
+        subject: `[ALERT] New Lead Submission on ${form.name}`,
+        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
+        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
+      });
+    }
+  }
+}
+
+export async function handleSendEventRegistrationConfirmation(
+  payload: JobPayloadOf<'send-event-registration-confirmation'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status === 'cancelled') {
+    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
+    return;
+  }
+
+  const event = await db
+    .selectFrom('events')
+    .select([
+      'name',
+      'start_time',
+      'end_time',
+      'location_address',
+      'contact_email',
+      'contact_phone',
+      'send_registration_confirmation',
+    ])
+    .where('id', '=', registration.event_id)
+    .executeTakeFirst();
+
+  if (!event || event.send_registration_confirmation === false) {
+    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const coordLine = [
+    event.contact_email ? `Email: ${event.contact_email}` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const coordHtml = [
+    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
+    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
+  ]
+    .filter(Boolean)
+    .join('<br>');
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Registration Confirmed: ${event.name}`,
+    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
+  });
+
+  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendEventReminder(
+  payload: JobPayloadOf<'send-event-reminder'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const registration = await db
+    .selectFrom('event_registrations')
+    .select(['id', 'status', 'event_id', 'person_id'])
+    .where('id', '=', payload.registrationId)
+    .executeTakeFirst();
+
+  if (!registration || registration.status !== 'registered') {
+    logger.info(
+      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
+    );
+    return;
+  }
+
+  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
+
+  if (!event || event.send_reminder === false) {
+    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
+    return;
+  }
+
+  const person = await db
+    .selectFrom('persons')
+    .select(['first_name', 'email'])
+    .where('id', '=', registration.person_id)
+    .executeTakeFirst();
+
+  if (!person || !person.email) {
+    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
+    return;
+  }
+
+  const startFormatted = new Date(event.start_time).toLocaleString();
+  const endFormatted = new Date(event.end_time).toLocaleString();
+  const mapsUrl = event.location_address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
+    : null;
+
+  await mailService.sendMail({
+    to: person.email,
+    subject: `Reminder: ${event.name} is tomorrow`,
+    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
+    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
+  });
+
+  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
+}
+
+export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
+  await mailService.sendMail({
+    to: payload.to,
+    subject: payload.subject ?? '',
+    text: payload.text ?? '',
+    html: payload.html ?? '',
+  });
+}
+
+export async function handleSendSubscriptionConfirmation(
+  payload: JobPayloadOf<'send-subscription-confirmation'>,
+): Promise<void> {
+  await mailService.sendMail({
+    to: payload.email,
+    subject: 'Please confirm your subscription',
+    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
+    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
+  });
+}
+
+export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
+  await checkDueTasks(db);
+
+  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
+}
+
+export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  try {
+    const dueTasks = await db
+      .selectFrom('tasks')
+      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select([
+        'tasks.id as task_id',
+        'tasks.name as task_name',
+        'tasks.due_at',
+        'tasks.details',
+        'authusers.id as user_id',
+        'authusers.email as user_email',
+        'authusers.first_name',
+        'profiles.json as profile_json',
+      ])
+      .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
+      .where('tasks.due_at', '<=', now)
+      .orderBy('tasks.due_at', 'asc')
+      .execute();
+
+    if (dueTasks.length === 0) return;
+
+    const userTasksMap = new Map<string, typeof dueTasks>();
+    for (const row of dueTasks) {
+      const userId = String(row.user_id);
+      let userTasks = userTasksMap.get(userId);
+      if (!userTasks) {
+        userTasks = [];
+        userTasksMap.set(userId, userTasks);
+      }
+      userTasks.push(row);
+    }
+
+    for (const [, tasks] of userTasksMap.entries()) {
+      const firstRow = tasks[0];
+      if (!firstRow) continue;
+      const userEmail = firstRow.user_email;
+      const firstName = firstRow.first_name;
+      const profileJson = firstRow.profile_json;
+
+      let optedIn = true;
+      if (profileJson) {
+        try {
+          const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+          if (json?.notifications?.task_due === false) {
+            optedIn = false;
+          }
+        } catch (e) {
+          logger.error({ err: e }, 'Failed to parse profile json in checkDueTasks');
+        }
+      }
+
+      if (optedIn && userEmail) {
+        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
+        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
+
+        for (const t of tasks) {
+          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
+          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
+          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
+        }
+
+        htmlContent += `</ul>`;
+
+        await mailService.sendMail({
+          to: userEmail,
+          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
+          text: textContent,
+          html: htmlContent,
+        });
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to check and notify due tasks');
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/sync.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { GoogleOAuthService } from '../../../modules/google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../../modules/google-sync/google-sync.service';
+import { MsOAuthService } from '../../../modules/ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../../modules/ms-sync/ms-sync.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { scheduleNextRun, TEN_MINUTES_MS } from '../reschedule';
+
+export async function handleScheduleSyncJobs(db: Kysely<Models>): Promise<void> {
+  await queueUserSyncJobs(db);
+
+  await scheduleNextRun(db, 'schedule_sync_jobs', TEN_MINUTES_MS);
+}
+
+export async function handleGoogleSync(payload: JobPayloadOf<'google_sync'>, db: Kysely<Models>): Promise<void> {
+  const oauthSvc = new GoogleOAuthService(db, {
+    clientId: env.googleClientId ?? '',
+    clientSecret: env.googleClientSecret ?? '',
+    redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+  });
+  const syncSvc = new GoogleSyncService(db, oauthSvc);
+  await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
+}
+
+export async function handleMsSync(payload: JobPayloadOf<'ms_sync'>, db: Kysely<Models>): Promise<void> {
+  const oauthSvc = new MsOAuthService(db, {
+    clientId: env.msClientId ?? '',
+    clientSecret: env.msClientSecret ?? '',
+    tenantId: env.msTenantId ?? 'common',
+    redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+  });
+  const syncSvc = new MsSyncService(db, oauthSvc);
+  await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
+}
+
+async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
+  try {
+    // Find all tenants with a connected Google account
+    const googleTokens = await db.selectFrom('google_oauth_tokens').select('tenant_id').execute();
+
+    for (const token of googleTokens) {
+      const tenantId = String(token.tenant_id);
+
+      // Check if there is already a pending or processing sync job for this tenant
+      const existing = await db
+        .selectFrom('background_jobs')
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql`payload->>'type'`, '=', 'google_sync')
+        .where(sql`payload->>'tenantId'`, '=', tenantId)
+        .executeTakeFirst();
+
+      if (!existing) {
+        logger.info(`Auto-scheduling Google sync job for tenant ${tenantId}`);
+        await db
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'google_sync',
+              tenantId,
+              requestedBy: 'system',
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute();
+      }
+    }
+
+    // Find all tenants with a connected Microsoft account
+    const msTokens = await db.selectFrom('ms_oauth_tokens').select('tenant_id').execute();
+
+    for (const token of msTokens) {
+      const tenantId = String(token.tenant_id);
+
+      // Check if there is already a pending or processing sync job for this tenant
+      const existing = await db
+        .selectFrom('background_jobs')
+        .select('id')
+        .where('status', 'in', ['pending', 'processing'])
+        .where(sql`payload->>'type'`, '=', 'ms_sync')
+        .where(sql`payload->>'tenantId'`, '=', tenantId)
+        .executeTakeFirst();
+
+      if (!existing) {
+        logger.info(`Auto-scheduling MS sync job for tenant ${tenantId}`);
+        await db
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'ms_sync',
+              tenantId,
+              requestedBy: 'system',
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute();
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Failed to queue tenant sync jobs');
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/handlers/workflows.handlers.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { scheduleNextRun, TEN_MINUTES_MS } from '../reschedule';
+
+const ENROLLMENT_BATCH_SIZE = 500;
+
+export async function handleProcessDripWorkflows(db: Kysely<Models>): Promise<void> {
+  const now = new Date();
+  const pendingEnrollments = await db
+    .selectFrom('workflow_enrollments')
+    .selectAll()
+    .where('status', '=', 'active')
+    .where('next_run_at', '<=', now)
+    .limit(ENROLLMENT_BATCH_SIZE)
+    .execute();
+
+  for (const enrollment of pendingEnrollments) {
+    try {
+      await db.transaction().execute(async (trx) => {
+        const lockedEnrollment = await trx
+          .selectFrom('workflow_enrollments')
+          .selectAll()
+          .where('id', '=', enrollment.id)
+          .where('status', '=', 'active')
+          .where('next_run_at', '<=', now)
+          .forUpdate()
+          .skipLocked()
+          .executeTakeFirst();
+
+        if (!lockedEnrollment) return;
+
+        const step = await trx
+          .selectFrom('workflow_steps')
+          .selectAll()
+          .where('workflow_id', '=', lockedEnrollment.workflow_id)
+          .where('step_number', '=', lockedEnrollment.current_step_number)
+          .executeTakeFirst();
+
+        if (!step) {
+          await trx
+            .updateTable('workflow_enrollments')
+            .set({
+              status: 'completed',
+              next_run_at: null,
+              updated_at: new Date(),
+            })
+            .where('id', '=', lockedEnrollment.id)
+            .execute();
+          return;
+        }
+
+        const person = await trx
+          .selectFrom('persons')
+          .select(['id', 'email', 'first_name', 'last_name'])
+          .where('id', '=', lockedEnrollment.person_id)
+          .executeTakeFirst();
+
+        if (person && person.email) {
+          const textContent =
+            step.plain_text_content || `Hello ${person.first_name || 'there'},\n\nThis is an automated message.`;
+          const htmlContent =
+            step.html_content || `<p>Hello ${person.first_name || 'there'},</p><p>This is an automated message.</p>`;
+
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: lockedEnrollment.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-transactional-email',
+                to: person.email,
+                subject: step.subject,
+                text: textContent,
+                html: htmlContent,
+              }),
+              run_at: new Date(),
+              max_attempts: 5,
+            })
+            .execute();
+
+          const workflow = await trx
+            .selectFrom('workflows')
+            .select(['name', 'createdby_id'])
+            .where('id', '=', lockedEnrollment.workflow_id)
+            .executeTakeFirst();
+
+          // Only log activity if the workflow (and its creator) still exist;
+          // skip the log rather than writing a row referencing a phantom user.
+          if (workflow?.createdby_id) {
+            const actorId = String(workflow.createdby_id);
+            await trx
+              .insertInto('user_activity')
+              .values({
+                tenant_id: lockedEnrollment.tenant_id,
+                user_id: actorId,
+                activity: 'send',
+                entity: 'workflows',
+                entity_id: String(lockedEnrollment.workflow_id),
+                quantity: 1,
+                metadata: JSON.stringify({
+                  person_id: String(person.id),
+                  person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
+                  email: person.email,
+                  subject: step.subject,
+                  step_number: step.step_number,
+                }),
+                createdby_id: actorId,
+                updatedby_id: actorId,
+              })
+              .execute();
+          }
+        }
+
+        const nextStep = await trx
+          .selectFrom('workflow_steps')
+          .selectAll()
+          .where('workflow_id', '=', lockedEnrollment.workflow_id)
+          .where('step_number', '>', lockedEnrollment.current_step_number)
+          .orderBy('step_number', 'asc')
+          .limit(1)
+          .executeTakeFirst();
+
+        if (nextStep) {
+          const delayMs =
+            nextStep.delay_unit === 'hours'
+              ? nextStep.delay_days * 60 * 60 * 1000
+              : nextStep.delay_days * 24 * 60 * 60 * 1000;
+          const nextRunAt = new Date(Date.now() + delayMs);
+          await trx
+            .updateTable('workflow_enrollments')
+            .set({
+              current_step_number: nextStep.step_number,
+              next_run_at: nextRunAt,
+              updated_at: new Date(),
+            })
+            .where('id', '=', lockedEnrollment.id)
+            .execute();
+        } else {
+          await trx
+            .updateTable('workflow_enrollments')
+            .set({
+              status: 'completed',
+              next_run_at: null,
+              updated_at: new Date(),
+            })
+            .where('id', '=', lockedEnrollment.id)
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, `Failed to process drip workflow enrollment ${enrollment.id}`);
+    }
+  }
+
+  // A full batch means there is likely more work waiting — requeue immediately.
+  const delayMs = pendingEnrollments.length === ENROLLMENT_BATCH_SIZE ? 0 : TEN_MINUTES_MS;
+  await scheduleNextRun(db, 'process_drip_workflows', delayMs);
+}
+```
+
+## File: apps/backend/src/app/lib/jobs/job-payloads.ts
+
+```typescript
+import { z } from 'zod';
+import type { ZapierEventType } from '../../modules/zapier/zapier.service';
+
+/**
+ * IDs are strings in the database, but historical job payloads may carry them
+ * as numbers (JSON round-trip of bigint columns). Normalize to string.
+ */
+const idSchema = z.union([z.string(), z.number()]).transform(String);
+
+/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
+const ZAPIER_EVENT_TYPES = [
+  'person_created',
+  'person_updated',
+  'person_deleted',
+  'person_tag_added',
+  'person_tag_removed',
+] as const satisfies readonly ZapierEventType[];
+
+const exportSortSchema = z.object({
+  colId: z.string().nullish(),
+  sort: z.string().nullish(),
+});
+
+const exportOptionsSchema = z.object({
+  userId: idSchema.nullish(),
+  entity: z.string().nullish(),
+  activity: z.string().nullish(),
+  searchStr: z.string().nullish(),
+  sortModel: z.array(exportSortSchema).nullish(),
+});
+
+export const jobPayloadSchema = z.discriminatedUnion('type', [
+  // ── Lists / companies / maintenance ─────────────────────────────────────
+  z.object({
+    type: z.literal('refresh_list'),
+    tenant_id: idSchema,
+    list_id: idSchema,
+    user_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('enrich_company_google'),
+    company_id: idSchema,
+    tenant_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('refresh_companies_google'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({ type: z.literal('cleanup_activities') }),
+  z.object({ type: z.literal('recompute_all_duplicates') }),
+  z.object({
+    type: z.literal('recompute_address_fingerprints'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({
+    type: z.literal('geocode_household'),
+    household_id: idSchema,
+    tenant_id: idSchema,
+  }),
+
+  // ── External account sync ───────────────────────────────────────────────
+  z.object({ type: z.literal('schedule_sync_jobs') }),
+  z.object({
+    type: z.literal('google_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+  z.object({
+    type: z.literal('ms_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+
+  // ── Notifications & transactional email ─────────────────────────────────
+  z.object({
+    type: z.literal('send-form-notifications'),
+    eventId: idSchema,
+    tenantId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    mobile: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-shift-reminder'),
+    shiftId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-webform-notifications'),
+    formId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-event-registration-confirmation'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-event-reminder'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-transactional-email'),
+    to: z.string(),
+    subject: z.string().nullish(),
+    text: z.string().nullish(),
+    html: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-subscription-confirmation'),
+    email: z.string(),
+    firstName: z.string().nullish(),
+    confirmUrl: z.string(),
+  }),
+  z.object({ type: z.literal('check_due_tasks') }),
+
+  // ── Newsletters ──────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('send-newsletter'),
+    tenantId: idSchema,
+    newsletterId: idSchema,
+    userId: idSchema,
+    offset: z.number().nullish(),
+    deliveredCount: z.number().nullish(),
+  }),
+  z.object({ type: z.literal('prune_newsletter_events') }),
+
+  // ── Workflows & deletions ────────────────────────────────────────────────
+  z.object({ type: z.literal('process_drip_workflows') }),
+  z.object({ type: z.literal('perform_scheduled_deletions') }),
+
+  // ── Billing & integrations ───────────────────────────────────────────────
+  z.object({
+    type: z.literal('zapier_trigger'),
+    tenant_id: idSchema,
+    event_type: z.enum(ZAPIER_EVENT_TYPES),
+    data: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal('check_usage_limits'),
+    tenant_id: idSchema,
+  }),
+  z.object({ type: z.literal('check_all_usage_limits') }),
+
+  // ── Exports ──────────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('export_csv'),
+    export_id: idSchema,
+    tenant_id: idSchema,
+    table: z.string().nullish(),
+    entity: z.string().nullish(),
+    options: exportOptionsSchema.default({}),
+    columns: z.array(z.string()).nullish(),
+    user_id: idSchema.nullish(),
+    file_name: z.string().nullish(),
+  }),
+]);
+
+export type JobPayload = z.infer<typeof jobPayloadSchema>;
+export type JobType = JobPayload['type'];
+export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
+
+/**
+ * CSV imports are queued without a `type` discriminator (legacy shape) and are
+ * matched by the presence of `import_id` + `storage_key` instead.
+ */
+export const legacyImportJobSchema = z.object({
+  import_id: idSchema,
+  storage_key: z.string(),
+  tenant_id: idSchema,
+  user_id: idSchema,
+  source: z.string().nullish(),
+  skipped: z.union([z.string(), z.number()]).nullish(),
+  campaign_id: idSchema.nullish(),
+  tags: z.array(z.string()).nullish(),
+  file_name: z.string().nullish(),
+});
+
+export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
+```
+
+## File: apps/backend/src/app/lib/jobs/reschedule.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { JobType } from './job-payloads';
+
+const MINUTE_MS = 60 * 1000;
+export const TEN_MINUTES_MS = 10 * MINUTE_MS;
+export const DAY_MS = 24 * 60 * MINUTE_MS;
+
+const DEFAULT_MAX_ATTEMPTS = 3;
+
+/**
+ * Re-queues a parameterless periodic job to run again after `delayMs`.
+ * Used by the self-rescheduling cron-style jobs (cleanup, dedupe, sync scheduling, …).
+ */
+export async function scheduleNextRun(db: Kysely<Models>, type: JobType, delayMs: number): Promise<void> {
+  await db
+    .insertInto('background_jobs')
+    .values({
+      tenant_id: null,
+      queue: 'default',
+      status: 'pending',
+      payload: JSON.stringify({ type }),
+      run_at: new Date(Date.now() + delayMs),
+      max_attempts: DEFAULT_MAX_ATTEMPTS,
+    })
+    .execute();
+}
+```
+
+## File: apps/backend/src/app/lib/test-utils/db-test-isolation.ts
+
+````typescript
+import type { ControlledTransaction, Transaction } from 'kysely';
+import { afterEach, beforeEach } from 'vitest';
+
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../base.repo';
+
+/**
+ * Test isolation context handed back by {@link useTestTransaction}.
+ *
+ * `trx` resolves to the *current* test's transaction (reopened by an internal
+ * `beforeEach` before every test), so it's safe to read `ctx.trx` from inside
+ * `it(...)` bodies and nested `beforeEach` hooks registered after the call to
+ * `useTestTransaction()`.
+ */
+export interface TestTransactionContext {
+  readonly trx: Transaction<Models>;
+}
+
+/**
+ * Backend specs in this repo run against a real, shared local Postgres
+ * instance (see `apps/backend/vite.config.ts`) -- there is no mocking layer.
+ * Historically specs seeded rows with random ids in `beforeEach` and manually
+ * deleted them in `afterEach`/`finally`, which leaks rows into the shared DB
+ * whenever a test fails or the process is killed mid-run.
+ *
+ * This helper opens a real Postgres transaction before each test and always
+ * rolls it back after, so anything written during a test -- via
+ * `repo.add(..., trx)`, raw `trx.insertInto(...)`, etc. -- disappears
+ * unconditionally, even if the test throws.
+ *
+ * Kysely's usual `db.transaction().execute(callback)` API scopes the
+ * transaction to a single callback, which doesn't fit the
+ * `beforeEach`/`it`/`afterEach` lifecycle -- the transaction needs to stay
+ * open *across* those hook boundaries. Kysely 0.28 (the version pinned in
+ * this repo) added `db.startTransaction().execute()`, which returns a
+ * `ControlledTransaction` (a `Transaction` subtype) that can be committed or
+ * rolled back manually instead of being tied to a callback -- exactly what's
+ * needed here.
+ *
+ * Usage:
+ * ```ts
+ * describe('MyRepo', () => {
+ *   const ctx = useTestTransaction();
+ *
+ *   it('adds a row', async () => {
+ *     const row = await repo.add({ row: { ... } }, ctx.trx);
+ *     expect(row).toBeDefined();
+ *   });
+ * });
+ * ```
+ */
+export function useTestTransaction(): TestTransactionContext {
+  let currentTrx: ControlledTransaction<Models> | undefined;
+
+  beforeEach(async () => {
+    currentTrx = await BaseRepository.dbInstance.startTransaction().execute();
+  });
+
+  afterEach(async () => {
+    if (currentTrx && !currentTrx.isCommitted && !currentTrx.isRolledBack) {
+      await currentTrx.rollback().execute();
+    }
+    currentTrx = undefined;
+  });
+
+  return {
+    get trx(): Transaction<Models> {
+      if (!currentTrx) {
+        throw new Error('useTestTransaction(): trx accessed outside of a running test (before beforeEach ran).');
+      }
+      return currentTrx;
+    },
+  };
+}
+````
+
+## File: apps/backend/src/app/lib/csv-stream.ts
+
+```typescript
+import { Transform } from 'stream';
+
+export class CsvTransformStream extends Transform {
+  private isFirst = true;
+  private columns: string[];
+  public rowCount = 0;
+
+  constructor(columns: string[] = []) {
+    super({ objectMode: true });
+    this.columns = columns;
+  }
+
+  override _transform(
+    row: Record<string, unknown>,
+    _encoding: string,
+    callback: (err?: Error | null, chunk?: unknown) => void,
+  ) {
+    this.rowCount++;
+    let chunk = '';
+
+    if (this.isFirst) {
+      if (!this.columns || this.columns.length === 0) {
+        this.columns = Object.keys(row);
+      }
+      chunk += this.columns.join(',') + '\n';
+      this.isFirst = false;
+    }
+
+    const escape = (value: unknown) => {
+      if (value === null || value === undefined) return '';
+      if (value instanceof Date) return value.toISOString();
+      const str = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+      return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
+    };
+
+    chunk += this.columns.map((col) => escape(row[col])).join(',') + '\n';
+    callback(null, chunk);
+  }
+
+  override _flush(callback: (err?: Error | null) => void) {
+    callback();
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/csv.ts
+
+```typescript
+export function rowsToCsv(rows: Array<Record<string, unknown>>, columns: string[]): string {
+  if (!columns.length) return '';
+
+  const escape = (value: unknown) => {
+    if (value === null || value === undefined) return '';
+    if (value instanceof Date) return value.toISOString();
+    const str = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
+    return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
+  };
+
+  const header = columns.join(',');
+  const data = rows.map((row) => columns.map((col) => escape(row[col])).join(','));
+  return [header, ...data].join('\n');
+}
+```
+
+## File: apps/backend/src/app/lib/fastify.types.ts
+
+```typescript
+import type { FastifyRequest } from 'fastify';
+
+export type IdParam = FastifyRequest<{
+  Params: { id: string };
+}>;
+```
+
+## File: apps/backend/src/app/lib/oauth-state.ts
+
+```typescript
+import { createHmac, timingSafeEqual } from 'crypto';
+
+import { env } from '../../env';
+
+// OAuth `state` must be unforgeable: it is the ONLY thing that binds the
+// mailbox being connected to a specific (userId, tenantId). If it is not
+// authenticated, an attacker can craft an authorization URL whose state points
+// at their own account, trick a victim into authorizing, and have the victim's
+// mailbox tokens stored under the attacker's user — a full account takeover.
+// We therefore HMAC-sign the state with the server secret and give it a short
+// TTL so a leaked/observed value cannot be replayed indefinitely.
+
+const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+export interface OAuthStatePayload {
+  userId: string;
+  tenantId: string;
+  returnTo?: string;
+}
+
+interface SignedStateBody extends OAuthStatePayload {
+  iat: number;
+}
+
+function sign(data: string): string {
+  return createHmac('sha256', env.sharedSecret).update(data).digest('base64url');
+}
+
+/** Produce a signed, tamper-proof state string for an OAuth authorization URL. */
+export function encodeOAuthState(payload: OAuthStatePayload): string {
+  const body: SignedStateBody = { ...payload, iat: Date.now() };
+  const data = Buffer.from(JSON.stringify(body)).toString('base64url');
+  return `${data}.${sign(data)}`;
+}
+
+/**
+ * Verify and decode a state string returned to an OAuth callback.
+ * Returns `null` if the signature is missing/invalid, the payload is malformed,
+ * or the state has expired — callers MUST treat null as an invalid request.
+ */
+export function decodeOAuthState(raw: string | undefined | null): OAuthStatePayload | null {
+  if (!raw || typeof raw !== 'string') return null;
+
+  const dot = raw.lastIndexOf('.');
+  if (dot <= 0) return null;
+
+  const data = raw.slice(0, dot);
+  const providedSig = raw.slice(dot + 1);
+  const expectedSig = sign(data);
+
+  const a = Buffer.from(providedSig);
+  const b = Buffer.from(expectedSig);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+  let parsed: SignedStateBody;
+  try {
+    parsed = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+
+  if (!parsed || typeof parsed.iat !== 'number') return null;
+  if (Date.now() - parsed.iat > STATE_TTL_MS) return null;
+  if (!parsed.userId || !parsed.tenantId) return null;
+
+  return { userId: parsed.userId, tenantId: parsed.tenantId, returnTo: parsed.returnTo };
+}
+```
+
+## File: apps/backend/src/app/lib/signed-download.ts
+
+```typescript
+import { createSigner, createVerifier } from 'fast-jwt';
+import { env } from '../../env';
+import { UnauthorizedError } from '../errors/app-errors';
+
+const DOWNLOAD_SCOPE = 'file-download';
+// Long enough that cached user lists keep rendering avatars, short enough
+// that a URL leaked from history or logs goes stale quickly.
+const DOWNLOAD_URL_TTL = '24h';
+
+interface SignedDownloadPayload {
+  scope: typeof DOWNLOAD_SCOPE;
+  file_id: string;
+  tenant_id: string;
+}
+
+const signer = createSigner({ algorithm: 'HS256', key: env.sharedSecret, expiresIn: DOWNLOAD_URL_TTL });
+const verifier = createVerifier({ algorithms: ['HS256'], key: env.sharedSecret, ignoreExpiration: false });
+
+/**
+ * Build a relative download URL carrying a short-lived token scoped to a
+ * single file. Safe to embed in <img> tags: unlike a session JWT it cannot
+ * be replayed against other endpoints and it expires quickly.
+ */
+export function signedFileDownloadUrl(fileId: string, tenantId: string): string {
+  const st = signer({ scope: DOWNLOAD_SCOPE, file_id: String(fileId), tenant_id: String(tenantId) });
+  return `/api/files/download/${fileId}?st=${encodeURIComponent(st)}`;
+}
+
+/**
+ * Verify a signed download token and confirm it was minted for the file
+ * being requested. Throws UnauthorizedError on any mismatch.
+ */
+export function verifyFileDownloadToken(st: string, fileId: string): SignedDownloadPayload {
+  let payload: unknown;
+  try {
+    payload = verifier(st);
+  } catch (err) {
+    throw new UnauthorizedError('Unauthorized: Invalid or expired download token', undefined, { cause: err });
+  }
+  const parsed = payload as Partial<SignedDownloadPayload> | null;
+  if (!parsed || parsed.scope !== DOWNLOAD_SCOPE || !parsed.tenant_id || String(parsed.file_id) !== String(fileId)) {
+    throw new UnauthorizedError('Unauthorized: Invalid download token');
+  }
+  return parsed as SignedDownloadPayload;
+}
+```
+
+## File: apps/backend/src/app/modules/auth/repositories/sessions.repo.ts
+
+```typescript
+import type { Transaction } from 'kysely';
+
+import type { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../../../lib/base.repo';
+import { hashToken } from '../../../lib/token-hash';
+
+export class SessionsRepo extends BaseRepository<'sessions'> {
+  constructor() {
+    super('sessions');
+  }
+
+  public async deleteBySessionId(session_id: string, trx?: Transaction<Models>) {
+    const result = await this.getDelete(trx).where('session_id', '=', hashToken(session_id)).executeTakeFirst();
+    return Number(result?.numDeletedRows ?? 0);
+  }
+
+  public async deleteByUserId(user_id: string, tenant_id: string, trx?: Transaction<Models>) {
+    return this.getDelete(trx).where('user_id', '=', user_id).where('tenant_id', '=', tenant_id).executeTakeFirst();
+  }
+
+  public getOneByAuthUserId(user_id: GetOperandType<'sessions', 'select', 'user_id'>, trx?: Transaction<Models>) {
+    if (!user_id) return Promise.resolve(undefined);
+    return this.getSelect(trx).where('user_id', '=', user_id).executeTakeFirst();
+  }
+
+  public updateRefreshToken(
+    user_id: GetOperandType<'sessions', 'update', 'user_id'>,
+    refresh_token: string,
+    trx?: Transaction<Models>,
+  ) {
+    if (!user_id) return Promise.resolve({ numUpdatedRows: BigInt(0) });
+
+    return this.getUpdate(trx).set({ refresh_token }).where('user_id', '=', user_id).executeTakeFirst();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/auth/trpc.router.ts
+
+```typescript
+import {
+  InviteAuthUserObj,
+  Verify2FAObj,
+  getAllOptions,
+  signInInputObj,
+  signUpInputObj,
+  idSchema,
+  UpdateAuthUserObj,
+} from '../../../../../../libs/common/src';
+
+import z from 'zod';
+
+import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
+import { AuthController } from './controller';
+import { PasskeyController } from './passkey.controller';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/types';
+
+const MIN15 = 15 * 60 * 1000;
+const HOUR1 = 60 * 60 * 1000;
+
+function currentUser() {
+  return authProcedure.query(({ ctx }) => controller.currentUser(ctx.auth));
+}
+
+function count() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
+}
+
+function getAllWithCounts() {
+  return adminOrOwnerProcedure.input(getAllOptions).query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
+}
+
+function getById() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
+    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
+}
+
+function renewAuthToken() {
+  return publicProcedure
+    .input(z.object({ auth_token: z.string(), refresh_token: z.string() }))
+    .mutation(({ input }) => controller.renewAuthToken(input));
+}
+
+function resetPassword() {
+  return publicProcedure.input(z.object({ password: z.string(), code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resetPassword`, 5, MIN15);
+    return controller.resetPassword(input.password, input.code);
+  });
+}
+
+function sendPasswordResetEmail() {
+  return publicProcedure
+    .input(z.object({ email: z.string().trim().email('Invalid email address') }))
+    .mutation(({ input, ctx }) => {
+      const ip = ctx.req?.ip ?? 'unknown';
+      checkRateLimit(`${ip}:sendPasswordResetEmail`, 3, HOUR1);
+      return controller.sendPasswordResetEmail(input.email);
+    });
+}
+
+function signIn() {
+  return publicProcedure.input(signInInputObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:signIn`, 10, MIN15);
+    const ua = ctx.req?.headers?.['user-agent'] || '';
+    return controller.signIn(input, ip, ua);
+  });
+}
+
+function verify2FA() {
+  return publicProcedure.input(Verify2FAObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
+    const ua = ctx.req?.headers?.['user-agent'] || '';
+    return controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
+  });
+}
+
+function scheduleAccountDeletion() {
+  return authProcedure.mutation(({ ctx }) => controller.scheduleAccountDeletion(ctx.auth));
+}
+
+function cancelAccountDeletion() {
+  return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
+}
+
+function getTenantAccountStatus() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
+}
+
+function cancelTenantDeletionByToken() {
+  return publicProcedure
+    .input(z.object({ tenantId: z.string(), token: z.string() }))
+    .mutation(({ input }) => controller.cancelTenantDeletionByToken(input.tenantId, input.token));
+}
+
+function scheduleTenantDeletion() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.scheduleTenantDeletion(ctx.auth));
+}
+
+function cancelTenantDeletion() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelTenantDeletion(ctx.auth));
+}
+
+function pauseTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.pauseTenant(ctx.auth));
+}
+
+function resumeTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.resumeTenant(ctx.auth));
+}
+
+function cancelEmailChange() {
+  return authProcedure.mutation(({ ctx }) => controller.cancelEmailChange(ctx.auth));
+}
+
+function uploadAvatar() {
+  return authProcedure
+    .input(
+      z.object({
+        dataBase64: z.string().min(1),
+        mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
+        filename: z.string().min(1).max(255),
+      }),
+    )
+    .mutation(({ input, ctx }) => controller.uploadAvatar(ctx.auth, input));
+}
+
+function deleteAvatar() {
+  return authProcedure.mutation(({ ctx }) => controller.deleteAvatar(ctx.auth));
+}
+
+function adminTriggerPasswordReset() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
+}
+
+function invite() {
+  return adminOrOwnerProcedure
+    .input(InviteAuthUserObj)
+    .mutation(({ input, ctx }) => controller.inviteUser(ctx.auth, input));
+}
+
+function signOut() {
+  return authProcedure.mutation(({ ctx }) => controller.signOut(ctx.auth));
+}
+
+function signUp() {
+  return publicProcedure.input(signUpInputObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:signUp`, 5, HOUR1);
+    return controller.signUp(input);
+  });
+}
+
+function deleteOne() {
+  return adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => controller.deleteUser(ctx.auth, input));
+}
+
+function verifyEmail() {
+  return publicProcedure.input(z.object({ code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verifyEmail`, 10, MIN15);
+    return controller.verifyEmail(input.code);
+  });
+}
+
+function resendVerificationEmail() {
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resendVerification`, 5, MIN15);
+    checkRateLimit(`resendVerification:${input.email}`, 5, MIN15);
+    return controller.resendVerificationEmail(input.email);
+  });
+}
+
+function dismissPasskeyPrompt() {
+  return authProcedure.mutation(({ ctx }) => controller.dismissPasskeyPrompt(ctx.auth));
+}
+
+const controller = new AuthController();
+const passkeyController = new PasskeyController();
+
+function passkeyRegistrationOptions() {
+  return authProcedure.query(({ ctx }) => passkeyController.getRegistrationOptions(ctx.auth));
+}
+
+function verifyPasskeyRegistration() {
+  return authProcedure
+    .input(
+      z.object({
+        response: z.any().transform((v) => v as RegistrationResponseJSON),
+        friendlyName: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => passkeyController.verifyRegistration(ctx.auth, input.response, input.friendlyName));
+}
+
+function passkeyAuthenticationOptions() {
+  return publicProcedure.query(() => passkeyController.getAuthenticationOptions());
+}
+
+function checkEmail() {
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).query(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:checkEmail`, 20, MIN15);
+    return passkeyController.checkEmailPasskeys(input.email);
+  });
+}
+
+function verifyPasskeyAuthentication() {
+  return publicProcedure
+    .input(
+      z.object({
+        response: z.any().transform((v) => v as AuthenticationResponseJSON),
+        nonce: z.string(),
+        rememberMe: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => {
+      const ip = ctx.req?.ip ?? 'unknown';
+      checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
+      const ua = ctx.req?.headers?.['user-agent'] ?? '';
+      return passkeyController.verifyAuthentication(input.response, input.nonce, ip, ua, input.rememberMe);
+    });
+}
+
+function listPasskeys() {
+  return authProcedure.query(({ ctx }) => passkeyController.listPasskeys(ctx.auth));
+}
+
+function deletePasskey() {
+  return authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => passkeyController.deletePasskey(ctx.auth, input.id));
+}
+
+function updatePasskeyName() {
+  return authProcedure
+    .input(z.object({ id: z.string(), friendlyName: z.string().min(1).max(100) }))
+    .mutation(({ input, ctx }) => passkeyController.updatePasskeyName(ctx.auth, input.id, input.friendlyName));
+}
+
+export const AuthRouter = router({
+  signUp: signUp(),
+  signIn: signIn(),
+  signOut: signOut(),
+  currentUser: currentUser(),
+  getAllWithCounts: getAllWithCounts(),
+  getById: getById(),
+  invite: invite(),
+  update: update(),
+  delete: deleteOne(),
+  count: count(),
+  resetPassword: resetPassword(),
+  renewAuthToken: renewAuthToken(),
+  sendPasswordResetEmail: sendPasswordResetEmail(),
+  verifyEmail: verifyEmail(),
+  resendVerificationEmail: resendVerificationEmail(),
+  verify2FA: verify2FA(),
+  scheduleAccountDeletion: scheduleAccountDeletion(),
+  cancelAccountDeletion: cancelAccountDeletion(),
+  cancelEmailChange: cancelEmailChange(),
+  getTenantAccountStatus: getTenantAccountStatus(),
+  scheduleTenantDeletion: scheduleTenantDeletion(),
+  cancelTenantDeletion: cancelTenantDeletion(),
+  cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
+  pauseTenant: pauseTenant(),
+  resumeTenant: resumeTenant(),
+  adminTriggerPasswordReset: adminTriggerPasswordReset(),
+  uploadAvatar: uploadAvatar(),
+  deleteAvatar: deleteAvatar(),
+  passkeyRegistrationOptions: passkeyRegistrationOptions(),
+  verifyPasskeyRegistration: verifyPasskeyRegistration(),
+  passkeyAuthenticationOptions: passkeyAuthenticationOptions(),
+  checkEmail: checkEmail(),
+  verifyPasskeyAuthentication: verifyPasskeyAuthentication(),
+  listPasskeys: listPasskeys(),
+  deletePasskey: deletePasskey(),
+  updatePasskeyName: updatePasskeyName(),
+  dismissPasskeyPrompt: dismissPasskeyPrompt(),
+});
+```
+
+## File: apps/backend/src/app/modules/billing/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+import { adminOrOwnerProcedure, router } from '../../../trpc';
+import { BillingController } from './controller';
+
+const controller = new BillingController();
+
+export const BillingRouter = router({
+  getDetails: adminOrOwnerProcedure.query(({ ctx }) => controller.getBillingDetails(ctx.auth)),
+
+  createCheckout: adminOrOwnerProcedure
+    .input(z.object({ plan: z.enum(['grassroots', 'representative']) }))
+    .mutation(({ ctx, input }) => controller.createCheckoutSession(ctx.auth, input.plan)),
+
+  createPortal: adminOrOwnerProcedure.mutation(({ ctx }) => controller.createPortalSession(ctx.auth)),
+
+  // Local mock testing mutation endpoints
+  activateMockPlan: adminOrOwnerProcedure
+    .input(z.object({ plan: z.enum(['grassroots', 'representative']) }))
+    .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan)),
+
+  cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
+});
+```
+
+## File: apps/backend/src/app/modules/donations/trpc.router.ts
+
+```typescript
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { DonationsController } from './controller';
+
+const controller = new DonationsController();
+
+export const DonationsRouter = router({
+  // ── One-time donations ──────────────────────────────────────────────────────
+
+  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
+
+  getPersonDonationHistory: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
+
+  getDonationStats: authProcedure
+    .input(z.string())
+    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
+
+  checkEligibility: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+        isRecurring: z.boolean().optional(),
+        remainingMonths: z.number().optional(),
+      }),
+    )
+    .query(({ ctx, input }) =>
+      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
+        isRecurring: input.isRecurring,
+        remainingMonths: input.remainingMonths,
+      }),
+    ),
+
+  createCheckout: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
+    ),
+
+  confirmDonation: authProcedure
+    .input(z.object({ sessionId: z.string() }))
+    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
+
+  confirmMockDonation: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        amountCents: z.number(),
+        sessionId: z.string(),
+        province: z.string(),
+        country: z.string(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockDonation(
+        ctx.auth.tenant_id,
+        ctx.auth.user_id,
+        input.personId,
+        input.amountCents,
+        input.sessionId,
+        input.province,
+        input.country,
+      ),
+    ),
+
+  // ── Recurring pledges ───────────────────────────────────────────────────────
+
+  createRecurringCheckout: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        monthlyAmountCents: z.number(),
+        address: z.object({
+          country: z.string().optional(),
+          state: z.string().optional(),
+        }),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
+    ),
+
+  confirmMockPledge: authProcedure
+    .input(
+      z.object({
+        personId: z.string(),
+        monthlyAmountCents: z.number(),
+        mockSubId: z.string(),
+        province: z.string(),
+        country: z.string(),
+      }),
+    )
+    .mutation(({ ctx, input }) =>
+      controller.confirmMockPledge(
+        ctx.auth.tenant_id,
+        ctx.auth.user_id,
+        input.personId,
+        input.monthlyAmountCents,
+        input.mockSubId,
+        input.province,
+        input.country,
+      ),
+    ),
+
+  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
+
+  getPersonPledges: authProcedure
+    .input(z.string())
+    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
+
+  cancelPledge: authProcedure
+    .input(z.object({ pledgeId: z.string() }))
+    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
+
+  // ── Donation periods ────────────────────────────────────────────────────────
+
+  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
+
+  createDonationPeriod: authProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        start_date: z.string(),
+        end_date: z.string().nullable().optional(),
+        limit_amount: z.number().int().positive(),
+      }),
+    )
+    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
+
+  updateDonationPeriod: authProcedure
+    .input(
+      z.object({
+        id: z.string(),
+        name: z.string().min(1).optional(),
+        start_date: z.string().optional(),
+        end_date: z.string().nullable().optional(),
+        limit_amount: z.number().int().positive().optional(),
+        is_active: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      const { id, ...payload } = input;
+      return controller.updateDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, id, payload);
+    }),
+
+  deleteDonationPeriod: authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
+});
+```
+
+## File: apps/backend/src/app/modules/emails/repositories/email-attachments.repo.ts
+
+```typescript
+import { sql } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { HasRow } from '../../../../../../../libs/common/src/lib/emails';
+
+export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
+  constructor() {
+    super('email_attachments');
+  }
+
+  public getAllAttachments(tenant_id: string, email_id: string, opts?: { includeInline?: boolean }) {
+    let q = this.selectBy('email_id', { tenant_id, value: email_id }).orderBy('pos', 'asc');
+
+    if (!opts?.includeInline) q = q.where('is_inline', '=', false);
+
+    return q.execute();
+  }
+
+  public getByEmailId(tenant_id: string, email_id: string) {
+    return this.getManyBy('email_id', { tenant_id, value: email_id });
+  }
+
+  public getCountByEmails(tenant_id: string) {
+    return this.getSelect()
+      .select(['email_id'])
+      .select(({ fn }) => fn.count('id').as('attachment_count'))
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .execute();
+  }
+
+  public getSelectForCountByEmails(tenant_id: string) {
+    return this.getSelect()
+      .select(['email_id'])
+      .select(({ fn }) => fn.count('id').as('att_count'))
+      .where('tenant_id', '=', tenant_id)
+      .groupBy('email_id')
+      .as('ea');
+  }
+
+  public async hasAttachment(tenant_id: string, email_id: string): Promise<boolean> {
+    const row = await this.getSelect()
+      .select(({ val }) => val(1).as('one'))
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', '=', email_id)
+      .limit(1)
+      .executeTakeFirst();
+    return !!row;
+  }
+
+  public hasAttachmentByEmailIds(tenant_id: string, ids: string[]): Promise<HasRow[]> {
+    if (!ids?.length) return Promise.resolve([]);
+
+    return this.getSelect()
+      .select(['email_id'])
+      .select(() => sql<boolean>`count(id) > 0`.as('has'))
+      .where('tenant_id', '=', tenant_id)
+      .where('email_id', 'in', ids)
+      .groupBy('email_id')
+      .execute() as Promise<HasRow[]>;
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/exports/repositories/exports.repo.ts
+
+```typescript
+import { ImportsRepo } from '../../imports/repositories/imports.repo';
+import { sql } from 'kysely';
+
+export class ExportsRepo {
+  public readonly db = new ImportsRepo().db;
+
+  public async create(row: {
+    tenant_id: string;
+    user_id: string;
+    entity: string;
+    file_name: string;
+    columns: string[] | null;
+  }) {
+    return this.db
+      .insertInto('data_exports')
+      .values({
+        tenant_id: row.tenant_id,
+        user_id: row.user_id,
+        entity: row.entity,
+        file_name: row.file_name,
+        status: 'pending',
+        columns: row.columns ? JSON.stringify(row.columns) : null,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+  }
+
+  public async updateStatus(
+    id: string,
+    tenant_id: string,
+    status: 'processing' | 'completed' | 'failed',
+    opts?: { rowCount?: number; storageKey?: string; error?: string },
+  ) {
+    return this.db
+      .updateTable('data_exports')
+      .set({
+        status,
+        row_count: opts?.rowCount ?? null,
+        storage_key: opts?.storageKey ?? null,
+        error: opts?.error ?? null,
+        updated_at: new Date(),
+      })
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+  }
+
+  public async list(tenant_id: string) {
+    return this.db
+      .selectFrom('data_exports')
+      .leftJoin('authusers as creator', 'creator.id', 'data_exports.user_id')
+      .select([
+        'data_exports.id',
+        'data_exports.entity',
+        'data_exports.file_name',
+        'data_exports.status',
+        'data_exports.row_count',
+        'data_exports.error',
+        'data_exports.created_at',
+        'data_exports.updated_at',
+        'data_exports.user_id',
+        'creator.email as creator_email',
+        'creator.first_name as creator_first_name',
+        'creator.last_name as creator_last_name',
+      ])
+      .where('data_exports.tenant_id', '=', tenant_id)
+      .orderBy('data_exports.created_at', 'desc')
+      .limit(50)
+      .execute();
+  }
+
+  public async getById(id: string, tenant_id: string) {
+    return this.db
+      .selectFrom('data_exports')
+      .selectAll()
+      .where('id', '=', id)
+      .where('tenant_id', '=', tenant_id)
+      .executeTakeFirst();
+  }
+
+  public async delete(id: string, tenant_id: string) {
+    return this.db.transaction().execute(async (trx) => {
+      // 1. Delete matching pending/processing background job
+      await trx
+        .deleteFrom('background_jobs')
+        .where('tenant_id', '=', tenant_id)
+        .where(sql`payload->>'type'`, '=', 'export_csv')
+        .where(sql`payload->>'export_id'`, '=', id)
+        .execute();
+
+      // 2. Delete export record
+      return await trx
+        .deleteFrom('data_exports')
+        .where('id', '=', id)
+        .where('tenant_id', '=', tenant_id)
+        .returningAll()
+        .executeTakeFirst();
+    });
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/exports/controller.ts
+
+```typescript
+import { TRPCError } from '@trpc/server';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { QueueExportInputType } from '../../../../../../libs/common/src';
+import { ExportsRepo } from './repositories/exports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { logger } from '../../logger';
+
+const ENTITY_LABEL_MAP: Record<string, string> = {
+  persons: 'persons',
+  households: 'households',
+  companies: 'companies',
+  tags: 'tags',
+  issues: 'tags',
+  tasks: 'tasks',
+  lists: 'lists',
+  newsletters: 'marketing_emails',
+  teams: 'teams',
+  users: 'authusers',
+  volunteer: 'volunteer_events',
+  forms: 'web_forms',
+  workflows: 'workflows',
+};
+
+export class ExportsController {
+  private readonly repo = new ExportsRepo();
+
+  public async queueExport(input: QueueExportInputType, auth: IAuthKeyPayload) {
+    const entityKey = input.entity?.trim();
+    if (!entityKey) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'entity is required' });
+    }
+
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const fileName = input.fileName?.trim() || `${entityKey}-export-${ts}.csv`;
+    const columns = Array.isArray(input.columns) && input.columns.length ? input.columns : null;
+
+    const exportRecord = await this.repo.create({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      entity: entityKey,
+      file_name: fileName,
+      columns,
+    });
+
+    const exportId = String((exportRecord as any).id);
+
+    await this.repo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'export_csv',
+          export_id: exportId,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          entity: entityKey,
+          table: ENTITY_LABEL_MAP[entityKey] ?? entityKey,
+          options: input.options ?? {},
+          columns,
+          file_name: fileName,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+
+    return {
+      id: exportId,
+      entity: entityKey,
+      file_name: fileName,
+      status: 'pending' as const,
+      row_count: null,
+      error: null,
+      created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
+      updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
+      createdBy: {
+        id: auth.user_id,
+        name: auth.name || null,
+        email: null,
+      },
+    };
+  }
+
+  public async list(auth: IAuthKeyPayload) {
+    const rows = await this.repo.list(auth.tenant_id);
+    return rows.map((r: any) => {
+      const name = [r.creator_first_name, r.creator_last_name].filter(Boolean).join(' ').trim();
+      return {
+        id: String(r.id),
+        entity: String(r.entity),
+        file_name: String(r.file_name),
+        status: r.status as 'pending' | 'processing' | 'completed' | 'failed',
+        row_count: r.row_count != null ? Number(r.row_count) : null,
+        error: r.error ?? null,
+        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+        updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
+        createdBy: r.user_id
+          ? {
+              id: r.user_id,
+              name: name || null,
+              email: r.creator_email || null,
+            }
+          : null,
+      };
+    });
+  }
+
+  public async getById(id: string, auth: IAuthKeyPayload) {
+    const row = await this.repo.getById(id, auth.tenant_id);
+    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
+    return row;
+  }
+
+  public async deleteExport(id: string, auth: IAuthKeyPayload) {
+    const row = await this.repo.getById(id, auth.tenant_id);
+    if (!row) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
+    }
+
+    await this.repo.delete(id, auth.tenant_id);
+
+    if ((row as any).storage_key) {
+      try {
+        const storageService = new StorageService();
+        await storageService.delete((row as any).storage_key);
+      } catch (err) {
+        logger.error({ err }, `Failed to delete storage file ${(row as any).storage_key}`);
+      }
+    }
+
+    return { success: true };
+  }
+
+  public getRepo() {
+    return this.repo;
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/files/repositories/files.repo.ts
+
+```typescript
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Transaction } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export class FilesRepo extends BaseRepository<'files'> {
+  constructor() {
+    super('files');
+  }
+
+  public override async getAllWithCounts(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<any>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const db = trx || this.db;
+    let query = db
+      .selectFrom('files')
+      .leftJoin('authusers as creator', 'creator.id', 'files.uploaded_by')
+      .where('files.tenant_id', '=', input.tenant_id);
+
+    if (input.options) {
+      query = this.applyOptions(query as any, input.options) as any;
+    } else {
+      query = query.orderBy('files.created_at', 'desc') as any;
+    }
+
+    const rows = await query
+      .select([
+        'files.id',
+        'files.tenant_id',
+        'files.filename',
+        'files.mime_type',
+        'files.size_bytes',
+        'files.storage_key',
+        'files.sha256_hex',
+        'files.uploaded_by',
+        'files.created_at',
+        'creator.email as creator_email',
+        'creator.first_name as creator_first_name',
+        'creator.last_name as creator_last_name',
+      ])
+      .execute();
+
+    const mappedRows = rows.map((row: any) => {
+      const name = [row.creator_first_name, row.creator_last_name].filter(Boolean).join(' ').trim();
+      return {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        filename: row.filename,
+        mime_type: row.mime_type,
+        size_bytes: row.size_bytes,
+        storage_key: row.storage_key,
+        sha256_hex: row.sha256_hex,
+        uploaded_by: row.uploaded_by,
+        created_at: row.created_at,
+        updated_at: row.created_at,
+        createdBy: row.uploaded_by
+          ? {
+              id: row.uploaded_by,
+              name: name || null,
+              email: row.creator_email || null,
+            }
+          : null,
+      };
+    });
+
+    return {
+      rows: mappedRows,
+      count: mappedRows.length,
+    };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/files/controller.ts
+
+```typescript
+import { BaseController } from '../../lib/base.controller';
+import { FilesRepo } from './repositories/files.repo';
+import { StorageService } from '../../lib/storage.service';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import { logger } from '../../logger';
+
+export class FilesController extends BaseController<'files', FilesRepo> {
+  private storageService = new StorageService();
+
+  constructor() {
+    super(new FilesRepo());
+  }
+
+  public async getAllFiles(auth: IAuthKeyPayload, options?: any) {
+    return this.getAllWithCounts(auth.tenant_id, options);
+  }
+
+  public async registerFile(
+    input: {
+      filename: string;
+      mimeType?: string | null;
+      sizeBytes?: number | null;
+      storageKey: string;
+      sha256Hex?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    if (input.sha256Hex) {
+      const existing = await this.getRepo()
+        .db.selectFrom('files')
+        .selectAll()
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('sha256_hex', '=', input.sha256Hex)
+        .executeTakeFirst();
+      if (existing) {
+        // Clean up the newly uploaded duplicate file from storage since we won't be using it
+        try {
+          await this.storageService.delete(input.storageKey);
+        } catch (err) {
+          logger.error({ err }, `Failed to clean up duplicate file ${input.storageKey}`);
+        }
+        return existing;
+      }
+    }
+
+    return this.add({
+      tenant_id: auth.tenant_id,
+      filename: input.filename,
+      mime_type: input.mimeType || null,
+      size_bytes: input.sizeBytes || null,
+      storage_key: input.storageKey,
+      sha256_hex: input.sha256Hex || null,
+      uploaded_by: auth.user_id,
+    });
+  }
+
+  public async generateUploadSasUrl(key: string, expiryMinutes = 15): Promise<string> {
+    return this.storageService.generateWriteSasUrl(key, expiryMinutes);
+  }
+
+  public override async delete(tenant_id: string, id: string, userId?: string): Promise<boolean> {
+    const file = (await this.getOneById({ tenant_id, id })) as any;
+    if (!file) return false;
+
+    // Delete from DB
+    const deleted = await super.delete(tenant_id as any, id, userId);
+
+    // Delete from Azure Storage
+    if (deleted && file.storage_key) {
+      try {
+        await this.storageService.delete(file.storage_key);
+      } catch (err) {
+        logger.error({ err }, `Failed to delete blob for storage key ${file.storage_key}`);
+      }
+    }
+    return deleted;
+  }
+
+  public override async deleteMany(tenant_id: string, ids: string[], userId?: string): Promise<boolean> {
+    let anyDeleted = false;
+    for (const id of ids) {
+      const ok = await this.delete(tenant_id, id, userId);
+      if (ok) anyDeleted = true;
+    }
+    return anyDeleted;
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/files/trpc.router.ts
+
+```typescript
+import { idSchema, getAllOptions } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { FilesController } from './controller';
+import crypto from 'crypto';
+
+const files = new FilesController();
+
+export const FilesRouter = router({
+  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => files.getAllFiles(ctx.auth, input)),
+
+  getUploadUrl: authProcedure
+    .input(
+      z.object({
+        filename: z.string(),
+        mimeType: z.string().nullable().optional(),
+      }),
+    )
+    .query(async ({ input, ctx }) => {
+      const fileUUID = crypto.randomUUID();
+      const storageKey = `uploads/${ctx.auth.tenant_id}/${fileUUID}_${input.filename}`;
+      const uploadUrl = await files.generateUploadSasUrl(storageKey);
+      return { uploadUrl, storageKey };
+    }),
+
+  registerFile: authProcedure
+    .input(
+      z.object({
+        filename: z.string(),
+        mimeType: z.string().nullable().optional(),
+        sizeBytes: z.number().nullable().optional(),
+        storageKey: z.string(),
+        sha256Hex: z.string().nullable().optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => files.registerFile(input, ctx.auth)),
+
+  delete: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => files.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  deleteMany: authProcedure
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
+    .mutation(({ input, ctx }) => files.deleteMany(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+});
+```
+
+## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+
+export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
+
+export class GoogleOAuthService {
+  private readonly db: Kysely<Models>;
+  private readonly clientId: string;
+  private readonly clientSecret: string;
+  private readonly redirectUri: string;
+
+  constructor(db: Kysely<Models>, config: { clientId: string; clientSecret: string; redirectUri: string }) {
+    this.db = db;
+    this.clientId = config.clientId;
+    this.clientSecret = config.clientSecret;
+    this.redirectUri = config.redirectUri;
+  }
+
+  public getAuthUrl(state: string): string {
+    const params = new URLSearchParams({
+      client_id: this.clientId,
+      redirect_uri: this.redirectUri,
+      response_type: 'code',
+      scope: GOOGLE_SCOPES.join(' '),
+      access_type: 'offline',
+      prompt: 'consent', // force consent to ensure refresh token is returned
+      state,
+    });
+    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
+  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        redirect_uri: this.redirectUri,
+        grant_type: 'authorization_code',
+      }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Failed to acquire token from Google: ${errorText}`);
+    }
+
+    const data: any = await res.json();
+    const accessToken = data.access_token;
+    const refreshToken = data.refresh_token; // Google only returns this on initial consent
+    const expiresIn = data.expires_in ?? 3600;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    // Fetch user profile to get Google email
+    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    let googleEmail: string | null = null;
+    if (profileRes.ok) {
+      const profile: any = await profileRes.json();
+      googleEmail = profile.email ?? null;
+    }
+
+    const insertObj: any = {
+      tenant_id: tenantId,
+      user_id: connectedBy,
+      access_token: accessToken,
+      expires_at: expiresAt,
+      google_email: googleEmail,
+      delta_link: NEEDS_FULL_SYNC,
+      synced_at: null,
+    };
+
+    if (!refreshToken) {
+      // If we don't have refresh token in this callback, try keeping the existing one
+      const existing = await this.db
+        .selectFrom('google_oauth_tokens')
+        .select('refresh_token')
+        .where('tenant_id', '=', tenantId)
+        .executeTakeFirst();
+      insertObj.refresh_token = existing?.refresh_token ?? '';
+    } else {
+      insertObj.refresh_token = refreshToken;
+    }
+
+    if (!insertObj.refresh_token) {
+      throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
+    }
+
+    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('google_oauth_tokens')
+        .values(insertObj)
+        .onConflict((oc) =>
+          oc.column('tenant_id').doUpdateSet({
+            user_id: connectedBy,
+            access_token: insertObj.access_token,
+            refresh_token: insertObj.refresh_token,
+            expires_at: insertObj.expires_at,
+            google_email: insertObj.google_email,
+            delta_link: NEEDS_FULL_SYNC,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+            updated_at: new Date(),
+          }),
+        )
+        .execute();
+
+      await trx
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'google_sync', tenantId, requestedBy: connectedBy }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    });
+  }
+
+  public async getValidToken(tenantId: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    if (!row) {
+      throw new Error('No Google account connected for this tenant');
+    }
+
+    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
+    if (!isExpired) {
+      return row.access_token;
+    }
+
+    // Refresh token
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        refresh_token: row.refresh_token,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Token refresh failed: ${errorText} — tenant must reconnect their Google account`);
+    }
+
+    const data: any = await res.json();
+    const newAccessToken = data.access_token;
+    const newExpiresIn = data.expires_in ?? 3600;
+    const newExpiry = new Date(Date.now() + newExpiresIn * 1000);
+    const newRefreshToken = data.refresh_token ?? row.refresh_token;
+
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+        expires_at: newExpiry,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+
+    return newAccessToken;
+  }
+
+  public async getConnectionStatus(tenantId: string): Promise<{
+    connected: boolean;
+    googleEmail: string | null;
+    syncedAt: Date | null;
+    lastSyncError: string | null;
+    lastSyncErrorAt: Date | null;
+  }> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    return {
+      connected: !!row,
+      googleEmail: row?.google_email ?? null,
+      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      lastSyncError: row?.last_sync_error ?? null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
+    };
+  }
+
+  public async disconnect(tenantId: string): Promise<void> {
+    await this.db.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tenantId).execute();
+  }
+
+  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({
+        delta_link: deltaLink,
+        synced_at: new Date(),
+        last_sync_error: null,
+        last_sync_error_at: null,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async getDeltaLink(tenantId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('google_oauth_tokens')
+      .select('delta_link')
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    return row?.delta_link ?? null;
+  }
+
+  public async resetDeltaLink(tenantId: string): Promise<void> {
+    await this.db
+      .updateTable('google_oauth_tokens')
+      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
+
+```typescript
+import type { AuthorizationCodeRequest } from '@azure/msal-node';
+import { ConfidentialClientApplication } from '@azure/msal-node';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+
+export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
+
+const MS_SCOPES = [
+  'https://graph.microsoft.com/Mail.Read',
+  'https://graph.microsoft.com/Mail.ReadWrite',
+  'https://graph.microsoft.com/Mail.Send',
+  'offline_access',
+];
+
+export class MsOAuthService {
+  private readonly msalApp: ConfidentialClientApplication;
+  private readonly db: Kysely<Models>;
+  private readonly redirectUri: string;
+
+  constructor(
+    db: Kysely<Models>,
+    config: { clientId: string; clientSecret: string; tenantId: string; redirectUri: string },
+  ) {
+    this.db = db;
+    this.redirectUri = config.redirectUri;
+    this.msalApp = new ConfidentialClientApplication({
+      auth: {
+        clientId: config.clientId,
+        clientSecret: config.clientSecret,
+        authority: `https://login.microsoftonline.com/${config.tenantId}`,
+      },
+    });
+  }
+
+  public async getAuthUrl(state: string): Promise<string> {
+    return this.msalApp.getAuthCodeUrl({
+      scopes: MS_SCOPES,
+      redirectUri: this.redirectUri,
+      state,
+      prompt: 'select_account',
+    });
+  }
+
+  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
+    const request: AuthorizationCodeRequest = {
+      code,
+      scopes: MS_SCOPES,
+      redirectUri: this.redirectUri,
+    };
+
+    const response = await this.msalApp.acquireTokenByCode(request);
+    if (!response?.accessToken || !response.account) {
+      throw new Error('Failed to acquire token from Microsoft');
+    }
+
+    const expiresAt = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
+
+    // Retrieve the refresh token from the MSAL cache
+    const cache = this.msalApp.getTokenCache().serialize();
+    const parsedCache = JSON.parse(cache);
+    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
+    const refreshToken = refreshTokenEntry[0]?.secret ?? '';
+
+    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .insertInto('ms_oauth_tokens')
+        .values({
+          tenant_id: tenantId,
+          user_id: connectedBy,
+          access_token: response.accessToken,
+          refresh_token: refreshToken,
+          expires_at: expiresAt,
+          ms_email: response.account?.username ?? null,
+          delta_link: NEEDS_FULL_SYNC,
+          synced_at: null,
+        })
+        .onConflict((oc) =>
+          oc.column('tenant_id').doUpdateSet({
+            user_id: connectedBy,
+            access_token: response.accessToken,
+            refresh_token: refreshToken,
+            expires_at: expiresAt,
+            ms_email: response.account?.username ?? null,
+            delta_link: NEEDS_FULL_SYNC,
+            synced_at: null,
+            last_sync_error: null,
+            last_sync_error_at: null,
+            updated_at: new Date(),
+          }),
+        )
+        .execute();
+
+      await trx
+        .insertInto('background_jobs')
+        .values({
+          tenant_id: tenantId,
+          queue: 'default',
+          status: 'pending',
+          payload: JSON.stringify({ type: 'ms_sync', tenantId, requestedBy: connectedBy }),
+          run_at: new Date(),
+          max_attempts: 3,
+        })
+        .execute();
+    });
+  }
+
+  public async getValidToken(tenantId: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    if (!row) {
+      throw new Error('No Microsoft account connected for this tenant');
+    }
+
+    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
+    if (!isExpired) {
+      return row.access_token;
+    }
+
+    // Refresh via MSAL silent flow
+    const response = await this.msalApp.acquireTokenByRefreshToken({
+      refreshToken: row.refresh_token,
+      scopes: MS_SCOPES,
+    });
+
+    if (!response?.accessToken) {
+      throw new Error('Token refresh failed — tenant must reconnect their Microsoft account');
+    }
+
+    const newExpiry = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
+
+    // Retrieve fresh refresh token from cache
+    const cache = this.msalApp.getTokenCache().serialize();
+    const parsedCache = JSON.parse(cache);
+    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
+    const newRefreshToken = refreshTokenEntry[0]?.secret ?? row.refresh_token;
+
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({
+        access_token: response.accessToken,
+        refresh_token: newRefreshToken,
+        expires_at: newExpiry,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+
+    return response.accessToken;
+  }
+
+  public async getConnectionStatus(tenantId: string): Promise<{
+    connected: boolean;
+    msEmail: string | null;
+    syncedAt: Date | null;
+    lastSyncError: string | null;
+    lastSyncErrorAt: Date | null;
+  }> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .select(['ms_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    return {
+      connected: !!row,
+      msEmail: row?.ms_email ?? null,
+      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
+      lastSyncError: row?.last_sync_error ?? null,
+      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
+    };
+  }
+
+  public async disconnect(tenantId: string): Promise<void> {
+    await this.db.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tenantId).execute();
+  }
+
+  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({
+        delta_link: deltaLink,
+        synced_at: new Date(),
+        last_sync_error: null,
+        last_sync_error_at: null,
+        updated_at: new Date(),
+      })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async recordSyncError(tenantId: string, error: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async getDeltaLink(tenantId: string): Promise<string | null> {
+    const row = await this.db
+      .selectFrom('ms_oauth_tokens')
+      .select('delta_link')
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+    return row?.delta_link ?? null;
+  }
+
+  public async resetDeltaLink(tenantId: string): Promise<void> {
+    await this.db
+      .updateTable('ms_oauth_tokens')
+      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/persons/trpc.router.ts
+
+```typescript
+import {
+  UpdatePersonsObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { PersonsController } from './controller';
+import { PersonsService } from './services/persons.service';
+
+const persons = new PersonsController();
+const personsService = new PersonsService();
+
+function add() {
+  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
+}
+
+function attachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
+}
+
+function count() {
+  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
+}
+
+const deleteOneInput = z.union([
+  idSchema,
+  z.object({
+    id: idSchema,
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteOne() {
+  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
+    const id = typeof input === 'string' ? input : input.id;
+    const force = typeof input === 'string' ? false : !!input.force;
+    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
+  });
+}
+
+const deleteManyInput = z.union([
+  z.array(idSchema).min(1, 'At least one ID is required'),
+  z.object({
+    ids: z.array(idSchema).min(1, 'At least one ID is required'),
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteMany() {
+  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
+    const ids = Array.isArray(input) ? input : input.ids;
+    const force = Array.isArray(input) ? false : !!input.force;
+    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
+  });
+}
+
+function detachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      personsService.detachTag({
+        tenant_id: ctx.auth.tenant_id,
+        person_id: input.id,
+        name: input.tag_name,
+        type: input.type ?? 'tag',
+        user_id: ctx.auth.user_id,
+      }),
+    );
+}
+
+function getAll() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
+}
+
+function getAllWithAddress() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
+}
+
+function getByHouseholdId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
+}
+
+function getByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
+}
+
+function countByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema }))
+    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
+}
+
+function getById() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+}
+
+function getActivity() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
+}
+
+// Distinct tags
+function getDistinctTags() {
+  return authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
+}
+
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
+}
+
+function getTags() {
+  return authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return persons.getTags(id, ctx.auth, type);
+    });
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
+    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
+}
+
+function removeHousehold() {
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
+}
+
+function importMany() {
+  const ImportRow = z.object({
+    first_name: z.string().trim().max(100).optional(),
+    last_name: z.string().trim().max(100).optional(),
+    email: z.string().trim().max(255).optional(),
+    mobile: z.string().trim().max(30).optional(),
+    notes: z.string().trim().max(10000).optional(),
+    home_phone: z.string().trim().max(30).optional(),
+    street_num: z.string().trim().max(30).optional(),
+    street1: z.string().trim().max(150).optional(),
+    street2: z.string().trim().max(150).optional(),
+    apt: z.string().trim().max(30).optional(),
+    city: z.string().trim().max(100).optional(),
+    state: z.string().trim().max(100).optional(),
+    zip: z.string().trim().max(20).optional(),
+    country: z.string().trim().max(100).optional(),
+  });
+
+  const Input = z.object({
+    rows: z.array(ImportRow),
+    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
+    skipped: z.number().int().nonnegative().optional(),
+    file_name: z.string().trim().min(1).max(255).optional(),
+  });
+
+  return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
+}
+
+function getPotentialDuplicates() {
+  return authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
+}
+
+function getDuplicateCounts() {
+  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
+}
+
+function mergePersons() {
+  return authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
+}
+
+function moveEntireHousehold() {
+  return authProcedure
+    .input(
+      z.object({
+        fromHouseholdId: idSchema,
+        toHouseholdId: idSchema,
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
+    );
+}
+
+export const PersonsRouter = router({
+  add: add(),
+  count: count(),
+  getAll: getAll(),
+  update: update(),
+  removeHousehold: removeHousehold(),
+  import: importMany(),
+  getTags: getTags(),
+  getById: getById(),
+  getActivity: getActivity(),
+  attachTag: attachTag(),
+  detachTag: detachTag(),
+  delete: deleteOne(),
+  deleteMany: deleteMany(),
+  getDistinctTags: getDistinctTags(),
+  getByHouseholdId: getByHouseholdId(),
+  getByCompanyId: getByCompanyId(),
+  countByCompanyId: countByCompanyId(),
+  getAllWithAddress: getAllWithAddress(),
+  exportCsv: exportCsv(),
+  getPotentialDuplicates: getPotentialDuplicates(),
+  getDuplicateCounts: getDuplicateCounts(),
+  mergePersons: mergePersons(),
+  moveEntireHousehold: moveEntireHousehold(),
+});
+```
+
+## File: apps/backend/src/app/modules/tags/controller.ts
+
+```typescript
+import type { AddTagType, IAuthKeyPayload, UpdateTagType } from '../../../../../../libs/common/src';
+
+import { ConflictError } from '../../errors/app-errors';
+import { BaseController } from '../../lib/base.controller';
+import { TagsRepo } from './repositories/tags.repo';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+
+export class TagsController extends BaseController<'tags', TagsRepo> {
+  constructor() {
+    super(new TagsRepo());
+  }
+
+  public async addTag(payload: AddTagType, auth: IAuthKeyPayload) {
+    const row = {
+      name: payload.name,
+      description: payload.description,
+      color: payload.color ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type: payload.type ?? 'tag',
+    };
+    try {
+      return await this.add(row as OperationDataType<'tags', 'insert'>);
+    } catch (err) {
+      if ((err as { code?: string })?.code === '23505') {
+        throw new ConflictError('A tag with this name already exists.', undefined, { cause: err });
+      }
+      throw err;
+    }
+  }
+
+  public async findByName(input: { name: string; type?: 'tag' | 'issue' }, auth: IAuthKeyPayload) {
+    const type = input.type ?? 'tag';
+    return this.getRepo().findByNameAndType({
+      tenant_id: auth.tenant_id,
+      name: input.name,
+      type,
+    });
+  }
+
+  public updateTag(id: string, row: UpdateTagType, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    };
+    return this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: rowWithUpdatedBy as OperationDataType<'tags', 'update'>,
+    });
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/workflows/repositories/workflow-enrollments.repo.ts
+
+```typescript
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Transaction } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export class WorkflowEnrollmentsRepo extends BaseRepository<'workflow_enrollments'> {
+  constructor() {
+    super('workflow_enrollments');
+  }
+
+  public async getEnrollmentsWithPersonDetails(
+    input: {
+      tenant_id: string;
+      workflow_id: string;
+      options?: QueryParams<'workflow_enrollments'>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const options = input.options || {};
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 50;
+
+    const query = this.getSelect(trx)
+      .innerJoin('persons', 'persons.id', 'workflow_enrollments.person_id')
+      .select([
+        'workflow_enrollments.id',
+        'workflow_enrollments.tenant_id',
+        'workflow_enrollments.workflow_id',
+        'workflow_enrollments.person_id',
+        'workflow_enrollments.status',
+        'workflow_enrollments.current_step_number',
+        'workflow_enrollments.next_run_at',
+        'workflow_enrollments.enrolled_at',
+        'workflow_enrollments.created_at',
+        'workflow_enrollments.updated_at',
+        'persons.first_name as person_first_name',
+        'persons.last_name as person_last_name',
+        'persons.email as person_email',
+      ])
+      .where('workflow_enrollments.tenant_id', '=', input.tenant_id)
+      .where('workflow_enrollments.workflow_id', '=', input.workflow_id)
+      .orderBy('workflow_enrollments.enrolled_at', 'desc')
+      .offset(startRow)
+      .limit(endRow - startRow);
+
+    const rows = await query.execute();
+    return rows.map((row) => ({
+      ...row,
+      id: String(row.id),
+      workflow_id: String(row.workflow_id),
+      person_id: String(row.person_id),
+    }));
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/workflows/trpc.router.ts
+
+```typescript
+import { AddWorkflowObj, UpdateWorkflowObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { WorkflowsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const workflows = new WorkflowsController();
+
+const crud = createCrudRouter(workflows, AddWorkflowObj, UpdateWorkflowObj);
+
+export const WorkflowsRouter = router({
+  ...crud,
+
+  getSteps: authProcedure.input(idSchema).query(({ input, ctx }) => workflows.getSteps(ctx.auth.tenant_id, input)),
+
+  saveSteps: authProcedure
+    .input(
+      z.object({
+        workflowId: idSchema,
+        steps: z.array(
+          z.object({
+            delay_days: z.number().int().nonnegative(),
+            delay_unit: z.enum(['days', 'hours']).default('days'),
+            subject: z.string(),
+            preview_text: z.string().nullable().optional(),
+            html_content: z.string().nullable().optional(),
+            plain_text_content: z.string().nullable().optional(),
+          }),
+        ),
+      }),
+    )
+    .mutation(async ({ input, ctx }) =>
+      workflows.saveSteps(ctx.auth.tenant_id, input.workflowId, input.steps, ctx.auth.user_id),
+    ),
+
+  getEnrollments: authProcedure
+    .input(z.object({ workflowId: idSchema, options: getAllOptions.optional() }))
+    .query(({ input, ctx }) => workflows.getEnrollments(ctx.auth.tenant_id, input.workflowId, input.options)),
+
+  enrollPerson: authProcedure
+    .input(z.object({ workflowId: idSchema, personId: idSchema }))
+    .mutation(async ({ input, ctx }) =>
+      workflows.enrollPerson(ctx.auth.tenant_id, input.personId, input.workflowId, ctx.auth.user_id),
+    ),
+
+  cancelEnrollment: authProcedure
+    .input(z.object({ enrollmentId: idSchema }))
+    .mutation(async ({ input, ctx }) =>
+      workflows.cancelEnrollment(ctx.auth.tenant_id, input.enrollmentId, ctx.auth.user_id),
+    ),
+});
+```
+
+## File: apps/backend/src/app/plugins/jsend-error-handler.plugin.ts
+
+```typescript
+import { jsend } from '../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import fp from 'fastify-plugin';
+
+import { AppError } from '../errors/app-errors';
+
+async function jsendPlugin(app: FastifyInstance) {
+  // Reply helpers
+  app.decorateReply('jsendSuccess', function (this: FastifyReply, data: unknown, meta?: Record<string, unknown>) {
+    const body = jsend.success(data);
+    return this.code(200).send(meta ? { ...body, meta } : body);
+  });
+
+  app.decorateReply('jsendFail', function <
+    E extends object = Record<string, unknown>,
+  >(this: FastifyReply, data: E, statusCode = 400, meta?: Record<string, unknown>) {
+    const body = jsend.fail(data);
+    return this.code(statusCode).send(meta ? { ...body, meta } : body);
+  });
+
+  app.decorateReply(
+    'jsendError',
+    function (
+      message: string,
+      statusCode = 500,
+      code?: string | number,
+      data?: unknown,
+      meta?: Record<string, unknown>,
+    ) {
+      const body = {
+        ...jsend.error(message, code),
+        ...(data !== undefined ? { data } : {}),
+        ...(meta ? { meta } : {}),
+      };
+      return this.code(statusCode).send(body);
+    },
+  );
+
+  app.setErrorHandler((err: Error, _req: FastifyRequest, reply: FastifyReply) => {
+    // Domain errors -> JSend
+    if (err instanceof AppError) {
+      if (err.status >= 500) {
+        return reply.code(err.status).send(jsend.error(err.message, err.code));
+      }
+      return reply.code(err.status).send(jsend.fail({ code: err.code, message: err.message, details: err.data }));
+    }
+
+    // tRPC errors (if thrown in REST by accident)
+    if (err instanceof TRPCError) {
+      const status = statusFromTRPC(err.code);
+      if (status >= 500) {
+        return reply.code(status).send(jsend.error(err.message, err.code));
+      }
+      return reply.code(status).send(jsend.fail({ code: err.code, message: err.message }));
+    }
+
+    // Unknown -> generic internal
+    app.log.error({ err }, 'Unhandled error');
+    return reply.code(500).send(jsend.error('Internal Server Error'));
+  });
+}
+
+function statusFromTRPC(code: TRPCError['code']): number {
+  switch (code) {
+    case 'BAD_REQUEST':
+      return 400;
+    case 'UNAUTHORIZED':
+      return 401;
+    case 'FORBIDDEN':
+      return 403;
+    case 'NOT_FOUND':
+      return 404;
+    case 'CONFLICT':
+      return 409;
+    case 'PRECONDITION_FAILED':
+      return 412;
+    case 'PAYLOAD_TOO_LARGE':
+      return 413;
+    case 'TOO_MANY_REQUESTS':
+      return 429;
+    default:
+      return 500;
+  }
+}
+
+declare module 'fastify' {
+  interface FastifyReply {
+    jsendSuccess<T>(data: T, meta?: Record<string, unknown>): FastifyReply;
+    jsendFail<E extends object = Record<string, unknown>>(
+      data: E,
+      statusCode?: number,
+      meta?: Record<string, unknown>,
+    ): FastifyReply;
+    jsendError(
+      message: string,
+      statusCode?: number,
+      code?: string | number,
+      data?: unknown,
+      meta?: Record<string, unknown>,
+    ): FastifyReply;
+  }
+}
+
+export default fp(jsendPlugin);
+```
+
+## File: apps/backend/src/app/logger.ts
+
+```typescript
+import * as pino from 'pino';
+
+export const logger = pino.pino({
+  transport: {
+    target: 'pino-pretty',
+  },
+});
+```
+
+## File: apps/backend/src/main.ts
+
+```typescript
+import './env';
+
+import { migrateToLatest } from './app/kyselyinit';
+import { WebhookEventWorker } from './app/lib/jobs/webhook-worker';
+import { BackgroundJobWorker } from './app/lib/jobs/worker';
+import { logger } from './app/logger';
+import { FastifyServer } from './fastify.server';
+import { onShutdown } from './shutdown';
+
+const worker = new BackgroundJobWorker();
+const webhookWorker = new WebhookEventWorker();
+
+void (async () => {
+  await migrateToLatest();
+  worker.start();
+  webhookWorker.start();
+})();
+
+const server = new FastifyServer();
+
+void (async () => await server.serve())();
+
+onShutdown(async () => {
+  logger.info('Stopping background workers…');
+  await worker.stop();
+  await webhookWorker.stop();
+  logger.info('Closing DB…');
+  await server.close();
+});
+```
+
+## File: apps/backend/src/shutdown.ts
+
+```typescript
+import { logger } from './app/logger';
+
+export function onShutdown(handler: any, { timeout = 500 } = {}) {
+  const signals = ['SIGINT', 'SIGTERM'];
+  for (const signal of signals) {
+    process.on(signal, () => {
+      void (async () => {
+        const timer = setTimeout(() => process.exit(1), timeout);
+        try {
+          void (await handler({ signal }));
+          clearTimeout(timer);
+          process.exit(0);
+        } catch (err) {
+          logger.error(err, 'Shutdown handler failed');
+          process.exit(1);
+        }
+      })();
+    });
+  }
+}
+```
+
+## File: apps/backend/eslint.config.cjs
+
+```javascript
+/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
+/* Node.js, Fastify, tRPC backend-specific rules only.                         */
+
+const { FlatCompat } = require('@eslint/eslintrc');
+const js = require('@eslint/js');
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+  recommendedConfig: js.configs.recommended,
+});
+
+module.exports = [
+  /* Compose the root config so `nx lint backend` enforces the same
+   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
+   * as the pre-commit `eslint` invocation. Previously this file stood alone,
+   * which meant nx lint never saw those rules and plain `eslint` never saw
+   * `local/no-unscoped-db-query` below — two disjoint, non-overlapping
+   * checks. Confirmed zero new violations from this composition. */
+  ...require('../../eslint.config.cjs'),
+
+  /* Extend the base config */
+  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
+    ...cfg,
+    files: ['**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      /* Fastify/tRPC specific style preferences */
+      'prefer-arrow-callback': 'warn',
+      'arrow-body-style': ['warn', 'as-needed'],
+    },
+  })),
+
+  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
+   *
+   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
+   * reaches an execute terminal without a .where('tenant_id', …) filter.
+   *
+   * Scoped to modules/** only — excludes:
+   *   - base.repo.ts          (tenant filtering is callers' responsibility)
+   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
+   *   - _migrations/**        (DDL; no runtime tenant scoping)
+   *   - *.spec.ts             (integration tests do their own scoped cleanup)
+   *   - kyselyinit*.ts        (migration runner)
+   * ─────────────────────────────────────────────────────────────────────── */
+  {
+    files: ['**/src/app/modules/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    // `local` is already registered by the root config spread in above —
+    // redeclaring it here for the same file set throws
+    // "Cannot redefine plugin 'local'" under ESLint's flat config.
+    rules: {
+      'local/no-unscoped-db-query': [
+        'error',
+        {
+          // Tables where cross-tenant queries are intentional:
+          //   authusers - login by email, password reset by code (pre-auth, no tenant known yet)
+          //   sessions  - sign-out by session_id hash (no tenant in token)
+          //   tenants   - tenant lookup by id
+          //
+          // Removed 2026-07-04: `tags` (all module queries already scope tenant_id — the old
+          // "join-level scoping" note was wrong) and `ms_oauth_tokens`/`google_oauth_tokens`
+          // (migration 2026-06-26-email-sync-per-tenant re-keyed both on UNIQUE(tenant_id) and
+          // made user_id nullable, so "keyed by user_id" no longer held — these hold OAuth
+          // secrets and must be tenant-scoped). Adding a table here is a security decision:
+          // prove every current and future query on it is safe cross-tenant, not just quiet.
+          ignoreTables: ['authusers', 'sessions', 'tenants'],
+        },
+      ],
+    },
+  },
+];
+```
+
+## File: apps/backend/src/app/\_migrations/0001_baseline.ts
+
+```typescript
+// tsco: ignore
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export async function up(db: Kysely<any>): Promise<void> {
+  // Read the schema_dump.sql file from the same directory
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const rawSql = fs.readFileSync(schemaPath, 'utf8');
+
+  // Strip psql meta-commands (\restrict etc.) and PG17-only SET params that
+  // don't exist on older servers (transaction_timeout added in PG17).
+  const pg17OnlyParams = new Set(['transaction_timeout']);
+
+  // Kysely's migrator creates and manages its own bookkeeping tables
+  // (kysely_migration / kysely_migration_lock) before any migration runs.
+  // pg_dump captures those tables into the schema dump, so executing them
+  // here would collide ("relation already exists"). Skip any DDL block that
+  // targets them. A block starts at a CREATE/ALTER TABLE referencing the
+  // table and continues until the statement-terminating ';'.
+  const kyselyBlockStart = /^(CREATE TABLE|ALTER TABLE(\s+ONLY)?)\s+(public\.)?kysely_migration(_lock)?\b/i;
+  let skippingKyselyBlock = false;
+
+  const schemaSql = rawSql
+    .split('\n')
+    .filter((line) => {
+      const t = line.trimStart();
+      if (t.startsWith('\\')) return false;
+      // pg_dump empties the session search_path; if left in, every subsequent
+      // unqualified statement on this connection (including Kysely's own INSERT
+      // into kysely_migration) fails with "relation does not exist".
+      if (/^SELECT\s+pg_catalog\.set_config\(\s*'search_path'/i.test(t)) return false;
+      const setMatch = t.match(/^SET\s+(\w+)\s*=/i);
+      if (setMatch && setMatch[1] && pg17OnlyParams.has(setMatch[1].toLowerCase())) return false;
+
+      if (skippingKyselyBlock) {
+        // Drop lines until we reach the end of the current statement.
+        if (t.endsWith(';')) skippingKyselyBlock = false;
+        return false;
+      }
+      if (kyselyBlockStart.test(t)) {
+        // Single-line statement ends immediately; otherwise keep skipping.
+        skippingKyselyBlock = !t.endsWith(';');
+        return false;
+      }
+      return true;
+    })
+    .join('\n');
+
+  await sql.raw(schemaSql).execute(db);
+}
+
+export async function down(_db: Kysely<any>): Promise<void> {
+  // A squashed baseline migration generally shouldn't be rolled back,
+  // as dropping the entire public schema is highly destructive.
+  // We throw an error here to prevent accidental database wiping.
+  throw new Error('This is a baseline migration and cannot be safely rolled back.');
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-06-25-fix-ondelete-behavior.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Corrects ON DELETE behavior across the schema.
+ *
+ *  - SET NULL  → child is a standalone record that merely references the parent
+ *                (reference-move). Must be a single-column FK: a composite SET NULL
+ *                would try to null tenant_id (NOT NULL) on PG14.
+ *  - CASCADE   → child is meaningless without the parent (join/owned rows). Uses the
+ *                composite (id, tenant_id) key for tenant safety where available.
+ *
+ * persons.household_id is intentionally NOT touched here — it is NOT NULL and is
+ * handled in app logic (reassign to the placeholder household inside the delete txn).
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  // --- Existing NO ACTION → SET NULL (single-column; targets have UNIQUE(id)) ---
+  await sql`
+    ALTER TABLE public.persons DROP CONSTRAINT IF EXISTS fk_persons_company;
+    ALTER TABLE public.persons
+      ADD CONSTRAINT fk_persons_company
+      FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.teams DROP CONSTRAINT IF EXISTS fk_teams_team_captain;
+    ALTER TABLE public.teams
+      ADD CONSTRAINT fk_teams_team_captain
+      FOREIGN KEY (team_captain_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS fk_tasks_team_id;
+    ALTER TABLE public.tasks
+      ADD CONSTRAINT fk_tasks_team_id
+      FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE SET NULL;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.data_imports DROP CONSTRAINT IF EXISTS fk_data_imports_tag;
+    ALTER TABLE public.data_imports
+      ADD CONSTRAINT fk_data_imports_tag
+      FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE SET NULL;
+  `.execute(db);
+
+  // --- Existing NO ACTION → CASCADE (join table) ---
+  await sql`
+    ALTER TABLE public.map_campaigns_users DROP CONSTRAINT IF EXISTS fk_campaign_id;
+    ALTER TABLE public.map_campaigns_users
+      ADD CONSTRAINT fk_campaign_id
+      FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
+  `.execute(db);
+
+  // --- Standalone UNIQUE(id) needed to target these with single-column SET NULL FKs ---
+  // CASCADE: on a DB squashed from a full schema dump these UNIQUE keys already
+  // exist and the SET NULL FKs below already depend on them. Dropping with
+  // CASCADE removes those dependents (re-created later in this same migration)
+  // so the drop/re-add is order-independent and idempotent.
+  await sql`
+    ALTER TABLE public.event_ticket_types DROP CONSTRAINT IF EXISTS event_ticket_types_id_key CASCADE;
+    ALTER TABLE public.event_ticket_types ADD CONSTRAINT event_ticket_types_id_key UNIQUE (id);
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.donation_pledges DROP CONSTRAINT IF EXISTS donation_pledges_id_key CASCADE;
+    ALTER TABLE public.donation_pledges ADD CONSTRAINT donation_pledges_id_key UNIQUE (id);
+  `.execute(db);
+
+  // --- Missing FKs: events children → CASCADE (composite, tenant-safe) ---
+  await sql`
+    ALTER TABLE public.event_ticket_types DROP CONSTRAINT IF EXISTS fk_event_ticket_types_event;
+    ALTER TABLE public.event_ticket_types
+      ADD CONSTRAINT fk_event_ticket_types_event
+      FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_event;
+    ALTER TABLE public.event_registrations
+      ADD CONSTRAINT fk_event_registrations_event
+      FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_person;
+    ALTER TABLE public.event_registrations
+      ADD CONSTRAINT fk_event_registrations_person
+      FOREIGN KEY (person_id, tenant_id) REFERENCES public.persons(id, tenant_id) ON DELETE CASCADE;
+  `.execute(db);
+
+  // --- Missing FKs: SET NULL (single-column; nullable columns) ---
+  await sql`
+    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_ticket_type;
+    ALTER TABLE public.event_registrations
+      ADD CONSTRAINT fk_event_registrations_ticket_type
+      FOREIGN KEY (ticket_type_id) REFERENCES public.event_ticket_types(id) ON DELETE SET NULL;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.donation_pledges DROP CONSTRAINT IF EXISTS fk_donation_pledges_person;
+    ALTER TABLE public.donation_pledges
+      ADD CONSTRAINT fk_donation_pledges_person
+      FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.donations DROP CONSTRAINT IF EXISTS fk_donations_pledge;
+    ALTER TABLE public.donations
+      ADD CONSTRAINT fk_donations_pledge
+      FOREIGN KEY (pledge_id) REFERENCES public.donation_pledges(id) ON DELETE SET NULL;
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  // Drop the newly-added FKs.
+  await sql`
+    ALTER TABLE public.donations DROP CONSTRAINT IF EXISTS fk_donations_pledge;
+    ALTER TABLE public.donation_pledges DROP CONSTRAINT IF EXISTS fk_donation_pledges_person;
+    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_ticket_type;
+    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_person;
+    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_event;
+    ALTER TABLE public.event_ticket_types DROP CONSTRAINT IF EXISTS fk_event_ticket_types_event;
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.donation_pledges DROP CONSTRAINT IF EXISTS donation_pledges_id_key;
+    ALTER TABLE public.event_ticket_types DROP CONSTRAINT IF EXISTS event_ticket_types_id_key;
+  `.execute(db);
+
+  // Restore the original NO ACTION constraints.
+  await sql`
+    ALTER TABLE public.map_campaigns_users DROP CONSTRAINT IF EXISTS fk_campaign_id;
+    ALTER TABLE public.map_campaigns_users
+      ADD CONSTRAINT fk_campaign_id
+      FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.data_imports DROP CONSTRAINT IF EXISTS fk_data_imports_tag;
+    ALTER TABLE public.data_imports
+      ADD CONSTRAINT fk_data_imports_tag
+      FOREIGN KEY (tag_id) REFERENCES public.tags(id);
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS fk_tasks_team_id;
+    ALTER TABLE public.tasks
+      ADD CONSTRAINT fk_tasks_team_id
+      FOREIGN KEY (team_id) REFERENCES public.teams(id);
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.teams DROP CONSTRAINT IF EXISTS fk_teams_team_captain;
+    ALTER TABLE public.teams
+      ADD CONSTRAINT fk_teams_team_captain
+      FOREIGN KEY (team_captain_id) REFERENCES public.persons(id);
+  `.execute(db);
+
+  await sql`
+    ALTER TABLE public.persons DROP CONSTRAINT IF EXISTS fk_persons_company;
+    ALTER TABLE public.persons
+      ADD CONSTRAINT fk_persons_company
+      FOREIGN KEY (company_id) REFERENCES public.companies(id);
+  `.execute(db);
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-06-25-person-newsletter-engagements.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    CREATE TABLE public.person_newsletter_engagements (
+      tenant_id       bigint      NOT NULL,
+      newsletter_id   bigint      NOT NULL,
+      email           text        NOT NULL,
+      open_count      integer     NOT NULL DEFAULT 0,
+      click_count     integer     NOT NULL DEFAULT 0,
+      has_unsubscribed boolean    NOT NULL DEFAULT false,
+      hard_bounced    boolean     NOT NULL DEFAULT false,
+      soft_bounced    boolean     NOT NULL DEFAULT false,
+      first_opened_at  timestamptz,
+      last_opened_at   timestamptz,
+      first_clicked_at timestamptz,
+      last_clicked_at  timestamptz,
+      bounced_at       timestamptz,
+      unsubscribed_at  timestamptz,
+      PRIMARY KEY (tenant_id, newsletter_id, email)
+    )
+  `.execute(db);
+
+  await sql`
+    CREATE INDEX idx_pne_tenant_email ON public.person_newsletter_engagements (tenant_id, email)
+  `.execute(db);
+
+  await sql`
+    CREATE INDEX idx_pne_newsletter ON public.person_newsletter_engagements (newsletter_id)
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`DROP TABLE IF EXISTS public.person_newsletter_engagements`.execute(db);
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-06-26-email-sync-per-tenant.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+export async function up(db: Kysely<any>): Promise<void> {
+  // For each table, keep only the most recently updated row per tenant before enforcing uniqueness
+  await sql`
+    DELETE FROM google_oauth_tokens
+    WHERE id NOT IN (
+      SELECT DISTINCT ON (tenant_id) id
+      FROM google_oauth_tokens
+      ORDER BY tenant_id, updated_at DESC NULLS LAST
+    )
+  `.execute(db);
+
+  await sql`
+    DELETE FROM ms_oauth_tokens
+    WHERE id NOT IN (
+      SELECT DISTINCT ON (tenant_id) id
+      FROM ms_oauth_tokens
+      ORDER BY tenant_id, updated_at DESC NULLS LAST
+    )
+  `.execute(db);
+
+  // google_oauth_tokens: drop old user_id unique constraint + index, add tenant_id unique
+  await sql`ALTER TABLE google_oauth_tokens DROP CONSTRAINT IF EXISTS google_oauth_tokens_user_id_key`.execute(db);
+  await sql`DROP INDEX IF EXISTS google_oauth_tokens_tenant_user_idx`.execute(db);
+  await sql`ALTER TABLE google_oauth_tokens ALTER COLUMN user_id DROP NOT NULL`.execute(db);
+  await sql`ALTER TABLE google_oauth_tokens ADD CONSTRAINT google_oauth_tokens_tenant_id_key UNIQUE (tenant_id)`.execute(
+    db,
+  );
+  await sql`CREATE INDEX google_oauth_tokens_tenant_idx ON google_oauth_tokens (tenant_id)`.execute(db);
+
+  // ms_oauth_tokens: same
+  await sql`ALTER TABLE ms_oauth_tokens DROP CONSTRAINT IF EXISTS ms_oauth_tokens_user_id_key`.execute(db);
+  await sql`DROP INDEX IF EXISTS ms_oauth_tokens_tenant_user_idx`.execute(db);
+  await sql`ALTER TABLE ms_oauth_tokens ALTER COLUMN user_id DROP NOT NULL`.execute(db);
+  await sql`ALTER TABLE ms_oauth_tokens ADD CONSTRAINT ms_oauth_tokens_tenant_id_key UNIQUE (tenant_id)`.execute(db);
+  await sql`CREATE INDEX ms_oauth_tokens_tenant_idx ON ms_oauth_tokens (tenant_id)`.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE google_oauth_tokens DROP CONSTRAINT IF EXISTS google_oauth_tokens_tenant_id_key`.execute(db);
+  await sql`DROP INDEX IF EXISTS google_oauth_tokens_tenant_idx`.execute(db);
+  await sql`ALTER TABLE google_oauth_tokens ALTER COLUMN user_id SET NOT NULL`.execute(db);
+  await sql`ALTER TABLE google_oauth_tokens ADD CONSTRAINT google_oauth_tokens_user_id_key UNIQUE (user_id)`.execute(
+    db,
+  );
+  await sql`CREATE INDEX google_oauth_tokens_tenant_user_idx ON google_oauth_tokens (tenant_id, user_id)`.execute(db);
+
+  await sql`ALTER TABLE ms_oauth_tokens DROP CONSTRAINT IF EXISTS ms_oauth_tokens_tenant_id_key`.execute(db);
+  await sql`DROP INDEX IF EXISTS ms_oauth_tokens_tenant_idx`.execute(db);
+  await sql`ALTER TABLE ms_oauth_tokens ALTER COLUMN user_id SET NOT NULL`.execute(db);
+  await sql`ALTER TABLE ms_oauth_tokens ADD CONSTRAINT ms_oauth_tokens_user_id_key UNIQUE (user_id)`.execute(db);
+  await sql`CREATE INDEX ms_oauth_tokens_tenant_user_idx ON ms_oauth_tokens (tenant_id, user_id)`.execute(db);
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-06-26-passkey-setup-dismissed.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE authusers ADD COLUMN IF NOT EXISTS passkey_setup_dismissed_at TIMESTAMP WITH TIME ZONE`.execute(
+    db,
+  );
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE authusers DROP COLUMN IF EXISTS passkey_setup_dismissed_at`.execute(db);
 }
 ```
 
@@ -9189,5191 +14312,6 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 \unrestrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
 ```
 
-## File: apps/backend/src/app/config/email-folders.config.ts
-
-```typescript
-import type { EmailFolderConfig } from '../../../../../libs/common/src';
-import { EMAIL_FOLDERS } from '../../../../../libs/common/src';
-
-export function getAllEmailFolders(): EmailFolderConfig[] {
-  return [...EMAIL_FOLDERS].filter((folder: any) => !folder.is_hidden).sort((a, b) => a.sort_order - b.sort_order);
-}
-
-export function getEmailFolderById(id: string): EmailFolderConfig | undefined {
-  return EMAIL_FOLDERS.find((folder) => folder.id === id);
-}
-
-export function getRegularFolders(): EmailFolderConfig[] {
-  return EMAIL_FOLDERS.filter((folder) => !folder.is_virtual);
-}
-
-export function getVirtualFolders(): EmailFolderConfig[] {
-  return EMAIL_FOLDERS.filter((folder) => folder.is_virtual);
-}
-
-export function isVirtualFolder(folderId: string): boolean {
-  const folder = getEmailFolderById(folderId);
-  return folder?.is_virtual || false;
-}
-```
-
-## File: apps/backend/src/app/errors/app-errors.ts
-
-```typescript
-// Lightweight, transport-agnostic error types you can throw from controllers/services.
-export abstract class AppError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-    public readonly code: string,
-    public readonly data?: unknown,
-    opts?: { cause?: unknown },
-  ) {
-    super(message, { cause: opts?.cause });
-    this.name = new.target.name;
-    Error.captureStackTrace?.(this, new.target);
-  }
-}
-
-export class BadRequestError extends AppError {
-  constructor(message = 'Bad request', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 400, 'BAD_REQUEST', data, opts);
-  }
-}
-
-export class ConflictError extends AppError {
-  constructor(message = 'Conflict', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 409, 'CONFLICT', data, opts);
-  }
-}
-
-export class ForbiddenError extends AppError {
-  constructor(message = 'Forbidden', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 403, 'FORBIDDEN', data, opts);
-  }
-}
-
-export class InternalError extends AppError {
-  constructor(message = 'Something went wrong, please try again', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 500, 'INTERNAL_SERVER_ERROR', data, opts);
-  }
-}
-
-export class NotFoundError extends AppError {
-  constructor(message = 'Not found', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 404, 'NOT_FOUND', data, opts);
-  }
-}
-
-export class PreconditionFailedError extends AppError {
-  constructor(message = 'Precondition failed', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 412, 'PRECONDITION_FAILED', data, opts);
-  }
-}
-
-export class ServerMisconfigError extends AppError {
-  constructor(message = 'Server misconfiguration', data?: unknown) {
-    super(message, 500, 'INTERNAL_SERVER_ERROR', data);
-  }
-}
-
-export class TooManyRequestsError extends AppError {
-  constructor(message = 'Too many requests', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 429, 'TOO_MANY_REQUESTS', data, opts);
-  }
-}
-
-export class UnauthorizedError extends AppError {
-  constructor(message = 'User is not authenticated. Please sign in', data?: unknown, opts?: { cause?: unknown }) {
-    super(message, 401, 'UNAUTHORIZED', data, opts);
-  }
-}
-```
-
-## File: apps/backend/src/app/errors/to-trpc-errors.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-
-import { AppError } from './app-errors';
-
-export function toTRPCError(err: unknown): TRPCError {
-  if (err instanceof TRPCError) return err;
-
-  const isDevOrTest = process.env['NODE_ENV'] !== 'production';
-
-  if (err instanceof AppError) {
-    // Status -> TRPC code
-    const code =
-      err.status === 400
-        ? 'BAD_REQUEST'
-        : err.status === 401
-          ? 'UNAUTHORIZED'
-          : err.status === 403
-            ? 'FORBIDDEN'
-            : err.status === 404
-              ? 'NOT_FOUND'
-              : err.status === 409
-                ? 'CONFLICT'
-                : err.status === 412
-                  ? 'PRECONDITION_FAILED'
-                  : err.status === 413
-                    ? 'PAYLOAD_TOO_LARGE'
-                    : err.status === 422
-                      ? 'BAD_REQUEST'
-                      : err.status === 429
-                        ? 'TOO_MANY_REQUESTS'
-                        : /* default */ 'INTERNAL_SERVER_ERROR';
-
-    let message = err.message;
-    if (isDevOrTest && err.cause instanceof Error) {
-      message = `${err.message} (Cause: ${err.cause.message})`;
-    } else if (isDevOrTest && typeof err.cause === 'string') {
-      message = `${err.message} (Cause: ${err.cause})`;
-    }
-
-    return new TRPCError({
-      code,
-      message,
-      cause: err,
-    });
-  }
-
-  // Unknown/unexpected -> internal
-  let message = 'Something went wrong, please try again';
-  if (isDevOrTest && err instanceof Error) {
-    message = `Something went wrong, please try again (Cause: ${err.message})`;
-  } else if (isDevOrTest && typeof err === 'string') {
-    message = `Something went wrong, please try again (Cause: ${err})`;
-  }
-
-  return new TRPCError({
-    code: 'INTERNAL_SERVER_ERROR',
-    message,
-    cause: err,
-  });
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/billing.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-export async function handleZapierTrigger(payload: JobPayloadOf<'zapier_trigger'>): Promise<void> {
-  const { ZapierService } = await import('../../../modules/zapier/zapier.service');
-  const zapierService = new ZapierService();
-  await zapierService.fireTrigger(payload.tenant_id, payload.event_type, payload.data);
-}
-
-export async function handleCheckUsageLimits(
-  payload: JobPayloadOf<'check_usage_limits'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const { checkTenantUsage } = await import('../../../modules/billing/usage-limits');
-  await checkTenantUsage(payload.tenant_id, db);
-}
-
-export async function handleCheckAllUsageLimits(db: Kysely<Models>): Promise<void> {
-  const { checkAllUsageLimits } = await import('../../../modules/billing/usage-limits');
-  await checkAllUsageLimits(db);
-  await scheduleNextRun(db, 'check_all_usage_limits', DAY_MS);
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/deletions.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-const mailService = new TransactionalEmailService();
-
-const COMPLETED_JOB_RETENTION_DAYS = 7;
-
-export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promise<void> {
-  const now = new Date();
-
-  const expiredUsers = await db
-    .selectFrom('authusers')
-    .select('id')
-    .where('deletion_scheduled_at', '<=', now)
-    .execute();
-
-  for (const user of expiredUsers) {
-    const userId = String(user.id);
-    await db.transaction().execute(async (trx) => {
-      await trx.deleteFrom('sessions').where('user_id', '=', userId).execute();
-      await trx.deleteFrom('profiles').where('auth_id', '=', userId).execute();
-      await trx.deleteFrom('authusers').where('id', '=', userId).execute();
-    });
-  }
-
-  const expiredTenants = await db
-    .selectFrom('tenants')
-    .select('id')
-    .where('deletion_scheduled_at', '<=', now)
-    .execute();
-
-  for (const tenant of expiredTenants) {
-    const tenantId = String(tenant.id);
-
-    // Capture owner emails before deletion — background_jobs is wiped inside the transaction
-    const ownerUsers = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('role', '=', 'owner')
-      .execute();
-
-    logger.info(`Hard-deleting tenant ${tenantId} (deletion_scheduled_at <= now)…`);
-    await db.transaction().execute(async (trx) => {
-      const tid = tenantId;
-
-      // ── Collaboration ─────────────────────────────────────────────────
-      await trx.deleteFrom('task_attachments').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('task_comments').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('task_subtasks').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('tasks').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_teams_lists').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_teams_persons').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('teams').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_lists_persons').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_lists_households').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('lists').where('tenant_id', '=', tid).execute();
-
-      // ── Email & Marketing ──────────────────────────────────────────────
-      await trx.deleteFrom('workflow_enrollments').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('workflow_steps').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('workflows').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('newsletter_events').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('newsletters').where('tenant_id', '=', tid).execute();
-
-      // ── Ops & Platform ─────────────────────────────────────────────────
-      await trx.deleteFrom('notifications').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('user_activity').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('potential_duplicates').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('data_imports').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('data_exports').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('web_forms').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('background_jobs').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('webhook_events').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('zapier_subscriptions').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('volunteer_shifts').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('volunteer_events').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('event_registrations').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('event_ticket_types').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('events').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('files').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tid).execute();
-
-      // ── Email inbox ────────────────────────────────────────────────────
-      await trx.deleteFrom('email_read_states').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_comments').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_trash').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_drafts').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('emails').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_folders').where('tenant_id', '=', tid).execute();
-
-      // ── CRM Core ───────────────────────────────────────────────────────
-      await trx.deleteFrom('map_campaigns_users').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_peoples_tags').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('map_households_tags').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('companies').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('persons').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('households').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('campaigns').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('tags').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('settings').where('tenant_id', '=', tid).execute();
-
-      // ── Auth & Identity (last) ─────────────────────────────────────────
-      // Null out FK references on tenants before deleting authusers
-      await trx.updateTable('tenants').set({ admin_id: null }).where('id', '=', tid).execute();
-      await trx.deleteFrom('sessions').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('profiles').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('authusers').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('tenants').where('id', '=', tid).execute();
-
-      logger.info(`Tenant ${tenantId} fully hard-deleted.`);
-    });
-
-    // Send confirmation emails after the transaction commits (outside the wiped tenant scope)
-    for (const owner of ownerUsers) {
-      if (owner.email) {
-        await mailService.sendMail({
-          to: owner.email,
-          subject: 'Your account data has been permanently deleted',
-          text: `Hi ${owner.first_name},\n\nAll data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.\n\nThank you for using PeopleCRM.`,
-          html: `<h2>Account Data Deleted</h2>
-<p>Hi ${owner.first_name},</p>
-<p>All data associated with your PeopleCRM account has been permanently and securely deleted as requested. You will not be billed going forward.</p>
-<p>Thank you for using PeopleCRM. If you ever wish to return, you are always welcome to create a new account.</p>`,
-        });
-      }
-    }
-  }
-
-  // Permanently delete completed background jobs older than 7 days to prevent unbounded table growth
-  const retentionCutoff = new Date(Date.now() - COMPLETED_JOB_RETENTION_DAYS * DAY_MS);
-  await db
-    .deleteFrom('background_jobs')
-    .where('status', '=', 'completed')
-    .where('updated_at', '<=', retentionCutoff)
-    .execute();
-
-  await scheduleNextRun(db, 'perform_scheduled_deletions', DAY_MS);
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/export.handlers.ts
-
-```typescript
-import type { ExpressionBuilder, Kysely } from 'kysely';
-import { sql } from 'kysely';
-import { Readable } from 'stream';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { ExportsRepo } from '../../../modules/exports/repositories/exports.repo';
-import { CsvTransformStream } from '../../csv-stream';
-import { StorageService } from '../../storage.service';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import type { JobPayloadOf } from '../job-payloads';
-
-const storageService = new StorageService();
-const mailService = new TransactionalEmailService();
-
-const ALLOWED_EXPORT_TABLES = [
-  'persons',
-  'households',
-  'companies',
-  'forms',
-  'workflows',
-  'teams',
-  'events',
-  'newsletters',
-  'tasks',
-  'tags',
-  'issues',
-  'users',
-  'user_activity',
-];
-
-export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: Kysely<Models>): Promise<void> {
-  const exportsRepo = new ExportsRepo();
-  const exportId = payload.export_id;
-  const tenantId = payload.tenant_id;
-  try {
-    // Make sure we're exporting one of the allowed tables
-    const table = payload.table || payload.entity || '';
-    if (!ALLOWED_EXPORT_TABLES.includes(table)) throw new Error('Invalid export entity');
-
-    // Mark as processing
-    await exportsRepo.updateStatus(exportId, tenantId, 'processing');
-
-    // Fetch all rows for the entity
-    const opts = payload.options;
-    // The export query is assembled dynamically across heterogeneous tables and joins,
-    // which Kysely cannot express statically — the builder is intentionally untyped here.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let query: any;
-
-    if (table === 'user_activity') {
-      query = db
-        .selectFrom('user_activity')
-        .innerJoin('authusers', 'authusers.id', 'user_activity.user_id')
-        .select([
-          'user_activity.id',
-          'user_activity.created_at',
-          sql`TRIM(CONCAT(authusers.first_name, ' ', COALESCE(authusers.last_name, '')))::text`.as('user'),
-          'authusers.email',
-          'user_activity.activity',
-          'user_activity.entity',
-          'user_activity.entity_id',
-          'user_activity.quantity',
-          'user_activity.metadata',
-        ])
-        .where('user_activity.tenant_id', '=', tenantId);
-
-      if (opts.userId) {
-        query = query.where('user_activity.user_id', '=', opts.userId);
-      }
-      if (opts.entity) {
-        query = query.where('user_activity.entity', 'in', getEntityFilterValues(opts.entity));
-      }
-      if (opts.activity) {
-        query = query.where('user_activity.activity', '=', opts.activity);
-      }
-      if (opts.searchStr) {
-        const search = `%${opts.searchStr.trim().toLowerCase()}%`;
-        query = query.where((eb: ExpressionBuilder<Models, 'user_activity' | 'authusers'>) =>
-          eb.or([
-            eb('authusers.first_name', 'ilike', search),
-            eb('authusers.last_name', 'ilike', search),
-            eb('user_activity.entity', 'ilike', search),
-            eb('user_activity.activity', 'ilike', search),
-          ]),
-        );
-      }
-    } else {
-      query = db
-        .selectFrom(table as keyof Models)
-        .selectAll()
-        .where('tenant_id', '=', tenantId);
-
-      // Issues are tags with type='issue'
-      if (payload.entity === 'issues') {
-        query = query.where('type', '=', 'issue');
-      }
-
-      // Apply search string if provided
-      if (opts.searchStr) {
-        const like = `%${opts.searchStr}%`;
-        // Best-effort: try name, first_name/last_name depending on table
-        if (table === 'persons') {
-          query = query.where((eb: ExpressionBuilder<Models, 'persons'>) =>
-            eb.or([eb('first_name', 'ilike', like), eb('last_name', 'ilike', like), eb('email', 'ilike', like)]),
-          );
-        } else if (table === 'households') {
-          query = query.where((eb: ExpressionBuilder<Models, 'households'>) =>
-            eb.or([eb('street1', 'ilike', like), eb('city', 'ilike', like)]),
-          );
-        } else {
-          query = query.where('name', 'ilike', like);
-        }
-      }
-    }
-
-    // Apply sort
-    if (opts.sortModel?.length) {
-      for (const s of opts.sortModel) {
-        if (s?.colId) {
-          query = query.orderBy(s.colId, s.sort === 'desc' ? 'desc' : 'asc');
-        }
-      }
-    } else {
-      const sortCol = table === 'user_activity' ? 'user_activity.created_at' : 'created_at';
-      query = query.orderBy(sortCol, 'desc');
-    }
-
-    // Determine columns
-    const requestedCols: string[] = payload.columns?.length ? payload.columns : [];
-
-    const storageKey = `exports/${tenantId}/${exportId}.csv`;
-
-    // Stream the query results using query.stream()
-    const dbStream = Readable.from(query.stream());
-    const csvStream = new CsvTransformStream(requestedCols);
-
-    await storageService.uploadStream(storageKey, dbStream.pipe(csvStream), 'text/csv');
-
-    const count = csvStream.rowCount;
-
-    // If no rows were processed, clean up by deleting the empty file if created
-    if (count === 0) {
-      await storageService.delete(storageKey);
-    }
-
-    await exportsRepo.updateStatus(exportId, tenantId, 'completed', {
-      rowCount: count,
-      storageKey: count > 0 ? storageKey : undefined,
-    });
-
-    logger.info(`Export job ${exportId} completed: ${count} rows exported.`);
-
-    // Notify the user who requested the export
-    if (payload.user_id) {
-      try {
-        const user = await db
-          .selectFrom('authusers')
-          .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-          .where('authusers.id', '=', payload.user_id)
-          .executeTakeFirst();
-
-        if (user) {
-          let emailOptedIn = true;
-          let inAppOptedIn = true;
-          const profileJson = user.profile_json;
-          if (profileJson) {
-            try {
-              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-              if (json?.notifications?.export_ready === false) {
-                emailOptedIn = false;
-              }
-              if (json?.notifications?.export_ready_in_app === false) {
-                inAppOptedIn = false;
-              }
-            } catch (e) {
-              logger.error({ err: e }, 'Failed to parse profile json for export notifications');
-            }
-          }
-
-          const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
-          const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
-
-          if (inAppOptedIn) {
-            const { NotificationsRepo } =
-              await import('../../../modules/notifications/repositories/notifications.repo');
-            const notificationsRepo = new NotificationsRepo();
-            await notificationsRepo.pushNotification({
-              tenant_id: tenantId,
-              user_id: payload.user_id,
-              title: 'Export Ready',
-              message: `Your export of ${count} records from ${displayLabel} is complete.`,
-              type: 'export',
-              link: '/exports',
-            });
-          }
-
-          if (emailOptedIn && user.email) {
-            await mailService.sendMail({
-              to: user.email,
-              subject: `Your Export is Ready: ${payload.file_name || 'export.csv'}`,
-              text: `Hi ${user.first_name || 'there'},\n\nYour export of ${count} records from the ${displayLabel} table is ready.\n\nFile Name: ${payload.file_name || 'export.csv'}\nDownload from the Exports page: ${env.appUrl}/exports`,
-              html: `<p>Hi ${user.first_name || 'there'},</p><p>Your export of <strong>${count}</strong> records from the <strong>${displayLabel}</strong> table is ready.</p><p><strong>File Name:</strong> ${payload.file_name || 'export.csv'}<br><strong>Download Link:</strong> <a href="${env.appUrl}/exports">Go to Exports Page</a></p>`,
-            });
-          }
-        }
-      } catch (notifErr) {
-        logger.error({ err: notifErr }, `Failed to send notifications for export job ${exportId}`);
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, `Export job ${exportId} failed`);
-    const message = err instanceof Error ? err.message : String(err);
-    await exportsRepo.updateStatus(exportId, tenantId, 'failed', {
-      error: message.substring(0, 500),
-    });
-    throw err;
-  }
-}
-
-function getEntityFilterValues(entityFilter: string): string[] {
-  const ent = entityFilter.toLowerCase();
-  if (ent === 'persons' || ent === 'person' || ent === 'people') {
-    return ['person', 'persons'];
-  }
-  if (ent === 'households' || ent === 'household') {
-    return ['household', 'households'];
-  }
-  if (ent === 'companies' || ent === 'company') {
-    return ['company', 'companies'];
-  }
-  if (ent === 'tasks' || ent === 'task') {
-    return ['task', 'tasks', 'tasks_archived'];
-  }
-  if (ent === 'emails' || ent === 'email') {
-    return ['email', 'emails'];
-  }
-  if (ent === 'volunteer_events' || ent === 'volunteer_event') {
-    return ['volunteer_event', 'volunteer_events'];
-  }
-  if (ent === 'volunteer_shifts' || ent === 'volunteer_shift') {
-    return ['volunteer_shift', 'volunteer_shifts'];
-  }
-  if (ent === 'web_forms' || ent === 'web_form' || ent === 'forms' || ent === 'form') {
-    return ['web_form', 'web_forms', 'form', 'forms'];
-  }
-  if (ent === 'tags' || ent === 'tag') {
-    return ['tag', 'tags'];
-  }
-  return [ent];
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { CompaniesController } from '../../../modules/companies/controller';
-import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo';
-import { PersonsService } from '../../../modules/persons/services/persons.service';
-import { TasksController } from '../../../modules/tasks/controller';
-import { StorageService } from '../../storage.service';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import type { LegacyImportJobPayload } from '../job-payloads';
-
-const storageService = new StorageService();
-const importsRepo = new ImportsRepo();
-const mailService = new TransactionalEmailService();
-
-export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysely<Models>): Promise<void> {
-  // 1. Mark import status as 'processing' in data_imports
-  await importsRepo.update({
-    tenant_id: payload.tenant_id,
-    id: payload.import_id,
-    row: {
-      status: 'processing',
-      updated_at: new Date(),
-    },
-  });
-
-  // 2. Download mapping payload from storage
-  const buffer = await storageService.download(payload.storage_key);
-  const rows = JSON.parse(buffer.toString('utf8'));
-
-  // 3. Process the import rows in chunks
-  if (payload.source === 'companies') {
-    const companiesController = new CompaniesController();
-    await companiesController.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      Number(payload.skipped || 0),
-      rows,
-    );
-  } else if (payload.source === 'tasks') {
-    const tasksController = new TasksController();
-    await tasksController.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      Number(payload.skipped || 0),
-      rows,
-    );
-  } else {
-    const personsService = new PersonsService();
-    await personsService.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      payload.campaign_id ?? '',
-      payload.tags ?? [],
-      Number(payload.skipped || 0),
-      rows,
-    );
-  }
-
-  // 4. Update import status to 'completed'
-  await importsRepo.update({
-    tenant_id: payload.tenant_id,
-    id: payload.import_id,
-    row: {
-      status: 'completed',
-      processed_at: new Date(),
-      updated_at: new Date(),
-    },
-  });
-
-  try {
-    await storageService.delete(payload.storage_key);
-  } catch (storageErr) {
-    logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
-  }
-
-  try {
-    const user = await db
-      .selectFrom('authusers')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-      .where('authusers.id', '=', payload.user_id)
-      .executeTakeFirst();
-
-    if (user && user.email) {
-      let optedIn = true;
-      if (user.profile_json) {
-        try {
-          const json = typeof user.profile_json === 'string' ? JSON.parse(user.profile_json) : user.profile_json;
-          if (json?.notifications?.import_summary === false) {
-            optedIn = false;
-          }
-        } catch (e) {
-          logger.error({ err: e }, 'Failed to parse profile json for import summary check');
-        }
-      }
-
-      if (optedIn) {
-        const importRecord = await db
-          .selectFrom('data_imports')
-          .select(['inserted_count', 'error_count', 'skipped_count'])
-          .where('id', '=', payload.import_id)
-          .where('tenant_id', '=', payload.tenant_id)
-          .executeTakeFirst();
-
-        if (importRecord) {
-          const inserted = importRecord.inserted_count || 0;
-          const errors = importRecord.error_count || 0;
-          const skipped = importRecord.skipped_count || 0;
-
-          await mailService.sendMail({
-            to: user.email,
-            subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
-            text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
-            html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
-          });
-        }
-      }
-    }
-  } catch (mailErr) {
-    logger.error({ err: mailErr }, 'Failed to send import completion summary email');
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/maintenance.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { fingerprintFull, fingerprintStreet } from '../../address-normalize';
-import { geocodeAndMapHousehold } from '../../gis/geocoding';
-import { logger } from '../../../logger';
-import { ActivityController } from '../../../modules/activity/controller';
-import { ListsController } from '../../../modules/lists/controller';
-import { DuplicateMaintenanceService } from '../../../modules/persons/services/duplicate-maintenance.service';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-export async function handleRefreshList(payload: JobPayloadOf<'refresh_list'>): Promise<void> {
-  const listsController = new ListsController();
-  await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
-}
-
-export async function handleEnrichCompanyGoogle(
-  payload: JobPayloadOf<'enrich_company_google'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const { CompaniesEnrichmentService } =
-    await import('../../../modules/companies/services/companies-enrichment.service');
-  const enrichmentSvc = new CompaniesEnrichmentService(db);
-  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
-}
-
-export async function handleRefreshCompaniesGoogle(
-  payload: JobPayloadOf<'refresh_companies_google'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const { CompaniesEnrichmentService } =
-    await import('../../../modules/companies/services/companies-enrichment.service');
-  const enrichmentSvc = new CompaniesEnrichmentService(db);
-  await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id ?? undefined);
-
-  // Only the global (cron-style) run reschedules itself.
-  if (!payload.tenant_id) {
-    await scheduleNextRun(db, 'refresh_companies_google', DAY_MS);
-  }
-}
-
-export async function handleCleanupActivities(db: Kysely<Models>): Promise<void> {
-  const activityController = new ActivityController();
-  await activityController.deleteOldActivities();
-
-  await scheduleNextRun(db, 'cleanup_activities', DAY_MS);
-}
-
-export async function handleRecomputeAllDuplicates(db: Kysely<Models>): Promise<void> {
-  const lastJob = await db
-    .selectFrom('background_jobs')
-    .select(['updated_at'])
-    .where('status', '=', 'completed')
-    .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
-    .orderBy('updated_at', 'desc')
-    .limit(1)
-    .executeTakeFirst();
-
-  const tenants = await db.selectFrom('tenants').select('id').execute();
-  const maintenanceSvc = new DuplicateMaintenanceService();
-  const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
-
-  for (const tenant of tenants) {
-    try {
-      let shouldRecompute = true;
-
-      if (lastRunTime) {
-        const personChanged = await db
-          .selectFrom('persons')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        const householdChanged = await db
-          .selectFrom('households')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        const companyChanged = await db
-          .selectFrom('companies')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        if (!personChanged && !householdChanged && !companyChanged) {
-          shouldRecompute = false;
-        }
-      }
-
-      if (shouldRecompute) {
-        await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
-      }
-    } catch (tenantErr) {
-      logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
-    }
-  }
-
-  await scheduleNextRun(db, 'recompute_all_duplicates', DAY_MS);
-}
-
-export async function handleRecomputeAddressFingerprints(
-  payload: JobPayloadOf<'recompute_address_fingerprints'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const tenantIds: string[] = [];
-  if (payload.tenant_id) {
-    tenantIds.push(payload.tenant_id);
-  } else {
-    const tenants = await db.selectFrom('tenants').select('id').execute();
-    for (const tenant of tenants) {
-      tenantIds.push(String(tenant.id));
-    }
-  }
-
-  for (const tenantId of tenantIds) {
-    try {
-      await recomputeTenantAddressFingerprints(tenantId, db);
-    } catch (tenantErr) {
-      logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
-    }
-  }
-
-  // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
-  if (!payload.tenant_id) {
-    await scheduleNextRun(db, 'recompute_address_fingerprints', DAY_MS);
-  }
-}
-
-export async function handleGeocodeHousehold(
-  payload: JobPayloadOf<'geocode_household'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
-}
-
-async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
-  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
-
-  for (const hh of households) {
-    const fp_street = fingerprintStreet({
-      street_num: hh.street_num,
-      street1: hh.street1,
-      street2: hh.street2,
-    });
-    const fp_full = fingerprintFull({
-      apt: hh.apt,
-      street_num: hh.street_num,
-      street1: hh.street1,
-      street2: hh.street2,
-      city: hh.city,
-      state: hh.state,
-      zip: hh.zip,
-      country: hh.country,
-    });
-
-    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
-      await db
-        .updateTable('households')
-        .set({
-          address_fp_street: fp_street,
-          address_fp_full: fp_full,
-          updated_at: new Date(),
-        })
-        .where('id', '=', hh.id)
-        .where('tenant_id', '=', tenantId)
-        .execute();
-    }
-  }
-
-  const maintenanceSvc = new DuplicateMaintenanceService();
-  await maintenanceSvc.recomputeAllDuplicates(tenantId);
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
-
-```typescript
-import type { ExpressionBuilder, Kysely } from 'kysely';
-import { sql } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { NewsletterEmailService } from '../../mail/newsletter-mail.service';
-import { UserActivityRepo } from '../../user-activity.repo';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-const NEWSLETTER_BATCH_SIZE = 500;
-const BATCH_DELAY_MS = 1000;
-
-export async function handleSendNewsletter(
-  payload: JobPayloadOf<'send-newsletter'>,
-  db: Kysely<Models>,
-  jobId?: string,
-): Promise<void> {
-  const newsletterMailSvc = new NewsletterEmailService();
-  const { tenantId, newsletterId, userId } = payload;
-
-  // 1. Fetch newsletter to get settings, targets, segments, and content
-  const newsletter = await db
-    .selectFrom('newsletters')
-    .selectAll()
-    .where('tenant_id', '=', tenantId)
-    .where('id', '=', newsletterId)
-    .executeTakeFirst();
-
-  if (!newsletter) {
-    logger.warn(`Newsletter ${newsletterId} not found.`);
-    return;
-  }
-
-  // 2. Build the recipient query using NewslettersController
-  const { NewslettersController } = await import('../../../modules/newsletters/controller');
-  const controller = new NewslettersController();
-  const baseQuery = controller.buildRecipientQuery(tenantId, newsletter);
-
-  // 3. Count total recipients
-  let offset = payload.offset ?? 0;
-  let deliveredCount = payload.deliveredCount ?? 0;
-
-  const countResult = await baseQuery
-    .select(({ fn }: ExpressionBuilder<Models, 'persons'>) => fn.count(sql`DISTINCT persons.email`).as('count'))
-    .executeTakeFirst();
-  const totalRecipients = Number(countResult?.count || 0);
-
-  if (offset === 0) {
-    await db
-      .updateTable('newsletters')
-      .set({
-        status: 'sending',
-        total_recipients: totalRecipients,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', newsletterId)
-      .execute();
-  }
-
-  // Load communications/settings from database
-  const settingsRows = await db
-    .selectFrom('settings')
-    .select(['key', 'value'])
-    .where('tenant_id', '=', tenantId)
-    .where('key', 'in', [
-      'communications.sendgrid_api_key',
-      'communications.sendgrid_subuser_username',
-      'communications.default_from_name',
-      'communications.default_from_email',
-      'communications.reply_to',
-      'communications.footer_disclaimer',
-      'communications.verified_emails',
-      'organization.address',
-    ])
-    .execute();
-
-  const settingsMap: Record<string, string> = {};
-  let verifiedEmails: string[] = [];
-  for (const row of settingsRows) {
-    if (typeof row.value === 'string') {
-      settingsMap[row.key] = row.value;
-    } else if (row.key === 'communications.verified_emails' && Array.isArray(row.value)) {
-      verifiedEmails = (row.value as unknown[]).map((e) => String(e).toLowerCase().trim());
-    }
-  }
-
-  const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
-  const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
-  const fromName = settingsMap['communications.default_from_name'] || 'PeopleCRM Team';
-  const fromEmail = settingsMap['communications.default_from_email'] || 'pplcrm@campaignraven.com';
-
-  // Reply-to is only honored when it has been verified (mirrors settings save-time validation).
-  const replyToRaw = (settingsMap['communications.reply_to'] || '').toLowerCase().trim();
-  const replyTo = replyToRaw && verifiedEmails.includes(replyToRaw) ? replyToRaw : undefined;
-
-  // Mandatory footer appended server-side so it cannot be removed from the editor: org address,
-  // tenant disclaimer, and a SendGrid-substituted unsubscribe link.
-  const footer = buildNewsletterFooter(
-    settingsMap['organization.address'],
-    settingsMap['communications.footer_disclaimer'],
-  );
-
-  while (offset < totalRecipients) {
-    // Query a chunk of recipients dynamically using LIMIT and OFFSET
-    // We order by persons.email asc to ensure consistent pagination ordering
-    const chunkRows = await baseQuery
-      .select(['persons.email'])
-      .distinct()
-      .orderBy('persons.email', 'asc')
-      .limit(NEWSLETTER_BATCH_SIZE)
-      .offset(offset)
-      .execute();
-
-    const chunk: string[] = Array.from(
-      new Set(chunkRows.map((r: { email: string | null }) => r.email?.trim()).filter(Boolean)),
-    );
-
-    if (chunk.length === 0) {
-      break;
-    }
-
-    const batchDelivered = await newsletterMailSvc.sendNewsletter({
-      fromName,
-      fromEmail,
-      replyTo,
-      recipients: chunk,
-      subject: newsletter.subject || 'Newsletter',
-      html: (newsletter.html_content || '') + footer.html,
-      text: newsletter.plain_text_content ? newsletter.plain_text_content + footer.text : undefined,
-      sendgridApiKey,
-      subuserUsername,
-      newsletterId,
-      tenantId,
-    });
-
-    deliveredCount += batchDelivered;
-    offset += chunkRows.length;
-
-    // Update progress in the background job payload (no recipients array!)
-    if (jobId) {
-      await db
-        .updateTable('background_jobs')
-        .set({
-          payload: JSON.stringify({
-            type: 'send-newsletter',
-            newsletterId,
-            tenantId,
-            userId,
-            offset,
-            deliveredCount,
-          }),
-          updated_at: new Date(),
-        })
-        .where('id', '=', jobId)
-        .execute();
-    }
-
-    // Add a small delay between batches to respect rate limits
-    if (offset < totalRecipients) {
-      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
-    }
-  }
-
-  // Update newsletter status to 'sent'
-  await db
-    .updateTable('newsletters')
-    .set({
-      status: 'sent',
-      delivered_count: deliveredCount,
-      send_date: new Date(),
-      updatedby_id: userId,
-      updated_at: new Date(),
-    })
-    .where('tenant_id', '=', tenantId)
-    .where('id', '=', newsletterId)
-    .execute();
-
-  // Log user activity
-  const userActivity = new UserActivityRepo();
-  await userActivity.log({
-    tenant_id: tenantId,
-    user_id: userId,
-    activity: 'send',
-    entity: 'newsletters',
-    entity_id: newsletterId,
-    quantity: totalRecipients,
-    metadata: { recipientsCount: totalRecipients, deliveredCount },
-  });
-
-  const { queueUsageLimitCheck } = await import('../../../modules/billing/usage-limits');
-  await queueUsageLimitCheck(tenantId, db);
-}
-
-export async function handlePruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
-  await pruneNewsletterEvents(db);
-  await scheduleNextRun(db, 'prune_newsletter_events', DAY_MS);
-}
-
-// Event types that warrant keeping a per-newsletter engagement record.
-// Delivery-only events (delivered, deferred, processed) are not stored.
-const ENGAGEMENT_EVENT_TYPES = new Set(['open', 'click', 'unsubscribe', 'group_unsubscribe', 'bounce', 'spamreport']);
-
-async function pruneNewsletterEvents(db: Kysely<Models>): Promise<void> {
-  const tenants: { id: string; subscription_plan: string | null }[] = await db
-    .selectFrom('tenants')
-    .select(['id', 'subscription_plan'])
-    .execute();
-
-  for (const tenant of tenants) {
-    try {
-      const plan = tenant.subscription_plan ?? 'free';
-      const retentionDays =
-        plan.toLowerCase() === 'representative' ? 90 : plan.toLowerCase() === 'grassroots' ? 30 : 15;
-
-      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-      const tenantId = String(tenant.id);
-
-      // Fetch events older than the retention window that are engagement events.
-      const expiringEvents: {
-        newsletter_id: string;
-        email: string;
-        event_type: string;
-        timestamp: Date;
-      }[] = await db
-        .selectFrom('newsletter_events')
-        .select(['newsletter_id', 'email', 'event_type', 'timestamp'])
-        .where('tenant_id', '=', tenantId)
-        .where('created_at', '<', cutoff)
-        .execute();
-
-      // Group by (newsletter_id, email) to produce one upsert per recipient.
-      const grouped = new Map<
-        string,
-        {
-          newsletter_id: string;
-          email: string;
-          open_count: number;
-          click_count: number;
-          has_unsubscribed: boolean;
-          hard_bounced: boolean;
-          soft_bounced: boolean;
-          first_opened_at: Date | null;
-          last_opened_at: Date | null;
-          first_clicked_at: Date | null;
-          last_clicked_at: Date | null;
-          bounced_at: Date | null;
-          unsubscribed_at: Date | null;
-        }
-      >();
-
-      for (const ev of expiringEvents) {
-        if (!ENGAGEMENT_EVENT_TYPES.has(ev.event_type)) continue;
-
-        const key = `${ev.newsletter_id}::${ev.email}`;
-        let agg = grouped.get(key);
-        if (!agg) {
-          agg = {
-            newsletter_id: ev.newsletter_id,
-            email: ev.email,
-            open_count: 0,
-            click_count: 0,
-            has_unsubscribed: false,
-            hard_bounced: false,
-            soft_bounced: false,
-            first_opened_at: null,
-            last_opened_at: null,
-            first_clicked_at: null,
-            last_clicked_at: null,
-            bounced_at: null,
-            unsubscribed_at: null,
-          };
-          grouped.set(key, agg);
-        }
-        const ts = new Date(ev.timestamp);
-
-        if (ev.event_type === 'open') {
-          agg.open_count++;
-          if (!agg.first_opened_at || ts < agg.first_opened_at) agg.first_opened_at = ts;
-          if (!agg.last_opened_at || ts > agg.last_opened_at) agg.last_opened_at = ts;
-        } else if (ev.event_type === 'click') {
-          agg.click_count++;
-          if (!agg.first_clicked_at || ts < agg.first_clicked_at) agg.first_clicked_at = ts;
-          if (!agg.last_clicked_at || ts > agg.last_clicked_at) agg.last_clicked_at = ts;
-        } else if (ev.event_type === 'unsubscribe' || ev.event_type === 'group_unsubscribe') {
-          agg.has_unsubscribed = true;
-          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
-        } else if (ev.event_type === 'bounce') {
-          // SendGrid bounce events don't carry a sub-type in this table;
-          // treat all as hard bounce (the webhook handler can refine this).
-          agg.hard_bounced = true;
-          if (!agg.bounced_at) agg.bounced_at = ts;
-        } else if (ev.event_type === 'spamreport') {
-          agg.has_unsubscribed = true;
-          if (!agg.unsubscribed_at || ts < agg.unsubscribed_at) agg.unsubscribed_at = ts;
-        }
-      }
-
-      // Upsert aggregated rows, then delete the raw events.
-      if (grouped.size > 0) {
-        await db.transaction().execute(async (trx) => {
-          for (const row of grouped.values()) {
-            await trx
-              .insertInto('person_newsletter_engagements')
-              .values({
-                tenant_id: tenantId,
-                newsletter_id: row.newsletter_id,
-                email: row.email,
-                open_count: row.open_count,
-                click_count: row.click_count,
-                has_unsubscribed: row.has_unsubscribed,
-                hard_bounced: row.hard_bounced,
-                soft_bounced: row.soft_bounced,
-                first_opened_at: row.first_opened_at,
-                last_opened_at: row.last_opened_at,
-                first_clicked_at: row.first_clicked_at,
-                last_clicked_at: row.last_clicked_at,
-                bounced_at: row.bounced_at,
-                unsubscribed_at: row.unsubscribed_at,
-              })
-              .onConflict((oc) =>
-                oc.columns(['tenant_id', 'newsletter_id', 'email']).doUpdateSet((eb) => ({
-                  open_count: sql`person_newsletter_engagements.open_count + ${eb.ref('excluded.open_count')}`,
-                  click_count: sql`person_newsletter_engagements.click_count + ${eb.ref('excluded.click_count')}`,
-                  has_unsubscribed: sql`person_newsletter_engagements.has_unsubscribed OR excluded.has_unsubscribed`,
-                  hard_bounced: sql`person_newsletter_engagements.hard_bounced OR excluded.hard_bounced`,
-                  soft_bounced: sql`person_newsletter_engagements.soft_bounced OR excluded.soft_bounced`,
-                  first_opened_at: sql`LEAST(person_newsletter_engagements.first_opened_at, excluded.first_opened_at)`,
-                  last_opened_at: sql`GREATEST(person_newsletter_engagements.last_opened_at, excluded.last_opened_at)`,
-                  first_clicked_at: sql`LEAST(person_newsletter_engagements.first_clicked_at, excluded.first_clicked_at)`,
-                  last_clicked_at: sql`GREATEST(person_newsletter_engagements.last_clicked_at, excluded.last_clicked_at)`,
-                  bounced_at: sql`COALESCE(person_newsletter_engagements.bounced_at, excluded.bounced_at)`,
-                  unsubscribed_at: sql`COALESCE(person_newsletter_engagements.unsubscribed_at, excluded.unsubscribed_at)`,
-                })),
-              )
-              .execute();
-          }
-
-          await trx
-            .deleteFrom('newsletter_events')
-            .where('tenant_id', '=', tenantId)
-            .where('created_at', '<', cutoff)
-            .execute();
-        });
-      } else {
-        // No engagement events to aggregate — still prune non-engagement events.
-        await db
-          .deleteFrom('newsletter_events')
-          .where('tenant_id', '=', tenantId)
-          .where('created_at', '<', cutoff)
-          .execute();
-      }
-    } catch (err) {
-      logger.error({ err }, `[prune_newsletter_events] Failed for tenant ${tenant.id}`);
-    }
-  }
-}
-
-/**
- * Builds the mandatory newsletter footer appended server-side at send time (so it cannot be removed
- * from the editor). Contains the organization address, the tenant footer disclaimer, and a SendGrid
- * substitution tag (`<% unsubscribe %>`) that SendGrid replaces with a working unsubscribe link when
- * subscription tracking is enabled.
- */
-function buildNewsletterFooter(address?: string, disclaimer?: string): { html: string; text: string } {
-  const esc = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-  const htmlParts: string[] = [];
-  const textParts: string[] = [];
-
-  const addr = (address || '').trim();
-  if (addr) {
-    htmlParts.push(`<div>${esc(addr).replace(/\n/g, '<br>')}</div>`);
-    textParts.push(addr);
-  }
-
-  const disc = (disclaimer || '').trim();
-  if (disc) {
-    htmlParts.push(`<div>${esc(disc).replace(/\n/g, '<br>')}</div>`);
-    textParts.push(disc);
-  }
-
-  // SendGrid substitution tag — replaced with the recipient's unsubscribe URL.
-  htmlParts.push('<div><a href="<% unsubscribe %>">Unsubscribe</a></div>');
-  textParts.push('Unsubscribe: <% unsubscribe %>');
-
-  const html = `<hr style="margin-top:24px"><div style="font-size:12px;color:#888;margin-top:8px">${htmlParts.join('')}</div>`;
-  const text = `\n\n----\n${textParts.join('\n')}`;
-
-  return { html, text };
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-const mailService = new TransactionalEmailService();
-
-export async function handleSendFormNotifications(
-  payload: JobPayloadOf<'send-form-notifications'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const event = await db
-    .selectFrom('volunteer_events')
-    .select([
-      'name',
-      'start_time',
-      'end_time',
-      'location_address',
-      'contact_email',
-      'contact_phone',
-      'send_signup_confirmation',
-      'send_volunteer_alert',
-    ])
-    .where('id', '=', payload.eventId)
-    .executeTakeFirst();
-
-  if (!event) {
-    logger.info(`Skipping volunteer signup notifications: event ${payload.eventId} not found.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-
-  // 1. Send Confirmation Email to the Constituent (if enabled)
-  if (event.send_signup_confirmation !== false) {
-    const coordEmailLine = event.contact_email ? `Email: ${event.contact_email}` : '';
-    const coordPhoneLine = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-    const coordinatorDetails = [coordEmailLine, coordPhoneLine].filter(Boolean).join('\n');
-
-    const coordEmailHtml = event.contact_email
-      ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>`
-      : '';
-    const coordPhoneHtml = event.contact_phone ? `Phone: ${event.contact_phone}` : '';
-    const coordinatorDetailsHtml = [coordEmailHtml, coordPhoneHtml].filter(Boolean).join('<br>');
-
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Volunteer Signup Confirmation: ${event.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for signing up to volunteer for "${event.name}"!\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}\n\nEvent Coordinator Details:\n${coordinatorDetails || 'N/A'}\n\nWe look forward to seeing you there!`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for signing up to volunteer for <strong>"${event.name}"</strong>!</p><p><strong>Details:</strong><br>Date & Time: ${startFormatted} - ${endFormatted}<br>Location: ${event.location_address || 'TBD'}</p><p><strong>Event Coordinator Details:</strong><br>${coordinatorDetailsHtml || 'N/A'}</p><p>We look forward to seeing you there!</p>`,
-    });
-  }
-
-  // 2. Send Alert Email to the Event Coordinator / Tenant Admin (if enabled)
-  if (event.send_volunteer_alert !== false) {
-    let alertRecipient = event.contact_email || null;
-
-    if (!alertRecipient) {
-      const admin = await db
-        .selectFrom('authusers')
-        .select('email')
-        .where('tenant_id', '=', payload.tenantId)
-        .limit(1)
-        .executeTakeFirst();
-      if (admin && admin.email) {
-        alertRecipient = admin.email;
-      }
-    }
-
-    if (alertRecipient) {
-      await mailService.sendMail({
-        to: alertRecipient,
-        subject: `[ALERT] New Volunteer Signup for ${event.name}`,
-        text: `Hi,\n\nA new constituent has signed up to volunteer for "${event.name}".\n\nName: ${payload.firstName || ''} ${payload.lastName || ''}\nEmail: ${payload.email}\nPhone: ${payload.mobile || 'N/A'}\nNotes: ${payload.notes || 'None'}`,
-        html: `<p>Hi,</p><p>A new constituent has signed up to volunteer for <strong>"${event.name}"</strong>.</p><p><strong>Volunteer Details:</strong><br>Name: ${payload.firstName || ''} ${payload.lastName || ''}<br>Email: ${payload.email}<br>Phone: ${payload.mobile || 'N/A'}<br>Notes: ${payload.notes || 'None'}</p>`,
-      });
-    }
-  }
-}
-
-export async function handleSendShiftReminder(
-  payload: JobPayloadOf<'send-shift-reminder'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const shift = await db
-    .selectFrom('volunteer_shifts')
-    .select(['id', 'status', 'event_id', 'person_id'])
-    .where('id', '=', payload.shiftId)
-    .executeTakeFirst();
-
-  if (!shift) {
-    logger.info(`Skipping shift reminder: shift ${payload.shiftId} not found.`);
-    return;
-  }
-
-  // Covers cancelled and no-show shifts as well.
-  if (shift.status !== 'signed_up') {
-    logger.info(`Skipping shift reminder: shift ${payload.shiftId} status is ${shift.status} instead of signed_up.`);
-    return;
-  }
-
-  const event = await db.selectFrom('volunteer_events').selectAll().where('id', '=', shift.event_id).executeTakeFirst();
-
-  if (!event) {
-    logger.info(`Skipping shift reminder: event ${shift.event_id} not found.`);
-    return;
-  }
-
-  if (event.send_reminder === false) {
-    logger.info(`Skipping shift reminder: reminders disabled for event ${event.id}.`);
-    return;
-  }
-
-  const person = await db.selectFrom('persons').selectAll().where('id', '=', shift.person_id).executeTakeFirst();
-
-  if (!person) {
-    logger.info(`Skipping shift reminder: person ${shift.person_id} not found.`);
-    return;
-  }
-
-  if (!person.email) {
-    logger.info(`Skipping shift reminder: person ${shift.person_id} has no email address.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-
-  const mapsUrl = event.location_address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-    : null;
-
-  const mapsLinkText = mapsUrl ? `\nDirections & Maps: View on Google Maps (${mapsUrl})` : '';
-
-  const subject = `Volunteer Shift Reminder: ${event.name}`;
-  const text = `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you have an upcoming volunteer shift for "${event.name}".\n\nDetails:\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsLinkText}\n\nThank you for volunteering, and we look forward to seeing you there!`;
-
-  const html = `
-<div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
-  <h2 style="color: #0284c7; margin-top: 0;">Volunteer Shift Reminder</h2>
-  <p>Hi ${person.first_name || 'there'},</p>
-  <p>This is a reminder that you have an upcoming volunteer shift for <strong>"${event.name}"</strong>.</p>
-  <div style="background-color: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 20px 0; border-radius: 8px;">
-    <h3 style="margin: 0 0 8px 0; font-size: 16px;">Shift Details</h3>
-    <p style="margin: 4px 0;"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p>
-    <p style="margin: 4px 0;"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>
-    ${mapsUrl ? `<p style="margin: 12px 0 4px 0;"><strong>Directions & Map:</strong><br><a href="${mapsUrl}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">Open in Google Maps</a></p>` : ''}
-  </div>
-  <p>Thank you for volunteering, and we look forward to seeing you there!</p>
-</div>`;
-
-  await mailService.sendMail({
-    to: person.email,
-    subject,
-    text,
-    html,
-  });
-
-  logger.info(`Successfully sent shift reminder email to ${person.email} for shift ${shift.id}`);
-}
-
-export async function handleSendWebformNotifications(
-  payload: JobPayloadOf<'send-webform-notifications'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const form = await db
-    .selectFrom('web_forms')
-    .select(['name', 'send_confirmation', 'send_alert', 'tenant_id'])
-    .where('id', '=', payload.formId)
-    .executeTakeFirst();
-
-  if (!form) {
-    logger.info(`Skipping web form notifications: form ${payload.formId} not found.`);
-    return;
-  }
-
-  // 1. Send Confirmation Email to the Constituent (if enabled)
-  if (form.send_confirmation !== false) {
-    await mailService.sendMail({
-      to: payload.email,
-      subject: `Thank you for your submission to ${form.name}`,
-      text: `Hi ${payload.firstName || 'there'},\n\nThank you for submitting our form "${form.name}". We have received your request and our team will follow up with you soon.`,
-      html: `<p>Hi ${payload.firstName || 'there'},</p><p>Thank you for submitting our form <strong>"${form.name}"</strong>. We have received your request and our team will follow up with you soon.</p>`,
-    });
-  }
-
-  // 2. Send Alert Email to the Tenant Admin (if enabled)
-  if (form.send_alert !== false) {
-    const admin = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name'])
-      .where('tenant_id', '=', form.tenant_id)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (admin && admin.email) {
-      await mailService.sendMail({
-        to: admin.email,
-        subject: `[ALERT] New Lead Submission on ${form.name}`,
-        text: `Hi ${admin.first_name || 'Admin'},\n\nYou have received a new submission on form "${form.name}" from ${payload.firstName || ''} ${payload.lastName || ''} (${payload.email}).\n\nNotes:\n${payload.notes || 'None'}`,
-        html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>You have received a new submission on form <strong>"${form.name}"</strong> from <strong>${payload.firstName || ''} ${payload.lastName || ''}</strong> (${payload.email}).</p><p><strong>Notes:</strong><br>${payload.notes || 'None'}</p>`,
-      });
-    }
-  }
-}
-
-export async function handleSendEventRegistrationConfirmation(
-  payload: JobPayloadOf<'send-event-registration-confirmation'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const registration = await db
-    .selectFrom('event_registrations')
-    .select(['id', 'status', 'event_id', 'person_id', 'ticket_type_id'])
-    .where('id', '=', payload.registrationId)
-    .executeTakeFirst();
-
-  if (!registration || registration.status === 'cancelled') {
-    logger.info(`Skipping event confirmation: registration ${payload.registrationId} not found or cancelled.`);
-    return;
-  }
-
-  const event = await db
-    .selectFrom('events')
-    .select([
-      'name',
-      'start_time',
-      'end_time',
-      'location_address',
-      'contact_email',
-      'contact_phone',
-      'send_registration_confirmation',
-    ])
-    .where('id', '=', registration.event_id)
-    .executeTakeFirst();
-
-  if (!event || event.send_registration_confirmation === false) {
-    logger.info(`Skipping event confirmation: event ${registration.event_id} not found or confirmations disabled.`);
-    return;
-  }
-
-  const person = await db
-    .selectFrom('persons')
-    .select(['first_name', 'email'])
-    .where('id', '=', registration.person_id)
-    .executeTakeFirst();
-
-  if (!person || !person.email) {
-    logger.info(`Skipping event confirmation: person ${registration.person_id} has no email.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-  const coordLine = [
-    event.contact_email ? `Email: ${event.contact_email}` : '',
-    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  const coordHtml = [
-    event.contact_email ? `Email: <a href="mailto:${event.contact_email}">${event.contact_email}</a>` : '',
-    event.contact_phone ? `Phone: ${event.contact_phone}` : '',
-  ]
-    .filter(Boolean)
-    .join('<br>');
-
-  await mailService.sendMail({
-    to: person.email,
-    subject: `Registration Confirmed: ${event.name}`,
-    text: `Hi ${person.first_name || 'there'},\n\nYou're registered for "${event.name}"!\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${coordLine ? `\n\nContact:\n${coordLine}` : ''}\n\nWe look forward to seeing you there!`,
-    html: `<p>Hi ${person.first_name || 'there'},</p><p>You're registered for <strong>"${event.name}"</strong>!</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${coordHtml ? `<p style="margin:12px 0 4px 0"><strong>Contact:</strong><br>${coordHtml}</p>` : ''}</div><p>We look forward to seeing you there!</p>`,
-  });
-
-  logger.info(`Sent registration confirmation to ${person.email} for event ${registration.event_id}`);
-}
-
-export async function handleSendEventReminder(
-  payload: JobPayloadOf<'send-event-reminder'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const registration = await db
-    .selectFrom('event_registrations')
-    .select(['id', 'status', 'event_id', 'person_id'])
-    .where('id', '=', payload.registrationId)
-    .executeTakeFirst();
-
-  if (!registration || registration.status !== 'registered') {
-    logger.info(
-      `Skipping event reminder: registration ${payload.registrationId} not found or not in registered status.`,
-    );
-    return;
-  }
-
-  const event = await db.selectFrom('events').selectAll().where('id', '=', registration.event_id).executeTakeFirst();
-
-  if (!event || event.send_reminder === false) {
-    logger.info(`Skipping event reminder: event ${registration.event_id} not found or reminders disabled.`);
-    return;
-  }
-
-  const person = await db
-    .selectFrom('persons')
-    .select(['first_name', 'email'])
-    .where('id', '=', registration.person_id)
-    .executeTakeFirst();
-
-  if (!person || !person.email) {
-    logger.info(`Skipping event reminder: person ${registration.person_id} has no email.`);
-    return;
-  }
-
-  const startFormatted = new Date(event.start_time).toLocaleString();
-  const endFormatted = new Date(event.end_time).toLocaleString();
-  const mapsUrl = event.location_address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.location_address)}`
-    : null;
-
-  await mailService.sendMail({
-    to: person.email,
-    subject: `Reminder: ${event.name} is tomorrow`,
-    text: `Hi ${person.first_name || 'there'},\n\nThis is a reminder that you're registered for "${event.name}" tomorrow.\n\nDate & Time: ${startFormatted} - ${endFormatted}\nLocation: ${event.location_address || 'TBD'}${mapsUrl ? `\nDirections: ${mapsUrl}` : ''}\n\nWe look forward to seeing you there!`,
-    html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #e2e8f0;border-radius:12px;padding:24px;"><h2 style="color:#0284c7;margin-top:0;">Event Reminder</h2><p>Hi ${person.first_name || 'there'},</p><p>This is a reminder that you're registered for <strong>"${event.name}"</strong> tomorrow.</p><div style="background:#f8fafc;border-left:4px solid #0284c7;padding:16px;margin:20px 0;border-radius:8px;"><p style="margin:4px 0"><strong>Date & Time:</strong> ${startFormatted} - ${endFormatted}</p><p style="margin:4px 0"><strong>Location:</strong> ${event.location_address || 'TBD'}</p>${mapsUrl ? `<p style="margin:12px 0 4px 0"><a href="${mapsUrl}" target="_blank" style="color:#0284c7;font-weight:600;">Open in Google Maps</a></p>` : ''}</div><p>We look forward to seeing you there!</p></div>`,
-  });
-
-  logger.info(`Sent event reminder to ${person.email} for event ${registration.event_id}`);
-}
-
-export async function handleSendTransactionalEmail(payload: JobPayloadOf<'send-transactional-email'>): Promise<void> {
-  await mailService.sendMail({
-    to: payload.to,
-    subject: payload.subject ?? '',
-    text: payload.text ?? '',
-    html: payload.html ?? '',
-  });
-}
-
-export async function handleSendSubscriptionConfirmation(
-  payload: JobPayloadOf<'send-subscription-confirmation'>,
-): Promise<void> {
-  await mailService.sendMail({
-    to: payload.email,
-    subject: 'Please confirm your subscription',
-    text: `Hi ${payload.firstName || 'there'},\n\nPlease confirm your subscription by visiting the link below:\n\n${payload.confirmUrl}\n\nIf you did not request this, you can safely ignore this email.`,
-    html: `<p>Hi ${payload.firstName || 'there'},</p><p>Please confirm your subscription by clicking the button below.</p><p><a href="${payload.confirmUrl}" class="btn">Confirm subscription</a></p><p>If you did not request this, you can safely ignore this email.</p>`,
-  });
-}
-
-export async function handleCheckDueTasks(db: Kysely<Models>): Promise<void> {
-  await checkDueTasks(db);
-
-  await scheduleNextRun(db, 'check_due_tasks', DAY_MS);
-}
-
-export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
-  const now = new Date();
-  try {
-    const dueTasks = await db
-      .selectFrom('tasks')
-      .innerJoin('authusers', 'authusers.id', 'tasks.assigned_to')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select([
-        'tasks.id as task_id',
-        'tasks.name as task_name',
-        'tasks.due_at',
-        'tasks.details',
-        'authusers.id as user_id',
-        'authusers.email as user_email',
-        'authusers.first_name',
-        'profiles.json as profile_json',
-      ])
-      .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
-      .where('tasks.due_at', '<=', now)
-      .orderBy('tasks.due_at', 'asc')
-      .execute();
-
-    if (dueTasks.length === 0) return;
-
-    const userTasksMap = new Map<string, typeof dueTasks>();
-    for (const row of dueTasks) {
-      const userId = String(row.user_id);
-      let userTasks = userTasksMap.get(userId);
-      if (!userTasks) {
-        userTasks = [];
-        userTasksMap.set(userId, userTasks);
-      }
-      userTasks.push(row);
-    }
-
-    for (const [, tasks] of userTasksMap.entries()) {
-      const firstRow = tasks[0];
-      if (!firstRow) continue;
-      const userEmail = firstRow.user_email;
-      const firstName = firstRow.first_name;
-      const profileJson = firstRow.profile_json;
-
-      let optedIn = true;
-      if (profileJson) {
-        try {
-          const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-          if (json?.notifications?.task_due === false) {
-            optedIn = false;
-          }
-        } catch (e) {
-          logger.error({ err: e }, 'Failed to parse profile json in checkDueTasks');
-        }
-      }
-
-      if (optedIn && userEmail) {
-        let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
-        let htmlContent = `<p>Hi ${firstName || 'there'},</p><p>Here are your active tasks needing attention today:</p><ul>`;
-
-        for (const t of tasks) {
-          const dueDateStr = t.due_at ? new Date(t.due_at).toLocaleDateString() : 'No due date';
-          textContent += `- ${t.task_name} (Due: ${dueDateStr})\n  Link: ${env.appUrl}/tasks/${t.task_id}\n\n`;
-          htmlContent += `<li><strong>${t.task_name}</strong> (Due: ${dueDateStr}) - <a href="${env.appUrl}/tasks/${t.task_id}">Resolve</a></li>`;
-        }
-
-        htmlContent += `</ul>`;
-
-        await mailService.sendMail({
-          to: userEmail,
-          subject: `Daily Task Attention Needed: ${tasks.length} Task(s) Due or Overdue`,
-          text: textContent,
-          html: htmlContent,
-        });
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to check and notify due tasks');
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/sync.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { GoogleOAuthService } from '../../../modules/google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../../modules/google-sync/google-sync.service';
-import { MsOAuthService } from '../../../modules/ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../../modules/ms-sync/ms-sync.service';
-import type { JobPayloadOf } from '../job-payloads';
-import { scheduleNextRun, TEN_MINUTES_MS } from '../reschedule';
-
-export async function handleScheduleSyncJobs(db: Kysely<Models>): Promise<void> {
-  await queueUserSyncJobs(db);
-
-  await scheduleNextRun(db, 'schedule_sync_jobs', TEN_MINUTES_MS);
-}
-
-export async function handleGoogleSync(payload: JobPayloadOf<'google_sync'>, db: Kysely<Models>): Promise<void> {
-  const oauthSvc = new GoogleOAuthService(db, {
-    clientId: env.googleClientId ?? '',
-    clientSecret: env.googleClientSecret ?? '',
-    redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-  });
-  const syncSvc = new GoogleSyncService(db, oauthSvc);
-  await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
-}
-
-export async function handleMsSync(payload: JobPayloadOf<'ms_sync'>, db: Kysely<Models>): Promise<void> {
-  const oauthSvc = new MsOAuthService(db, {
-    clientId: env.msClientId ?? '',
-    clientSecret: env.msClientSecret ?? '',
-    tenantId: env.msTenantId ?? 'common',
-    redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-  });
-  const syncSvc = new MsSyncService(db, oauthSvc);
-  await syncSvc.syncTenant(payload.tenantId, payload.requestedBy);
-}
-
-async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
-  try {
-    // Find all tenants with a connected Google account
-    const googleTokens = await db.selectFrom('google_oauth_tokens').select('tenant_id').execute();
-
-    for (const token of googleTokens) {
-      const tenantId = String(token.tenant_id);
-
-      // Check if there is already a pending or processing sync job for this tenant
-      const existing = await db
-        .selectFrom('background_jobs')
-        .select('id')
-        .where('status', 'in', ['pending', 'processing'])
-        .where(sql`payload->>'type'`, '=', 'google_sync')
-        .where(sql`payload->>'tenantId'`, '=', tenantId)
-        .executeTakeFirst();
-
-      if (!existing) {
-        logger.info(`Auto-scheduling Google sync job for tenant ${tenantId}`);
-        await db
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'google_sync',
-              tenantId,
-              requestedBy: 'system',
-            }),
-            run_at: new Date(),
-            max_attempts: 3,
-          })
-          .execute();
-      }
-    }
-
-    // Find all tenants with a connected Microsoft account
-    const msTokens = await db.selectFrom('ms_oauth_tokens').select('tenant_id').execute();
-
-    for (const token of msTokens) {
-      const tenantId = String(token.tenant_id);
-
-      // Check if there is already a pending or processing sync job for this tenant
-      const existing = await db
-        .selectFrom('background_jobs')
-        .select('id')
-        .where('status', 'in', ['pending', 'processing'])
-        .where(sql`payload->>'type'`, '=', 'ms_sync')
-        .where(sql`payload->>'tenantId'`, '=', tenantId)
-        .executeTakeFirst();
-
-      if (!existing) {
-        logger.info(`Auto-scheduling MS sync job for tenant ${tenantId}`);
-        await db
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'ms_sync',
-              tenantId,
-              requestedBy: 'system',
-            }),
-            run_at: new Date(),
-            max_attempts: 3,
-          })
-          .execute();
-      }
-    }
-  } catch (err) {
-    logger.error({ err }, 'Failed to queue tenant sync jobs');
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/workflows.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { scheduleNextRun, TEN_MINUTES_MS } from '../reschedule';
-
-const ENROLLMENT_BATCH_SIZE = 500;
-
-export async function handleProcessDripWorkflows(db: Kysely<Models>): Promise<void> {
-  const now = new Date();
-  const pendingEnrollments = await db
-    .selectFrom('workflow_enrollments')
-    .selectAll()
-    .where('status', '=', 'active')
-    .where('next_run_at', '<=', now)
-    .limit(ENROLLMENT_BATCH_SIZE)
-    .execute();
-
-  for (const enrollment of pendingEnrollments) {
-    try {
-      await db.transaction().execute(async (trx) => {
-        const lockedEnrollment = await trx
-          .selectFrom('workflow_enrollments')
-          .selectAll()
-          .where('id', '=', enrollment.id)
-          .where('status', '=', 'active')
-          .where('next_run_at', '<=', now)
-          .forUpdate()
-          .skipLocked()
-          .executeTakeFirst();
-
-        if (!lockedEnrollment) return;
-
-        const step = await trx
-          .selectFrom('workflow_steps')
-          .selectAll()
-          .where('workflow_id', '=', lockedEnrollment.workflow_id)
-          .where('step_number', '=', lockedEnrollment.current_step_number)
-          .executeTakeFirst();
-
-        if (!step) {
-          await trx
-            .updateTable('workflow_enrollments')
-            .set({
-              status: 'completed',
-              next_run_at: null,
-              updated_at: new Date(),
-            })
-            .where('id', '=', lockedEnrollment.id)
-            .execute();
-          return;
-        }
-
-        const person = await trx
-          .selectFrom('persons')
-          .select(['id', 'email', 'first_name', 'last_name'])
-          .where('id', '=', lockedEnrollment.person_id)
-          .executeTakeFirst();
-
-        if (person && person.email) {
-          const textContent =
-            step.plain_text_content || `Hello ${person.first_name || 'there'},\n\nThis is an automated message.`;
-          const htmlContent =
-            step.html_content || `<p>Hello ${person.first_name || 'there'},</p><p>This is an automated message.</p>`;
-
-          await trx
-            .insertInto('background_jobs')
-            .values({
-              tenant_id: lockedEnrollment.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'send-transactional-email',
-                to: person.email,
-                subject: step.subject,
-                text: textContent,
-                html: htmlContent,
-              }),
-              run_at: new Date(),
-              max_attempts: 5,
-            })
-            .execute();
-
-          const workflow = await trx
-            .selectFrom('workflows')
-            .select(['name', 'createdby_id'])
-            .where('id', '=', lockedEnrollment.workflow_id)
-            .executeTakeFirst();
-
-          // Only log activity if the workflow (and its creator) still exist;
-          // skip the log rather than writing a row referencing a phantom user.
-          if (workflow?.createdby_id) {
-            const actorId = String(workflow.createdby_id);
-            await trx
-              .insertInto('user_activity')
-              .values({
-                tenant_id: lockedEnrollment.tenant_id,
-                user_id: actorId,
-                activity: 'send',
-                entity: 'workflows',
-                entity_id: String(lockedEnrollment.workflow_id),
-                quantity: 1,
-                metadata: JSON.stringify({
-                  person_id: String(person.id),
-                  person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
-                  email: person.email,
-                  subject: step.subject,
-                  step_number: step.step_number,
-                }),
-                createdby_id: actorId,
-                updatedby_id: actorId,
-              })
-              .execute();
-          }
-        }
-
-        const nextStep = await trx
-          .selectFrom('workflow_steps')
-          .selectAll()
-          .where('workflow_id', '=', lockedEnrollment.workflow_id)
-          .where('step_number', '>', lockedEnrollment.current_step_number)
-          .orderBy('step_number', 'asc')
-          .limit(1)
-          .executeTakeFirst();
-
-        if (nextStep) {
-          const delayMs =
-            nextStep.delay_unit === 'hours'
-              ? nextStep.delay_days * 60 * 60 * 1000
-              : nextStep.delay_days * 24 * 60 * 60 * 1000;
-          const nextRunAt = new Date(Date.now() + delayMs);
-          await trx
-            .updateTable('workflow_enrollments')
-            .set({
-              current_step_number: nextStep.step_number,
-              next_run_at: nextRunAt,
-              updated_at: new Date(),
-            })
-            .where('id', '=', lockedEnrollment.id)
-            .execute();
-        } else {
-          await trx
-            .updateTable('workflow_enrollments')
-            .set({
-              status: 'completed',
-              next_run_at: null,
-              updated_at: new Date(),
-            })
-            .where('id', '=', lockedEnrollment.id)
-            .execute();
-        }
-      });
-    } catch (err) {
-      logger.error({ err }, `Failed to process drip workflow enrollment ${enrollment.id}`);
-    }
-  }
-
-  // A full batch means there is likely more work waiting — requeue immediately.
-  const delayMs = pendingEnrollments.length === ENROLLMENT_BATCH_SIZE ? 0 : TEN_MINUTES_MS;
-  await scheduleNextRun(db, 'process_drip_workflows', delayMs);
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/job-payloads.ts
-
-```typescript
-import { z } from 'zod';
-import type { ZapierEventType } from '../../modules/zapier/zapier.service';
-
-/**
- * IDs are strings in the database, but historical job payloads may carry them
- * as numbers (JSON round-trip of bigint columns). Normalize to string.
- */
-const idSchema = z.union([z.string(), z.number()]).transform(String);
-
-/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
-const ZAPIER_EVENT_TYPES = [
-  'person_created',
-  'person_updated',
-  'person_deleted',
-  'person_tag_added',
-  'person_tag_removed',
-] as const satisfies readonly ZapierEventType[];
-
-const exportSortSchema = z.object({
-  colId: z.string().nullish(),
-  sort: z.string().nullish(),
-});
-
-const exportOptionsSchema = z.object({
-  userId: idSchema.nullish(),
-  entity: z.string().nullish(),
-  activity: z.string().nullish(),
-  searchStr: z.string().nullish(),
-  sortModel: z.array(exportSortSchema).nullish(),
-});
-
-export const jobPayloadSchema = z.discriminatedUnion('type', [
-  // ── Lists / companies / maintenance ─────────────────────────────────────
-  z.object({
-    type: z.literal('refresh_list'),
-    tenant_id: idSchema,
-    list_id: idSchema,
-    user_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('enrich_company_google'),
-    company_id: idSchema,
-    tenant_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('refresh_companies_google'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({ type: z.literal('cleanup_activities') }),
-  z.object({ type: z.literal('recompute_all_duplicates') }),
-  z.object({
-    type: z.literal('recompute_address_fingerprints'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({
-    type: z.literal('geocode_household'),
-    household_id: idSchema,
-    tenant_id: idSchema,
-  }),
-
-  // ── External account sync ───────────────────────────────────────────────
-  z.object({ type: z.literal('schedule_sync_jobs') }),
-  z.object({
-    type: z.literal('google_sync'),
-    tenantId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-  z.object({
-    type: z.literal('ms_sync'),
-    tenantId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-
-  // ── Notifications & transactional email ─────────────────────────────────
-  z.object({
-    type: z.literal('send-form-notifications'),
-    eventId: idSchema,
-    tenantId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    mobile: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-shift-reminder'),
-    shiftId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-webform-notifications'),
-    formId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-event-registration-confirmation'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-event-reminder'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-transactional-email'),
-    to: z.string(),
-    subject: z.string().nullish(),
-    text: z.string().nullish(),
-    html: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-subscription-confirmation'),
-    email: z.string(),
-    firstName: z.string().nullish(),
-    confirmUrl: z.string(),
-  }),
-  z.object({ type: z.literal('check_due_tasks') }),
-
-  // ── Newsletters ──────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('send-newsletter'),
-    tenantId: idSchema,
-    newsletterId: idSchema,
-    userId: idSchema,
-    offset: z.number().nullish(),
-    deliveredCount: z.number().nullish(),
-  }),
-  z.object({ type: z.literal('prune_newsletter_events') }),
-
-  // ── Workflows & deletions ────────────────────────────────────────────────
-  z.object({ type: z.literal('process_drip_workflows') }),
-  z.object({ type: z.literal('perform_scheduled_deletions') }),
-
-  // ── Billing & integrations ───────────────────────────────────────────────
-  z.object({
-    type: z.literal('zapier_trigger'),
-    tenant_id: idSchema,
-    event_type: z.enum(ZAPIER_EVENT_TYPES),
-    data: z.record(z.string(), z.unknown()).default({}),
-  }),
-  z.object({
-    type: z.literal('check_usage_limits'),
-    tenant_id: idSchema,
-  }),
-  z.object({ type: z.literal('check_all_usage_limits') }),
-
-  // ── Exports ──────────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('export_csv'),
-    export_id: idSchema,
-    tenant_id: idSchema,
-    table: z.string().nullish(),
-    entity: z.string().nullish(),
-    options: exportOptionsSchema.default({}),
-    columns: z.array(z.string()).nullish(),
-    user_id: idSchema.nullish(),
-    file_name: z.string().nullish(),
-  }),
-]);
-
-export type JobPayload = z.infer<typeof jobPayloadSchema>;
-export type JobType = JobPayload['type'];
-export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
-
-/**
- * CSV imports are queued without a `type` discriminator (legacy shape) and are
- * matched by the presence of `import_id` + `storage_key` instead.
- */
-export const legacyImportJobSchema = z.object({
-  import_id: idSchema,
-  storage_key: z.string(),
-  tenant_id: idSchema,
-  user_id: idSchema,
-  source: z.string().nullish(),
-  skipped: z.union([z.string(), z.number()]).nullish(),
-  campaign_id: idSchema.nullish(),
-  tags: z.array(z.string()).nullish(),
-  file_name: z.string().nullish(),
-});
-
-export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
-```
-
-## File: apps/backend/src/app/lib/jobs/reschedule.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { JobType } from './job-payloads';
-
-const MINUTE_MS = 60 * 1000;
-export const TEN_MINUTES_MS = 10 * MINUTE_MS;
-export const DAY_MS = 24 * 60 * MINUTE_MS;
-
-const DEFAULT_MAX_ATTEMPTS = 3;
-
-/**
- * Re-queues a parameterless periodic job to run again after `delayMs`.
- * Used by the self-rescheduling cron-style jobs (cleanup, dedupe, sync scheduling, …).
- */
-export async function scheduleNextRun(db: Kysely<Models>, type: JobType, delayMs: number): Promise<void> {
-  await db
-    .insertInto('background_jobs')
-    .values({
-      tenant_id: null,
-      queue: 'default',
-      status: 'pending',
-      payload: JSON.stringify({ type }),
-      run_at: new Date(Date.now() + delayMs),
-      max_attempts: DEFAULT_MAX_ATTEMPTS,
-    })
-    .execute();
-}
-```
-
-## File: apps/backend/src/app/lib/test-utils/db-test-isolation.ts
-
-````typescript
-import type { ControlledTransaction, Transaction } from 'kysely';
-import { afterEach, beforeEach } from 'vitest';
-
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository } from '../base.repo';
-
-/**
- * Test isolation context handed back by {@link useTestTransaction}.
- *
- * `trx` resolves to the *current* test's transaction (reopened by an internal
- * `beforeEach` before every test), so it's safe to read `ctx.trx` from inside
- * `it(...)` bodies and nested `beforeEach` hooks registered after the call to
- * `useTestTransaction()`.
- */
-export interface TestTransactionContext {
-  readonly trx: Transaction<Models>;
-}
-
-/**
- * Backend specs in this repo run against a real, shared local Postgres
- * instance (see `apps/backend/vite.config.ts`) -- there is no mocking layer.
- * Historically specs seeded rows with random ids in `beforeEach` and manually
- * deleted them in `afterEach`/`finally`, which leaks rows into the shared DB
- * whenever a test fails or the process is killed mid-run.
- *
- * This helper opens a real Postgres transaction before each test and always
- * rolls it back after, so anything written during a test -- via
- * `repo.add(..., trx)`, raw `trx.insertInto(...)`, etc. -- disappears
- * unconditionally, even if the test throws.
- *
- * Kysely's usual `db.transaction().execute(callback)` API scopes the
- * transaction to a single callback, which doesn't fit the
- * `beforeEach`/`it`/`afterEach` lifecycle -- the transaction needs to stay
- * open *across* those hook boundaries. Kysely 0.28 (the version pinned in
- * this repo) added `db.startTransaction().execute()`, which returns a
- * `ControlledTransaction` (a `Transaction` subtype) that can be committed or
- * rolled back manually instead of being tied to a callback -- exactly what's
- * needed here.
- *
- * Usage:
- * ```ts
- * describe('MyRepo', () => {
- *   const ctx = useTestTransaction();
- *
- *   it('adds a row', async () => {
- *     const row = await repo.add({ row: { ... } }, ctx.trx);
- *     expect(row).toBeDefined();
- *   });
- * });
- * ```
- */
-export function useTestTransaction(): TestTransactionContext {
-  let currentTrx: ControlledTransaction<Models> | undefined;
-
-  beforeEach(async () => {
-    currentTrx = await BaseRepository.dbInstance.startTransaction().execute();
-  });
-
-  afterEach(async () => {
-    if (currentTrx && !currentTrx.isCommitted && !currentTrx.isRolledBack) {
-      await currentTrx.rollback().execute();
-    }
-    currentTrx = undefined;
-  });
-
-  return {
-    get trx(): Transaction<Models> {
-      if (!currentTrx) {
-        throw new Error('useTestTransaction(): trx accessed outside of a running test (before beforeEach ran).');
-      }
-      return currentTrx;
-    },
-  };
-}
-````
-
-## File: apps/backend/src/app/lib/csv-stream.ts
-
-```typescript
-import { Transform } from 'stream';
-
-export class CsvTransformStream extends Transform {
-  private isFirst = true;
-  private columns: string[];
-  public rowCount = 0;
-
-  constructor(columns: string[] = []) {
-    super({ objectMode: true });
-    this.columns = columns;
-  }
-
-  override _transform(
-    row: Record<string, unknown>,
-    _encoding: string,
-    callback: (err?: Error | null, chunk?: unknown) => void,
-  ) {
-    this.rowCount++;
-    let chunk = '';
-
-    if (this.isFirst) {
-      if (!this.columns || this.columns.length === 0) {
-        this.columns = Object.keys(row);
-      }
-      chunk += this.columns.join(',') + '\n';
-      this.isFirst = false;
-    }
-
-    const escape = (value: unknown) => {
-      if (value === null || value === undefined) return '';
-      if (value instanceof Date) return value.toISOString();
-      const str = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
-      return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
-    };
-
-    chunk += this.columns.map((col) => escape(row[col])).join(',') + '\n';
-    callback(null, chunk);
-  }
-
-  override _flush(callback: (err?: Error | null) => void) {
-    callback();
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/csv.ts
-
-```typescript
-export function rowsToCsv(rows: Array<Record<string, unknown>>, columns: string[]): string {
-  if (!columns.length) return '';
-
-  const escape = (value: unknown) => {
-    if (value === null || value === undefined) return '';
-    if (value instanceof Date) return value.toISOString();
-    const str = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
-    return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
-  };
-
-  const header = columns.join(',');
-  const data = rows.map((row) => columns.map((col) => escape(row[col])).join(','));
-  return [header, ...data].join('\n');
-}
-```
-
-## File: apps/backend/src/app/lib/fastify.types.ts
-
-```typescript
-import type { FastifyRequest } from 'fastify';
-
-export type IdParam = FastifyRequest<{
-  Params: { id: string };
-}>;
-```
-
-## File: apps/backend/src/app/lib/oauth-state.ts
-
-```typescript
-import { createHmac, timingSafeEqual } from 'crypto';
-
-import { env } from '../../env';
-
-// OAuth `state` must be unforgeable: it is the ONLY thing that binds the
-// mailbox being connected to a specific (userId, tenantId). If it is not
-// authenticated, an attacker can craft an authorization URL whose state points
-// at their own account, trick a victim into authorizing, and have the victim's
-// mailbox tokens stored under the attacker's user — a full account takeover.
-// We therefore HMAC-sign the state with the server secret and give it a short
-// TTL so a leaked/observed value cannot be replayed indefinitely.
-
-const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-
-export interface OAuthStatePayload {
-  userId: string;
-  tenantId: string;
-  returnTo?: string;
-}
-
-interface SignedStateBody extends OAuthStatePayload {
-  iat: number;
-}
-
-function sign(data: string): string {
-  return createHmac('sha256', env.sharedSecret).update(data).digest('base64url');
-}
-
-/** Produce a signed, tamper-proof state string for an OAuth authorization URL. */
-export function encodeOAuthState(payload: OAuthStatePayload): string {
-  const body: SignedStateBody = { ...payload, iat: Date.now() };
-  const data = Buffer.from(JSON.stringify(body)).toString('base64url');
-  return `${data}.${sign(data)}`;
-}
-
-/**
- * Verify and decode a state string returned to an OAuth callback.
- * Returns `null` if the signature is missing/invalid, the payload is malformed,
- * or the state has expired — callers MUST treat null as an invalid request.
- */
-export function decodeOAuthState(raw: string | undefined | null): OAuthStatePayload | null {
-  if (!raw || typeof raw !== 'string') return null;
-
-  const dot = raw.lastIndexOf('.');
-  if (dot <= 0) return null;
-
-  const data = raw.slice(0, dot);
-  const providedSig = raw.slice(dot + 1);
-  const expectedSig = sign(data);
-
-  const a = Buffer.from(providedSig);
-  const b = Buffer.from(expectedSig);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-
-  let parsed: SignedStateBody;
-  try {
-    parsed = JSON.parse(Buffer.from(data, 'base64url').toString('utf8'));
-  } catch {
-    return null;
-  }
-
-  if (!parsed || typeof parsed.iat !== 'number') return null;
-  if (Date.now() - parsed.iat > STATE_TTL_MS) return null;
-  if (!parsed.userId || !parsed.tenantId) return null;
-
-  return { userId: parsed.userId, tenantId: parsed.tenantId, returnTo: parsed.returnTo };
-}
-```
-
-## File: apps/backend/src/app/lib/signed-download.ts
-
-```typescript
-import { createSigner, createVerifier } from 'fast-jwt';
-import { env } from '../../env';
-import { UnauthorizedError } from '../errors/app-errors';
-
-const DOWNLOAD_SCOPE = 'file-download';
-// Long enough that cached user lists keep rendering avatars, short enough
-// that a URL leaked from history or logs goes stale quickly.
-const DOWNLOAD_URL_TTL = '24h';
-
-interface SignedDownloadPayload {
-  scope: typeof DOWNLOAD_SCOPE;
-  file_id: string;
-  tenant_id: string;
-}
-
-const signer = createSigner({ algorithm: 'HS256', key: env.sharedSecret, expiresIn: DOWNLOAD_URL_TTL });
-const verifier = createVerifier({ algorithms: ['HS256'], key: env.sharedSecret, ignoreExpiration: false });
-
-/**
- * Build a relative download URL carrying a short-lived token scoped to a
- * single file. Safe to embed in <img> tags: unlike a session JWT it cannot
- * be replayed against other endpoints and it expires quickly.
- */
-export function signedFileDownloadUrl(fileId: string, tenantId: string): string {
-  const st = signer({ scope: DOWNLOAD_SCOPE, file_id: String(fileId), tenant_id: String(tenantId) });
-  return `/api/files/download/${fileId}?st=${encodeURIComponent(st)}`;
-}
-
-/**
- * Verify a signed download token and confirm it was minted for the file
- * being requested. Throws UnauthorizedError on any mismatch.
- */
-export function verifyFileDownloadToken(st: string, fileId: string): SignedDownloadPayload {
-  let payload: unknown;
-  try {
-    payload = verifier(st);
-  } catch (err) {
-    throw new UnauthorizedError('Unauthorized: Invalid or expired download token', undefined, { cause: err });
-  }
-  const parsed = payload as Partial<SignedDownloadPayload> | null;
-  if (!parsed || parsed.scope !== DOWNLOAD_SCOPE || !parsed.tenant_id || String(parsed.file_id) !== String(fileId)) {
-    throw new UnauthorizedError('Unauthorized: Invalid download token');
-  }
-  return parsed as SignedDownloadPayload;
-}
-```
-
-## File: apps/backend/src/app/modules/auth/repositories/sessions.repo.ts
-
-```typescript
-import type { Transaction } from 'kysely';
-
-import type { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository } from '../../../lib/base.repo';
-import { hashToken } from '../../../lib/token-hash';
-
-export class SessionsRepo extends BaseRepository<'sessions'> {
-  constructor() {
-    super('sessions');
-  }
-
-  public async deleteBySessionId(session_id: string, trx?: Transaction<Models>) {
-    const result = await this.getDelete(trx).where('session_id', '=', hashToken(session_id)).executeTakeFirst();
-    return Number(result?.numDeletedRows ?? 0);
-  }
-
-  public async deleteByUserId(user_id: string, tenant_id: string, trx?: Transaction<Models>) {
-    return this.getDelete(trx).where('user_id', '=', user_id).where('tenant_id', '=', tenant_id).executeTakeFirst();
-  }
-
-  public getOneByAuthUserId(user_id: GetOperandType<'sessions', 'select', 'user_id'>, trx?: Transaction<Models>) {
-    if (!user_id) return Promise.resolve(undefined);
-    return this.getSelect(trx).where('user_id', '=', user_id).executeTakeFirst();
-  }
-
-  public updateRefreshToken(
-    user_id: GetOperandType<'sessions', 'update', 'user_id'>,
-    refresh_token: string,
-    trx?: Transaction<Models>,
-  ) {
-    if (!user_id) return Promise.resolve({ numUpdatedRows: BigInt(0) });
-
-    return this.getUpdate(trx).set({ refresh_token }).where('user_id', '=', user_id).executeTakeFirst();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/auth/trpc.router.ts
-
-```typescript
-import {
-  InviteAuthUserObj,
-  Verify2FAObj,
-  getAllOptions,
-  signInInputObj,
-  signUpInputObj,
-  idSchema,
-  UpdateAuthUserObj,
-} from '../../../../../../libs/common/src';
-
-import z from 'zod';
-
-import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
-import { AuthController } from './controller';
-import { PasskeyController } from './passkey.controller';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/types';
-
-const MIN15 = 15 * 60 * 1000;
-const HOUR1 = 60 * 60 * 1000;
-
-function currentUser() {
-  return authProcedure.query(({ ctx }) => controller.currentUser(ctx.auth));
-}
-
-function count() {
-  return adminOrOwnerProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
-}
-
-function getAllWithCounts() {
-  return adminOrOwnerProcedure.input(getAllOptions).query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
-}
-
-function getById() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
-}
-
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
-    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
-}
-
-function renewAuthToken() {
-  return publicProcedure
-    .input(z.object({ auth_token: z.string(), refresh_token: z.string() }))
-    .mutation(({ input }) => controller.renewAuthToken(input));
-}
-
-function resetPassword() {
-  return publicProcedure.input(z.object({ password: z.string(), code: z.string() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:resetPassword`, 5, MIN15);
-    return controller.resetPassword(input.password, input.code);
-  });
-}
-
-function sendPasswordResetEmail() {
-  return publicProcedure
-    .input(z.object({ email: z.string().trim().email('Invalid email address') }))
-    .mutation(({ input, ctx }) => {
-      const ip = ctx.req?.ip ?? 'unknown';
-      checkRateLimit(`${ip}:sendPasswordResetEmail`, 3, HOUR1);
-      return controller.sendPasswordResetEmail(input.email);
-    });
-}
-
-function signIn() {
-  return publicProcedure.input(signInInputObj).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:signIn`, 10, MIN15);
-    const ua = ctx.req?.headers?.['user-agent'] || '';
-    return controller.signIn(input, ip, ua);
-  });
-}
-
-function verify2FA() {
-  return publicProcedure.input(Verify2FAObj).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
-    const ua = ctx.req?.headers?.['user-agent'] || '';
-    return controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
-  });
-}
-
-function scheduleAccountDeletion() {
-  return authProcedure.mutation(({ ctx }) => controller.scheduleAccountDeletion(ctx.auth));
-}
-
-function cancelAccountDeletion() {
-  return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
-}
-
-function getTenantAccountStatus() {
-  return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
-}
-
-function cancelTenantDeletionByToken() {
-  return publicProcedure
-    .input(z.object({ tenantId: z.string(), token: z.string() }))
-    .mutation(({ input }) => controller.cancelTenantDeletionByToken(input.tenantId, input.token));
-}
-
-function scheduleTenantDeletion() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.scheduleTenantDeletion(ctx.auth));
-}
-
-function cancelTenantDeletion() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelTenantDeletion(ctx.auth));
-}
-
-function pauseTenant() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.pauseTenant(ctx.auth));
-}
-
-function resumeTenant() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.resumeTenant(ctx.auth));
-}
-
-function cancelEmailChange() {
-  return authProcedure.mutation(({ ctx }) => controller.cancelEmailChange(ctx.auth));
-}
-
-function uploadAvatar() {
-  return authProcedure
-    .input(
-      z.object({
-        dataBase64: z.string().min(1),
-        mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
-        filename: z.string().min(1).max(255),
-      }),
-    )
-    .mutation(({ input, ctx }) => controller.uploadAvatar(ctx.auth, input));
-}
-
-function deleteAvatar() {
-  return authProcedure.mutation(({ ctx }) => controller.deleteAvatar(ctx.auth));
-}
-
-function adminTriggerPasswordReset() {
-  return adminOrOwnerProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
-}
-
-function invite() {
-  return adminOrOwnerProcedure
-    .input(InviteAuthUserObj)
-    .mutation(({ input, ctx }) => controller.inviteUser(ctx.auth, input));
-}
-
-function signOut() {
-  return authProcedure.mutation(({ ctx }) => controller.signOut(ctx.auth));
-}
-
-function signUp() {
-  return publicProcedure.input(signUpInputObj).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:signUp`, 5, HOUR1);
-    return controller.signUp(input);
-  });
-}
-
-function deleteOne() {
-  return adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => controller.deleteUser(ctx.auth, input));
-}
-
-function verifyEmail() {
-  return publicProcedure.input(z.object({ code: z.string() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:verifyEmail`, 10, MIN15);
-    return controller.verifyEmail(input.code);
-  });
-}
-
-function resendVerificationEmail() {
-  return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:resendVerification`, 5, MIN15);
-    checkRateLimit(`resendVerification:${input.email}`, 5, MIN15);
-    return controller.resendVerificationEmail(input.email);
-  });
-}
-
-function dismissPasskeyPrompt() {
-  return authProcedure.mutation(({ ctx }) => controller.dismissPasskeyPrompt(ctx.auth));
-}
-
-const controller = new AuthController();
-const passkeyController = new PasskeyController();
-
-function passkeyRegistrationOptions() {
-  return authProcedure.query(({ ctx }) => passkeyController.getRegistrationOptions(ctx.auth));
-}
-
-function verifyPasskeyRegistration() {
-  return authProcedure
-    .input(
-      z.object({
-        response: z.any().transform((v) => v as RegistrationResponseJSON),
-        friendlyName: z.string().max(100).optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => passkeyController.verifyRegistration(ctx.auth, input.response, input.friendlyName));
-}
-
-function passkeyAuthenticationOptions() {
-  return publicProcedure.query(() => passkeyController.getAuthenticationOptions());
-}
-
-function checkEmail() {
-  return publicProcedure.input(z.object({ email: z.string().trim().email() })).query(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:checkEmail`, 20, MIN15);
-    return passkeyController.checkEmailPasskeys(input.email);
-  });
-}
-
-function verifyPasskeyAuthentication() {
-  return publicProcedure
-    .input(
-      z.object({
-        response: z.any().transform((v) => v as AuthenticationResponseJSON),
-        nonce: z.string(),
-        rememberMe: z.boolean().optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => {
-      const ip = ctx.req?.ip ?? 'unknown';
-      checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
-      const ua = ctx.req?.headers?.['user-agent'] ?? '';
-      return passkeyController.verifyAuthentication(input.response, input.nonce, ip, ua, input.rememberMe);
-    });
-}
-
-function listPasskeys() {
-  return authProcedure.query(({ ctx }) => passkeyController.listPasskeys(ctx.auth));
-}
-
-function deletePasskey() {
-  return authProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => passkeyController.deletePasskey(ctx.auth, input.id));
-}
-
-function updatePasskeyName() {
-  return authProcedure
-    .input(z.object({ id: z.string(), friendlyName: z.string().min(1).max(100) }))
-    .mutation(({ input, ctx }) => passkeyController.updatePasskeyName(ctx.auth, input.id, input.friendlyName));
-}
-
-export const AuthRouter = router({
-  signUp: signUp(),
-  signIn: signIn(),
-  signOut: signOut(),
-  currentUser: currentUser(),
-  getAllWithCounts: getAllWithCounts(),
-  getById: getById(),
-  invite: invite(),
-  update: update(),
-  delete: deleteOne(),
-  count: count(),
-  resetPassword: resetPassword(),
-  renewAuthToken: renewAuthToken(),
-  sendPasswordResetEmail: sendPasswordResetEmail(),
-  verifyEmail: verifyEmail(),
-  resendVerificationEmail: resendVerificationEmail(),
-  verify2FA: verify2FA(),
-  scheduleAccountDeletion: scheduleAccountDeletion(),
-  cancelAccountDeletion: cancelAccountDeletion(),
-  cancelEmailChange: cancelEmailChange(),
-  getTenantAccountStatus: getTenantAccountStatus(),
-  scheduleTenantDeletion: scheduleTenantDeletion(),
-  cancelTenantDeletion: cancelTenantDeletion(),
-  cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
-  pauseTenant: pauseTenant(),
-  resumeTenant: resumeTenant(),
-  adminTriggerPasswordReset: adminTriggerPasswordReset(),
-  uploadAvatar: uploadAvatar(),
-  deleteAvatar: deleteAvatar(),
-  passkeyRegistrationOptions: passkeyRegistrationOptions(),
-  verifyPasskeyRegistration: verifyPasskeyRegistration(),
-  passkeyAuthenticationOptions: passkeyAuthenticationOptions(),
-  checkEmail: checkEmail(),
-  verifyPasskeyAuthentication: verifyPasskeyAuthentication(),
-  listPasskeys: listPasskeys(),
-  deletePasskey: deletePasskey(),
-  updatePasskeyName: updatePasskeyName(),
-  dismissPasskeyPrompt: dismissPasskeyPrompt(),
-});
-```
-
-## File: apps/backend/src/app/modules/billing/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-import { adminOrOwnerProcedure, router } from '../../../trpc';
-import { BillingController } from './controller';
-
-const controller = new BillingController();
-
-export const BillingRouter = router({
-  getDetails: adminOrOwnerProcedure.query(({ ctx }) => controller.getBillingDetails(ctx.auth)),
-
-  createCheckout: adminOrOwnerProcedure
-    .input(z.object({ plan: z.enum(['grassroots', 'representative']) }))
-    .mutation(({ ctx, input }) => controller.createCheckoutSession(ctx.auth, input.plan)),
-
-  createPortal: adminOrOwnerProcedure.mutation(({ ctx }) => controller.createPortalSession(ctx.auth)),
-
-  // Local mock testing mutation endpoints
-  activateMockPlan: adminOrOwnerProcedure
-    .input(z.object({ plan: z.enum(['grassroots', 'representative']) }))
-    .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan)),
-
-  cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/donations/trpc.router.ts
-
-```typescript
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { DonationsController } from './controller';
-
-const controller = new DonationsController();
-
-export const DonationsRouter = router({
-  // ── One-time donations ──────────────────────────────────────────────────────
-
-  listDonations: authProcedure.query(({ ctx }) => controller.getTenantDonationsList(ctx.auth.tenant_id)),
-
-  getPersonDonationHistory: authProcedure
-    .input(z.string())
-    .query(({ ctx, input }) => controller.getPersonDonationsList(ctx.auth.tenant_id, input)),
-
-  getDonationStats: authProcedure
-    .input(z.string())
-    .query(async ({ ctx, input }) => controller.getDonationStats(ctx.auth.tenant_id, input)),
-
-  checkEligibility: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-        isRecurring: z.boolean().optional(),
-        remainingMonths: z.number().optional(),
-      }),
-    )
-    .query(({ ctx, input }) =>
-      controller.checkEligibility(ctx.auth.tenant_id, input.personId, input.amountCents, input.address, {
-        isRecurring: input.isRecurring,
-        remainingMonths: input.remainingMonths,
-      }),
-    ),
-
-  createCheckout: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.createCheckoutSession(ctx.auth, input.personId, input.amountCents, input.address),
-    ),
-
-  confirmDonation: authProcedure
-    .input(z.object({ sessionId: z.string() }))
-    .mutation(({ ctx, input }) => controller.confirmDonation(ctx.auth.tenant_id, ctx.auth.user_id, input.sessionId)),
-
-  confirmMockDonation: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        amountCents: z.number(),
-        sessionId: z.string(),
-        province: z.string(),
-        country: z.string(),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.confirmMockDonation(
-        ctx.auth.tenant_id,
-        ctx.auth.user_id,
-        input.personId,
-        input.amountCents,
-        input.sessionId,
-        input.province,
-        input.country,
-      ),
-    ),
-
-  // ── Recurring pledges ───────────────────────────────────────────────────────
-
-  createRecurringCheckout: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        monthlyAmountCents: z.number(),
-        address: z.object({
-          country: z.string().optional(),
-          state: z.string().optional(),
-        }),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.createRecurringCheckoutSession(ctx.auth, input.personId, input.monthlyAmountCents, input.address),
-    ),
-
-  confirmMockPledge: authProcedure
-    .input(
-      z.object({
-        personId: z.string(),
-        monthlyAmountCents: z.number(),
-        mockSubId: z.string(),
-        province: z.string(),
-        country: z.string(),
-      }),
-    )
-    .mutation(({ ctx, input }) =>
-      controller.confirmMockPledge(
-        ctx.auth.tenant_id,
-        ctx.auth.user_id,
-        input.personId,
-        input.monthlyAmountCents,
-        input.mockSubId,
-        input.province,
-        input.country,
-      ),
-    ),
-
-  listPledges: authProcedure.query(({ ctx }) => controller.getTenantPledgesList(ctx.auth.tenant_id)),
-
-  getPersonPledges: authProcedure
-    .input(z.string())
-    .query(({ ctx, input }) => controller.getPersonPledges(ctx.auth.tenant_id, input)),
-
-  cancelPledge: authProcedure
-    .input(z.object({ pledgeId: z.string() }))
-    .mutation(({ ctx, input }) => controller.cancelPledge(ctx.auth.tenant_id, input.pledgeId, ctx.auth.user_id)),
-
-  // ── Donation periods ────────────────────────────────────────────────────────
-
-  getDonationPeriods: authProcedure.query(({ ctx }) => controller.getDonationPeriods(ctx.auth.tenant_id)),
-
-  createDonationPeriod: authProcedure
-    .input(
-      z.object({
-        name: z.string().min(1),
-        start_date: z.string(),
-        end_date: z.string().nullable().optional(),
-        limit_amount: z.number().int().positive(),
-      }),
-    )
-    .mutation(({ ctx, input }) => controller.createDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, input)),
-
-  updateDonationPeriod: authProcedure
-    .input(
-      z.object({
-        id: z.string(),
-        name: z.string().min(1).optional(),
-        start_date: z.string().optional(),
-        end_date: z.string().nullable().optional(),
-        limit_amount: z.number().int().positive().optional(),
-        is_active: z.boolean().optional(),
-      }),
-    )
-    .mutation(({ ctx, input }) => {
-      const { id, ...payload } = input;
-      return controller.updateDonationPeriod(ctx.auth.tenant_id, ctx.auth.user_id, id, payload);
-    }),
-
-  deleteDonationPeriod: authProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
-});
-```
-
-## File: apps/backend/src/app/modules/emails/repositories/email-attachments.repo.ts
-
-```typescript
-import { sql } from 'kysely';
-
-import { BaseRepository } from '../../../lib/base.repo';
-import type { HasRow } from '../../../../../../../libs/common/src/lib/emails';
-
-export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
-  constructor() {
-    super('email_attachments');
-  }
-
-  public getAllAttachments(tenant_id: string, email_id: string, opts?: { includeInline?: boolean }) {
-    let q = this.selectBy('email_id', { tenant_id, value: email_id }).orderBy('pos', 'asc');
-
-    if (!opts?.includeInline) q = q.where('is_inline', '=', false);
-
-    return q.execute();
-  }
-
-  public getByEmailId(tenant_id: string, email_id: string) {
-    return this.getManyBy('email_id', { tenant_id, value: email_id });
-  }
-
-  public getCountByEmails(tenant_id: string) {
-    return this.getSelect()
-      .select(['email_id'])
-      .select(({ fn }) => fn.count('id').as('attachment_count'))
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email_id')
-      .execute();
-  }
-
-  public getSelectForCountByEmails(tenant_id: string) {
-    return this.getSelect()
-      .select(['email_id'])
-      .select(({ fn }) => fn.count('id').as('att_count'))
-      .where('tenant_id', '=', tenant_id)
-      .groupBy('email_id')
-      .as('ea');
-  }
-
-  public async hasAttachment(tenant_id: string, email_id: string): Promise<boolean> {
-    const row = await this.getSelect()
-      .select(({ val }) => val(1).as('one'))
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', '=', email_id)
-      .limit(1)
-      .executeTakeFirst();
-    return !!row;
-  }
-
-  public hasAttachmentByEmailIds(tenant_id: string, ids: string[]): Promise<HasRow[]> {
-    if (!ids?.length) return Promise.resolve([]);
-
-    return this.getSelect()
-      .select(['email_id'])
-      .select(() => sql<boolean>`count(id) > 0`.as('has'))
-      .where('tenant_id', '=', tenant_id)
-      .where('email_id', 'in', ids)
-      .groupBy('email_id')
-      .execute() as Promise<HasRow[]>;
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/exports/repositories/exports.repo.ts
-
-```typescript
-import { ImportsRepo } from '../../imports/repositories/imports.repo';
-import { sql } from 'kysely';
-
-export class ExportsRepo {
-  public readonly db = new ImportsRepo().db;
-
-  public async create(row: {
-    tenant_id: string;
-    user_id: string;
-    entity: string;
-    file_name: string;
-    columns: string[] | null;
-  }) {
-    return this.db
-      .insertInto('data_exports')
-      .values({
-        tenant_id: row.tenant_id,
-        user_id: row.user_id,
-        entity: row.entity,
-        file_name: row.file_name,
-        status: 'pending',
-        columns: row.columns ? JSON.stringify(row.columns) : null,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-  }
-
-  public async updateStatus(
-    id: string,
-    tenant_id: string,
-    status: 'processing' | 'completed' | 'failed',
-    opts?: { rowCount?: number; storageKey?: string; error?: string },
-  ) {
-    return this.db
-      .updateTable('data_exports')
-      .set({
-        status,
-        row_count: opts?.rowCount ?? null,
-        storage_key: opts?.storageKey ?? null,
-        error: opts?.error ?? null,
-        updated_at: new Date(),
-      })
-      .where('id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-  }
-
-  public async list(tenant_id: string) {
-    return this.db
-      .selectFrom('data_exports')
-      .leftJoin('authusers as creator', 'creator.id', 'data_exports.user_id')
-      .select([
-        'data_exports.id',
-        'data_exports.entity',
-        'data_exports.file_name',
-        'data_exports.status',
-        'data_exports.row_count',
-        'data_exports.error',
-        'data_exports.created_at',
-        'data_exports.updated_at',
-        'data_exports.user_id',
-        'creator.email as creator_email',
-        'creator.first_name as creator_first_name',
-        'creator.last_name as creator_last_name',
-      ])
-      .where('data_exports.tenant_id', '=', tenant_id)
-      .orderBy('data_exports.created_at', 'desc')
-      .limit(50)
-      .execute();
-  }
-
-  public async getById(id: string, tenant_id: string) {
-    return this.db
-      .selectFrom('data_exports')
-      .selectAll()
-      .where('id', '=', id)
-      .where('tenant_id', '=', tenant_id)
-      .executeTakeFirst();
-  }
-
-  public async delete(id: string, tenant_id: string) {
-    return this.db.transaction().execute(async (trx) => {
-      // 1. Delete matching pending/processing background job
-      await trx
-        .deleteFrom('background_jobs')
-        .where('tenant_id', '=', tenant_id)
-        .where(sql`payload->>'type'`, '=', 'export_csv')
-        .where(sql`payload->>'export_id'`, '=', id)
-        .execute();
-
-      // 2. Delete export record
-      return await trx
-        .deleteFrom('data_exports')
-        .where('id', '=', id)
-        .where('tenant_id', '=', tenant_id)
-        .returningAll()
-        .executeTakeFirst();
-    });
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/exports/controller.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { QueueExportInputType } from '../../../../../../libs/common/src';
-import { ExportsRepo } from './repositories/exports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { logger } from '../../logger';
-
-const ENTITY_LABEL_MAP: Record<string, string> = {
-  persons: 'persons',
-  households: 'households',
-  companies: 'companies',
-  tags: 'tags',
-  issues: 'tags',
-  tasks: 'tasks',
-  lists: 'lists',
-  newsletters: 'marketing_emails',
-  teams: 'teams',
-  users: 'authusers',
-  volunteer: 'volunteer_events',
-  forms: 'web_forms',
-  workflows: 'workflows',
-};
-
-export class ExportsController {
-  private readonly repo = new ExportsRepo();
-
-  public async queueExport(input: QueueExportInputType, auth: IAuthKeyPayload) {
-    const entityKey = input.entity?.trim();
-    if (!entityKey) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'entity is required' });
-    }
-
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const fileName = input.fileName?.trim() || `${entityKey}-export-${ts}.csv`;
-    const columns = Array.isArray(input.columns) && input.columns.length ? input.columns : null;
-
-    const exportRecord = await this.repo.create({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      entity: entityKey,
-      file_name: fileName,
-      columns,
-    });
-
-    const exportId = String((exportRecord as any).id);
-
-    await this.repo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'export_csv',
-          export_id: exportId,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          entity: entityKey,
-          table: ENTITY_LABEL_MAP[entityKey] ?? entityKey,
-          options: input.options ?? {},
-          columns,
-          file_name: fileName,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
-
-    return {
-      id: exportId,
-      entity: entityKey,
-      file_name: fileName,
-      status: 'pending' as const,
-      row_count: null,
-      error: null,
-      created_at: (exportRecord as any).created_at?.toISOString?.() ?? new Date().toISOString(),
-      updated_at: (exportRecord as any).updated_at?.toISOString?.() ?? new Date().toISOString(),
-      createdBy: {
-        id: auth.user_id,
-        name: auth.name || null,
-        email: null,
-      },
-    };
-  }
-
-  public async list(auth: IAuthKeyPayload) {
-    const rows = await this.repo.list(auth.tenant_id);
-    return rows.map((r: any) => {
-      const name = [r.creator_first_name, r.creator_last_name].filter(Boolean).join(' ').trim();
-      return {
-        id: String(r.id),
-        entity: String(r.entity),
-        file_name: String(r.file_name),
-        status: r.status as 'pending' | 'processing' | 'completed' | 'failed',
-        row_count: r.row_count != null ? Number(r.row_count) : null,
-        error: r.error ?? null,
-        created_at: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
-        updated_at: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at),
-        createdBy: r.user_id
-          ? {
-              id: r.user_id,
-              name: name || null,
-              email: r.creator_email || null,
-            }
-          : null,
-      };
-    });
-  }
-
-  public async getById(id: string, auth: IAuthKeyPayload) {
-    const row = await this.repo.getById(id, auth.tenant_id);
-    if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
-    return row;
-  }
-
-  public async deleteExport(id: string, auth: IAuthKeyPayload) {
-    const row = await this.repo.getById(id, auth.tenant_id);
-    if (!row) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Export not found' });
-    }
-
-    await this.repo.delete(id, auth.tenant_id);
-
-    if ((row as any).storage_key) {
-      try {
-        const storageService = new StorageService();
-        await storageService.delete((row as any).storage_key);
-      } catch (err) {
-        logger.error({ err }, `Failed to delete storage file ${(row as any).storage_key}`);
-      }
-    }
-
-    return { success: true };
-  }
-
-  public getRepo() {
-    return this.repo;
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/files/repositories/files.repo.ts
-
-```typescript
-import type { QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Transaction } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export class FilesRepo extends BaseRepository<'files'> {
-  constructor() {
-    super('files');
-  }
-
-  public override async getAllWithCounts(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<any>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const db = trx || this.db;
-    let query = db
-      .selectFrom('files')
-      .leftJoin('authusers as creator', 'creator.id', 'files.uploaded_by')
-      .where('files.tenant_id', '=', input.tenant_id);
-
-    if (input.options) {
-      query = this.applyOptions(query as any, input.options) as any;
-    } else {
-      query = query.orderBy('files.created_at', 'desc') as any;
-    }
-
-    const rows = await query
-      .select([
-        'files.id',
-        'files.tenant_id',
-        'files.filename',
-        'files.mime_type',
-        'files.size_bytes',
-        'files.storage_key',
-        'files.sha256_hex',
-        'files.uploaded_by',
-        'files.created_at',
-        'creator.email as creator_email',
-        'creator.first_name as creator_first_name',
-        'creator.last_name as creator_last_name',
-      ])
-      .execute();
-
-    const mappedRows = rows.map((row: any) => {
-      const name = [row.creator_first_name, row.creator_last_name].filter(Boolean).join(' ').trim();
-      return {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        filename: row.filename,
-        mime_type: row.mime_type,
-        size_bytes: row.size_bytes,
-        storage_key: row.storage_key,
-        sha256_hex: row.sha256_hex,
-        uploaded_by: row.uploaded_by,
-        created_at: row.created_at,
-        updated_at: row.created_at,
-        createdBy: row.uploaded_by
-          ? {
-              id: row.uploaded_by,
-              name: name || null,
-              email: row.creator_email || null,
-            }
-          : null,
-      };
-    });
-
-    return {
-      rows: mappedRows,
-      count: mappedRows.length,
-    };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/files/controller.ts
-
-```typescript
-import { BaseController } from '../../lib/base.controller';
-import { FilesRepo } from './repositories/files.repo';
-import { StorageService } from '../../lib/storage.service';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import { logger } from '../../logger';
-
-export class FilesController extends BaseController<'files', FilesRepo> {
-  private storageService = new StorageService();
-
-  constructor() {
-    super(new FilesRepo());
-  }
-
-  public async getAllFiles(auth: IAuthKeyPayload, options?: any) {
-    return this.getAllWithCounts(auth.tenant_id, options);
-  }
-
-  public async registerFile(
-    input: {
-      filename: string;
-      mimeType?: string | null;
-      sizeBytes?: number | null;
-      storageKey: string;
-      sha256Hex?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    if (input.sha256Hex) {
-      const existing = await this.getRepo()
-        .db.selectFrom('files')
-        .selectAll()
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('sha256_hex', '=', input.sha256Hex)
-        .executeTakeFirst();
-      if (existing) {
-        // Clean up the newly uploaded duplicate file from storage since we won't be using it
-        try {
-          await this.storageService.delete(input.storageKey);
-        } catch (err) {
-          logger.error({ err }, `Failed to clean up duplicate file ${input.storageKey}`);
-        }
-        return existing;
-      }
-    }
-
-    return this.add({
-      tenant_id: auth.tenant_id,
-      filename: input.filename,
-      mime_type: input.mimeType || null,
-      size_bytes: input.sizeBytes || null,
-      storage_key: input.storageKey,
-      sha256_hex: input.sha256Hex || null,
-      uploaded_by: auth.user_id,
-    });
-  }
-
-  public async generateUploadSasUrl(key: string, expiryMinutes = 15): Promise<string> {
-    return this.storageService.generateWriteSasUrl(key, expiryMinutes);
-  }
-
-  public override async delete(tenant_id: string, id: string, userId?: string): Promise<boolean> {
-    const file = (await this.getOneById({ tenant_id, id })) as any;
-    if (!file) return false;
-
-    // Delete from DB
-    const deleted = await super.delete(tenant_id as any, id, userId);
-
-    // Delete from Azure Storage
-    if (deleted && file.storage_key) {
-      try {
-        await this.storageService.delete(file.storage_key);
-      } catch (err) {
-        logger.error({ err }, `Failed to delete blob for storage key ${file.storage_key}`);
-      }
-    }
-    return deleted;
-  }
-
-  public override async deleteMany(tenant_id: string, ids: string[], userId?: string): Promise<boolean> {
-    let anyDeleted = false;
-    for (const id of ids) {
-      const ok = await this.delete(tenant_id, id, userId);
-      if (ok) anyDeleted = true;
-    }
-    return anyDeleted;
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/files/trpc.router.ts
-
-```typescript
-import { idSchema, getAllOptions } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { FilesController } from './controller';
-import crypto from 'crypto';
-
-const files = new FilesController();
-
-export const FilesRouter = router({
-  getAll: authProcedure.input(getAllOptions).query(({ input, ctx }) => files.getAllFiles(ctx.auth, input)),
-
-  getUploadUrl: authProcedure
-    .input(
-      z.object({
-        filename: z.string(),
-        mimeType: z.string().nullable().optional(),
-      }),
-    )
-    .query(async ({ input, ctx }) => {
-      const fileUUID = crypto.randomUUID();
-      const storageKey = `uploads/${ctx.auth.tenant_id}/${fileUUID}_${input.filename}`;
-      const uploadUrl = await files.generateUploadSasUrl(storageKey);
-      return { uploadUrl, storageKey };
-    }),
-
-  registerFile: authProcedure
-    .input(
-      z.object({
-        filename: z.string(),
-        mimeType: z.string().nullable().optional(),
-        sizeBytes: z.number().nullable().optional(),
-        storageKey: z.string(),
-        sha256Hex: z.string().nullable().optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => files.registerFile(input, ctx.auth)),
-
-  delete: authProcedure
-    .input(idSchema)
-    .mutation(({ input, ctx }) => files.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-
-  deleteMany: authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => files.deleteMany(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-});
-```
-
-## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-
-export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
-
-const GOOGLE_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
-  'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/userinfo.email',
-];
-
-export class GoogleOAuthService {
-  private readonly db: Kysely<Models>;
-  private readonly clientId: string;
-  private readonly clientSecret: string;
-  private readonly redirectUri: string;
-
-  constructor(db: Kysely<Models>, config: { clientId: string; clientSecret: string; redirectUri: string }) {
-    this.db = db;
-    this.clientId = config.clientId;
-    this.clientSecret = config.clientSecret;
-    this.redirectUri = config.redirectUri;
-  }
-
-  public getAuthUrl(state: string): string {
-    const params = new URLSearchParams({
-      client_id: this.clientId,
-      redirect_uri: this.redirectUri,
-      response_type: 'code',
-      scope: GOOGLE_SCOPES.join(' '),
-      access_type: 'offline',
-      prompt: 'consent', // force consent to ensure refresh token is returned
-      state,
-    });
-    return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
-  }
-
-  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code,
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        redirect_uri: this.redirectUri,
-        grant_type: 'authorization_code',
-      }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Failed to acquire token from Google: ${errorText}`);
-    }
-
-    const data: any = await res.json();
-    const accessToken = data.access_token;
-    const refreshToken = data.refresh_token; // Google only returns this on initial consent
-    const expiresIn = data.expires_in ?? 3600;
-    const expiresAt = new Date(Date.now() + expiresIn * 1000);
-
-    // Fetch user profile to get Google email
-    const profileRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    let googleEmail: string | null = null;
-    if (profileRes.ok) {
-      const profile: any = await profileRes.json();
-      googleEmail = profile.email ?? null;
-    }
-
-    const insertObj: any = {
-      tenant_id: tenantId,
-      user_id: connectedBy,
-      access_token: accessToken,
-      expires_at: expiresAt,
-      google_email: googleEmail,
-      delta_link: NEEDS_FULL_SYNC,
-      synced_at: null,
-    };
-
-    if (!refreshToken) {
-      // If we don't have refresh token in this callback, try keeping the existing one
-      const existing = await this.db
-        .selectFrom('google_oauth_tokens')
-        .select('refresh_token')
-        .where('tenant_id', '=', tenantId)
-        .executeTakeFirst();
-      insertObj.refresh_token = existing?.refresh_token ?? '';
-    } else {
-      insertObj.refresh_token = refreshToken;
-    }
-
-    if (!insertObj.refresh_token) {
-      throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
-    }
-
-    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto('google_oauth_tokens')
-        .values(insertObj)
-        .onConflict((oc) =>
-          oc.column('tenant_id').doUpdateSet({
-            user_id: connectedBy,
-            access_token: insertObj.access_token,
-            refresh_token: insertObj.refresh_token,
-            expires_at: insertObj.expires_at,
-            google_email: insertObj.google_email,
-            delta_link: NEEDS_FULL_SYNC,
-            synced_at: null,
-            last_sync_error: null,
-            last_sync_error_at: null,
-            updated_at: new Date(),
-          }),
-        )
-        .execute();
-
-      await trx
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'google_sync', tenantId, requestedBy: connectedBy }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    });
-  }
-
-  public async getValidToken(tenantId: string): Promise<string> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!row) {
-      throw new Error('No Google account connected for this tenant');
-    }
-
-    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
-    if (!isExpired) {
-      return row.access_token;
-    }
-
-    // Refresh token
-    const res = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        refresh_token: row.refresh_token,
-        grant_type: 'refresh_token',
-      }),
-    });
-
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Token refresh failed: ${errorText} — tenant must reconnect their Google account`);
-    }
-
-    const data: any = await res.json();
-    const newAccessToken = data.access_token;
-    const newExpiresIn = data.expires_in ?? 3600;
-    const newExpiry = new Date(Date.now() + newExpiresIn * 1000);
-    const newRefreshToken = data.refresh_token ?? row.refresh_token;
-
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({
-        access_token: newAccessToken,
-        refresh_token: newRefreshToken,
-        expires_at: newExpiry,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-
-    return newAccessToken;
-  }
-
-  public async getConnectionStatus(tenantId: string): Promise<{
-    connected: boolean;
-    googleEmail: string | null;
-    syncedAt: Date | null;
-    lastSyncError: string | null;
-    lastSyncErrorAt: Date | null;
-  }> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .select(['google_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    return {
-      connected: !!row,
-      googleEmail: row?.google_email ?? null,
-      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
-      lastSyncError: row?.last_sync_error ?? null,
-      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
-    };
-  }
-
-  public async disconnect(tenantId: string): Promise<void> {
-    await this.db.deleteFrom('google_oauth_tokens').where('tenant_id', '=', tenantId).execute();
-  }
-
-  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({
-        delta_link: deltaLink,
-        synced_at: new Date(),
-        last_sync_error: null,
-        last_sync_error_at: null,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async recordSyncError(tenantId: string, error: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async getDeltaLink(tenantId: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom('google_oauth_tokens')
-      .select('delta_link')
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-    return row?.delta_link ?? null;
-  }
-
-  public async resetDeltaLink(tenantId: string): Promise<void> {
-    await this.db
-      .updateTable('google_oauth_tokens')
-      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
-
-```typescript
-import type { AuthorizationCodeRequest } from '@azure/msal-node';
-import { ConfidentialClientApplication } from '@azure/msal-node';
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-
-export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
-
-const MS_SCOPES = [
-  'https://graph.microsoft.com/Mail.Read',
-  'https://graph.microsoft.com/Mail.ReadWrite',
-  'https://graph.microsoft.com/Mail.Send',
-  'offline_access',
-];
-
-export class MsOAuthService {
-  private readonly msalApp: ConfidentialClientApplication;
-  private readonly db: Kysely<Models>;
-  private readonly redirectUri: string;
-
-  constructor(
-    db: Kysely<Models>,
-    config: { clientId: string; clientSecret: string; tenantId: string; redirectUri: string },
-  ) {
-    this.db = db;
-    this.redirectUri = config.redirectUri;
-    this.msalApp = new ConfidentialClientApplication({
-      auth: {
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
-        authority: `https://login.microsoftonline.com/${config.tenantId}`,
-      },
-    });
-  }
-
-  public async getAuthUrl(state: string): Promise<string> {
-    return this.msalApp.getAuthCodeUrl({
-      scopes: MS_SCOPES,
-      redirectUri: this.redirectUri,
-      state,
-      prompt: 'select_account',
-    });
-  }
-
-  public async handleCallback(code: string, connectedBy: string, tenantId: string): Promise<void> {
-    const request: AuthorizationCodeRequest = {
-      code,
-      scopes: MS_SCOPES,
-      redirectUri: this.redirectUri,
-    };
-
-    const response = await this.msalApp.acquireTokenByCode(request);
-    if (!response?.accessToken || !response.account) {
-      throw new Error('Failed to acquire token from Microsoft');
-    }
-
-    const expiresAt = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
-
-    // Retrieve the refresh token from the MSAL cache
-    const cache = this.msalApp.getTokenCache().serialize();
-    const parsedCache = JSON.parse(cache);
-    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
-    const refreshToken = refreshTokenEntry[0]?.secret ?? '';
-
-    // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
-    await this.db.transaction().execute(async (trx) => {
-      await trx
-        .insertInto('ms_oauth_tokens')
-        .values({
-          tenant_id: tenantId,
-          user_id: connectedBy,
-          access_token: response.accessToken,
-          refresh_token: refreshToken,
-          expires_at: expiresAt,
-          ms_email: response.account?.username ?? null,
-          delta_link: NEEDS_FULL_SYNC,
-          synced_at: null,
-        })
-        .onConflict((oc) =>
-          oc.column('tenant_id').doUpdateSet({
-            user_id: connectedBy,
-            access_token: response.accessToken,
-            refresh_token: refreshToken,
-            expires_at: expiresAt,
-            ms_email: response.account?.username ?? null,
-            delta_link: NEEDS_FULL_SYNC,
-            synced_at: null,
-            last_sync_error: null,
-            last_sync_error_at: null,
-            updated_at: new Date(),
-          }),
-        )
-        .execute();
-
-      await trx
-        .insertInto('background_jobs')
-        .values({
-          tenant_id: tenantId,
-          queue: 'default',
-          status: 'pending',
-          payload: JSON.stringify({ type: 'ms_sync', tenantId, requestedBy: connectedBy }),
-          run_at: new Date(),
-          max_attempts: 3,
-        })
-        .execute();
-    });
-  }
-
-  public async getValidToken(tenantId: string): Promise<string> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!row) {
-      throw new Error('No Microsoft account connected for this tenant');
-    }
-
-    const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
-    if (!isExpired) {
-      return row.access_token;
-    }
-
-    // Refresh via MSAL silent flow
-    const response = await this.msalApp.acquireTokenByRefreshToken({
-      refreshToken: row.refresh_token,
-      scopes: MS_SCOPES,
-    });
-
-    if (!response?.accessToken) {
-      throw new Error('Token refresh failed — tenant must reconnect their Microsoft account');
-    }
-
-    const newExpiry = response.expiresOn ?? new Date(Date.now() + 3600 * 1000);
-
-    // Retrieve fresh refresh token from cache
-    const cache = this.msalApp.getTokenCache().serialize();
-    const parsedCache = JSON.parse(cache);
-    const refreshTokenEntry = Object.values(parsedCache.RefreshToken ?? {}) as any[];
-    const newRefreshToken = refreshTokenEntry[0]?.secret ?? row.refresh_token;
-
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({
-        access_token: response.accessToken,
-        refresh_token: newRefreshToken,
-        expires_at: newExpiry,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-
-    return response.accessToken;
-  }
-
-  public async getConnectionStatus(tenantId: string): Promise<{
-    connected: boolean;
-    msEmail: string | null;
-    syncedAt: Date | null;
-    lastSyncError: string | null;
-    lastSyncErrorAt: Date | null;
-  }> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .select(['ms_email', 'synced_at', 'last_sync_error', 'last_sync_error_at'])
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    return {
-      connected: !!row,
-      msEmail: row?.ms_email ?? null,
-      syncedAt: row?.synced_at ? new Date(row.synced_at as any) : null,
-      lastSyncError: row?.last_sync_error ?? null,
-      lastSyncErrorAt: row?.last_sync_error_at ? new Date(row.last_sync_error_at as any) : null,
-    };
-  }
-
-  public async disconnect(tenantId: string): Promise<void> {
-    await this.db.deleteFrom('ms_oauth_tokens').where('tenant_id', '=', tenantId).execute();
-  }
-
-  public async saveDeltaLink(tenantId: string, deltaLink: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({
-        delta_link: deltaLink,
-        synced_at: new Date(),
-        last_sync_error: null,
-        last_sync_error_at: null,
-        updated_at: new Date(),
-      })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async recordSyncError(tenantId: string, error: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({ last_sync_error: error, last_sync_error_at: new Date(), updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-
-  public async getDeltaLink(tenantId: string): Promise<string | null> {
-    const row = await this.db
-      .selectFrom('ms_oauth_tokens')
-      .select('delta_link')
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-    return row?.delta_link ?? null;
-  }
-
-  public async resetDeltaLink(tenantId: string): Promise<void> {
-    await this.db
-      .updateTable('ms_oauth_tokens')
-      .set({ delta_link: NEEDS_FULL_SYNC, updated_at: new Date() })
-      .where('tenant_id', '=', tenantId)
-      .execute();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/persons/trpc.router.ts
-
-```typescript
-import {
-  UpdatePersonsObj,
-  exportCsvInput,
-  exportCsvResponse,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { PersonsController } from './controller';
-import { PersonsService } from './services/persons.service';
-
-const persons = new PersonsController();
-const personsService = new PersonsService();
-
-function add() {
-  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
-}
-
-function attachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
-}
-
-function count() {
-  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
-}
-
-const deleteOneInput = z.union([
-  idSchema,
-  z.object({
-    id: idSchema,
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteOne() {
-  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
-    const id = typeof input === 'string' ? input : input.id;
-    const force = typeof input === 'string' ? false : !!input.force;
-    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
-  });
-}
-
-const deleteManyInput = z.union([
-  z.array(idSchema).min(1, 'At least one ID is required'),
-  z.object({
-    ids: z.array(idSchema).min(1, 'At least one ID is required'),
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteMany() {
-  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
-    const ids = Array.isArray(input) ? input : input.ids;
-    const force = Array.isArray(input) ? false : !!input.force;
-    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
-  });
-}
-
-function detachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      personsService.detachTag({
-        tenant_id: ctx.auth.tenant_id,
-        person_id: input.id,
-        name: input.tag_name,
-        type: input.type ?? 'tag',
-        user_id: ctx.auth.user_id,
-      }),
-    );
-}
-
-function getAll() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
-}
-
-function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
-}
-
-function getByHouseholdId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
-}
-
-function getByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
-}
-
-function countByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema }))
-    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
-}
-
-function getById() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
-}
-
-function getActivity() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
-}
-
-// Distinct tags
-function getDistinctTags() {
-  return authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
-}
-
-function exportCsv() {
-  return authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
-}
-
-function getTags() {
-  return authProcedure
-    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
-    .query(({ input, ctx }) => {
-      const id = typeof input === 'string' ? input : input.id;
-      const type = typeof input === 'string' ? undefined : input.type;
-      return persons.getTags(id, ctx.auth, type);
-    });
-}
-
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
-    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
-}
-
-function removeHousehold() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
-}
-
-function importMany() {
-  const ImportRow = z.object({
-    first_name: z.string().trim().max(100).optional(),
-    last_name: z.string().trim().max(100).optional(),
-    email: z.string().trim().max(255).optional(),
-    mobile: z.string().trim().max(30).optional(),
-    notes: z.string().trim().max(10000).optional(),
-    home_phone: z.string().trim().max(30).optional(),
-    street_num: z.string().trim().max(30).optional(),
-    street1: z.string().trim().max(150).optional(),
-    street2: z.string().trim().max(150).optional(),
-    apt: z.string().trim().max(30).optional(),
-    city: z.string().trim().max(100).optional(),
-    state: z.string().trim().max(100).optional(),
-    zip: z.string().trim().max(20).optional(),
-    country: z.string().trim().max(100).optional(),
-  });
-
-  const Input = z.object({
-    rows: z.array(ImportRow),
-    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
-    skipped: z.number().int().nonnegative().optional(),
-    file_name: z.string().trim().min(1).max(255).optional(),
-  });
-
-  return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
-}
-
-function getPotentialDuplicates() {
-  return authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
-}
-
-function getDuplicateCounts() {
-  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
-}
-
-function mergePersons() {
-  return authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
-}
-
-function moveEntireHousehold() {
-  return authProcedure
-    .input(
-      z.object({
-        fromHouseholdId: idSchema,
-        toHouseholdId: idSchema,
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
-    );
-}
-
-export const PersonsRouter = router({
-  add: add(),
-  count: count(),
-  getAll: getAll(),
-  update: update(),
-  removeHousehold: removeHousehold(),
-  import: importMany(),
-  getTags: getTags(),
-  getById: getById(),
-  getActivity: getActivity(),
-  attachTag: attachTag(),
-  detachTag: detachTag(),
-  delete: deleteOne(),
-  deleteMany: deleteMany(),
-  getDistinctTags: getDistinctTags(),
-  getByHouseholdId: getByHouseholdId(),
-  getByCompanyId: getByCompanyId(),
-  countByCompanyId: countByCompanyId(),
-  getAllWithAddress: getAllWithAddress(),
-  exportCsv: exportCsv(),
-  getPotentialDuplicates: getPotentialDuplicates(),
-  getDuplicateCounts: getDuplicateCounts(),
-  mergePersons: mergePersons(),
-  moveEntireHousehold: moveEntireHousehold(),
-});
-```
-
-## File: apps/backend/src/app/modules/tags/controller.ts
-
-```typescript
-import type { AddTagType, IAuthKeyPayload, UpdateTagType } from '../../../../../../libs/common/src';
-
-import { ConflictError } from '../../errors/app-errors';
-import { BaseController } from '../../lib/base.controller';
-import { TagsRepo } from './repositories/tags.repo';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-
-export class TagsController extends BaseController<'tags', TagsRepo> {
-  constructor() {
-    super(new TagsRepo());
-  }
-
-  public async addTag(payload: AddTagType, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      description: payload.description,
-      color: payload.color ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type: payload.type ?? 'tag',
-    };
-    try {
-      return await this.add(row as OperationDataType<'tags', 'insert'>);
-    } catch (err) {
-      if ((err as { code?: string })?.code === '23505') {
-        throw new ConflictError('A tag with this name already exists.', undefined, { cause: err });
-      }
-      throw err;
-    }
-  }
-
-  public async findByName(input: { name: string; type?: 'tag' | 'issue' }, auth: IAuthKeyPayload) {
-    const type = input.type ?? 'tag';
-    return this.getRepo().findByNameAndType({
-      tenant_id: auth.tenant_id,
-      name: input.name,
-      type,
-    });
-  }
-
-  public updateTag(id: string, row: UpdateTagType, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    };
-    return this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: rowWithUpdatedBy as OperationDataType<'tags', 'update'>,
-    });
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/web-forms/trpc.router.ts
-
-```typescript
-import {
-  AddWebFormObj,
-  CreateFormObj,
-  UpdateFormObj,
-  UpdateWebFormObj,
-  getAllOptions,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-
-import { authProcedure, publicProcedure, router } from '../../../trpc';
-import { WebFormsController } from './controller';
-
-const webForms = new WebFormsController();
-
-export const WebFormsRouter = router({
-  getAllWithCounts: authProcedure
-    .input(getAllOptions)
-    .query(({ input, ctx }) => webForms.getAllWithCounts(ctx.auth.tenant_id, input)),
-  getById: authProcedure
-    .input(z.string().uuid())
-    .query(({ input, ctx }) => webForms.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
-  add: authProcedure.input(AddWebFormObj).mutation(({ input, ctx }) => webForms.addForm(input, ctx.auth)),
-  update: authProcedure
-    .input(z.object({ id: z.string().uuid(), data: UpdateWebFormObj }))
-    .mutation(({ input, ctx }) => webForms.updateForm(input.id, input.data, ctx.auth)),
-  delete: authProcedure
-    .input(z.string().uuid())
-    .mutation(({ input, ctx }) => webForms.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
-  getSubmissionsCount: authProcedure
-    .input(z.string().uuid())
-    .query(({ input, ctx }) => webForms.getSubmissionsCount(input, ctx.auth.tenant_id)),
-  confirmSubscription: publicProcedure
-    .input(z.object({ token: z.string() }))
-    .mutation(({ input }) => webForms.confirmSubscription(input.token)),
-
-  // --- North Star "living funnel" lifecycle (new Forms experience) ---
-  list: authProcedure.query(({ ctx }) => webForms.listForms(ctx.auth.tenant_id)),
-  getForEdit: authProcedure
-    .input(z.string().uuid())
-    .query(({ input, ctx }) => webForms.getFormForEdit(input, ctx.auth.tenant_id)),
-  create: authProcedure.input(CreateFormObj).mutation(({ input, ctx }) => webForms.createForm(input, ctx.auth)),
-  updateLive: authProcedure
-    .input(z.object({ id: z.string().uuid(), data: UpdateFormObj }))
-    .mutation(({ input, ctx }) => webForms.updateFormLive(input.id, input.data, ctx.auth)),
-  publish: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.publishForm(input, ctx.auth)),
-  unpublish: authProcedure
-    .input(z.string().uuid())
-    .mutation(({ input, ctx }) => webForms.unpublishForm(input, ctx.auth)),
-  archive: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.archiveForm(input, ctx.auth)),
-  restore: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.restoreForm(input, ctx.auth)),
-  deleteDraft: authProcedure
-    .input(z.string().uuid())
-    .mutation(({ input, ctx }) => webForms.deleteForm(input, ctx.auth)),
-  submissions: authProcedure
-    .input(z.object({ id: z.string().uuid(), cursor: z.number().optional() }))
-    .query(({ input, ctx }) => webForms.getFormSubmissions(input.id, ctx.auth.tenant_id, input.cursor)),
-});
-```
-
-## File: apps/backend/src/app/modules/workflows/repositories/workflow-enrollments.repo.ts
-
-```typescript
-import type { QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Transaction } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export class WorkflowEnrollmentsRepo extends BaseRepository<'workflow_enrollments'> {
-  constructor() {
-    super('workflow_enrollments');
-  }
-
-  public async getEnrollmentsWithPersonDetails(
-    input: {
-      tenant_id: string;
-      workflow_id: string;
-      options?: QueryParams<'workflow_enrollments'>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const options = input.options || {};
-    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
-    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 50;
-
-    const query = this.getSelect(trx)
-      .innerJoin('persons', 'persons.id', 'workflow_enrollments.person_id')
-      .select([
-        'workflow_enrollments.id',
-        'workflow_enrollments.tenant_id',
-        'workflow_enrollments.workflow_id',
-        'workflow_enrollments.person_id',
-        'workflow_enrollments.status',
-        'workflow_enrollments.current_step_number',
-        'workflow_enrollments.next_run_at',
-        'workflow_enrollments.enrolled_at',
-        'workflow_enrollments.created_at',
-        'workflow_enrollments.updated_at',
-        'persons.first_name as person_first_name',
-        'persons.last_name as person_last_name',
-        'persons.email as person_email',
-      ])
-      .where('workflow_enrollments.tenant_id', '=', input.tenant_id)
-      .where('workflow_enrollments.workflow_id', '=', input.workflow_id)
-      .orderBy('workflow_enrollments.enrolled_at', 'desc')
-      .offset(startRow)
-      .limit(endRow - startRow);
-
-    const rows = await query.execute();
-    return rows.map((row) => ({
-      ...row,
-      id: String(row.id),
-      workflow_id: String(row.workflow_id),
-      person_id: String(row.person_id),
-    }));
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/workflows/trpc.router.ts
-
-```typescript
-import { AddWorkflowObj, UpdateWorkflowObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { WorkflowsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const workflows = new WorkflowsController();
-
-const crud = createCrudRouter(workflows, AddWorkflowObj, UpdateWorkflowObj);
-
-export const WorkflowsRouter = router({
-  ...crud,
-
-  getSteps: authProcedure.input(idSchema).query(({ input, ctx }) => workflows.getSteps(ctx.auth.tenant_id, input)),
-
-  saveSteps: authProcedure
-    .input(
-      z.object({
-        workflowId: idSchema,
-        steps: z.array(
-          z.object({
-            delay_days: z.number().int().nonnegative(),
-            delay_unit: z.enum(['days', 'hours']).default('days'),
-            subject: z.string(),
-            preview_text: z.string().nullable().optional(),
-            html_content: z.string().nullable().optional(),
-            plain_text_content: z.string().nullable().optional(),
-          }),
-        ),
-      }),
-    )
-    .mutation(async ({ input, ctx }) =>
-      workflows.saveSteps(ctx.auth.tenant_id, input.workflowId, input.steps, ctx.auth.user_id),
-    ),
-
-  getEnrollments: authProcedure
-    .input(z.object({ workflowId: idSchema, options: getAllOptions.optional() }))
-    .query(({ input, ctx }) => workflows.getEnrollments(ctx.auth.tenant_id, input.workflowId, input.options)),
-
-  enrollPerson: authProcedure
-    .input(z.object({ workflowId: idSchema, personId: idSchema }))
-    .mutation(async ({ input, ctx }) =>
-      workflows.enrollPerson(ctx.auth.tenant_id, input.personId, input.workflowId, ctx.auth.user_id),
-    ),
-
-  cancelEnrollment: authProcedure
-    .input(z.object({ enrollmentId: idSchema }))
-    .mutation(async ({ input, ctx }) =>
-      workflows.cancelEnrollment(ctx.auth.tenant_id, input.enrollmentId, ctx.auth.user_id),
-    ),
-});
-```
-
-## File: apps/backend/src/app/plugins/jsend-error-handler.plugin.ts
-
-```typescript
-import { jsend } from '../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import fp from 'fastify-plugin';
-
-import { AppError } from '../errors/app-errors';
-
-async function jsendPlugin(app: FastifyInstance) {
-  // Reply helpers
-  app.decorateReply('jsendSuccess', function (this: FastifyReply, data: unknown, meta?: Record<string, unknown>) {
-    const body = jsend.success(data);
-    return this.code(200).send(meta ? { ...body, meta } : body);
-  });
-
-  app.decorateReply('jsendFail', function <
-    E extends object = Record<string, unknown>,
-  >(this: FastifyReply, data: E, statusCode = 400, meta?: Record<string, unknown>) {
-    const body = jsend.fail(data);
-    return this.code(statusCode).send(meta ? { ...body, meta } : body);
-  });
-
-  app.decorateReply(
-    'jsendError',
-    function (
-      message: string,
-      statusCode = 500,
-      code?: string | number,
-      data?: unknown,
-      meta?: Record<string, unknown>,
-    ) {
-      const body = {
-        ...jsend.error(message, code),
-        ...(data !== undefined ? { data } : {}),
-        ...(meta ? { meta } : {}),
-      };
-      return this.code(statusCode).send(body);
-    },
-  );
-
-  app.setErrorHandler((err: Error, _req: FastifyRequest, reply: FastifyReply) => {
-    // Domain errors -> JSend
-    if (err instanceof AppError) {
-      if (err.status >= 500) {
-        return reply.code(err.status).send(jsend.error(err.message, err.code));
-      }
-      return reply.code(err.status).send(jsend.fail({ code: err.code, message: err.message, details: err.data }));
-    }
-
-    // tRPC errors (if thrown in REST by accident)
-    if (err instanceof TRPCError) {
-      const status = statusFromTRPC(err.code);
-      if (status >= 500) {
-        return reply.code(status).send(jsend.error(err.message, err.code));
-      }
-      return reply.code(status).send(jsend.fail({ code: err.code, message: err.message }));
-    }
-
-    // Unknown -> generic internal
-    app.log.error({ err }, 'Unhandled error');
-    return reply.code(500).send(jsend.error('Internal Server Error'));
-  });
-}
-
-function statusFromTRPC(code: TRPCError['code']): number {
-  switch (code) {
-    case 'BAD_REQUEST':
-      return 400;
-    case 'UNAUTHORIZED':
-      return 401;
-    case 'FORBIDDEN':
-      return 403;
-    case 'NOT_FOUND':
-      return 404;
-    case 'CONFLICT':
-      return 409;
-    case 'PRECONDITION_FAILED':
-      return 412;
-    case 'PAYLOAD_TOO_LARGE':
-      return 413;
-    case 'TOO_MANY_REQUESTS':
-      return 429;
-    default:
-      return 500;
-  }
-}
-
-declare module 'fastify' {
-  interface FastifyReply {
-    jsendSuccess<T>(data: T, meta?: Record<string, unknown>): FastifyReply;
-    jsendFail<E extends object = Record<string, unknown>>(
-      data: E,
-      statusCode?: number,
-      meta?: Record<string, unknown>,
-    ): FastifyReply;
-    jsendError(
-      message: string,
-      statusCode?: number,
-      code?: string | number,
-      data?: unknown,
-      meta?: Record<string, unknown>,
-    ): FastifyReply;
-  }
-}
-
-export default fp(jsendPlugin);
-```
-
-## File: apps/backend/src/app/logger.ts
-
-```typescript
-import * as pino from 'pino';
-
-export const logger = pino.pino({
-  transport: {
-    target: 'pino-pretty',
-  },
-});
-```
-
-## File: apps/backend/src/main.ts
-
-```typescript
-import './env';
-
-import { migrateToLatest } from './app/kyselyinit';
-import { WebhookEventWorker } from './app/lib/jobs/webhook-worker';
-import { BackgroundJobWorker } from './app/lib/jobs/worker';
-import { logger } from './app/logger';
-import { FastifyServer } from './fastify.server';
-import { onShutdown } from './shutdown';
-
-const worker = new BackgroundJobWorker();
-const webhookWorker = new WebhookEventWorker();
-
-void (async () => {
-  await migrateToLatest();
-  worker.start();
-  webhookWorker.start();
-})();
-
-const server = new FastifyServer();
-
-void (async () => await server.serve())();
-
-onShutdown(async () => {
-  logger.info('Stopping background workers…');
-  await worker.stop();
-  await webhookWorker.stop();
-  logger.info('Closing DB…');
-  await server.close();
-});
-```
-
-## File: apps/backend/src/shutdown.ts
-
-```typescript
-import { logger } from './app/logger';
-
-export function onShutdown(handler: any, { timeout = 500 } = {}) {
-  const signals = ['SIGINT', 'SIGTERM'];
-  for (const signal of signals) {
-    process.on(signal, () => {
-      void (async () => {
-        const timer = setTimeout(() => process.exit(1), timeout);
-        try {
-          void (await handler({ signal }));
-          clearTimeout(timer);
-          process.exit(0);
-        } catch (err) {
-          logger.error(err, 'Shutdown handler failed');
-          process.exit(1);
-        }
-      })();
-    });
-  }
-}
-```
-
-## File: apps/backend/eslint.config.cjs
-
-```javascript
-/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
-/* Node.js, Fastify, tRPC backend-specific rules only.                         */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-module.exports = [
-  /* Compose the root config so `nx lint backend` enforces the same
-   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
-   * as the pre-commit `eslint` invocation. Previously this file stood alone,
-   * which meant nx lint never saw those rules and plain `eslint` never saw
-   * `local/no-unscoped-db-query` below — two disjoint, non-overlapping
-   * checks. Confirmed zero new violations from this composition. */
-  ...require('../../eslint.config.cjs'),
-
-  /* Extend the base config */
-  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
-    ...cfg,
-    files: ['**/*.{ts,tsx,js,jsx}'],
-    rules: {
-      /* Fastify/tRPC specific style preferences */
-      'prefer-arrow-callback': 'warn',
-      'arrow-body-style': ['warn', 'as-needed'],
-    },
-  })),
-
-  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
-   *
-   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
-   * reaches an execute terminal without a .where('tenant_id', …) filter.
-   *
-   * Scoped to modules/** only — excludes:
-   *   - base.repo.ts          (tenant filtering is callers' responsibility)
-   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
-   *   - _migrations/**        (DDL; no runtime tenant scoping)
-   *   - *.spec.ts             (integration tests do their own scoped cleanup)
-   *   - kyselyinit*.ts        (migration runner)
-   * ─────────────────────────────────────────────────────────────────────── */
-  {
-    files: ['**/src/app/modules/**/*.ts'],
-    ignores: ['**/*.spec.ts'],
-    // `local` is already registered by the root config spread in above —
-    // redeclaring it here for the same file set throws
-    // "Cannot redefine plugin 'local'" under ESLint's flat config.
-    rules: {
-      'local/no-unscoped-db-query': [
-        'error',
-        {
-          // Tables where cross-tenant queries are intentional:
-          //   authusers - login by email, password reset by code (pre-auth, no tenant known yet)
-          //   sessions  - sign-out by session_id hash (no tenant in token)
-          //   tenants   - tenant lookup by id
-          //
-          // Removed 2026-07-04: `tags` (all module queries already scope tenant_id — the old
-          // "join-level scoping" note was wrong) and `ms_oauth_tokens`/`google_oauth_tokens`
-          // (migration 2026-06-26-email-sync-per-tenant re-keyed both on UNIQUE(tenant_id) and
-          // made user_id nullable, so "keyed by user_id" no longer held — these hold OAuth
-          // secrets and must be tenant-scoped). Adding a table here is a security decision:
-          // prove every current and future query on it is safe cross-tenant, not just quiet.
-          ignoreTables: ['authusers', 'sessions', 'tenants'],
-        },
-      ],
-    },
-  },
-];
-```
-
-## File: apps/backend/src/app/\_migrations/0001_baseline.ts
-
-```typescript
-// tsco: ignore
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import * as fs from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-export async function up(db: Kysely<any>): Promise<void> {
-  // Read the schema_dump.sql file from the same directory
-  const schemaPath = path.join(__dirname, 'schema.sql');
-  const rawSql = fs.readFileSync(schemaPath, 'utf8');
-
-  // Strip psql meta-commands (\restrict etc.) and PG17-only SET params that
-  // don't exist on older servers (transaction_timeout added in PG17).
-  const pg17OnlyParams = new Set(['transaction_timeout']);
-
-  // Kysely's migrator creates and manages its own bookkeeping tables
-  // (kysely_migration / kysely_migration_lock) before any migration runs.
-  // pg_dump captures those tables into the schema dump, so executing them
-  // here would collide ("relation already exists"). Skip any DDL block that
-  // targets them. A block starts at a CREATE/ALTER TABLE referencing the
-  // table and continues until the statement-terminating ';'.
-  const kyselyBlockStart = /^(CREATE TABLE|ALTER TABLE(\s+ONLY)?)\s+(public\.)?kysely_migration(_lock)?\b/i;
-  let skippingKyselyBlock = false;
-
-  const schemaSql = rawSql
-    .split('\n')
-    .filter((line) => {
-      const t = line.trimStart();
-      if (t.startsWith('\\')) return false;
-      // pg_dump empties the session search_path; if left in, every subsequent
-      // unqualified statement on this connection (including Kysely's own INSERT
-      // into kysely_migration) fails with "relation does not exist".
-      if (/^SELECT\s+pg_catalog\.set_config\(\s*'search_path'/i.test(t)) return false;
-      const setMatch = t.match(/^SET\s+(\w+)\s*=/i);
-      if (setMatch && setMatch[1] && pg17OnlyParams.has(setMatch[1].toLowerCase())) return false;
-
-      if (skippingKyselyBlock) {
-        // Drop lines until we reach the end of the current statement.
-        if (t.endsWith(';')) skippingKyselyBlock = false;
-        return false;
-      }
-      if (kyselyBlockStart.test(t)) {
-        // Single-line statement ends immediately; otherwise keep skipping.
-        skippingKyselyBlock = !t.endsWith(';');
-        return false;
-      }
-      return true;
-    })
-    .join('\n');
-
-  await sql.raw(schemaSql).execute(db);
-}
-
-export async function down(_db: Kysely<any>): Promise<void> {
-  // A squashed baseline migration generally shouldn't be rolled back,
-  // as dropping the entire public schema is highly destructive.
-  // We throw an error here to prevent accidental database wiping.
-  throw new Error('This is a baseline migration and cannot be safely rolled back.');
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-06-25-fix-ondelete-behavior.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Corrects ON DELETE behavior across the schema.
- *
- *  - SET NULL  → child is a standalone record that merely references the parent
- *                (reference-move). Must be a single-column FK: a composite SET NULL
- *                would try to null tenant_id (NOT NULL) on PG14.
- *  - CASCADE   → child is meaningless without the parent (join/owned rows). Uses the
- *                composite (id, tenant_id) key for tenant safety where available.
- *
- * persons.household_id is intentionally NOT touched here — it is NOT NULL and is
- * handled in app logic (reassign to the placeholder household inside the delete txn).
- */
-export async function up(db: Kysely<any>): Promise<void> {
-  // --- Existing NO ACTION → SET NULL (single-column; targets have UNIQUE(id)) ---
-  await sql`
-    ALTER TABLE public.persons DROP CONSTRAINT IF EXISTS fk_persons_company;
-    ALTER TABLE public.persons
-      ADD CONSTRAINT fk_persons_company
-      FOREIGN KEY (company_id) REFERENCES public.companies(id) ON DELETE SET NULL;
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.teams DROP CONSTRAINT IF EXISTS fk_teams_team_captain;
-    ALTER TABLE public.teams
-      ADD CONSTRAINT fk_teams_team_captain
-      FOREIGN KEY (team_captain_id) REFERENCES public.persons(id) ON DELETE SET NULL;
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS fk_tasks_team_id;
-    ALTER TABLE public.tasks
-      ADD CONSTRAINT fk_tasks_team_id
-      FOREIGN KEY (team_id) REFERENCES public.teams(id) ON DELETE SET NULL;
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.data_imports DROP CONSTRAINT IF EXISTS fk_data_imports_tag;
-    ALTER TABLE public.data_imports
-      ADD CONSTRAINT fk_data_imports_tag
-      FOREIGN KEY (tag_id) REFERENCES public.tags(id) ON DELETE SET NULL;
-  `.execute(db);
-
-  // --- Existing NO ACTION → CASCADE (join table) ---
-  await sql`
-    ALTER TABLE public.map_campaigns_users DROP CONSTRAINT IF EXISTS fk_campaign_id;
-    ALTER TABLE public.map_campaigns_users
-      ADD CONSTRAINT fk_campaign_id
-      FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id) ON DELETE CASCADE;
-  `.execute(db);
-
-  // --- Standalone UNIQUE(id) needed to target these with single-column SET NULL FKs ---
-  // CASCADE: on a DB squashed from a full schema dump these UNIQUE keys already
-  // exist and the SET NULL FKs below already depend on them. Dropping with
-  // CASCADE removes those dependents (re-created later in this same migration)
-  // so the drop/re-add is order-independent and idempotent.
-  await sql`
-    ALTER TABLE public.event_ticket_types DROP CONSTRAINT IF EXISTS event_ticket_types_id_key CASCADE;
-    ALTER TABLE public.event_ticket_types ADD CONSTRAINT event_ticket_types_id_key UNIQUE (id);
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.donation_pledges DROP CONSTRAINT IF EXISTS donation_pledges_id_key CASCADE;
-    ALTER TABLE public.donation_pledges ADD CONSTRAINT donation_pledges_id_key UNIQUE (id);
-  `.execute(db);
-
-  // --- Missing FKs: events children → CASCADE (composite, tenant-safe) ---
-  await sql`
-    ALTER TABLE public.event_ticket_types DROP CONSTRAINT IF EXISTS fk_event_ticket_types_event;
-    ALTER TABLE public.event_ticket_types
-      ADD CONSTRAINT fk_event_ticket_types_event
-      FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_event;
-    ALTER TABLE public.event_registrations
-      ADD CONSTRAINT fk_event_registrations_event
-      FOREIGN KEY (event_id, tenant_id) REFERENCES public.events(id, tenant_id) ON DELETE CASCADE;
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_person;
-    ALTER TABLE public.event_registrations
-      ADD CONSTRAINT fk_event_registrations_person
-      FOREIGN KEY (person_id, tenant_id) REFERENCES public.persons(id, tenant_id) ON DELETE CASCADE;
-  `.execute(db);
-
-  // --- Missing FKs: SET NULL (single-column; nullable columns) ---
-  await sql`
-    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_ticket_type;
-    ALTER TABLE public.event_registrations
-      ADD CONSTRAINT fk_event_registrations_ticket_type
-      FOREIGN KEY (ticket_type_id) REFERENCES public.event_ticket_types(id) ON DELETE SET NULL;
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.donation_pledges DROP CONSTRAINT IF EXISTS fk_donation_pledges_person;
-    ALTER TABLE public.donation_pledges
-      ADD CONSTRAINT fk_donation_pledges_person
-      FOREIGN KEY (person_id) REFERENCES public.persons(id) ON DELETE SET NULL;
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.donations DROP CONSTRAINT IF EXISTS fk_donations_pledge;
-    ALTER TABLE public.donations
-      ADD CONSTRAINT fk_donations_pledge
-      FOREIGN KEY (pledge_id) REFERENCES public.donation_pledges(id) ON DELETE SET NULL;
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  // Drop the newly-added FKs.
-  await sql`
-    ALTER TABLE public.donations DROP CONSTRAINT IF EXISTS fk_donations_pledge;
-    ALTER TABLE public.donation_pledges DROP CONSTRAINT IF EXISTS fk_donation_pledges_person;
-    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_ticket_type;
-    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_person;
-    ALTER TABLE public.event_registrations DROP CONSTRAINT IF EXISTS fk_event_registrations_event;
-    ALTER TABLE public.event_ticket_types DROP CONSTRAINT IF EXISTS fk_event_ticket_types_event;
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.donation_pledges DROP CONSTRAINT IF EXISTS donation_pledges_id_key;
-    ALTER TABLE public.event_ticket_types DROP CONSTRAINT IF EXISTS event_ticket_types_id_key;
-  `.execute(db);
-
-  // Restore the original NO ACTION constraints.
-  await sql`
-    ALTER TABLE public.map_campaigns_users DROP CONSTRAINT IF EXISTS fk_campaign_id;
-    ALTER TABLE public.map_campaigns_users
-      ADD CONSTRAINT fk_campaign_id
-      FOREIGN KEY (campaign_id) REFERENCES public.campaigns(id);
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.data_imports DROP CONSTRAINT IF EXISTS fk_data_imports_tag;
-    ALTER TABLE public.data_imports
-      ADD CONSTRAINT fk_data_imports_tag
-      FOREIGN KEY (tag_id) REFERENCES public.tags(id);
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS fk_tasks_team_id;
-    ALTER TABLE public.tasks
-      ADD CONSTRAINT fk_tasks_team_id
-      FOREIGN KEY (team_id) REFERENCES public.teams(id);
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.teams DROP CONSTRAINT IF EXISTS fk_teams_team_captain;
-    ALTER TABLE public.teams
-      ADD CONSTRAINT fk_teams_team_captain
-      FOREIGN KEY (team_captain_id) REFERENCES public.persons(id);
-  `.execute(db);
-
-  await sql`
-    ALTER TABLE public.persons DROP CONSTRAINT IF EXISTS fk_persons_company;
-    ALTER TABLE public.persons
-      ADD CONSTRAINT fk_persons_company
-      FOREIGN KEY (company_id) REFERENCES public.companies(id);
-  `.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-06-25-person-newsletter-engagements.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    CREATE TABLE public.person_newsletter_engagements (
-      tenant_id       bigint      NOT NULL,
-      newsletter_id   bigint      NOT NULL,
-      email           text        NOT NULL,
-      open_count      integer     NOT NULL DEFAULT 0,
-      click_count     integer     NOT NULL DEFAULT 0,
-      has_unsubscribed boolean    NOT NULL DEFAULT false,
-      hard_bounced    boolean     NOT NULL DEFAULT false,
-      soft_bounced    boolean     NOT NULL DEFAULT false,
-      first_opened_at  timestamptz,
-      last_opened_at   timestamptz,
-      first_clicked_at timestamptz,
-      last_clicked_at  timestamptz,
-      bounced_at       timestamptz,
-      unsubscribed_at  timestamptz,
-      PRIMARY KEY (tenant_id, newsletter_id, email)
-    )
-  `.execute(db);
-
-  await sql`
-    CREATE INDEX idx_pne_tenant_email ON public.person_newsletter_engagements (tenant_id, email)
-  `.execute(db);
-
-  await sql`
-    CREATE INDEX idx_pne_newsletter ON public.person_newsletter_engagements (newsletter_id)
-  `.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`DROP TABLE IF EXISTS public.person_newsletter_engagements`.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-06-26-email-sync-per-tenant.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  // For each table, keep only the most recently updated row per tenant before enforcing uniqueness
-  await sql`
-    DELETE FROM google_oauth_tokens
-    WHERE id NOT IN (
-      SELECT DISTINCT ON (tenant_id) id
-      FROM google_oauth_tokens
-      ORDER BY tenant_id, updated_at DESC NULLS LAST
-    )
-  `.execute(db);
-
-  await sql`
-    DELETE FROM ms_oauth_tokens
-    WHERE id NOT IN (
-      SELECT DISTINCT ON (tenant_id) id
-      FROM ms_oauth_tokens
-      ORDER BY tenant_id, updated_at DESC NULLS LAST
-    )
-  `.execute(db);
-
-  // google_oauth_tokens: drop old user_id unique constraint + index, add tenant_id unique
-  await sql`ALTER TABLE google_oauth_tokens DROP CONSTRAINT IF EXISTS google_oauth_tokens_user_id_key`.execute(db);
-  await sql`DROP INDEX IF EXISTS google_oauth_tokens_tenant_user_idx`.execute(db);
-  await sql`ALTER TABLE google_oauth_tokens ALTER COLUMN user_id DROP NOT NULL`.execute(db);
-  await sql`ALTER TABLE google_oauth_tokens ADD CONSTRAINT google_oauth_tokens_tenant_id_key UNIQUE (tenant_id)`.execute(
-    db,
-  );
-  await sql`CREATE INDEX google_oauth_tokens_tenant_idx ON google_oauth_tokens (tenant_id)`.execute(db);
-
-  // ms_oauth_tokens: same
-  await sql`ALTER TABLE ms_oauth_tokens DROP CONSTRAINT IF EXISTS ms_oauth_tokens_user_id_key`.execute(db);
-  await sql`DROP INDEX IF EXISTS ms_oauth_tokens_tenant_user_idx`.execute(db);
-  await sql`ALTER TABLE ms_oauth_tokens ALTER COLUMN user_id DROP NOT NULL`.execute(db);
-  await sql`ALTER TABLE ms_oauth_tokens ADD CONSTRAINT ms_oauth_tokens_tenant_id_key UNIQUE (tenant_id)`.execute(db);
-  await sql`CREATE INDEX ms_oauth_tokens_tenant_idx ON ms_oauth_tokens (tenant_id)`.execute(db);
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE google_oauth_tokens DROP CONSTRAINT IF EXISTS google_oauth_tokens_tenant_id_key`.execute(db);
-  await sql`DROP INDEX IF EXISTS google_oauth_tokens_tenant_idx`.execute(db);
-  await sql`ALTER TABLE google_oauth_tokens ALTER COLUMN user_id SET NOT NULL`.execute(db);
-  await sql`ALTER TABLE google_oauth_tokens ADD CONSTRAINT google_oauth_tokens_user_id_key UNIQUE (user_id)`.execute(
-    db,
-  );
-  await sql`CREATE INDEX google_oauth_tokens_tenant_user_idx ON google_oauth_tokens (tenant_id, user_id)`.execute(db);
-
-  await sql`ALTER TABLE ms_oauth_tokens DROP CONSTRAINT IF EXISTS ms_oauth_tokens_tenant_id_key`.execute(db);
-  await sql`DROP INDEX IF EXISTS ms_oauth_tokens_tenant_idx`.execute(db);
-  await sql`ALTER TABLE ms_oauth_tokens ALTER COLUMN user_id SET NOT NULL`.execute(db);
-  await sql`ALTER TABLE ms_oauth_tokens ADD CONSTRAINT ms_oauth_tokens_user_id_key UNIQUE (user_id)`.execute(db);
-  await sql`CREATE INDEX ms_oauth_tokens_tenant_user_idx ON ms_oauth_tokens (tenant_id, user_id)`.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-06-26-passkey-setup-dismissed.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE authusers ADD COLUMN IF NOT EXISTS passkey_setup_dismissed_at TIMESTAMP WITH TIME ZONE`.execute(
-    db,
-  );
-}
-
-export async function down(db: Kysely<any>): Promise<void> {
-  await sql`ALTER TABLE authusers DROP COLUMN IF EXISTS passkey_setup_dismissed_at`.execute(db);
-}
-```
-
 ## File: apps/backend/src/app/lib/jobs/worker.ts
 
 ```typescript
@@ -16020,338 +15958,6 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
 }
 
 type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
-```
-
-## File: apps/backend/src/app/modules/auth/onboarding-seed.ts
-
-```typescript
-import type { Transaction } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
-import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-
-export async function seedOnboardingData(
-  params: {
-    tenant_id: string;
-    user_id: string;
-    campaign_id: string | bigint;
-  },
-  trx: Transaction<Models>,
-) {
-  const { tenant_id, user_id } = params;
-  const campaign_id = String(params.campaign_id);
-
-  // ── 1. Two sample households ─────────────────────────────────────────────
-  const households = await trx
-    .insertInto('households')
-    .values([
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        street1: '123 Sample Street',
-        city: 'Springfield',
-        state: 'IL',
-        zip: '62701',
-        country: 'US',
-        address_fp_street: fingerprintStreet({ street1: '123 Sample Street' }),
-        address_fp_full: fingerprintFull({
-          street1: '123 Sample Street',
-          city: 'Springfield',
-          state: 'IL',
-          zip: '62701',
-          country: 'US',
-        }),
-        notes: '[SAMPLE] Sample household. Delete when you add your real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        street1: '456 Demo Avenue',
-        city: 'Springfield',
-        state: 'IL',
-        zip: '62702',
-        country: 'US',
-        address_fp_street: fingerprintStreet({ street1: '456 Demo Avenue' }),
-        address_fp_full: fingerprintFull({
-          street1: '456 Demo Avenue',
-          city: 'Springfield',
-          state: 'IL',
-          zip: '62702',
-          country: 'US',
-        }),
-        notes: '[SAMPLE] Sample household. Delete when you add your real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-    ])
-    .returning('id')
-    .execute();
-
-  const [hh1Id, hh2Id] = households.map((h) => h.id) as [string, string];
-
-  // ── 2. Three sample persons ───────────────────────────────────────────────
-  const persons = await trx
-    .insertInto('persons')
-    .values([
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        household_id: hh1Id,
-        first_name: 'Alex',
-        last_name: '[Sample]',
-        email: 'alex.sample@example.com',
-        mobile: '555-0101',
-        notes: '[SAMPLE] Tagged as Supporter. Delete when ready to use real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        household_id: hh1Id,
-        first_name: 'Sam',
-        last_name: '[Sample]',
-        email: 'sam.sample@example.com',
-        mobile: '555-0102',
-        notes: '[SAMPLE] Tagged as Volunteer. Delete when ready to use real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        campaign_id,
-        household_id: hh2Id,
-        first_name: 'Jordan',
-        last_name: '[Sample]',
-        email: 'jordan.sample@example.com',
-        mobile: '555-0103',
-        notes: '[SAMPLE] Tagged as Non-Supporter. Delete when ready to use real contacts.',
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-    ])
-    .returning('id')
-    .execute();
-
-  const [alexId, samId, jordanId] = persons.map((p) => p.id) as [string, string, string];
-
-  // ── 3. Tag assignments ────────────────────────────────────────────────────
-  const tagRows = await trx
-    .selectFrom('tags')
-    .select(['id', 'name'])
-    .where('tenant_id', '=', tenant_id)
-    .where('name', 'in', ['supporter', 'volunteer', 'non-supporter'])
-    .where('type', '=', 'tag')
-    .execute();
-
-  const tagMap = new Map(tagRows.map((t) => [String(t.name), t.id]));
-  const supporterTagId = tagMap.get('supporter');
-  const volunteerTagId = tagMap.get('volunteer');
-  const nonSupporterTagId = tagMap.get('non-supporter');
-
-  const tagMappings = [
-    supporterTagId ? { person_id: alexId, tag_id: supporterTagId } : null,
-    volunteerTagId ? { person_id: samId, tag_id: volunteerTagId } : null,
-    nonSupporterTagId ? { person_id: jordanId, tag_id: nonSupporterTagId } : null,
-  ].filter((m): m is { person_id: string; tag_id: string } => m !== null);
-
-  if (tagMappings.length > 0) {
-    await trx
-      .insertInto('map_peoples_tags')
-      .values(
-        tagMappings.map(({ person_id, tag_id }) => ({
-          tenant_id: tenant_id,
-          person_id: person_id,
-          tag_id: tag_id,
-          createdby_id: user_id,
-          updatedby_id: user_id,
-        })),
-      )
-      .execute();
-  }
-
-  // ── 4. Sample tasks ───────────────────────────────────────────────────────
-  await trx
-    .insertInto('tasks')
-    .values([
-      {
-        tenant_id: tenant_id,
-        name: 'Add your first real contact [SAMPLE]',
-        details:
-          'Go to People and add someone from your real list. You can delete the three sample contacts (Alex, Sam, Jordan) anytime.',
-        status: 'todo' as const,
-        priority: 'low' as const,
-        position: 1,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        name: 'Explore tags and lists to segment your contacts [SAMPLE]',
-        details:
-          'Tags like "supporter", "volunteer", and "donor" are already set up. Open a sample person and try adding a tag. Then visit Lists to group people automatically by criteria.',
-        status: 'todo' as const,
-        priority: 'low' as const,
-        position: 2,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-      {
-        tenant_id: tenant_id,
-        name: 'Share your sign-up form with supporters [SAMPLE]',
-        details:
-          'A sample web form called "Newsletter Sign-Up" has been created under Forms. Copy the public link and put it on your website so new contacts land directly in this CRM.',
-        status: 'todo' as const,
-        priority: 'medium' as const,
-        position: 3,
-        createdby_id: user_id,
-        updatedby_id: user_id,
-      },
-    ])
-    .execute();
-
-  // ── 5. Sample web sign-up form ────────────────────────────────────────────
-  await trx
-    .insertInto('web_forms')
-    .values({
-      tenant_id: tenant_id,
-      name: 'Newsletter Sign-Up [SAMPLE]',
-      description: 'Sample sign-up form for your website. Customize the fields or delete and create your own.',
-      fields: JSON.stringify(fieldsForTemplate('signup')),
-      target_tags: JSON.stringify(['subscriber']),
-      target_lists: JSON.stringify([]),
-      status: 'published',
-      type: 'signup',
-      slug: 'newsletter-sign-up',
-      submit_label: FORM_TEMPLATES.signup.submitLabel,
-      thanks_title: 'Thank you!',
-      thanks_body: 'You’re on the list — thanks for signing up.',
-      confirm_subject: 'Thanks for signing up',
-      confirm_body: 'Hi [First name],\n\nThanks for signing up — we’ll be in touch soon.',
-      send_confirmation: true,
-      send_alert: false,
-      notify_team_on: false,
-      form_type: 'standard',
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
-
-  // ── 6. Sample list (Supporters) with Alex pre-added ──────────────────────
-  const list = await trx
-    .insertInto('lists')
-    .values({
-      tenant_id: tenant_id,
-      name: 'Supporters [SAMPLE]',
-      description:
-        'Sample list pre-populated with a supporter. Use lists to group contacts for newsletters or exports.',
-      object: 'people',
-      is_dynamic: false,
-      status: 'idle',
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-
-  await trx
-    .insertInto('map_lists_persons')
-    .values({
-      tenant_id: tenant_id,
-      list_id: list.id,
-      person_id: alexId,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
-
-  // ── 7. Sample volunteer event with Sam signed up ──────────────────────────
-  const eventStart = new Date();
-  eventStart.setDate(eventStart.getDate() + 30);
-  eventStart.setHours(10, 0, 0, 0);
-  const eventEnd = new Date(eventStart);
-  eventEnd.setHours(14, 0, 0, 0);
-
-  const event = await trx
-    .insertInto('volunteer_events')
-    .values({
-      tenant_id: tenant_id,
-      name: 'Community Kickoff [SAMPLE]',
-      description:
-        'Sample volunteer event. Edit the details, date, and location — then share the public sign-up link with your volunteers.',
-      location_address: '789 Town Hall Square, Springfield, IL',
-      start_time: eventStart,
-      end_time: eventEnd,
-      capacity: 20,
-      is_private: false,
-      send_reminder: false,
-      send_signup_confirmation: false,
-      send_volunteer_alert: false,
-      slug: `sample-community-kickoff-${tenant_id.replace(/-/g, '').slice(0, 8)}`,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-
-  await trx
-    .insertInto('volunteer_shifts')
-    .values({
-      tenant_id: tenant_id,
-      event_id: event.id,
-      person_id: samId,
-      status: 'signed_up',
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
-
-  // ── 8. Sample newsletter (draft) ─────────────────────────────────────────
-  await trx
-    .insertInto('newsletters')
-    .values({
-      tenant_id: tenant_id,
-      name: 'Welcome Newsletter [SAMPLE]',
-      status: 'draft',
-      subject: 'Welcome — we are glad you are here!',
-      preview_text: 'A quick introduction to who we are and how to get involved.',
-      audience_description: 'All supporters and subscribers',
-      html_content:
-        '<h1>Welcome!</h1><p>Thanks for joining us. We are excited to have you on board.</p><p>Stay tuned for updates, events, and ways to get involved.</p>',
-      plain_text_content:
-        'Welcome! Thanks for joining us. We are excited to have you on board. Stay tuned for updates, events, and ways to get involved.',
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
-
-  // ── 9. Sample team with the owner as lead and Sam as a member ─────────────
-  const team = await trx
-    .insertInto('teams')
-    .values({
-      tenant_id: tenant_id,
-      name: 'Sample Team [SAMPLE]',
-      description: 'Sample team. Teams let you assign contacts and lists to a group of users working together.',
-      team_lead_user_id: user_id,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .returning('id')
-    .executeTakeFirstOrThrow();
-
-  await trx
-    .insertInto('map_teams_persons')
-    .values({
-      tenant_id: tenant_id,
-      team_id: team.id,
-      person_id: samId,
-      createdby_id: user_id,
-      updatedby_id: user_id,
-    })
-    .execute();
-}
 ```
 
 ## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
@@ -19542,6 +19148,68 @@ export class UserProfiles extends BaseRepository<'profiles'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/web-forms/trpc.router.ts
+
+```typescript
+import {
+  AddWebFormObj,
+  CreateFormObj,
+  UpdateFormObj,
+  UpdateWebFormObj,
+  getAllOptions,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+
+import { authProcedure, publicProcedure, router } from '../../../trpc';
+import { WebFormsController } from './controller';
+
+const webForms = new WebFormsController();
+
+export const WebFormsRouter = router({
+  getAllWithCounts: authProcedure
+    .input(getAllOptions)
+    .query(({ input, ctx }) => webForms.getAllWithCounts(ctx.auth.tenant_id, input)),
+  getById: authProcedure
+    .input(z.string().uuid())
+    .query(({ input, ctx }) => webForms.getOneById({ tenant_id: ctx.auth.tenant_id, id: input })),
+  add: authProcedure.input(AddWebFormObj).mutation(({ input, ctx }) => webForms.addForm(input, ctx.auth)),
+  update: authProcedure
+    .input(z.object({ id: z.string().uuid(), data: UpdateWebFormObj }))
+    .mutation(({ input, ctx }) => webForms.updateForm(input.id, input.data, ctx.auth)),
+  delete: authProcedure
+    .input(z.string().uuid())
+    .mutation(({ input, ctx }) => webForms.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+  getSubmissionsCount: authProcedure
+    .input(z.string().uuid())
+    .query(({ input, ctx }) => webForms.getSubmissionsCount(input, ctx.auth.tenant_id)),
+  confirmSubscription: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(({ input }) => webForms.confirmSubscription(input.token)),
+
+  // --- North Star "living funnel" lifecycle (new Forms experience) ---
+  list: authProcedure.query(({ ctx }) => webForms.listForms(ctx.auth.tenant_id)),
+  getForEdit: authProcedure
+    .input(z.string().uuid())
+    .query(({ input, ctx }) => webForms.getFormForEdit(input, ctx.auth.tenant_id)),
+  create: authProcedure.input(CreateFormObj).mutation(({ input, ctx }) => webForms.createForm(input, ctx.auth)),
+  updateLive: authProcedure
+    .input(z.object({ id: z.string().uuid(), data: UpdateFormObj }))
+    .mutation(({ input, ctx }) => webForms.updateFormLive(input.id, input.data, ctx.auth)),
+  publish: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.publishForm(input, ctx.auth)),
+  unpublish: authProcedure
+    .input(z.string().uuid())
+    .mutation(({ input, ctx }) => webForms.unpublishForm(input, ctx.auth)),
+  archive: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.archiveForm(input, ctx.auth)),
+  restore: authProcedure.input(z.string().uuid()).mutation(({ input, ctx }) => webForms.restoreForm(input, ctx.auth)),
+  deleteDraft: authProcedure
+    .input(z.string().uuid())
+    .mutation(({ input, ctx }) => webForms.deleteForm(input, ctx.auth)),
+  submissions: authProcedure
+    .input(z.object({ id: z.string().uuid(), cursor: z.number().optional() }))
+    .query(({ input, ctx }) => webForms.getFormSubmissions(input.id, ctx.auth.tenant_id, input.cursor)),
+});
+```
+
 ## File: apps/backend/src/app/kyselyinit.ts
 
 ```typescript
@@ -20771,6 +20439,338 @@ export class ActivityController extends BaseController<'user_activity', UserActi
       status: 'processing',
     } as any;
   }
+}
+```
+
+## File: apps/backend/src/app/modules/auth/onboarding-seed.ts
+
+```typescript
+import type { Transaction } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+
+export async function seedOnboardingData(
+  params: {
+    tenant_id: string;
+    user_id: string;
+    campaign_id: string | bigint;
+  },
+  trx: Transaction<Models>,
+) {
+  const { tenant_id, user_id } = params;
+  const campaign_id = String(params.campaign_id);
+
+  // ── 1. Two sample households ─────────────────────────────────────────────
+  const households = await trx
+    .insertInto('households')
+    .values([
+      {
+        tenant_id: tenant_id,
+        campaign_id,
+        street1: '123 Sample Street',
+        city: 'Springfield',
+        state: 'IL',
+        zip: '62701',
+        country: 'US',
+        address_fp_street: fingerprintStreet({ street1: '123 Sample Street' }),
+        address_fp_full: fingerprintFull({
+          street1: '123 Sample Street',
+          city: 'Springfield',
+          state: 'IL',
+          zip: '62701',
+          country: 'US',
+        }),
+        notes: '[SAMPLE] Sample household. Delete when you add your real contacts.',
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      },
+      {
+        tenant_id: tenant_id,
+        campaign_id,
+        street1: '456 Demo Avenue',
+        city: 'Springfield',
+        state: 'IL',
+        zip: '62702',
+        country: 'US',
+        address_fp_street: fingerprintStreet({ street1: '456 Demo Avenue' }),
+        address_fp_full: fingerprintFull({
+          street1: '456 Demo Avenue',
+          city: 'Springfield',
+          state: 'IL',
+          zip: '62702',
+          country: 'US',
+        }),
+        notes: '[SAMPLE] Sample household. Delete when you add your real contacts.',
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      },
+    ])
+    .returning('id')
+    .execute();
+
+  const [hh1Id, hh2Id] = households.map((h) => h.id) as [string, string];
+
+  // ── 2. Three sample persons ───────────────────────────────────────────────
+  const persons = await trx
+    .insertInto('persons')
+    .values([
+      {
+        tenant_id: tenant_id,
+        campaign_id,
+        household_id: hh1Id,
+        first_name: 'Alex',
+        last_name: '[Sample]',
+        email: 'alex.sample@example.com',
+        mobile: '555-0101',
+        notes: '[SAMPLE] Tagged as Supporter. Delete when ready to use real contacts.',
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      },
+      {
+        tenant_id: tenant_id,
+        campaign_id,
+        household_id: hh1Id,
+        first_name: 'Sam',
+        last_name: '[Sample]',
+        email: 'sam.sample@example.com',
+        mobile: '555-0102',
+        notes: '[SAMPLE] Tagged as Volunteer. Delete when ready to use real contacts.',
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      },
+      {
+        tenant_id: tenant_id,
+        campaign_id,
+        household_id: hh2Id,
+        first_name: 'Jordan',
+        last_name: '[Sample]',
+        email: 'jordan.sample@example.com',
+        mobile: '555-0103',
+        notes: '[SAMPLE] Tagged as Non-Supporter. Delete when ready to use real contacts.',
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      },
+    ])
+    .returning('id')
+    .execute();
+
+  const [alexId, samId, jordanId] = persons.map((p) => p.id) as [string, string, string];
+
+  // ── 3. Tag assignments ────────────────────────────────────────────────────
+  const tagRows = await trx
+    .selectFrom('tags')
+    .select(['id', 'name'])
+    .where('tenant_id', '=', tenant_id)
+    .where('name', 'in', ['supporter', 'volunteer', 'non-supporter'])
+    .where('type', '=', 'tag')
+    .execute();
+
+  const tagMap = new Map(tagRows.map((t) => [String(t.name), t.id]));
+  const supporterTagId = tagMap.get('supporter');
+  const volunteerTagId = tagMap.get('volunteer');
+  const nonSupporterTagId = tagMap.get('non-supporter');
+
+  const tagMappings = [
+    supporterTagId ? { person_id: alexId, tag_id: supporterTagId } : null,
+    volunteerTagId ? { person_id: samId, tag_id: volunteerTagId } : null,
+    nonSupporterTagId ? { person_id: jordanId, tag_id: nonSupporterTagId } : null,
+  ].filter((m): m is { person_id: string; tag_id: string } => m !== null);
+
+  if (tagMappings.length > 0) {
+    await trx
+      .insertInto('map_peoples_tags')
+      .values(
+        tagMappings.map(({ person_id, tag_id }) => ({
+          tenant_id: tenant_id,
+          person_id: person_id,
+          tag_id: tag_id,
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        })),
+      )
+      .execute();
+  }
+
+  // ── 4. Sample tasks ───────────────────────────────────────────────────────
+  await trx
+    .insertInto('tasks')
+    .values([
+      {
+        tenant_id: tenant_id,
+        name: 'Add your first real contact [SAMPLE]',
+        details:
+          'Go to People and add someone from your real list. You can delete the three sample contacts (Alex, Sam, Jordan) anytime.',
+        status: 'todo' as const,
+        priority: 'low' as const,
+        position: 1,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      },
+      {
+        tenant_id: tenant_id,
+        name: 'Explore tags and lists to segment your contacts [SAMPLE]',
+        details:
+          'Tags like "supporter", "volunteer", and "donor" are already set up. Open a sample person and try adding a tag. Then visit Lists to group people automatically by criteria.',
+        status: 'todo' as const,
+        priority: 'low' as const,
+        position: 2,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      },
+      {
+        tenant_id: tenant_id,
+        name: 'Share your sign-up form with supporters [SAMPLE]',
+        details:
+          'A sample web form called "Newsletter Sign-Up" has been created under Forms. Copy the public link and put it on your website so new contacts land directly in this CRM.',
+        status: 'todo' as const,
+        priority: 'medium' as const,
+        position: 3,
+        createdby_id: user_id,
+        updatedby_id: user_id,
+      },
+    ])
+    .execute();
+
+  // ── 5. Sample web sign-up form ────────────────────────────────────────────
+  await trx
+    .insertInto('web_forms')
+    .values({
+      tenant_id: tenant_id,
+      name: 'Newsletter Sign-Up [SAMPLE]',
+      description: 'Sample sign-up form for your website. Customize the fields or delete and create your own.',
+      fields: JSON.stringify(fieldsForTemplate('signup')),
+      target_tags: JSON.stringify(['subscriber']),
+      target_lists: JSON.stringify([]),
+      status: 'published',
+      type: 'signup',
+      slug: 'newsletter-sign-up',
+      submit_label: FORM_TEMPLATES.signup.submitLabel,
+      thanks_title: 'Thank you!',
+      thanks_body: 'You’re on the list — thanks for signing up.',
+      confirm_subject: 'Thanks for signing up',
+      confirm_body: 'Hi [First name],\n\nThanks for signing up — we’ll be in touch soon.',
+      send_confirmation: true,
+      send_alert: false,
+      notify_team_on: false,
+      form_type: 'standard',
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .execute();
+
+  // ── 6. Sample list (Supporters) with Alex pre-added ──────────────────────
+  const list = await trx
+    .insertInto('lists')
+    .values({
+      tenant_id: tenant_id,
+      name: 'Supporters [SAMPLE]',
+      description:
+        'Sample list pre-populated with a supporter. Use lists to group contacts for newsletters or exports.',
+      object: 'people',
+      is_dynamic: false,
+      status: 'idle',
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+
+  await trx
+    .insertInto('map_lists_persons')
+    .values({
+      tenant_id: tenant_id,
+      list_id: list.id,
+      person_id: alexId,
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .execute();
+
+  // ── 7. Sample volunteer event with Sam signed up ──────────────────────────
+  const eventStart = new Date();
+  eventStart.setDate(eventStart.getDate() + 30);
+  eventStart.setHours(10, 0, 0, 0);
+  const eventEnd = new Date(eventStart);
+  eventEnd.setHours(14, 0, 0, 0);
+
+  const event = await trx
+    .insertInto('volunteer_events')
+    .values({
+      tenant_id: tenant_id,
+      name: 'Community Kickoff [SAMPLE]',
+      description:
+        'Sample volunteer event. Edit the details, date, and location — then share the public sign-up link with your volunteers.',
+      location_address: '789 Town Hall Square, Springfield, IL',
+      start_time: eventStart,
+      end_time: eventEnd,
+      capacity: 20,
+      is_private: false,
+      send_reminder: false,
+      send_signup_confirmation: false,
+      send_volunteer_alert: false,
+      slug: `sample-community-kickoff-${tenant_id.replace(/-/g, '').slice(0, 8)}`,
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+
+  await trx
+    .insertInto('volunteer_shifts')
+    .values({
+      tenant_id: tenant_id,
+      event_id: event.id,
+      person_id: samId,
+      status: 'signed_up',
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .execute();
+
+  // ── 8. Sample newsletter (draft) ─────────────────────────────────────────
+  await trx
+    .insertInto('newsletters')
+    .values({
+      tenant_id: tenant_id,
+      name: 'Welcome Newsletter [SAMPLE]',
+      status: 'draft',
+      subject: 'Welcome — we are glad you are here!',
+      preview_text: 'A quick introduction to who we are and how to get involved.',
+      audience_description: 'All supporters and subscribers',
+      html_content:
+        '<h1>Welcome!</h1><p>Thanks for joining us. We are excited to have you on board.</p><p>Stay tuned for updates, events, and ways to get involved.</p>',
+      plain_text_content:
+        'Welcome! Thanks for joining us. We are excited to have you on board. Stay tuned for updates, events, and ways to get involved.',
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .execute();
+
+  // ── 9. Sample team with the owner as lead and Sam as a member ─────────────
+  const team = await trx
+    .insertInto('teams')
+    .values({
+      tenant_id: tenant_id,
+      name: 'Sample Team [SAMPLE]',
+      description: 'Sample team. Teams let you assign contacts and lists to a group of users working together.',
+      team_lead_user_id: user_id,
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .returning('id')
+    .executeTakeFirstOrThrow();
+
+  await trx
+    .insertInto('map_teams_persons')
+    .values({
+      tenant_id: tenant_id,
+      team_id: team.id,
+      person_id: samId,
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })
+    .execute();
 }
 ```
 
@@ -24927,932 +24927,6 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     };
   }
 }
-```
-
-## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { WebFormsController } from '../controller';
-import formBody from '@fastify/formbody';
-
-const webFormsController = new WebFormsController();
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-const SUCCESS_HTML = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submission Successful</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --success: #2dd4bf;
-      --success-glow: rgba(45, 212, 191, 0.15);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --success: #22c55e;
-        --success-glow: rgba(34, 197, 94, 0.15);
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 300px;
-      height: 300px;
-      border-radius: 50%;
-      background: var(--accent);
-      filter: blur(120px);
-      opacity: 0.08;
-      z-index: 0;
-    }
-    body::before { top: 10%; left: 15%; }
-    body::after { bottom: 10%; right: 15%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 48px 32px;
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--success-glow);
-      border: 2px solid var(--success);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--success);
-      stroke-dasharray: 100;
-      stroke-dashoffset: 100;
-      stroke-width: 3px;
-      fill: none;
-      animation: drawCheck 0.6s 0.3s ease-out forwards;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    p {
-      color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    .btn:active {
-      transform: translateY(0);
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popIn {
-      0% {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-
-    @keyframes drawCheck {
-      to {
-        stroke-dashoffset: 0;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </div>
-    <h1>Submission Successful</h1>
-    <p>Thank you! Your information has been successfully received and processed.</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
-  </div>
-</body>
-</html>
-`;
-
-const errorHtml = (message: string) => `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Submission Error</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --error: #f37373;
-      --error-glow: rgba(243, 115, 115, 0.15);
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --error: #ef4444;
-        --error-glow: rgba(239, 68, 68, 0.15);
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 300px;
-      height: 300px;
-      border-radius: 50%;
-      background: var(--error);
-      filter: blur(120px);
-      opacity: 0.08;
-      z-index: 0;
-    }
-    body::before { top: 10%; left: 15%; }
-    body::after { bottom: 10%; right: 15%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border-radius: 24px;
-      padding: 48px 32px;
-      width: 100%;
-      max-width: 440px;
-      text-align: center;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--error), transparent);
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      background: var(--error-glow);
-      border: 2px solid var(--error);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 28px;
-      position: relative;
-      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-    }
-
-    .icon-container svg {
-      width: 38px;
-      height: 38px;
-      stroke: var(--error);
-      stroke-width: 3px;
-      fill: none;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 500;
-      margin-bottom: 12px;
-      letter-spacing: -0.01em;
-    }
-
-    p {
-      color: var(--text-secondary);
-      font-size: 15px;
-      line-height: 1.6;
-      margin-bottom: 32px;
-    }
-
-    .btn {
-      display: inline-block;
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 500;
-      text-decoration: none;
-      border-radius: 12px;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-    }
-
-    .btn:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    .btn:active {
-      transform: translateY(0);
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(30px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    @keyframes popIn {
-      0% {
-        opacity: 0;
-        transform: scale(0.6);
-      }
-      100% {
-        opacity: 1;
-        transform: scale(1);
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="icon-container">
-      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
-      </svg>
-    </div>
-    <h1>Submission Failed</h1>
-    <p>${escapeHtml(message)}</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
-  </div>
-</body>
-</html>
-`;
-
-const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Register form URL-encoded parser
-  fastify.register(formBody);
-
-  fastify.get('/success', async (req: any, reply) => {
-    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
-    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
-    // unauthenticated and every parameter (tenant_id, person_id, amount) is
-    // attacker-controlled, so it must NEVER record donations in production — real
-    // payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
-    const isProduction = process.env['NODE_ENV'] === 'production';
-    if (!isProduction && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
-      try {
-        const { DonationsController } = await import('../../donations/controller');
-        const donationsController = new DonationsController();
-        await donationsController.confirmMockDonation(
-          tenant_id,
-          user_id || '1',
-          person_id,
-          Number(amount_cents),
-          checkout_session_id,
-          province || '',
-          country || '',
-        );
-      } catch (err) {
-        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
-      }
-    }
-    reply.type('text/html');
-    return reply.send(SUCCESS_HTML);
-  });
-
-  fastify.get('/view/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
-    try {
-      const form = await webFormsController.getFormPublic(formId);
-      if (!form || form.status !== 'published') {
-        reply.status(404).type('text/html');
-        return reply.send(errorHtml('Web form not found or inactive.'));
-      }
-
-      const formName = form.name;
-      const formDescription = form.description || '';
-
-      // Extract fields configuration, default to all fields if null/empty
-      const fields: string[] = form.fields
-        ? Array.isArray(form.fields)
-          ? (form.fields as string[])
-          : JSON.parse(String(form.fields))
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-      reply.type('text/html');
-      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
-    } catch (err) {
-      reply.status(500).type('text/html');
-      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
-    }
-  });
-
-  fastify.post('/submit/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
-    // Standard reverse-proxy header check, fallback to req.ip
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
-    const isJsonExpected =
-      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
-
-    try {
-      const body = req.body || {};
-      const result = await webFormsController.submitFormPublic(formId, body, clientIp);
-
-      if (isJsonExpected) {
-        return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
-      }
-
-      if (result.redirect_url) {
-        return reply.redirect(result.redirect_url);
-      }
-
-      return reply.redirect('/api/forms/success');
-    } catch (err) {
-      fastify.log.error(err);
-      const statusCode =
-        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
-      const message =
-        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
-
-      if (isJsonExpected) {
-        return reply.status(statusCode).send({ error: message });
-      }
-
-      reply.status(statusCode).type('text/html');
-      return reply.send(errorHtml(message));
-    }
-  });
-
-  done();
-};
-
-export default webFormsPublicRoute;
-
-const renderFormHtml = (
-  formId: string,
-  formName: string,
-  formDescription: string,
-  fields: string[],
-  formType: string,
-) => {
-  const isFieldEnabled = (name: string): boolean => {
-    if (formType === 'donation') {
-      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-      if (alwaysEnabled.includes(name)) return true;
-    }
-    return fields.includes(name) || fields.includes(`${name}:required`);
-  };
-
-  const isFieldRequired = (name: string): boolean => {
-    if (formType === 'donation') {
-      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
-      if (alwaysRequired.includes(name)) return true;
-    }
-    return fields.includes(`${name}:required`);
-  };
-
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(formName)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
-      --accent: #0ea5e9;
-      --accent-hover: #0284c7;
-      --accent-glow: rgba(14, 165, 233, 0.15);
-      --card-bg: rgba(255, 255, 255, 0.8);
-      --card-border: #cbd5e1;
-      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
-      --text-primary: #1f2937;
-      --text-secondary: #6b7280;
-      --input-bg: #ffffff;
-      --input-border: #cbd5e1;
-      --input-focus-border: #0ea5e9;
-      --input-focus-ring: rgba(14, 165, 233, 0.15);
-      --label-color: #374151;
-      --placeholder-color: #9ca3af;
-    }
-
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
-        --accent: #3ea6ff;
-        --accent-hover: #1a8cff;
-        --accent-glow: rgba(62, 166, 255, 0.2);
-        --card-bg: rgba(19, 30, 49, 0.85);
-        --card-border: #1a2b45;
-        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
-        --text-primary: #f8fafc;
-        --text-secondary: #c7d1e5;
-        --input-bg: #0b1220;
-        --input-border: #1a2b45;
-        --input-focus-border: #3ea6ff;
-        --input-focus-ring: rgba(62, 166, 255, 0.25);
-        --label-color: #cbd5e1;
-        --placeholder-color: #4b5563;
-      }
-    }
-
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
-
-    body {
-      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-weight: 300;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 40px 24px;
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    body::before, body::after {
-      content: "";
-      position: absolute;
-      width: 400px;
-      height: 400px;
-      border-radius: 50%;
-      background: var(--accent);
-      filter: blur(150px);
-      opacity: 0.08;
-      z-index: 0;
-      pointer-events: none;
-    }
-    body::before { top: 15%; left: 10%; }
-    body::after { bottom: 15%; right: 10%; }
-
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border-radius: 24px;
-      padding: 40px;
-      width: 100%;
-      max-width: 480px;
-      box-shadow: var(--card-shadow);
-      z-index: 10;
-      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .card::before {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, transparent, var(--accent), transparent);
-    }
-
-    .header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-
-    h1 {
-      font-size: 26px;
-      font-weight: 500;
-      letter-spacing: -0.015em;
-      margin-bottom: 8px;
-      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
-    .description {
-      color: var(--text-secondary);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-
-    .form-group {
-      margin-bottom: 20px;
-      position: relative;
-    }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 8px;
-      color: var(--label-color);
-      letter-spacing: 0.01em;
-    }
-
-    input, textarea, select {
-      width: 100%;
-      padding: 12px 16px;
-      background: var(--input-bg);
-      border: 1px solid var(--input-border);
-      border-radius: 12px;
-      color: var(--text-primary);
-      font-size: 14px;
-      font-family: inherit;
-      transition: all 0.2s ease;
-      min-height: 46px;
-    }
-
-    input::placeholder, textarea::placeholder {
-      color: var(--placeholder-color);
-    }
-
-    input:hover, textarea:hover, select:hover {
-      border-color: var(--accent);
-      opacity: 0.95;
-    }
-
-    input:focus, textarea:focus, select:focus {
-      outline: none;
-      border-color: var(--input-focus-border);
-      box-shadow: 0 0 0 4px var(--input-focus-ring);
-    }
-
-    textarea {
-      resize: vertical;
-      min-height: 90px;
-    }
-
-    button {
-      width: 100%;
-      padding: 14px 28px;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      font-weight: 600;
-      border: none;
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      box-shadow: 0 4px 12px var(--accent-glow);
-      margin-top: 8px;
-      min-height: 48px;
-    }
-
-    button:hover {
-      background: var(--accent-hover);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px var(--accent-glow);
-    }
-
-    button:active {
-      transform: translateY(0);
-    }
-
-    .hp-field {
-      display: none !important;
-    }
-
-    .footer-note {
-      text-align: center;
-      margin-top: 24px;
-      font-size: 11px;
-      color: var(--text-secondary);
-      opacity: 0.6;
-    }
-
-    .footer-note a {
-      color: var(--accent);
-      text-decoration: none;
-      font-weight: 500;
-    }
-
-    .footer-note a:hover {
-      text-decoration: underline;
-    }
-
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="header">
-      <h1>${escapeHtml(formName)}</h1>
-      <p class="description">${escapeHtml(formDescription)}</p>
-    </div>
-
-    <form action="/api/forms/submit/${formId}" method="POST">
-      <!-- Honeypot Bot Field (leave empty!) -->
-      <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
-
-      ${
-        formType === 'donation'
-          ? `
-      <div class="form-group">
-        <label for="amount">Donation Amount ($ CAD) *</label>
-        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('first_name')
-          ? `
-      <div class="form-group">
-        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
-        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('last_name')
-          ? `
-      <div class="form-group">
-        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
-        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      <div class="form-group">
-        <label for="email">Email Address *</label>
-        <input type="email" id="email" name="email" placeholder="john@example.com" required />
-      </div>
-
-      ${
-        isFieldEnabled('street1')
-          ? `
-      <div class="form-group">
-        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
-        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('city')
-          ? `
-      <div class="form-group">
-        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
-        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('country')
-          ? `
-      <div class="form-group">
-        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
-        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
-          <option value="CA">Canada</option>
-          <option value="US">United States</option>
-          <option value="GB">United Kingdom</option>
-          <option value="AU">Australia</option>
-        </select>
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('state')
-          ? `
-      <div class="form-group">
-        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
-        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('zip')
-          ? `
-      <div class="form-group">
-        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
-        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('mobile')
-          ? `
-      <div class="form-group">
-        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
-        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
-      </div>`
-          : ''
-      }
-
-      ${
-        isFieldEnabled('notes')
-          ? `
-      <div class="form-group">
-        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
-        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
-      </div>`
-          : ''
-      }
-
-      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
-    </form>
-
-    <div class="footer-note">
-      Powered by <a href="#" target="_blank">PeopleCRM</a>
-    </div>
-  </div>
-</body>
-</html>
-`;
-};
 ```
 
 ## File: apps/backend/src/trpc.ts
@@ -33043,184 +32117,948 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 export default volunteerEventsPublicRoute;
 ```
 
-## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
+## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
 
 ```typescript
-import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
+import type { FastifyPluginCallback } from 'fastify';
+import { WebFormsController } from '../controller';
+import formBody from '@fastify/formbody';
 
-import type { QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+const webFormsController = new WebFormsController();
 
-export class WebFormsRepo extends BaseRepository<'web_forms'> {
-  constructor() {
-    super('web_forms');
-  }
-
-  public async getByIdPublic(id: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx).selectAll().where('id', '=', id).executeTakeFirst();
-  }
-
-  /** Public lookup by slug — used by the unauthenticated /f/:slug page + submit route (Phase 4). */
-  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('slug', '=', slug)
-      .executeTakeFirst();
-  }
-
-  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
-    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const row = await query.limit(1).executeTakeFirst();
-    return !!row;
-  }
-
-  /**
-   * Cards for the new Forms page: every non-donation form with a live submission count. Donation
-   * forms keep their own /donation-pages experience and are excluded here.
-   */
-  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
-    return this.getSelect()
-      .selectAll('web_forms')
-      .select((eb) =>
-        eb
-          .selectFrom('form_submissions')
-          .select((eb2) => eb2.fn.countAll<number>().as('c'))
-          .whereRef('form_submissions.form_id', '=', 'web_forms.id')
-          .where('form_submissions.tenant_id', '=', tenantId)
-          .as('submission_count'),
-      )
-      .where('web_forms.tenant_id', '=', tenantId)
-      .where('web_forms.form_type', 'not in', ['donation', 'recurring_donation'])
-      .orderBy('web_forms.updated_at', 'desc')
-      .execute();
-  }
-
-  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
-    const row = await this.db
-      .selectFrom('form_submissions')
-      .select((eb) => eb.fn.countAll<number>().as('c'))
-      .where('tenant_id', '=', tenantId)
-      .where('form_id', '=', formId)
-      .executeTakeFirst();
-    return Number(row?.c ?? 0);
-  }
-
-  public async getFormSubmissions(
-    tenantId: string,
-    formId: string,
-    limit: number,
-    offset: number,
-  ): Promise<Record<string, unknown>[]> {
-    return this.db
-      .selectFrom('form_submissions')
-      .leftJoin('persons', (join) =>
-        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
-      )
-      .select([
-        'form_submissions.id',
-        'form_submissions.person_id',
-        'form_submissions.answers',
-        'form_submissions.created_at',
-        'persons.first_name',
-        'persons.last_name',
-      ])
-      .where('form_submissions.tenant_id', '=', tenantId)
-      .where('form_submissions.form_id', '=', formId)
-      .orderBy('form_submissions.created_at', 'desc')
-      .limit(limit)
-      .offset(offset)
-      .execute();
-  }
-
-  public override async getAllWithCounts(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'web_forms'>;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
-
-    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
-    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
-
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
-      qb
-        .where('web_forms.tenant_id', '=', tenantId)
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-            LOWER(web_forms.name) LIKE ${text} OR
-            LOWER(web_forms.description) LIKE ${text}
-          )`,
-          );
-        })
-        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
-        .$if(!!filterModel['description']?.value, (q) =>
-          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
-        )
-        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
-
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    const rows = await applyFilters(this.getSelect(trx))
-      .select([
-        'web_forms.id',
-        'web_forms.tenant_id',
-        'web_forms.name',
-        'web_forms.description',
-        'web_forms.redirect_url',
-        'web_forms.target_tags',
-        'web_forms.target_lists',
-        'web_forms.status',
-        'web_forms.createdby_id',
-        'web_forms.updatedby_id',
-        'web_forms.created_at',
-        'web_forms.updated_at',
-        'web_forms.send_confirmation',
-        'web_forms.send_alert',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce(
-          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
-          qb,
-        ),
-      )
-      .offset(startRow)
-      .limit(endRow - startRow)
-      .execute();
-
-    const formattedRows = rows.map((row) => ({
-      ...row,
-      id: String(row['id']),
-      target_tags: Array.isArray(row['target_tags'])
-        ? row['target_tags']
-        : JSON.parse(String(row['target_tags'] || '[]')),
-      target_lists: Array.isArray(row['target_lists'])
-        ? row['target_lists']
-        : JSON.parse(String(row['target_lists'] || '[]')),
-    }));
-
-    return {
-      rows: formattedRows,
-      count,
-    };
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const SUCCESS_HTML = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Successful</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --success: #2dd4bf;
+      --success-glow: rgba(45, 212, 191, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --success: #22c55e;
+        --success-glow: rgba(34, 197, 94, 0.15);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: var(--accent);
+      filter: blur(120px);
+      opacity: 0.08;
+      z-index: 0;
+    }
+    body::before { top: 10%; left: 15%; }
+    body::after { bottom: 10%; right: 15%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--success-glow);
+      border: 2px solid var(--success);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--success);
+      stroke-dasharray: 100;
+      stroke-dashoffset: 100;
+      stroke-width: 3px;
+      fill: none;
+      animation: drawCheck 0.6s 0.3s ease-out forwards;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes drawCheck {
+      to {
+        stroke-dashoffset: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M20 6L9 17L4 12" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1>Submission Successful</h1>
+    <p>Thank you! Your information has been successfully received and processed.</p>
+    <a href="javascript:history.back()" class="btn">Go Back</a>
+  </div>
+</body>
+</html>
+`;
+
+const errorHtml = (message: string) => `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Error</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --error: #f37373;
+      --error-glow: rgba(243, 115, 115, 0.15);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --error: #ef4444;
+        --error-glow: rgba(239, 68, 68, 0.15);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      background: var(--error);
+      filter: blur(120px);
+      opacity: 0.08;
+      z-index: 0;
+    }
+    body::before { top: 10%; left: 15%; }
+    body::after { bottom: 10%; right: 15%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-radius: 24px;
+      padding: 48px 32px;
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--error), transparent);
+    }
+
+    .icon-container {
+      width: 80px;
+      height: 80px;
+      background: var(--error-glow);
+      border: 2px solid var(--error);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      position: relative;
+      animation: popIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .icon-container svg {
+      width: 38px;
+      height: 38px;
+      stroke: var(--error);
+      stroke-width: 3px;
+      fill: none;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 500;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    .btn {
+      display: inline-block;
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 500;
+      text-decoration: none;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes popIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.6);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-container">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 9v4M12 17h.01M12 3a9 9 0 110 18 9 9 0 010-18z" stroke-linecap="round" stroke-linejoin="round" stroke="var(--error)"/>
+      </svg>
+    </div>
+    <h1>Submission Failed</h1>
+    <p>${escapeHtml(message)}</p>
+    <a href="javascript:history.back()" class="btn">Go Back</a>
+  </div>
+</body>
+</html>
+`;
+
+const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Register form URL-encoded parser
+  fastify.register(formBody);
+
+  fastify.get('/success', async (req: any, reply) => {
+    const { checkout_session_id, is_mock, person_id, amount_cents, province, country, tenant_id, user_id } = req.query;
+    // Mock-donation confirmation is a local/dev convenience only. This endpoint is
+    // unauthenticated and every parameter (tenant_id, person_id, amount) is
+    // attacker-controlled, so it must NEVER record donations in production — real
+    // payments are confirmed via the signed Stripe webhook / authenticated tRPC path.
+    const isProduction = process.env['NODE_ENV'] === 'production';
+    if (!isProduction && is_mock === 'true' && checkout_session_id && person_id && tenant_id) {
+      try {
+        const { DonationsController } = await import('../../donations/controller');
+        const donationsController = new DonationsController();
+        await donationsController.confirmMockDonation(
+          tenant_id,
+          user_id || '1',
+          person_id,
+          Number(amount_cents),
+          checkout_session_id,
+          province || '',
+          country || '',
+        );
+      } catch (err) {
+        fastify.log.error(err as Error, 'Failed to confirm mock donation on public success page:');
+      }
+    }
+    reply.type('text/html');
+    return reply.send(SUCCESS_HTML);
+  });
+
+  // JSON config for the SPA public page (/f/:slug). Published forms return their render config;
+  // unpublished/archived slugs return a "closed" status; unknown slugs 404.
+  fastify.get('/f/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    try {
+      const result = await webFormsController.getPublicFormBySlug(String(slug));
+      return reply.status(200).send(result);
+    } catch (err) {
+      const statusCode =
+        isRecord(err) && typeof err['statusCode'] === 'number'
+          ? err['statusCode']
+          : err && (err as any).code === 'NOT_FOUND'
+            ? 404
+            : 500;
+      return reply.status(statusCode).send({ error: 'Form not found.' });
+    }
+  });
+
+  fastify.get('/view/:formId', async (req: any, reply) => {
+    const { formId } = req.params;
+    try {
+      const form = await webFormsController.getFormPublic(formId);
+      if (!form || form.status !== 'published') {
+        reply.status(404).type('text/html');
+        return reply.send(errorHtml('Web form not found or inactive.'));
+      }
+
+      const formName = form.name;
+      const formDescription = form.description || '';
+
+      // Extract fields configuration, default to all fields if null/empty
+      const fields: string[] = form.fields
+        ? Array.isArray(form.fields)
+          ? (form.fields as string[])
+          : JSON.parse(String(form.fields))
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+      reply.type('text/html');
+      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
+    } catch (err) {
+      reply.status(500).type('text/html');
+      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
+    }
+  });
+
+  fastify.post('/submit/:formId', async (req: any, reply) => {
+    const { formId } = req.params;
+    // Standard reverse-proxy header check, fallback to req.ip
+    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+    const isJsonExpected =
+      req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
+
+    try {
+      const body = req.body || {};
+      const result = await webFormsController.submitFormPublic(formId, body, clientIp);
+
+      if (isJsonExpected) {
+        return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
+      }
+
+      if (result.redirect_url) {
+        return reply.redirect(result.redirect_url);
+      }
+
+      return reply.redirect('/api/forms/success');
+    } catch (err) {
+      fastify.log.error(err);
+      const statusCode =
+        (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+      const message =
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
+
+      if (isJsonExpected) {
+        return reply.status(statusCode).send({ error: message });
+      }
+
+      reply.status(statusCode).type('text/html');
+      return reply.send(errorHtml(message));
+    }
+  });
+
+  done();
+};
+
+export default webFormsPublicRoute;
+
+const renderFormHtml = (
+  formId: string,
+  formName: string,
+  formDescription: string,
+  fields: string[],
+  formType: string,
+) => {
+  const isFieldEnabled = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysEnabled = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysEnabled.includes(name)) return true;
+    }
+    return fields.includes(name) || fields.includes(`${name}:required`);
+  };
+
+  const isFieldRequired = (name: string): boolean => {
+    if (formType === 'donation') {
+      const alwaysRequired = ['first_name', 'last_name', 'street1', 'city', 'state', 'zip', 'country'];
+      if (alwaysRequired.includes(name)) return true;
+    }
+    return fields.includes(`${name}:required`);
+  };
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(formName)}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #e2e8f0 100%);
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --accent-glow: rgba(14, 165, 233, 0.15);
+      --card-bg: rgba(255, 255, 255, 0.8);
+      --card-border: #cbd5e1;
+      --card-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 20px 40px -15px rgba(0, 0, 0, 0.05);
+      --text-primary: #1f2937;
+      --text-secondary: #6b7280;
+      --input-bg: #ffffff;
+      --input-border: #cbd5e1;
+      --input-focus-border: #0ea5e9;
+      --input-focus-ring: rgba(14, 165, 233, 0.15);
+      --label-color: #374151;
+      --placeholder-color: #9ca3af;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-gradient: linear-gradient(135deg, #0b1220 0%, #0e1726 50%, #060a12 100%);
+        --accent: #3ea6ff;
+        --accent-hover: #1a8cff;
+        --accent-glow: rgba(62, 166, 255, 0.2);
+        --card-bg: rgba(19, 30, 49, 0.85);
+        --card-border: #1a2b45;
+        --card-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5);
+        --text-primary: #f8fafc;
+        --text-secondary: #c7d1e5;
+        --input-bg: #0b1220;
+        --input-border: #1a2b45;
+        --input-focus-border: #3ea6ff;
+        --input-focus-ring: rgba(62, 166, 255, 0.25);
+        --label-color: #cbd5e1;
+        --placeholder-color: #4b5563;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 300;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 24px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before, body::after {
+      content: "";
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: var(--accent);
+      filter: blur(150px);
+      opacity: 0.08;
+      z-index: 0;
+      pointer-events: none;
+    }
+    body::before { top: 15%; left: 10%; }
+    body::after { bottom: 15%; right: 10%; }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-radius: 24px;
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: var(--card-shadow);
+      z-index: 10;
+      animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 500;
+      letter-spacing: -0.015em;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .description {
+      color: var(--text-secondary);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+      position: relative;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--label-color);
+      letter-spacing: 0.01em;
+    }
+
+    input, textarea, select {
+      width: 100%;
+      padding: 12px 16px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 12px;
+      color: var(--text-primary);
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+      min-height: 46px;
+    }
+
+    input::placeholder, textarea::placeholder {
+      color: var(--placeholder-color);
+    }
+
+    input:hover, textarea:hover, select:hover {
+      border-color: var(--accent);
+      opacity: 0.95;
+    }
+
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: var(--input-focus-border);
+      box-shadow: 0 0 0 4px var(--input-focus-ring);
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 90px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px 28px;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px var(--accent-glow);
+      margin-top: 8px;
+      min-height: 48px;
+    }
+
+    button:hover {
+      background: var(--accent-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px var(--accent-glow);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .hp-field {
+      display: none !important;
+    }
+
+    .footer-note {
+      text-align: center;
+      margin-top: 24px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      opacity: 0.6;
+    }
+
+    .footer-note a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .footer-note a:hover {
+      text-decoration: underline;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>${escapeHtml(formName)}</h1>
+      <p class="description">${escapeHtml(formDescription)}</p>
+    </div>
+
+    <form action="/api/forms/submit/${formId}" method="POST">
+      <!-- Honeypot Bot Field (leave empty!) -->
+      <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
+
+      ${
+        formType === 'donation'
+          ? `
+      <div class="form-group">
+        <label for="amount">Donation Amount ($ CAD) *</label>
+        <input type="number" id="amount" name="amount" min="1" step="any" placeholder="E.g. 50.00" required />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('first_name')
+          ? `
+      <div class="form-group">
+        <label for="first_name">First Name ${isFieldRequired('first_name') ? '*' : ''}</label>
+        <input type="text" id="first_name" name="first_name" placeholder="E.g. John" ${isFieldRequired('first_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('last_name')
+          ? `
+      <div class="form-group">
+        <label for="last_name">Last Name ${isFieldRequired('last_name') ? '*' : ''}</label>
+        <input type="text" id="last_name" name="last_name" placeholder="E.g. Doe" ${isFieldRequired('last_name') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      <div class="form-group">
+        <label for="email">Email Address *</label>
+        <input type="email" id="email" name="email" placeholder="john@example.com" required />
+      </div>
+
+      ${
+        isFieldEnabled('street1')
+          ? `
+      <div class="form-group">
+        <label for="street1">Street Address ${isFieldRequired('street1') ? '*' : ''}</label>
+        <input type="text" id="street1" name="street1" placeholder="E.g. 123 Main St" ${isFieldRequired('street1') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('city')
+          ? `
+      <div class="form-group">
+        <label for="city">City ${isFieldRequired('city') ? '*' : ''}</label>
+        <input type="text" id="city" name="city" placeholder="E.g. Toronto" ${isFieldRequired('city') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('country')
+          ? `
+      <div class="form-group">
+        <label for="country">Country ${isFieldRequired('country') ? '*' : ''}</label>
+        <select id="country" name="country" ${isFieldRequired('country') ? 'required' : ''}>
+          <option value="CA">Canada</option>
+          <option value="US">United States</option>
+          <option value="GB">United Kingdom</option>
+          <option value="AU">Australia</option>
+        </select>
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('state')
+          ? `
+      <div class="form-group">
+        <label for="state">State / Province ${isFieldRequired('state') ? '*' : ''}</label>
+        <input type="text" id="state" name="state" placeholder="E.g. ON or NY" ${isFieldRequired('state') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('zip')
+          ? `
+      <div class="form-group">
+        <label for="zip">Zip / Postal Code ${isFieldRequired('zip') ? '*' : ''}</label>
+        <input type="text" id="zip" name="zip" placeholder="E.g. M5V 2T6" ${isFieldRequired('zip') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('mobile')
+          ? `
+      <div class="form-group">
+        <label for="mobile">Mobile / Phone ${isFieldRequired('mobile') ? '*' : ''}</label>
+        <input type="text" id="mobile" name="mobile" placeholder="E.g. 555-0199" ${isFieldRequired('mobile') ? 'required' : ''} />
+      </div>`
+          : ''
+      }
+
+      ${
+        isFieldEnabled('notes')
+          ? `
+      <div class="form-group">
+        <label for="notes">Notes / Message ${isFieldRequired('notes') ? '*' : ''}</label>
+        <textarea id="notes" name="notes" placeholder="How can we help you?" ${isFieldRequired('notes') ? 'required' : ''}></textarea>
+      </div>`
+          : ''
+      }
+
+      <button type="submit">${formType === 'donation' ? 'Next' : 'Submit'}</button>
+    </form>
+
+    <div class="footer-note">
+      Powered by <a href="#" target="_blank">PeopleCRM</a>
+    </div>
+  </div>
+</body>
+</html>
+`;
+};
 ```
 
 ## File: apps/backend/src/app/modules/workflows/repositories/workflows.repo.ts
@@ -35357,1018 +35195,192 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
 }
 ```
 
-## File: apps/backend/src/app/modules/web-forms/controller.ts
+## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
 
 ```typescript
-import type {
-  AddWebFormType,
-  CreateFormType,
-  IAuthKeyPayload,
-  UpdateFormType,
-  UpdateWebFormType,
-} from '../../../../../../libs/common/src';
-import { FORM_TEMPLATES, fieldsForTemplate, normForm } from '../../../../../../libs/common/src';
-import { BaseController } from '../../lib/base.controller';
-import { WebFormsRepo } from './repositories/web-forms.repo';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { type Transaction, sql } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { createSigner, createVerifier } from 'fast-jwt';
-import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-import { HouseholdRepo } from '../households/repositories/households.repo';
+import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
 
-import { WorkflowsController } from '../workflows/controller';
-import { DonationsController } from '../donations/controller';
-import { logger } from '../../logger';
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 
-// Sliding window memory for rate-limiting
-const ipSubmissionTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
-export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+export class WebFormsRepo extends BaseRepository<'web_forms'> {
   constructor() {
-    super(new WebFormsRepo());
+    super('web_forms');
   }
 
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const form = await super.getOneById(input);
-    if (!form) return form;
-    return this.resolveCreatorAndUpdater(input.tenant_id, form);
+  public async getByIdPublic(id: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx).selectAll().where('id', '=', id).executeTakeFirst();
   }
 
-  public async getFormPublic(id: string) {
-    return this.getRepo().getByIdPublic(id);
-  }
-
-  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
-    const row = {
-      tenant_id: auth.tenant_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      redirect_url: payload.redirect_url ?? null,
-      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
-      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
-      fields: payload.fields ? JSON.stringify(payload.fields) : null,
-      status: this.mapLegacyStatus(payload.status),
-      send_confirmation: payload.send_confirmation ?? true,
-      send_alert: payload.send_alert ?? true,
-      form_type: payload.form_type ?? 'standard',
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    return this.add(row as any);
-  }
-
-  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
-    if (!existing) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found.',
-      });
-    }
-
-    const row: any = {
-      updatedby_id: auth.user_id,
-      updated_at: new Date(),
-    };
-    if (payload.name !== undefined) row.name = payload.name;
-    if (payload.description !== undefined) row.description = payload.description;
-    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
-    if (payload.target_tags !== undefined)
-      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
-    if (payload.target_lists !== undefined)
-      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
-    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
-    if (payload.status !== undefined) row.status = this.mapLegacyStatus(payload.status);
-    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
-    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
-
-    const rawPayload = payload as any;
-    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Form type cannot be changed after the form has been created.',
-      });
-    }
-
-    return this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row,
-    });
-  }
-
-  public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
-    }
-    timestamps.push(now);
-    // Prune empty keys to prevent unbounded Map growth
-    if (timestamps.length > 0) {
-      ipSubmissionTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSubmissionTimestamps.delete(clientIp);
-    }
-
-    // 2. Fetch Form by ID
-    const form = await this.getRepo().getByIdPublic(formId);
-    if (!form || form.status !== 'published') {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found or inactive.',
-      });
-    }
-
-    const tenantId = String(form.tenant_id);
-
-    // 3. Honeypot check
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
-      return { redirect_url: form.redirect_url || null };
-    }
-
-    // 4. Validate email
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Email address is required.',
-      });
-    }
-
-    // Parse configured fields. Supports both the legacy string[] shape ("mobile:required") used by
-    // donation/older forms and the new-model FormField[] objects ({ key, on, required, label }).
-    const rawFields: unknown = form.fields
-      ? Array.isArray(form.fields)
-        ? form.fields
-        : JSON.parse(String(form.fields))
-      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-    const fieldArray: unknown[] = Array.isArray(rawFields) ? rawFields : [];
-
-    // Map payload key aliases helper
-    const getPayloadValue = (key: string): string => {
-      let value = '';
-      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
-      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
-      else if (key === 'full_name' || key === 'name') value = payload['full_name'] || payload['name'] || '';
-      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
-      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
-      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
-      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
-      else value = payload[key] || '';
-      return String(value).trim();
-    };
-
-    // Validate user-configured required fields for standard forms
-    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-      const fieldLabels: Record<string, string> = {
-        first_name: 'First Name',
-        last_name: 'Last Name',
-        full_name: 'Full name',
-        mobile: 'Mobile / Phone',
-        notes: 'Notes / Message',
-        street1: 'Street Address',
-        city: 'City',
-        state: 'State / Province',
-        zip: 'Zip / Postal Code',
-        country: 'Country',
-      };
-
-      const requiredFields: { name: string; label: string }[] = [];
-      for (const raw of fieldArray) {
-        if (typeof raw === 'string') {
-          if (raw.endsWith(':required')) {
-            const name = raw.replace(':required', '');
-            requiredFields.push({ name, label: fieldLabels[name] ?? name });
-          }
-        } else if (raw && typeof raw === 'object') {
-          const obj = raw as { key?: string; on?: boolean; required?: boolean; label?: string };
-          // Email is validated separately above; skip it here.
-          if (obj.key && obj.key !== 'email' && obj.on && obj.required) {
-            requiredFields.push({ name: obj.key, label: obj.label ?? fieldLabels[obj.key] ?? obj.key });
-          }
-        }
-      }
-
-      for (const field of requiredFields) {
-        if (!getPayloadValue(field.name)) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: `${field.label} is required.` });
-        }
-      }
-    }
-
-    // Parse and validate donation fields if form is a donation or recurring_donation form
-    let amountCents = 0;
-    let monthlyAmountCents = 0;
-    let country = '';
-    let state = '';
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
-      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
-      if (!firstName || !lastName) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'First name and last name are required for donations.',
-        });
-      }
-
-      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-      const city = (payload['city'] || '').trim();
-      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-      country = (payload['country'] || payload['residency_country'] || '').trim();
-      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-      if (!street1 || !city || !zip || !country || !state) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message:
-            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
-        });
-      }
-
-      // Check if email already exists to run eligibility checks
-      const existing = await this.getRepo()
-        .db.selectFrom('persons')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where(sql`lower(email)`, '=', email.toLowerCase())
-        .executeTakeFirst();
-
-      const donationsController = new DonationsController();
-
-      if (form.form_type === 'donation') {
-        const amountStr = payload['amount'] || payload['donation_amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
-        }
-        amountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          amountCents,
-          { country, state },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
-      } else {
-        // recurring_donation
-        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
-        }
-        monthlyAmountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          monthlyAmountCents,
-          { country, state },
-          { isRecurring: true },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
-      }
-    }
-
-    // 5. Gather submission fields. New-model forms collect a single `full_name`; split it on the
-    // last space so the person record still gets a first/last name.
-    let firstName = payload['first_name'] || payload['firstName'] || null;
-    let lastName = payload['last_name'] || payload['lastName'] || null;
-    if (!firstName && !lastName) {
-      const fullName = (payload['full_name'] || payload['name'] || '').trim();
-      if (fullName) {
-        const lastSpace = fullName.lastIndexOf(' ');
-        if (lastSpace === -1) {
-          firstName = fullName;
-        } else {
-          firstName = fullName.slice(0, lastSpace).trim();
-          lastName = fullName.slice(lastSpace + 1).trim();
-        }
-      }
-    }
-    const mobile = payload['mobile'] || payload['phone'] || null;
-    const notes = payload['notes'] || payload['message'] || null;
-
-    let resolvedPersonId = '';
-    let resolvedCreatorId = '1';
-
-    // 6. Find or Create person & apply merges/tags
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        // Use the form's creator as the actor — they are the person who
-        // configured this form, which is the most correct attribution for
-        // contacts and data created via public submissions.
-        const creatorId = String(form.createdby_id);
-
-        resolvedCreatorId = creatorId;
-
-        if (!householdId) {
-          throw new Error('Tenant placeholder household is not configured.');
-        }
-
-        const campaignId = await this.getCampaignId(tenantId, trx);
-
-        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
-        // counted once they confirm via the emailed link (see confirm-subscription route).
-        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
-
-        let finalHouseholdId = householdId;
-
-        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-        const city = (payload['city'] || '').trim();
-        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-        const country = (payload['country'] || payload['residency_country'] || '').trim();
-        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-        const hasAddress = !!(street1 || city || zip || country || state);
-
-        if (hasAddress) {
-          const fp_street = fingerprintStreet({ street1 });
-          const fp_full = fingerprintFull({
-            street1,
-            city,
-            state,
-            zip,
-            country,
-          });
-
-          const householdRepo = new HouseholdRepo();
-          const existingHh = await trx
-            .selectFrom('households')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('campaign_id', '=', campaignId)
-            .where('address_fp_full', '=', fp_full)
-            .executeTakeFirst();
-
-          if (existingHh) {
-            finalHouseholdId = String(existingHh.id);
-          } else {
-            const createdHhs = await householdRepo.addMany(
-              {
-                rows: [
-                  {
-                    tenant_id: tenantId,
-                    campaign_id: campaignId,
-                    createdby_id: creatorId,
-                    updatedby_id: creatorId,
-                    street1,
-                    city,
-                    state,
-                    zip,
-                    country,
-                    address_fp_street: fp_street,
-                    address_fp_full: fp_full,
-                  } as any,
-                ],
-              },
-              trx,
-            );
-            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
-              finalHouseholdId = String(createdHhs[0].id);
-            }
-          }
-        }
-
-        // Check if email already exists
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = {
-            updatedby_id: creatorId,
-            updated_at: sql`now()`,
-          };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (form.form_type === 'donation' || hasAddress) {
-            updateRow.household_id = finalHouseholdId;
-          }
-          if (!existing.notes && notes) {
-            updateRow.notes = notes;
-          } else if (existing.notes && notes) {
-            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
-          }
-
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: finalHouseholdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            mobile: mobile,
-            notes: notes,
-            opt_in_status: doubleOptIn ? 'pending' : null,
-          };
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          // Trigger contact created workflow
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
-          }
-
-          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
-          if (doubleOptIn) {
-            await this.enqueueSubscriptionConfirmation(trx, {
-              tenantId,
-              personId,
-              email,
-              firstName,
-            });
-          }
-        }
-
-        resolvedPersonId = personId;
-
-        const workflowsController = new WorkflowsController();
-
-        // Add target custom tags & read-only system tag
-        const targetTags: string[] = Array.isArray(form.target_tags)
-          ? form.target_tags
-          : JSON.parse((form.target_tags as any) || '[]');
-        const systemTagName = `source: ${form.name}`;
-        const allTagsToApply = [...targetTags, systemTagName];
-        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-          allTagsToApply.push('donor');
-        }
-
-        for (const tagName of allTagsToApply) {
-          const normalizedTagName = tagName.trim().toLowerCase();
-          if (!normalizedTagName) continue;
-
-          let tag = await trx
-            .selectFrom('tags')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('name', '=', normalizedTagName)
-            .where('type', '=', 'tag')
-            .executeTakeFirst();
-
-          if (!tag) {
-            const insertTagRes = await trx
-              .insertInto('tags')
-              .values({
-                tenant_id: tenantId,
-                name: normalizedTagName,
-                type: 'tag',
-                deletable: true,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .returning('id')
-              .executeTakeFirstOrThrow();
-            tag = { id: insertTagRes.id };
-          }
-
-          const mapExists = await trx
-            .selectFrom('map_peoples_tags')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('tag_id', '=', tag.id)
-            .executeTakeFirst();
-
-          if (!mapExists) {
-            await trx
-              .insertInto('map_peoples_tags')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                tag_id: tag.id,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger tag_added and specialized subscriber workflows
-            try {
-              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Add target lists
-        const targetLists: string[] = Array.isArray(form.target_lists)
-          ? form.target_lists
-          : JSON.parse((form.target_lists as any) || '[]');
-        for (const listId of targetLists) {
-          if (!listId) continue;
-          const listExists = await trx
-            .selectFrom('lists')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', listId)
-            .executeTakeFirst();
-
-          if (!listExists) continue;
-
-          const inList = await trx
-            .selectFrom('map_lists_persons')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('list_id', '=', listId)
-            .executeTakeFirst();
-
-          if (!inList) {
-            await trx
-              .insertInto('map_lists_persons')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                list_id: listId,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger list joined workflows
-            try {
-              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Trigger web form submitted workflows
-        try {
-          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
-        }
-
-        // Log user activity
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: creatorId,
-            activity: 'submission',
-            entity: 'web_forms',
-            entity_id: formId,
-            quantity: 1,
-            metadata: JSON.stringify({ person_id: personId, email }),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .execute();
-
-        // Persist a durable response record (answers snapshot + person FK) for the Responses tab.
-        // Donation forms are a separate flow (Stripe/webhook) and are not part of this model.
-        if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-          const answers: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(payload)) {
-            if (key === '_hp') continue;
-            answers[key] = value;
-          }
-          await trx
-            .insertInto('form_submissions')
-            .values({
-              tenant_id: tenantId,
-              form_id: String(form.id),
-              person_id: personId,
-              answers: JSON.stringify(answers),
-            })
-            .execute();
-        }
-
-        // Queue email notification job in background
-        await trx
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'send-webform-notifications',
-              formId: String(form.id),
-              tenantId,
-              email,
-              firstName,
-              lastName,
-              mobile,
-              notes,
-            }),
-            run_at: new Date(),
-          })
-          .execute();
-      });
-
-    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const donationsController = new DonationsController();
-      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
-
-      if (form.form_type === 'donation') {
-        const checkoutSession = await donationsController.createCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          amountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      } else {
-        const checkoutSession = await donationsController.createRecurringCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          monthlyAmountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      }
-    }
-
-    return { redirect_url: form.redirect_url || null };
+  /** Public lookup by slug within a known tenant. */
+  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('slug', '=', slug)
+      .executeTakeFirst();
   }
 
   /**
-   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
-   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
+   * Resolve a slug for the unauthenticated public page. The public URL (/f/:slug) carries no tenant
+   * context — a public form page is cross-tenant by design (anyone on the internet reaches it) — so
+   * this intentionally queries without a tenant_id scope. It only returns a public artifact (a form
+   * meant to be public) and leaks no other tenant data, so the tenant-safety rule is waived here.
    */
-  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
-
-    let payload: any;
-    try {
-      payload = await verifier(token);
-    } catch {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
-    }
-
-    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
-    }
-
-    await this.getRepo()
-      .db.updateTable('persons')
-      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
-      .where('tenant_id', '=', String(payload.tenant_id))
-      .where('id', '=', String(payload.person_id))
-      .execute();
-
-    return { success: true };
+  // eslint-disable-next-line local/no-unscoped-db-query -- public /f/:slug lookup is cross-tenant by design; see doc comment.
+  public async getBySlugAnyTenant(slug: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx).selectAll().where('slug', '=', slug).orderBy('created_at', 'asc').executeTakeFirst();
   }
 
-  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'communications.double_opt_in')
-      .executeTakeFirst();
-
-    return row?.value === true || row?.value === 'true';
+  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
   }
 
   /**
-   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
-   * runs only if the surrounding submission transaction commits, keeping the pending person and the
-   * confirmation email consistent.
+   * Cards for the new Forms page: every non-donation form with a live submission count. Donation
+   * forms keep their own /donation-pages experience and are excluded here.
    */
-  private async enqueueSubscriptionConfirmation(
-    trx: Transaction<Models>,
-    args: { tenantId: string; personId: string; email: string; firstName: string | null },
-  ): Promise<void> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
-      return;
-    }
-
-    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
-    const token = signer({
-      tenant_id: args.tenantId,
-      person_id: args.personId,
-      email: args.email.toLowerCase().trim(),
-      purpose: 'confirm-subscription',
-    });
-    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
-
-    await trx
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: args.tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-subscription-confirmation',
-          tenantId: args.tenantId,
-          email: args.email,
-          firstName: args.firstName,
-          confirmUrl,
-        }),
-        run_at: new Date(),
-      })
+  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
+    return this.getSelect()
+      .selectAll('web_forms')
+      .select((eb) =>
+        eb
+          .selectFrom('form_submissions')
+          .select((eb2) => eb2.fn.countAll<number>().as('c'))
+          .whereRef('form_submissions.form_id', '=', 'web_forms.id')
+          .where('form_submissions.tenant_id', '=', tenantId)
+          .as('submission_count'),
+      )
+      .where('web_forms.tenant_id', '=', tenantId)
+      .where('web_forms.form_type', 'not in', ['donation', 'recurring_donation'])
+      .orderBy('web_forms.updated_at', 'desc')
       .execute();
   }
 
-  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
+  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('form_submissions')
+      .select((eb) => eb.fn.countAll<number>().as('c'))
       .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'current_campaign')
+      .where('form_id', '=', formId)
       .executeTakeFirst();
-
-    if (row) {
-      const value = row.value;
-      if (typeof value === 'number' || typeof value === 'string') {
-        return String(value);
-      }
-      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-        const id = (value as Record<string, unknown>)['id'];
-        if (typeof id === 'number' || typeof id === 'string') {
-          return String(id);
-        }
-      }
-    }
-
-    const campaignRow = await trx
-      .selectFrom('campaigns')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (campaignRow) {
-      return String(campaignRow.id);
-    }
-
-    throw new Error('No campaign found for this tenant.');
+    return Number(row?.c ?? 0);
   }
 
-  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
-    return this.getRepo().countSubmissions(tenantId, formId);
+  public async getFormSubmissions(
+    tenantId: string,
+    formId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Record<string, unknown>[]> {
+    return this.db
+      .selectFrom('form_submissions')
+      .leftJoin('persons', (join) =>
+        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
+      )
+      .select([
+        'form_submissions.id',
+        'form_submissions.person_id',
+        'form_submissions.answers',
+        'form_submissions.created_at',
+        'persons.first_name',
+        'persons.last_name',
+      ])
+      .where('form_submissions.tenant_id', '=', tenantId)
+      .where('form_submissions.form_id', '=', formId)
+      .orderBy('form_submissions.created_at', 'desc')
+      .limit(limit)
+      .offset(offset)
+      .execute();
   }
 
-  // ---------------------------------------------------------------------------
-  // North Star "living funnel" lifecycle (new Forms experience).
-  // ---------------------------------------------------------------------------
+  public override async getAllWithCounts(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'web_forms'>;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
 
-  /** All non-donation forms as cards for the browse page, fields normalized for the preview. */
-  public async listForms(tenantId: string) {
-    const rows = await this.getRepo().listForms(tenantId);
-    return rows.map((row) => this.normalizeForm(row));
-  }
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
 
-  /** Single form, fields normalized — used by the editor + preview. */
-  public async getFormForEdit(id: string, tenantId: string) {
-    const form = await this.getRepo().getOneById({ id, tenant_id: tenantId });
-    if (!form) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    return this.normalizeForm(form);
-  }
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .where('web_forms.tenant_id', '=', tenantId)
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+            LOWER(web_forms.name) LIKE ${text} OR
+            LOWER(web_forms.description) LIKE ${text}
+          )`,
+          );
+        })
+        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
+        )
+        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
 
-  /** Create a draft from a template. Lands the user in edit mode (frontend). */
-  public async createForm(payload: CreateFormType, auth: IAuthKeyPayload) {
-    const template = FORM_TEMPLATES[payload.type];
-    const slug = await this.uniqueSlug(auth.tenant_id, payload.name);
-    const fields = fieldsForTemplate(payload.type);
-    const row = {
-      tenant_id: auth.tenant_id,
-      name: payload.name,
-      description: template.description,
-      redirect_url: null,
-      target_tags: JSON.stringify([]),
-      target_lists: JSON.stringify([]),
-      fields: JSON.stringify(fields),
-      status: 'draft',
-      type: payload.type,
-      form_type: 'standard',
-      slug,
-      submit_label: template.submitLabel,
-      thanks_title: 'Thank you!',
-      thanks_body: 'Your response has been recorded — thanks for reaching out.',
-      confirm_subject: `Thanks for your ${payload.type}`,
-      confirm_body: 'Hi [First name],\n\nThanks for your submission — we’ve received it and will be in touch soon.',
-      send_confirmation: true,
-      send_alert: false,
-      notify_team_on: false,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    const created = await this.add(row as any);
-    return this.normalizeForm(created);
-  }
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
+      .execute();
 
-  /** Live-edit patch. `normForm` guarantees the email identity-key invariant server-side. */
-  public async updateFormLive(id: string, patch: UpdateFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
+    const count = Number(countResult[0]?.['total'] || 0);
 
-    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
-    // Slug intentionally stays stable across renames — a published link must never break.
-    if (patch.name !== undefined) row['name'] = patch.name;
-    if (patch.description !== undefined) row['description'] = patch.description;
-    if (patch.redirect_url !== undefined) row['redirect_url'] = patch.redirect_url;
-    if (patch.submit_label !== undefined) row['submit_label'] = patch.submit_label;
-    if (patch.thanks_title !== undefined) row['thanks_title'] = patch.thanks_title;
-    if (patch.thanks_body !== undefined) row['thanks_body'] = patch.thanks_body;
-    if (patch.confirm_email_on !== undefined) row['send_confirmation'] = patch.confirm_email_on;
-    if (patch.confirm_subject !== undefined) row['confirm_subject'] = patch.confirm_subject;
-    if (patch.confirm_body !== undefined) row['confirm_body'] = patch.confirm_body;
-    if (patch.notify_team_on !== undefined) row['notify_team_on'] = patch.notify_team_on;
-    if (patch.target_tags !== undefined) row['target_tags'] = JSON.stringify(patch.target_tags);
-    if (patch.target_lists !== undefined) row['target_lists'] = JSON.stringify(patch.target_lists);
-    if (patch.fields !== undefined) {
-      row['fields'] = JSON.stringify(normForm(patch.fields));
-    }
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'web_forms.id',
+        'web_forms.tenant_id',
+        'web_forms.name',
+        'web_forms.description',
+        'web_forms.redirect_url',
+        'web_forms.target_tags',
+        'web_forms.target_lists',
+        'web_forms.status',
+        'web_forms.createdby_id',
+        'web_forms.updatedby_id',
+        'web_forms.created_at',
+        'web_forms.updated_at',
+        'web_forms.send_confirmation',
+        'web_forms.send_alert',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce(
+          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
+          qb,
+        ),
+      )
+      .offset(startRow)
+      .limit(endRow - startRow)
+      .execute();
 
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
-    return this.normalizeForm(updated);
-  }
-
-  public publishForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'published', null);
-  }
-
-  public unpublishForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'draft', null);
-  }
-
-  public archiveForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'archived', new Date());
-  }
-
-  /** Restore always lands in draft — reopening a public link is a deliberate act. */
-  public restoreForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'draft', null);
-  }
-
-  /** Hard delete is only allowed for a zero-response draft; everything else must be archived. */
-  public async deleteForm(id: string, auth: IAuthKeyPayload) {
-    const existing = (await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id })) as
-      | { status?: string }
-      | undefined;
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const count = await this.getRepo().countSubmissions(auth.tenant_id, id);
-    if (existing.status !== 'draft' || count > 0) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Only a draft with no responses can be deleted. Archive it instead — archiving is reversible.',
-      });
-    }
-    return this.delete(auth.tenant_id, id, auth.user_id);
-  }
-
-  public async getFormSubmissions(id: string, tenantId: string, cursor?: number) {
-    const limit = 25;
-    const offset = cursor ?? 0;
-    const rows = await this.getRepo().getFormSubmissions(tenantId, id, limit + 1, offset);
-    const total = await this.getRepo().countSubmissions(tenantId, id);
-    const hasMore = rows.length > limit;
-    const items = rows.slice(0, limit).map((row) => {
-      const answersRaw = row['answers'];
-      const answers =
-        typeof answersRaw === 'string'
-          ? this.safeJson(answersRaw, {})
-          : ((answersRaw as Record<string, unknown>) ?? {});
-      const name = `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim();
-      return {
-        id: String(row['id']),
-        person_id: String(row['person_id']),
-        person_name: name || null,
-        answers,
-        created_at: row['created_at'] as Date | string,
-      };
-    });
-    return { items, total, nextCursor: hasMore ? offset + limit : null };
-  }
-
-  private async setStatus(
-    id: string,
-    auth: IAuthKeyPayload,
-    status: 'draft' | 'published' | 'archived',
-    archivedAt: Date | null,
-  ) {
-    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const updated = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() } as any,
-    });
-    return this.normalizeForm(updated);
-  }
-
-  private async uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
-    const base =
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '') || 'form';
-    let slug = base;
-    let n = 2;
-    while (await this.getRepo().slugExists(tenantId, slug, excludeId)) {
-      slug = `${base}-${n++}`;
-    }
-    return slug;
-  }
-
-  /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */
-  private mapLegacyStatus(status: string | undefined): 'draft' | 'published' | 'archived' {
-    if (status === 'archived') return 'archived';
-    if (status === 'draft') return 'draft';
-    return 'published';
-  }
-
-  private safeJson<T>(value: string, fallback: T): T {
-    try {
-      return JSON.parse(value) as T;
-    } catch {
-      return fallback;
-    }
-  }
-
-  private normalizeForm(record: unknown) {
-    if (!record || typeof record !== 'object') return record;
-    const row = record as Record<string, unknown>;
-    const toArray = (value: unknown): string[] => {
-      if (Array.isArray(value)) return value as string[];
-      if (typeof value === 'string') return this.safeJson<string[]>(value, []);
-      return [];
-    };
-    const rawFields = Array.isArray(row['fields'])
-      ? row['fields']
-      : typeof row['fields'] === 'string'
-        ? this.safeJson<unknown[]>(row['fields'] as string, [])
-        : [];
-    return {
+    const formattedRows = rows.map((row) => ({
       ...row,
-      id: row['id'] != null ? String(row['id']) : row['id'],
-      tenant_id: row['tenant_id'] != null ? String(row['tenant_id']) : row['tenant_id'],
-      target_tags: toArray(row['target_tags']),
-      target_lists: toArray(row['target_lists']),
-      fields: normForm(rawFields),
-      submission_count: row['submission_count'] != null ? Number(row['submission_count']) : 0,
+      id: String(row['id']),
+      target_tags: Array.isArray(row['target_tags'])
+        ? row['target_tags']
+        : JSON.parse(String(row['target_tags'] || '[]')),
+      target_lists: Array.isArray(row['target_lists'])
+        ? row['target_lists']
+        : JSON.parse(String(row['target_lists'] || '[]')),
+    }));
+
+    return {
+      rows: formattedRows,
+      count,
     };
   }
 }
@@ -38267,6 +37279,1075 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     }
 
     throw new Error('No campaign found for this tenant.');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/web-forms/controller.ts
+
+```typescript
+import type {
+  AddWebFormType,
+  CreateFormType,
+  FormField,
+  IAuthKeyPayload,
+  UpdateFormType,
+  UpdateWebFormType,
+} from '../../../../../../libs/common/src';
+import { FORM_TEMPLATES, fieldsForTemplate, normForm } from '../../../../../../libs/common/src';
+import { BaseController } from '../../lib/base.controller';
+import { WebFormsRepo } from './repositories/web-forms.repo';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { type Transaction, sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { createSigner, createVerifier } from 'fast-jwt';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import { HouseholdRepo } from '../households/repositories/households.repo';
+
+import { WorkflowsController } from '../workflows/controller';
+import { DonationsController } from '../donations/controller';
+import { logger } from '../../logger';
+
+// Sliding window memory for rate-limiting
+const ipSubmissionTimestamps = new Map<string, number[]>();
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+  constructor() {
+    super(new WebFormsRepo());
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const form = await super.getOneById(input);
+    if (!form) return form;
+    return this.resolveCreatorAndUpdater(input.tenant_id, form);
+  }
+
+  public async getFormPublic(id: string) {
+    return this.getRepo().getByIdPublic(id);
+  }
+
+  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
+    const row = {
+      tenant_id: auth.tenant_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      redirect_url: payload.redirect_url ?? null,
+      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
+      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
+      fields: payload.fields ? JSON.stringify(payload.fields) : null,
+      status: this.mapLegacyStatus(payload.status),
+      send_confirmation: payload.send_confirmation ?? true,
+      send_alert: payload.send_alert ?? true,
+      form_type: payload.form_type ?? 'standard',
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    return this.add(row as any);
+  }
+
+  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
+    if (!existing) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found.',
+      });
+    }
+
+    const row: any = {
+      updatedby_id: auth.user_id,
+      updated_at: new Date(),
+    };
+    if (payload.name !== undefined) row.name = payload.name;
+    if (payload.description !== undefined) row.description = payload.description;
+    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
+    if (payload.target_tags !== undefined)
+      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
+    if (payload.target_lists !== undefined)
+      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
+    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
+    if (payload.status !== undefined) row.status = this.mapLegacyStatus(payload.status);
+    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
+    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
+
+    const rawPayload = payload as any;
+    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Form type cannot be changed after the form has been created.',
+      });
+    }
+
+    return this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row,
+    });
+  }
+
+  public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
+    // 1. Rate limiting check
+    const now = Date.now();
+    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RATE_LIMIT_MAX) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. Please try again in a minute.',
+      });
+    }
+    timestamps.push(now);
+    // Prune empty keys to prevent unbounded Map growth
+    if (timestamps.length > 0) {
+      ipSubmissionTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSubmissionTimestamps.delete(clientIp);
+    }
+
+    // 2. Fetch Form by ID
+    const form = await this.getRepo().getByIdPublic(formId);
+    if (!form || form.status !== 'published') {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found or inactive.',
+      });
+    }
+
+    const tenantId = String(form.tenant_id);
+
+    // 3. Honeypot check
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
+      return { redirect_url: form.redirect_url || null };
+    }
+
+    // 4. Validate email
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Email address is required.',
+      });
+    }
+
+    // Parse configured fields. Supports both the legacy string[] shape ("mobile:required") used by
+    // donation/older forms and the new-model FormField[] objects ({ key, on, required, label }).
+    const rawFields: unknown = form.fields
+      ? Array.isArray(form.fields)
+        ? form.fields
+        : JSON.parse(String(form.fields))
+      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+    const fieldArray: unknown[] = Array.isArray(rawFields) ? rawFields : [];
+
+    // Map payload key aliases helper
+    const getPayloadValue = (key: string): string => {
+      let value = '';
+      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
+      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
+      else if (key === 'full_name' || key === 'name') value = payload['full_name'] || payload['name'] || '';
+      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
+      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
+      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
+      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
+      else value = payload[key] || '';
+      return String(value).trim();
+    };
+
+    // Validate user-configured required fields for standard forms
+    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+      const fieldLabels: Record<string, string> = {
+        first_name: 'First Name',
+        last_name: 'Last Name',
+        full_name: 'Full name',
+        mobile: 'Mobile / Phone',
+        notes: 'Notes / Message',
+        street1: 'Street Address',
+        city: 'City',
+        state: 'State / Province',
+        zip: 'Zip / Postal Code',
+        country: 'Country',
+      };
+
+      const requiredFields: { name: string; label: string }[] = [];
+      for (const raw of fieldArray) {
+        if (typeof raw === 'string') {
+          if (raw.endsWith(':required')) {
+            const name = raw.replace(':required', '');
+            requiredFields.push({ name, label: fieldLabels[name] ?? name });
+          }
+        } else if (raw && typeof raw === 'object') {
+          const obj = raw as { key?: string; on?: boolean; required?: boolean; label?: string };
+          // Email is validated separately above; skip it here.
+          if (obj.key && obj.key !== 'email' && obj.on && obj.required) {
+            requiredFields.push({ name: obj.key, label: obj.label ?? fieldLabels[obj.key] ?? obj.key });
+          }
+        }
+      }
+
+      for (const field of requiredFields) {
+        if (!getPayloadValue(field.name)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `${field.label} is required.` });
+        }
+      }
+    }
+
+    // Parse and validate donation fields if form is a donation or recurring_donation form
+    let amountCents = 0;
+    let monthlyAmountCents = 0;
+    let country = '';
+    let state = '';
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
+      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
+      if (!firstName || !lastName) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'First name and last name are required for donations.',
+        });
+      }
+
+      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+      const city = (payload['city'] || '').trim();
+      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+      country = (payload['country'] || payload['residency_country'] || '').trim();
+      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+      if (!street1 || !city || !zip || !country || !state) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
+        });
+      }
+
+      // Check if email already exists to run eligibility checks
+      const existing = await this.getRepo()
+        .db.selectFrom('persons')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where(sql`lower(email)`, '=', email.toLowerCase())
+        .executeTakeFirst();
+
+      const donationsController = new DonationsController();
+
+      if (form.form_type === 'donation') {
+        const amountStr = payload['amount'] || payload['donation_amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
+        }
+        amountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          amountCents,
+          { country, state },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      } else {
+        // recurring_donation
+        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
+        }
+        monthlyAmountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          monthlyAmountCents,
+          { country, state },
+          { isRecurring: true },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      }
+    }
+
+    // 5. Gather submission fields. New-model forms collect a single `full_name`; split it on the
+    // last space so the person record still gets a first/last name.
+    let firstName = payload['first_name'] || payload['firstName'] || null;
+    let lastName = payload['last_name'] || payload['lastName'] || null;
+    if (!firstName && !lastName) {
+      const fullName = (payload['full_name'] || payload['name'] || '').trim();
+      if (fullName) {
+        const lastSpace = fullName.lastIndexOf(' ');
+        if (lastSpace === -1) {
+          firstName = fullName;
+        } else {
+          firstName = fullName.slice(0, lastSpace).trim();
+          lastName = fullName.slice(lastSpace + 1).trim();
+        }
+      }
+    }
+    const mobile = payload['mobile'] || payload['phone'] || null;
+    const notes = payload['notes'] || payload['message'] || null;
+
+    let resolvedPersonId = '';
+    let resolvedCreatorId = '1';
+
+    // 6. Find or Create person & apply merges/tags
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        // Use the form's creator as the actor — they are the person who
+        // configured this form, which is the most correct attribution for
+        // contacts and data created via public submissions.
+        const creatorId = String(form.createdby_id);
+
+        resolvedCreatorId = creatorId;
+
+        if (!householdId) {
+          throw new Error('Tenant placeholder household is not configured.');
+        }
+
+        const campaignId = await this.getCampaignId(tenantId, trx);
+
+        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
+        // counted once they confirm via the emailed link (see confirm-subscription route).
+        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
+
+        let finalHouseholdId = householdId;
+
+        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+        const city = (payload['city'] || '').trim();
+        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+        const country = (payload['country'] || payload['residency_country'] || '').trim();
+        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+        const hasAddress = !!(street1 || city || zip || country || state);
+
+        if (hasAddress) {
+          const fp_street = fingerprintStreet({ street1 });
+          const fp_full = fingerprintFull({
+            street1,
+            city,
+            state,
+            zip,
+            country,
+          });
+
+          const householdRepo = new HouseholdRepo();
+          const existingHh = await trx
+            .selectFrom('households')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('campaign_id', '=', campaignId)
+            .where('address_fp_full', '=', fp_full)
+            .executeTakeFirst();
+
+          if (existingHh) {
+            finalHouseholdId = String(existingHh.id);
+          } else {
+            const createdHhs = await householdRepo.addMany(
+              {
+                rows: [
+                  {
+                    tenant_id: tenantId,
+                    campaign_id: campaignId,
+                    createdby_id: creatorId,
+                    updatedby_id: creatorId,
+                    street1,
+                    city,
+                    state,
+                    zip,
+                    country,
+                    address_fp_street: fp_street,
+                    address_fp_full: fp_full,
+                  } as any,
+                ],
+              },
+              trx,
+            );
+            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
+              finalHouseholdId = String(createdHhs[0].id);
+            }
+          }
+        }
+
+        // Check if email already exists
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = {
+            updatedby_id: creatorId,
+            updated_at: sql`now()`,
+          };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (form.form_type === 'donation' || hasAddress) {
+            updateRow.household_id = finalHouseholdId;
+          }
+          if (!existing.notes && notes) {
+            updateRow.notes = notes;
+          } else if (existing.notes && notes) {
+            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
+          }
+
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: finalHouseholdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            mobile: mobile,
+            notes: notes,
+            opt_in_status: doubleOptIn ? 'pending' : null,
+          };
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          // Trigger contact created workflow
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
+          }
+
+          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
+          if (doubleOptIn) {
+            await this.enqueueSubscriptionConfirmation(trx, {
+              tenantId,
+              personId,
+              email,
+              firstName,
+            });
+          }
+        }
+
+        resolvedPersonId = personId;
+
+        const workflowsController = new WorkflowsController();
+
+        // Add target custom tags & read-only system tag
+        const targetTags: string[] = Array.isArray(form.target_tags)
+          ? form.target_tags
+          : JSON.parse((form.target_tags as any) || '[]');
+        const systemTagName = `source: ${form.name}`;
+        const allTagsToApply = [...targetTags, systemTagName];
+        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+          allTagsToApply.push('donor');
+        }
+
+        for (const tagName of allTagsToApply) {
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
+
+          let tag = await trx
+            .selectFrom('tags')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('name', '=', normalizedTagName)
+            .where('type', '=', 'tag')
+            .executeTakeFirst();
+
+          if (!tag) {
+            const insertTagRes = await trx
+              .insertInto('tags')
+              .values({
+                tenant_id: tenantId,
+                name: normalizedTagName,
+                type: 'tag',
+                deletable: true,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            tag = { id: insertTagRes.id };
+          }
+
+          const mapExists = await trx
+            .selectFrom('map_peoples_tags')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('tag_id', '=', tag.id)
+            .executeTakeFirst();
+
+          if (!mapExists) {
+            await trx
+              .insertInto('map_peoples_tags')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                tag_id: tag.id,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger tag_added and specialized subscriber workflows
+            try {
+              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Add target lists
+        const targetLists: string[] = Array.isArray(form.target_lists)
+          ? form.target_lists
+          : JSON.parse((form.target_lists as any) || '[]');
+        for (const listId of targetLists) {
+          if (!listId) continue;
+          const listExists = await trx
+            .selectFrom('lists')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', listId)
+            .executeTakeFirst();
+
+          if (!listExists) continue;
+
+          const inList = await trx
+            .selectFrom('map_lists_persons')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('list_id', '=', listId)
+            .executeTakeFirst();
+
+          if (!inList) {
+            await trx
+              .insertInto('map_lists_persons')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                list_id: listId,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger list joined workflows
+            try {
+              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Trigger web form submitted workflows
+        try {
+          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
+        }
+
+        // Log user activity
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: creatorId,
+            activity: 'submission',
+            entity: 'web_forms',
+            entity_id: formId,
+            quantity: 1,
+            metadata: JSON.stringify({ person_id: personId, email }),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .execute();
+
+        // Persist a durable response record (answers snapshot + person FK) for the Responses tab.
+        // Donation forms are a separate flow (Stripe/webhook) and are not part of this model.
+        if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+          const answers: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(payload)) {
+            if (key === '_hp') continue;
+            answers[key] = value;
+          }
+          await trx
+            .insertInto('form_submissions')
+            .values({
+              tenant_id: tenantId,
+              form_id: String(form.id),
+              person_id: personId,
+              answers: JSON.stringify(answers),
+            })
+            .execute();
+        }
+
+        // Queue email notification job in background
+        await trx
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'send-webform-notifications',
+              formId: String(form.id),
+              tenantId,
+              email,
+              firstName,
+              lastName,
+              mobile,
+              notes,
+            }),
+            run_at: new Date(),
+          })
+          .execute();
+      });
+
+    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const donationsController = new DonationsController();
+      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
+
+      if (form.form_type === 'donation') {
+        const checkoutSession = await donationsController.createCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          amountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      } else {
+        const checkoutSession = await donationsController.createRecurringCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          monthlyAmountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      }
+    }
+
+    return { redirect_url: form.redirect_url || null };
+  }
+
+  /**
+   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
+   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
+   */
+  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
+
+    let payload: any;
+    try {
+      payload = await verifier(token);
+    } catch {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
+    }
+
+    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
+    }
+
+    await this.getRepo()
+      .db.updateTable('persons')
+      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
+      .where('tenant_id', '=', String(payload.tenant_id))
+      .where('id', '=', String(payload.person_id))
+      .execute();
+
+    return { success: true };
+  }
+
+  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'communications.double_opt_in')
+      .executeTakeFirst();
+
+    return row?.value === true || row?.value === 'true';
+  }
+
+  /**
+   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
+   * runs only if the surrounding submission transaction commits, keeping the pending person and the
+   * confirmation email consistent.
+   */
+  private async enqueueSubscriptionConfirmation(
+    trx: Transaction<Models>,
+    args: { tenantId: string; personId: string; email: string; firstName: string | null },
+  ): Promise<void> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
+      return;
+    }
+
+    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
+    const token = signer({
+      tenant_id: args.tenantId,
+      person_id: args.personId,
+      email: args.email.toLowerCase().trim(),
+      purpose: 'confirm-subscription',
+    });
+    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
+
+    await trx
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: args.tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-subscription-confirmation',
+          tenantId: args.tenantId,
+          email: args.email,
+          firstName: args.firstName,
+          confirmUrl,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+  }
+
+  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'current_campaign')
+      .executeTakeFirst();
+
+    if (row) {
+      const value = row.value;
+      if (typeof value === 'number' || typeof value === 'string') {
+        return String(value);
+      }
+      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+        const id = (value as Record<string, unknown>)['id'];
+        if (typeof id === 'number' || typeof id === 'string') {
+          return String(id);
+        }
+      }
+    }
+
+    const campaignRow = await trx
+      .selectFrom('campaigns')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (campaignRow) {
+      return String(campaignRow.id);
+    }
+
+    throw new Error('No campaign found for this tenant.');
+  }
+
+  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
+    return this.getRepo().countSubmissions(tenantId, formId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // North Star "living funnel" lifecycle (new Forms experience).
+  // ---------------------------------------------------------------------------
+
+  /** All non-donation forms as cards for the browse page, fields normalized for the preview. */
+  public async listForms(tenantId: string) {
+    const rows = await this.getRepo().listForms(tenantId);
+    return rows.map((row) => this.normalizeForm(row));
+  }
+
+  /**
+   * Public config for the unauthenticated /f/:slug page. Returns only what the public page renders,
+   * plus the org name; closed (unpublished/archived) forms return a status the page shows as a
+   * "closed" card. Throws NOT_FOUND when the slug doesn't exist at all.
+   */
+  public async getPublicFormBySlug(slug: string) {
+    const form = await this.getRepo().getBySlugAnyTenant(slug);
+    if (!form) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const orgName = await this.getOrgName(String(form.tenant_id));
+    if (form.status !== 'published') {
+      return { status: 'closed' as const, orgName, name: String(form.name) };
+    }
+    const normalized = this.normalizeForm(form) as {
+      id: string;
+      name: string;
+      description: string | null;
+      submit_label: string | null;
+      thanks_title: string | null;
+      thanks_body: string | null;
+      redirect_url: string | null;
+      fields: FormField[];
+    };
+    return {
+      status: 'open' as const,
+      orgName,
+      form: {
+        id: normalized.id,
+        name: normalized.name,
+        description: normalized.description,
+        submit_label: normalized.submit_label,
+        thanks_title: normalized.thanks_title,
+        thanks_body: normalized.thanks_body,
+        redirect_url: normalized.redirect_url,
+        fields: normalized.fields.filter((f) => f.on),
+      },
+    };
+  }
+
+  private async getOrgName(tenantId: string): Promise<string> {
+    const row = await this.getRepo()
+      .db.selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'organization.name')
+      .executeTakeFirst();
+    const value = row?.value;
+    return typeof value === 'string' && value.trim() ? value : 'Our organization';
+  }
+
+  /** Single form, fields normalized — used by the editor + preview. */
+  public async getFormForEdit(id: string, tenantId: string) {
+    const form = await this.getRepo().getOneById({ id, tenant_id: tenantId });
+    if (!form) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    return this.normalizeForm(form);
+  }
+
+  /** Create a draft from a template. Lands the user in edit mode (frontend). */
+  public async createForm(payload: CreateFormType, auth: IAuthKeyPayload) {
+    const template = FORM_TEMPLATES[payload.type];
+    const slug = await this.uniqueSlug(auth.tenant_id, payload.name);
+    const fields = fieldsForTemplate(payload.type);
+    const row = {
+      tenant_id: auth.tenant_id,
+      name: payload.name,
+      description: template.description,
+      redirect_url: null,
+      target_tags: JSON.stringify([]),
+      target_lists: JSON.stringify([]),
+      fields: JSON.stringify(fields),
+      status: 'draft',
+      type: payload.type,
+      form_type: 'standard',
+      slug,
+      submit_label: template.submitLabel,
+      thanks_title: 'Thank you!',
+      thanks_body: 'Your response has been recorded — thanks for reaching out.',
+      confirm_subject: `Thanks for your ${payload.type}`,
+      confirm_body: 'Hi [First name],\n\nThanks for your submission — we’ve received it and will be in touch soon.',
+      send_confirmation: true,
+      send_alert: false,
+      notify_team_on: false,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    const created = await this.add(row as any);
+    return this.normalizeForm(created);
+  }
+
+  /** Live-edit patch. `normForm` guarantees the email identity-key invariant server-side. */
+  public async updateFormLive(id: string, patch: UpdateFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+
+    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
+    // Slug intentionally stays stable across renames — a published link must never break.
+    if (patch.name !== undefined) row['name'] = patch.name;
+    if (patch.description !== undefined) row['description'] = patch.description;
+    if (patch.redirect_url !== undefined) row['redirect_url'] = patch.redirect_url;
+    if (patch.submit_label !== undefined) row['submit_label'] = patch.submit_label;
+    if (patch.thanks_title !== undefined) row['thanks_title'] = patch.thanks_title;
+    if (patch.thanks_body !== undefined) row['thanks_body'] = patch.thanks_body;
+    if (patch.confirm_email_on !== undefined) row['send_confirmation'] = patch.confirm_email_on;
+    if (patch.confirm_subject !== undefined) row['confirm_subject'] = patch.confirm_subject;
+    if (patch.confirm_body !== undefined) row['confirm_body'] = patch.confirm_body;
+    if (patch.notify_team_on !== undefined) row['notify_team_on'] = patch.notify_team_on;
+    if (patch.target_tags !== undefined) row['target_tags'] = JSON.stringify(patch.target_tags);
+    if (patch.target_lists !== undefined) row['target_lists'] = JSON.stringify(patch.target_lists);
+    if (patch.fields !== undefined) {
+      row['fields'] = JSON.stringify(normForm(patch.fields));
+    }
+
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
+    return this.normalizeForm(updated);
+  }
+
+  public publishForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'published', null);
+  }
+
+  public unpublishForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'draft', null);
+  }
+
+  public archiveForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'archived', new Date());
+  }
+
+  /** Restore always lands in draft — reopening a public link is a deliberate act. */
+  public restoreForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'draft', null);
+  }
+
+  /** Hard delete is only allowed for a zero-response draft; everything else must be archived. */
+  public async deleteForm(id: string, auth: IAuthKeyPayload) {
+    const existing = (await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id })) as
+      | { status?: string }
+      | undefined;
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const count = await this.getRepo().countSubmissions(auth.tenant_id, id);
+    if (existing.status !== 'draft' || count > 0) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Only a draft with no responses can be deleted. Archive it instead — archiving is reversible.',
+      });
+    }
+    return this.delete(auth.tenant_id, id, auth.user_id);
+  }
+
+  public async getFormSubmissions(id: string, tenantId: string, cursor?: number) {
+    const limit = 25;
+    const offset = cursor ?? 0;
+    const rows = await this.getRepo().getFormSubmissions(tenantId, id, limit + 1, offset);
+    const total = await this.getRepo().countSubmissions(tenantId, id);
+    const hasMore = rows.length > limit;
+    const items = rows.slice(0, limit).map((row) => {
+      const answersRaw = row['answers'];
+      const answers =
+        typeof answersRaw === 'string'
+          ? this.safeJson(answersRaw, {})
+          : ((answersRaw as Record<string, unknown>) ?? {});
+      const name = `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim();
+      return {
+        id: String(row['id']),
+        person_id: String(row['person_id']),
+        person_name: name || null,
+        answers,
+        created_at: row['created_at'] as Date | string,
+      };
+    });
+    return { items, total, nextCursor: hasMore ? offset + limit : null };
+  }
+
+  private async setStatus(
+    id: string,
+    auth: IAuthKeyPayload,
+    status: 'draft' | 'published' | 'archived',
+    archivedAt: Date | null,
+  ) {
+    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const updated = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() } as any,
+    });
+    return this.normalizeForm(updated);
+  }
+
+  private async uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
+    const base =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '') || 'form';
+    let slug = base;
+    let n = 2;
+    while (await this.getRepo().slugExists(tenantId, slug, excludeId)) {
+      slug = `${base}-${n++}`;
+    }
+    return slug;
+  }
+
+  /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */
+  private mapLegacyStatus(status: string | undefined): 'draft' | 'published' | 'archived' {
+    if (status === 'archived') return 'archived';
+    if (status === 'draft') return 'draft';
+    return 'published';
+  }
+
+  private safeJson<T>(value: string, fallback: T): T {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private normalizeForm(record: unknown) {
+    if (!record || typeof record !== 'object') return record;
+    const row = record as Record<string, unknown>;
+    const toArray = (value: unknown): string[] => {
+      if (Array.isArray(value)) return value as string[];
+      if (typeof value === 'string') return this.safeJson<string[]>(value, []);
+      return [];
+    };
+    const rawFields = Array.isArray(row['fields'])
+      ? row['fields']
+      : typeof row['fields'] === 'string'
+        ? this.safeJson<unknown[]>(row['fields'] as string, [])
+        : [];
+    return {
+      ...row,
+      id: row['id'] != null ? String(row['id']) : row['id'],
+      tenant_id: row['tenant_id'] != null ? String(row['tenant_id']) : row['tenant_id'],
+      target_tags: toArray(row['target_tags']),
+      target_lists: toArray(row['target_lists']),
+      fields: normForm(rawFields),
+      submission_count: row['submission_count'] != null ? Number(row['submission_count']) : 0,
+    };
   }
 }
 ```

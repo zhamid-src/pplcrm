@@ -203,6 +203,7 @@ apps/
               form-view.ts
               forms-page.html
               forms-page.ts
+              public-form.ts
           fundraising/
             ui/
               fundraising-form.html
@@ -4315,184 +4316,6 @@ export class DonationPagesService extends FormsService {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/services/forms-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  AddWebFormType,
-  CreateFormType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  FormField,
-  FormStatus,
-  FormType,
-  UpdateFormType,
-  UpdateWebFormType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-/** A form as consumed by the new Forms experience (fields normalized to objects by the server). */
-export interface FormDetail {
-  id: string;
-  name: string;
-  description: string | null;
-  redirect_url: string | null;
-  status: FormStatus;
-  type: FormType | null;
-  slug: string | null;
-  submit_label: string | null;
-  thanks_title: string | null;
-  thanks_body: string | null;
-  send_confirmation: boolean;
-  confirm_subject: string | null;
-  confirm_body: string | null;
-  notify_team_on: boolean;
-  target_tags: string[];
-  target_lists: string[];
-  fields: FormField[];
-  submission_count: number;
-  updated_at: Date | string;
-  created_at: Date | string;
-}
-
-export interface FormSubmissionRow {
-  id: string;
-  person_id: string;
-  person_name: string | null;
-  answers: Record<string, unknown>;
-  created_at: Date | string;
-}
-
-@Service()
-export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType | UpdateWebFormType> {
-  protected override readonly endpointName = 'webForms';
-
-  public add(row: AddWebFormType) {
-    return this.api.webForms.add.mutate(row);
-  }
-
-  public addMany(_rows: AddWebFormType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return Promise.resolve(0);
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public async getAll(options?: getAllOptionsType) {
-    const result = await this.api.webForms.getAllWithCounts.query(options, { signal: this.ac.signal });
-    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
-    const count = result?.count != null ? Number(result.count) : rows.length;
-    return { rows, count };
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getById(id: string) {
-    const record = await this.api.webForms.getById.query(id);
-    return this.normalize(record);
-  }
-
-  public async getTags(_id: string) {
-    return [];
-  }
-
-  public update(id: string, data: UpdateWebFormType) {
-    return this.api.webForms.update.mutate({ id, data });
-  }
-
-  public getSubmissionsCount(id: string): Promise<number> {
-    return this.api.webForms.getSubmissionsCount.query(id);
-  }
-
-  // --- North Star lifecycle endpoints (new Forms experience) ---
-
-  public listForms(): Promise<FormDetail[]> {
-    return this.api.webForms.list.query(undefined, { signal: this.ac.signal }) as Promise<FormDetail[]>;
-  }
-
-  public getForEdit(id: string): Promise<FormDetail> {
-    return this.api.webForms.getForEdit.query(id) as Promise<FormDetail>;
-  }
-
-  public createForm(input: CreateFormType): Promise<FormDetail> {
-    return this.api.webForms.create.mutate(input) as Promise<FormDetail>;
-  }
-
-  public updateLive(id: string, data: UpdateFormType): Promise<FormDetail> {
-    return this.api.webForms.updateLive.mutate({ id, data }) as Promise<FormDetail>;
-  }
-
-  public publish(id: string): Promise<FormDetail> {
-    return this.api.webForms.publish.mutate(id) as Promise<FormDetail>;
-  }
-
-  public unpublish(id: string): Promise<FormDetail> {
-    return this.api.webForms.unpublish.mutate(id) as Promise<FormDetail>;
-  }
-
-  public archive(id: string): Promise<FormDetail> {
-    return this.api.webForms.archive.mutate(id) as Promise<FormDetail>;
-  }
-
-  public restore(id: string): Promise<FormDetail> {
-    return this.api.webForms.restore.mutate(id) as Promise<FormDetail>;
-  }
-
-  public deleteDraft(id: string): Promise<unknown> {
-    return this.api.webForms.deleteDraft.mutate(id);
-  }
-
-  public getSubmissions(
-    id: string,
-    cursor?: number,
-  ): Promise<{ items: FormSubmissionRow[]; total: number; nextCursor: number | null }> {
-    return this.api.webForms.submissions.query({ id, cursor }) as Promise<{
-      items: FormSubmissionRow[];
-      total: number;
-      nextCursor: number | null;
-    }>;
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('Export CSV not supported for forms.'));
-  }
-
-  private normalize(record: any) {
-    if (!record) return record;
-    const asDate = (value: unknown) => {
-      if (!value) return null;
-      if (value instanceof Date) return value;
-      const date = new Date(value as string);
-      return Number.isNaN(date.getTime()) ? null : date;
-    };
-    return {
-      ...record,
-      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
-      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
-      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
-      created_at: asDate(record.created_at) ?? new Date(),
-      updated_at: asDate(record.updated_at) ?? new Date(),
-      target_tags: Array.isArray(record.target_tags) ? record.target_tags : [],
-      target_lists: Array.isArray(record.target_lists) ? record.target_lists : [],
-    };
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/forms/services/standard-forms-service.ts
 
 ```typescript
@@ -4510,1124 +4333,276 @@ export class StandardFormsService extends FormsService {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/form-render.ts
+## File: apps/frontend/src/app/experiences/forms/ui/public-form.ts
 
 ```typescript
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { FormField } from '../../../../../../../libs/common/src';
 
-import { FormDetail } from '../services/forms-service';
+import { environment } from '../../../../environments/environment';
+
+interface PublicForm {
+  id: string;
+  name: string;
+  description: string | null;
+  submit_label: string | null;
+  thanks_title: string | null;
+  thanks_body: string | null;
+  redirect_url: string | null;
+  fields: FormField[];
+}
+
+type PageState = 'loading' | 'open' | 'closed' | 'notfound' | 'thanks';
 
 /**
- * Presentational render of a form's public card — the 440px card shown in the preview pane and,
- * later, on the public /f/:slug page. Phase 2 renders it read-only (structure only); the public
- * page (Phase 4) layers interactivity and validation on top.
+ * Unauthenticated public form page served at /f/:slug, outside the app shell. Fetches the form's
+ * render config from the backend, collects a response with coach-don't-block validation, and posts
+ * it to the existing public submit endpoint.
  */
 @Component({
-  selector: 'pc-form-render',
+  selector: 'pc-public-form',
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div
-      class="mx-auto w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm"
-      [class.opacity-70]="closed()"
-    >
-      <div class="mb-4 flex items-center gap-2">
-        <div
-          class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
-        >
-          {{ orgInitials() }}
-        </div>
-        <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
-      </div>
-
-      @if (closed()) {
-        <h2 class="mb-2 text-xl font-semibold text-base-content">This form is closed</h2>
-        <p class="text-sm text-base-content/60">{{ orgName() }} isn’t taking new responses here right now.</p>
-      } @else {
-        <h2 class="mb-1 text-xl font-semibold text-base-content">{{ form().name }}</h2>
-        @if (form().description) {
-          <p class="mb-6 text-sm leading-relaxed text-base-content/60">{{ form().description }}</p>
-        } @else {
-          <div class="mb-6"></div>
+    <div class="flex min-h-screen items-center justify-center bg-base-200 px-4 py-10">
+      @switch (state()) {
+        @case ('loading') {
+          <span class="loading loading-spinner loading-lg text-primary"></span>
         }
-
-        <div class="flex flex-col gap-5">
-          @for (field of enabledFields(); track field.key) {
-            <div class="flex flex-col gap-2">
-              <label class="text-sm font-medium text-base-content">
-                {{ field.label }}
-                @if (field.required) {
-                  <span class="text-base-content/50"> *</span>
-                }
-              </label>
-
-              @switch (field.type) {
-                @case ('area') {
-                  <textarea
-                    class="textarea textarea-bordered min-h-[76px] w-full resize-none bg-base-100 text-sm"
-                    [placeholder]="field.placeholder ?? ''"
-                    disabled
-                  ></textarea>
-                }
-                @case ('select') {
-                  <select class="select select-bordered w-full bg-base-100 text-sm" disabled>
-                    @for (opt of field.options ?? []; track opt) {
-                      <option>{{ opt }}</option>
-                    }
-                  </select>
-                }
-                @case ('checks') {
-                  <div class="flex flex-col gap-2">
-                    @for (opt of field.options ?? []; track opt) {
-                      <label class="flex items-center gap-2 text-sm text-base-content">
-                        <input type="checkbox" class="checkbox checkbox-sm" disabled />
-                        {{ opt }}
-                      </label>
-                    }
-                  </div>
-                }
-                @default {
-                  <input
-                    class="input input-bordered w-full bg-base-100 text-sm"
-                    [placeholder]="field.placeholder ?? ''"
-                    disabled
-                  />
-                }
-              }
-
-              @if (field.help) {
-                <span class="text-xs text-base-content/50">{{ field.help }}</span>
-              }
+        @case ('open') {
+          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm">
+            <div class="mb-4 flex items-center gap-2">
+              <div
+                class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
+              >
+                {{ orgInitials() }}
+              </div>
+              <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
             </div>
-          }
 
-          <button class="btn btn-primary mt-1 w-full" type="button" disabled>
-            {{ form().submit_label || 'Submit' }}
-          </button>
-        </div>
+            <h1 class="mb-1 text-xl font-semibold text-base-content">{{ form()!.name }}</h1>
+            @if (form()!.description) {
+              <p class="mb-6 text-sm leading-relaxed text-base-content/60">{{ form()!.description }}</p>
+            } @else {
+              <div class="mb-6"></div>
+            }
+
+            <form class="flex flex-col gap-5" (submit)="$event.preventDefault(); submit()" novalidate>
+              @for (field of form()!.fields; track field.key) {
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-medium text-base-content">
+                    {{ field.label }}
+                    @if (field.required) {
+                      <span class="text-base-content/50"> *</span>
+                    }
+                  </label>
+
+                  @switch (field.type) {
+                    @case ('area') {
+                      <textarea
+                        class="textarea textarea-bordered min-h-[76px] w-full resize-none text-sm"
+                        [class.textarea-error]="!!errors()[field.key]"
+                        [placeholder]="field.placeholder ?? ''"
+                        (input)="setValue(field.key, $any($event.target).value)"
+                      ></textarea>
+                    }
+                    @case ('select') {
+                      <select
+                        class="select select-bordered w-full text-sm"
+                        [class.select-error]="!!errors()[field.key]"
+                        (change)="setValue(field.key, $any($event.target).value)"
+                      >
+                        <option value="">Choose…</option>
+                        @for (opt of field.options ?? []; track opt) {
+                          <option [value]="opt">{{ opt }}</option>
+                        }
+                      </select>
+                    }
+                    @case ('checks') {
+                      <div class="flex flex-col gap-2">
+                        @for (opt of field.options ?? []; track opt) {
+                          <label class="flex items-center gap-2 text-sm text-base-content">
+                            <input
+                              type="checkbox"
+                              class="checkbox checkbox-sm"
+                              (change)="toggleCheck(field.key, opt)"
+                            />
+                            {{ opt }}
+                          </label>
+                        }
+                      </div>
+                    }
+                    @default {
+                      <input
+                        class="input input-bordered w-full text-sm"
+                        [class.input-error]="!!errors()[field.key]"
+                        [type]="field.key === 'email' ? 'email' : 'text'"
+                        [placeholder]="field.placeholder ?? ''"
+                        (input)="setValue(field.key, $any($event.target).value)"
+                      />
+                    }
+                  }
+
+                  @if (errors()[field.key]) {
+                    <span class="text-xs text-error">{{ errors()[field.key] }}</span>
+                  } @else if (field.help) {
+                    <span class="text-xs text-base-content/50">{{ field.help }}</span>
+                  }
+                </div>
+              }
+
+              @if (submitError()) {
+                <p class="text-sm text-error">{{ submitError() }}</p>
+              }
+
+              <button class="btn btn-primary mt-1 w-full" [disabled]="submitting()" type="submit">
+                @if (submitting()) {
+                  <span class="loading loading-spinner loading-sm"></span>
+                }
+                {{ form()!.submit_label || 'Submit' }}
+              </button>
+            </form>
+
+            <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+          </div>
+        }
+        @case ('thanks') {
+          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
+            <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
+              ✓
+            </div>
+            <h1 class="mb-2 text-xl font-semibold text-base-content">{{ form()?.thanks_title || 'Thank you!' }}</h1>
+            <p class="text-sm text-base-content/60">{{ form()?.thanks_body || 'Your response has been recorded.' }}</p>
+          </div>
+        }
+        @default {
+          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
+            <h1 class="mb-2 text-xl font-semibold text-base-content">This form is closed</h1>
+            <p class="text-sm text-base-content/60">{{ orgName() }} isn’t taking new responses here right now.</p>
+          </div>
+        }
       }
-
-      <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
     </div>
   `,
 })
-export class FormRenderComponent {
-  public readonly form = input.required<FormDetail>();
-  public readonly orgName = input<string>('Your organization');
-  /** When true, render the "closed" card instead of the form (archived/unpublished public page). */
-  public readonly closed = input<boolean>(false);
+export class PublicFormComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
 
-  protected readonly enabledFields = computed<FormField[]>(() => this.form().fields.filter((f) => f.on));
+  protected readonly state = signal<PageState>('loading');
+  protected readonly orgName = signal('Our organization');
+  protected readonly form = signal<PublicForm | null>(null);
+  protected readonly errors = signal<Record<string, string>>({});
+  protected readonly submitError = signal<string | null>(null);
+  protected readonly submitting = signal(false);
+
+  private readonly values = new Map<string, string>();
+  private readonly checks = new Map<string, Set<string>>();
 
   protected readonly orgInitials = computed(() => {
-    const name = this.orgName().trim();
-    if (!name) return 'pC';
-    const parts = name.split(/\s+/).slice(0, 2);
+    const parts = this.orgName().trim().split(/\s+/).slice(0, 2);
     return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
   });
-}
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
-
-```html
-<!-- Preview panel (shared by browse + edit) ---------------------------------->
-<ng-template #previewPanel let-showEdit="showEdit">
-  @if (selected(); as form) {
-  <div class="rounded-2xl border border-base-300 bg-base-100">
-    <!-- Actions row -->
-    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-4 py-3">
-      <div class="join">
-        <button
-          class="btn join-item btn-sm"
-          [class.btn-active]="tab() === 'form'"
-          (click)="setTab('form')"
-          type="button"
-        >
-          Form
-        </button>
-        <button
-          class="btn join-item btn-sm"
-          [class.btn-active]="tab() === 'responses'"
-          (click)="setTab('responses')"
-          type="button"
-        >
-          Responses
-          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
-        </button>
-      </div>
-
-      <div class="flex items-center gap-2">
-        @if (showEdit) {
-        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
-          <pc-icon name="pencil-square" [size]="4"></pc-icon>
-          Edit form
-        </button>
-        } @switch (form.status) { @case ('draft') {
-        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
-          Publish
-        </button>
-        } @case ('published') {
-        <button class="btn btn-outline btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
-          Unpublish
-        </button>
-        } @case ('archived') {
-        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
-          Restore
-        </button>
-        } }
-      </div>
-    </div>
-
-    <!-- Public link row -->
-    <div class="flex items-center gap-3 bg-base-200/60 px-4 py-2.5">
-      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
-      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="openPublicLink()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
-          type="button"
-          aria-label="Open public page"
-        >
-          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-        </button>
-        <button
-          class="btn btn-ghost btn-xs btn-square"
-          (click)="copyLink()"
-          [disabled]="form.status !== 'published'"
-          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
-          type="button"
-          aria-label="Copy public link"
-        >
-          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        </button>
-      </div>
-    </div>
-
-    <!-- State banner -->
-    @if (form.status === 'draft') {
-    <div class="border-b border-base-200 bg-info/10 px-4 py-2 text-xs text-info-content/80">
-      Draft — only your team can see this preview. Publish to accept responses.
-    </div>
-    } @else if (form.status === 'archived') {
-    <div class="border-b border-base-200 bg-base-200 px-4 py-2 text-xs text-base-content/70">
-      Archived — the public link shows a closed notice. Restore to edit or publish again.
-    </div>
-    }
-
-    <!-- Tab content -->
-    @if (tab() === 'form') {
-    <div class="bg-base-200/40 p-6">
-      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
-    </div>
-    } @else {
-    <div class="p-4">
-      @if (submissionsLoading()) {
-      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
-      } @else if (submissions().length > 0) {
-      <div class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>Person</th>
-              <th>Submitted</th>
-              <th>Answers</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (row of submissions(); track row.id) {
-            <tr>
-              <td>
-                <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
-                  {{ row.person_name || 'View person' }}
-                </a>
-              </td>
-              <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
-              <td class="text-base-content/70">{{ answerSummary(row) }}</td>
-            </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
-        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
-      </div>
-      <p class="mt-2 px-1 text-xs text-base-content/50">
-        Each response created or updated a person, applied the form’s tags and joined its lists.
-      </p>
-      } @else {
-      <div class="flex flex-col items-center gap-2 py-12 text-center">
-        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
-        @switch (form.status) { @case ('draft') {
-        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
-        } @case ('published') {
-        <p class="text-sm text-base-content/60">
-          Share the link to start collecting responses — each one becomes a person.
-        </p>
-        } @case ('archived') {
-        <p class="text-sm text-base-content/60">No responses yet — anything collected stayed on people’s records.</p>
-        } }
-      </div>
-      }
-    </div>
-    }
-  </div>
-  }
-</ng-template>
-
-<!-- Page ---------------------------------------------------------------------->
-@if (loading() && forms().length === 0) {
-<div class="flex flex-col gap-4">
-  <div class="skeleton h-10 w-48"></div>
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-    <div class="flex flex-col gap-3">
-      <div class="skeleton h-20 w-full"></div>
-      <div class="skeleton h-20 w-full"></div>
-      <div class="skeleton h-20 w-full"></div>
-    </div>
-    <div class="skeleton h-96 w-full"></div>
-  </div>
-</div>
-} @else if (mode() === 'browse') {
-<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-6">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-semibold text-base-content">Forms</h1>
-      <p class="mt-1 text-sm text-base-content/60">{{ countSentence() }}</p>
-    </div>
-    <button class="btn btn-primary gap-1" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="5"></pc-icon>
-      New form
-    </button>
-  </div>
-
-  @if (forms().length === 0) {
-  <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
-    <pc-icon name="clipboard-document-list" [size]="10" class="text-base-content/30"></pc-icon>
-    <p class="text-base-content/60">No forms yet — create one to start collecting signups, RSVPs and more.</p>
-    <button class="btn btn-primary btn-sm gap-1" (click)="openNewForm()" type="button">
-      <pc-icon name="add-form" [size]="4"></pc-icon>
-      New form
-    </button>
-  </div>
-  } @else {
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-    <!-- Left rail -->
-    <div class="flex flex-col gap-2">
-      @for (form of activeForms(); track form.id) {
-      <button
-        class="flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors"
-        [class.border-primary]="form.id === selectedId()"
-        [class.bg-primary]="form.id === selectedId()"
-        [class.bg-opacity-[0.06]]="form.id === selectedId()"
-        [class.border-base-300]="form.id !== selectedId()"
-        [class.hover:border-base-content]="form.id !== selectedId()"
-        (click)="select(form.id)"
-        type="button"
-      >
-        <div class="flex items-center gap-2">
-          <span class="font-medium text-base-content">{{ form.name }}</span>
-          <span class="badge badge-ghost badge-sm">{{ typeChip(form.type) }}</span>
-          <span
-            class="badge badge-sm"
-            [class.badge-success]="form.status === 'published'"
-            [class.badge-ghost]="form.status !== 'published'"
-          >
-            {{ form.status === 'published' ? 'Published' : 'Draft' }}
-          </span>
-        </div>
-        <span class="text-xs text-base-content/50">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
-          form.updated_at | date: 'MMM d' }}
-        </span>
-      </button>
-      } @if (archivedForms().length > 0) {
-      <button
-        class="mt-2 flex items-center gap-1 px-1 text-sm text-base-content/60 hover:text-base-content"
-        (click)="toggleArchived()"
-        type="button"
-      >
-        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="4"></pc-icon>
-        Archived ({{ archivedForms().length }})
-      </button>
-      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
-      <button
-        class="flex flex-col gap-1 rounded-xl border border-base-300 p-3 text-left opacity-[0.78] transition-colors hover:opacity-100"
-        [class.border-primary]="form.id === selectedId()"
-        (click)="select(form.id)"
-        type="button"
-      >
-        <div class="flex items-center gap-2">
-          <span class="font-medium text-base-content">{{ form.name }}</span>
-          <span class="badge badge-ghost badge-sm">{{ typeChip(form.type) }}</span>
-          <span class="badge badge-sm badge-ghost">Archived</span>
-        </div>
-        <span class="text-xs text-base-content/50">
-          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
-        </span>
-      </button>
-      } } }
-
-      <p class="mt-3 px-1 text-xs text-base-content/40">
-        Responses land in People with the form’s tag applied — no copy-paste step.
-      </p>
-    </div>
-
-    <!-- Preview -->
-    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
-  </div>
-  }
-</div>
-} @else if (selected(); as form) {
-<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
-<div class="flex flex-col gap-6">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <button
-        class="mb-1 flex items-center gap-1 text-sm text-base-content/60 hover:text-base-content"
-        (click)="exitEdit()"
-        type="button"
-      >
-        <pc-icon name="arrow-left" [size]="4"></pc-icon>
-        All forms
-      </button>
-      <div class="flex items-center gap-2">
-        <h1 class="text-2xl font-semibold text-base-content">{{ form.name }}</h1>
-        <span class="badge badge-info badge-sm">Editing</span>
-      </div>
-      <p class="mt-1 text-sm text-base-content/60">Changes apply to the live form instantly — nothing to save.</p>
-    </div>
-    <button class="btn btn-primary gap-1" (click)="exitEdit()" type="button">
-      <pc-icon name="check-circle" [size]="5"></pc-icon>
-      Done editing
-    </button>
-  </div>
-
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
-    <!-- Settings column -->
-    <div class="flex flex-col gap-6">
-      <!-- FORM -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Form name</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.name"
-            (input)="editName($any($event.target).value)"
-          />
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Public description</span>
-          <textarea
-            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
-            (input)="editDescription($any($event.target).value)"
-          >
-{{ form.description }}</textarea
-          >
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.redirect_url ?? ''"
-            (input)="editRedirect($any($event.target).value)"
-            placeholder="https://…"
-          />
-          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
-        </label>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Submit button label</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            [value]="form.submit_label ?? ''"
-            (input)="editSubmitLabel($any($event.target).value)"
-          />
-        </label>
-      </section>
-
-      <!-- AFTER SUBMIT -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
-        <label class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="toggle toggle-primary toggle-sm mt-0.5"
-            [checked]="form.send_confirmation"
-            (change)="toggleConfirmEmail($any($event.target).checked)"
-          />
-          <span class="flex flex-col">
-            <span class="text-sm font-medium text-base-content">Confirmation email</span>
-            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
-          </span>
-        </label>
-        <label class="flex items-start gap-3">
-          <input
-            type="checkbox"
-            class="toggle toggle-primary toggle-sm mt-0.5"
-            [checked]="form.notify_team_on"
-            (change)="toggleNotifyTeam($any($event.target).checked)"
-          />
-          <span class="flex flex-col">
-            <span class="text-sm font-medium text-base-content">Notify the team</span>
-            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
-          </span>
-        </label>
-      </section>
-
-      <!-- FIELDS -->
-      <section class="flex flex-col gap-2">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
-        @for (field of form.fields; track field.key) {
-        <div class="flex items-center gap-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-sm"
-            [checked]="field.on"
-            [disabled]="field.key === 'email'"
-            (change)="toggleField(field.key, $any($event.target).checked)"
-          />
-          <span
-            class="flex-1 text-sm text-base-content"
-            [class.text-base-content]="field.on"
-            [class.text-base-content/40]="!field.on"
-          >
-            {{ field.label }}
-          </span>
-          <button
-            class="badge badge-sm"
-            [class.badge-primary]="field.required"
-            [class.badge-ghost]="!field.required"
-            (click)="toggleRequired(field.key)"
-            type="button"
-          >
-            {{ field.required ? 'Required' : 'Optional' }}
-          </button>
-        </div>
-        }
-        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
-      </section>
-
-      <!-- AUDIENCE -->
-      <section class="flex flex-col gap-3">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
-          <select
-            class="select select-bordered select-sm w-full"
-            (change)="addList($any($event.target).value); $any($event.target).value = ''"
-          >
-            <option value="">Choose a list…</option>
-            @for (list of lists(); track list.id) {
-            <option [value]="list.id">{{ list.name }}</option>
-            }
-          </select>
-        </label>
-        @if (form.target_lists.length > 0) {
-        <div class="flex flex-wrap gap-2">
-          @for (id of form.target_lists; track id) {
-          <span class="badge badge-outline gap-1">
-            {{ listName(id) }}
-            <button (click)="removeList(id)" type="button" aria-label="Remove list">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-            </button>
-          </span>
-          }
-        </div>
-        }
-
-        <label class="flex flex-col gap-1">
-          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
-          <input
-            class="input input-bordered input-sm w-full"
-            placeholder="Add a tag, press Enter"
-            #tagInput
-            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
-          />
-        </label>
-        @if (form.target_tags.length > 0) {
-        <div class="flex flex-wrap gap-2">
-          @for (tag of form.target_tags; track tag) {
-          <span class="badge badge-primary badge-outline gap-1">
-            {{ tag }}
-            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
-              <pc-icon name="x-mark" [size]="3"></pc-icon>
-            </button>
-          </span>
-          }
-        </div>
-        }
-        <p class="text-xs text-base-content/50">
-          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
-          applied automatically.
-        </p>
-      </section>
-
-      <!-- ARCHIVE -->
-      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
-        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
-        @if (canDelete(form)) {
-        <p class="text-xs text-base-content/60">
-          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
-        </p>
-        } @else {
-        <p class="text-xs text-base-content/60">
-          Forms with responses are archived, never deleted — receipts and person timelines keep pointing at them.
-        </p>
-        }
-        <div class="flex gap-2">
-          @if (form.status !== 'archived') {
-          <button class="btn btn-outline btn-sm gap-1" (click)="archiveForm()" [disabled]="mutating()" type="button">
-            <pc-icon name="archive-box" [size]="4"></pc-icon>
-            Archive form
-          </button>
-          } @if (canDelete(form)) {
-          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
-            <pc-icon name="trash-forever" [size]="4"></pc-icon>
-            Delete draft
-          </button>
-          }
-        </div>
-      </section>
-    </div>
-
-    <!-- Preview -->
-    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
-  </div>
-</div>
-}
-
-<!-- New form dialog ----------------------------------------------------------->
-<dialog #newFormDialog class="modal">
-  <div class="modal-box max-w-md">
-    <div class="mb-4 flex items-center gap-2">
-      <div class="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-        <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
-      </div>
-      <h3 class="text-lg font-semibold text-base-content">New form</h3>
-    </div>
-
-    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Form name</span>
-        <input
-          class="input input-bordered w-full"
-          [class.input-error]="!!newFormError()"
-          [value]="newFormName()"
-          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
-          placeholder="June phone bank signup"
-          autofocus
-        />
-        @if (newFormError()) {
-        <span class="text-xs text-error">{{ newFormError() }}</span>
-        }
-      </label>
-
-      <label class="flex flex-col gap-1">
-        <span class="text-sm font-medium text-base-content">Start from</span>
-        <select
-          class="select select-bordered w-full"
-          [value]="newFormType()"
-          (change)="newFormType.set($any($event.target).value)"
-        >
-          @for (opt of templateOptions; track opt.type) {
-          <option [value]="opt.type">{{ opt.label }}</option>
-          }
-        </select>
-        <span class="text-xs text-base-content/50"
-          >Starts as a draft with the template’s fields — publish when it’s ready.</span
-        >
-      </label>
-
-      <div class="flex justify-end gap-2">
-        <button class="btn btn-ghost" (click)="closeNewForm()" type="button">Cancel</button>
-        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
-      </div>
-    </form>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
-
-```typescript
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  OnInit,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
-import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
-import { FormRenderComponent } from './form-render';
-import { SettingsService } from '@experiences/settings/services/settings-service';
-import { environment } from '../../../../environments/environment';
-
-interface TemplateOption {
-  type: FormType;
-  label: string;
-}
-
-@Component({
-  selector: 'pc-forms-page',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe],
-  templateUrl: './forms-page.html',
-})
-export class FormsPageComponent implements OnInit {
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly settings = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly confirm = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-
-  protected readonly forms = signal<FormDetail[]>([]);
-  protected readonly selectedId = signal<string | null>(null);
-  protected readonly mode = signal<'browse' | 'edit'>('browse');
-  protected readonly tab = signal<'form' | 'responses'>('form');
-  protected readonly archivedOpen = signal(false);
-  protected readonly mutating = signal(false);
-  protected readonly orgName = signal('Your organization');
-  protected readonly lists = signal<{ id: string; name: string }[]>([]);
-
-  protected readonly submissions = signal<FormSubmissionRow[]>([]);
-  protected readonly submissionsTotal = signal(0);
-  protected readonly submissionsLoading = signal(false);
-
-  // New-form dialog state.
-  protected readonly newFormName = signal('');
-  protected readonly newFormType = signal<FormType>('signup');
-  protected readonly newFormError = signal<string | null>(null);
-  protected readonly creating = signal(false);
-  private readonly newFormDialog = viewChild<ElementRef<HTMLDialogElement>>('newFormDialog');
-
-  protected readonly templateOptions: TemplateOption[] = FORM_TYPES.map((type) => ({
-    type,
-    label: this.templateLabel(type),
-  }));
-
-  protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
-  protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
-  protected readonly archivedForms = computed(() => this.forms().filter((f) => f.status === 'archived'));
-
-  protected readonly totalSubmissions = computed(() =>
-    this.forms().reduce((sum, f) => sum + (f.submission_count ?? 0), 0),
-  );
-
-  protected readonly countSentence = computed(() => {
-    const total = this.forms().length;
-    const subs = this.totalSubmissions();
-    const archived = this.archivedForms().length;
-    const parts = [
-      `${total} ${total === 1 ? 'form' : 'forms'}`,
-      `${subs} ${subs === 1 ? 'submission' : 'submissions'}`,
-    ];
-    if (archived > 0) parts.push(`${archived} archived`);
-    return parts.join(' · ');
-  });
-
-  protected readonly publicUrl = computed(() => {
-    const form = this.selected();
-    if (!form?.slug) return '';
-    const origin = this.appOrigin();
-    return `${origin}/f/${form.slug}`;
-  });
-
-  private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
-  private pendingPatch: UpdateFormType = {};
 
   public ngOnInit(): void {
-    void Promise.all([this.loadForms(), this.loadOrg(), this.loadLists()]);
+    void this.load();
   }
 
-  // ── Loading ────────────────────────────────────────────────────────────
-
-  private async loadForms(): Promise<void> {
-    const end = this._loading.begin();
+  private async load(): Promise<void> {
+    const slug = this.route.snapshot.paramMap.get('slug');
+    if (!slug) {
+      this.state.set('notfound');
+      return;
+    }
     try {
-      const rows = await this.formsSvc.listForms();
-      this.forms.set(rows);
-      const first = rows[0];
-      if (!this.selectedId() && first) {
-        this.selectedId.set(first.id);
+      const res = await fetch(`${this.apiBase()}/api/forms/f/${encodeURIComponent(slug)}`);
+      if (res.status === 404) {
+        this.state.set('notfound');
+        return;
+      }
+      const data = await res.json();
+      if (data?.orgName) this.orgName.set(String(data.orgName));
+      if (data?.status === 'open' && data.form) {
+        this.form.set(data.form as PublicForm);
+        this.state.set('open');
+      } else {
+        this.state.set('closed');
       }
     } catch {
-      this.alerts.showError('Could not load your forms. Please try again.');
-    } finally {
-      end();
+      this.state.set('notfound');
     }
   }
 
-  private async loadOrg(): Promise<void> {
-    try {
-      await this.settings.load();
-      const name = this.settings.getValue<string>('organization.name', '');
-      if (name) this.orgName.set(name);
-    } catch {
-      /* org name is decorative; fall back to the default */
+  protected setValue(key: string, value: string): void {
+    this.values.set(key, value);
+    if (this.errors()[key]) {
+      this.errors.update((e) => {
+        const next = { ...e };
+        delete next[key];
+        return next;
+      });
     }
   }
 
-  private async loadLists(): Promise<void> {
-    try {
-      const res = await this.listsSvc.getAllWithCounts();
-      const rows = (res?.rows ?? []) as Array<Record<string, unknown>>;
-      this.lists.set(rows.map((r) => ({ id: String(r['id']), name: String(r['name'] ?? '') })));
-    } catch {
-      /* audience list picker degrades gracefully to empty */
+  protected toggleCheck(key: string, opt: string): void {
+    const set = this.checks.get(key) ?? new Set<string>();
+    if (set.has(opt)) set.delete(opt);
+    else set.add(opt);
+    this.checks.set(key, set);
+    this.values.set(key, Array.from(set).join(', '));
+    if (this.errors()[key]) {
+      this.errors.update((e) => {
+        const next = { ...e };
+        delete next[key];
+        return next;
+      });
     }
   }
 
-  // ── Selection / navigation ─────────────────────────────────────────────
+  protected async submit(): Promise<void> {
+    const form = this.form();
+    if (!form || this.submitting()) return;
 
-  protected select(id: string): void {
-    if (this.selectedId() === id) return;
-    this.selectedId.set(id);
-    this.tab.set('form');
-    this.submissions.set([]);
-    this.submissionsTotal.set(0);
-  }
-
-  protected setTab(tab: 'form' | 'responses'): void {
-    this.tab.set(tab);
-    if (tab === 'responses') void this.loadSubmissions();
-  }
-
-  protected enterEdit(): void {
-    if (!this.selected()) return;
-    this.mode.set('edit');
-    this.tab.set('form');
-  }
-
-  protected exitEdit(): void {
-    this.mode.set('browse');
-  }
-
-  protected toggleArchived(): void {
-    this.archivedOpen.update((v) => !v);
-  }
-
-  // ── Status verbs ───────────────────────────────────────────────────────
-
-  protected async publish(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.publish(id),
-      (f) => `Published “${f.name}” — the link now accepts responses.`,
-    );
-  }
-
-  protected async unpublish(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.unpublish(id),
-      (f) => `Unpublished “${f.name}” — the public link is paused.`,
-    );
-  }
-
-  protected async archiveForm(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.archive(id),
-      (f) => `Archived “${f.name}” — the public link now shows a closed notice.`,
-    );
-    this.mode.set('browse');
-  }
-
-  protected async restore(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.restore(id),
-      (f) => `Restored “${f.name}” as a draft.`,
-    );
-  }
-
-  private async runVerb(
-    action: (id: string) => Promise<FormDetail>,
-    message: (f: FormDetail) => string,
-  ): Promise<void> {
-    const id = this.selectedId();
-    if (!id || this.mutating()) return;
-    this.mutating.set(true);
-    try {
-      const updated = await action(id);
-      this.replaceForm(updated);
-      this.alerts.showSuccess(message(updated));
-    } catch {
-      this.alerts.showError('That action didn’t go through. Please try again.');
-    } finally {
-      this.mutating.set(false);
+    const errors: Record<string, string> = {};
+    for (const field of form.fields) {
+      if (field.required && !(this.values.get(field.key) ?? '').trim()) {
+        errors[field.key] = `${field.label} is required.`;
+      }
     }
-  }
-
-  // ── New form dialog ────────────────────────────────────────────────────
-
-  protected openNewForm(): void {
-    this.newFormName.set('');
-    this.newFormType.set('signup');
-    this.newFormError.set(null);
-    this.newFormDialog()?.nativeElement.showModal();
-  }
-
-  protected closeNewForm(): void {
-    this.newFormDialog()?.nativeElement.close();
-  }
-
-  protected async createForm(): Promise<void> {
-    const name = this.newFormName().trim();
-    if (!name) {
-      this.newFormError.set('Give your form a name so you can find it later.');
+    if (Object.keys(errors).length > 0) {
+      this.errors.set(errors);
       return;
     }
-    if (this.creating()) return;
-    this.creating.set(true);
+
+    this.submitting.set(true);
+    this.submitError.set(null);
     try {
-      const type = this.newFormType();
-      const created = await this.formsSvc.createForm({ name, type });
-      this.forms.update((list) => [created, ...list]);
-      this.selectedId.set(created.id);
-      this.closeNewForm();
-      this.mode.set('edit');
-      this.tab.set('form');
-      this.alerts.showSuccess(
-        `Draft created from the ${this.templateLabel(type)} template — adjust its fields, then publish.`,
-      );
+      const payload: Record<string, string> = {};
+      for (const [key, value] of this.values.entries()) payload[key] = value;
+
+      const res = await fetch(`${this.apiBase()}/api/forms/submit/${form.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        this.submitError.set(data?.error || 'Something went wrong. Please try again.');
+        return;
+      }
+      if (data?.redirect_url) {
+        window.location.href = String(data.redirect_url);
+        return;
+      }
+      this.state.set('thanks');
     } catch {
-      this.newFormError.set('Could not create the form. Please try again.');
+      this.submitError.set('Couldn’t reach the server. Check your connection and try again.');
     } finally {
-      this.creating.set(false);
+      this.submitting.set(false);
     }
   }
 
-  // ── Live editing (debounced patch) ─────────────────────────────────────
-
-  protected editName(value: string): void {
-    this.patch({ name: value });
-  }
-
-  protected editDescription(value: string): void {
-    this.patch({ description: value });
-  }
-
-  protected editRedirect(value: string): void {
-    this.patch({ redirect_url: value });
-  }
-
-  protected editSubmitLabel(value: string): void {
-    this.patch({ submit_label: value });
-  }
-
-  protected toggleConfirmEmail(on: boolean): void {
-    this.patch({ confirm_email_on: on });
-  }
-
-  protected toggleNotifyTeam(on: boolean): void {
-    this.patch({ notify_team_on: on });
-  }
-
-  protected toggleField(key: string, on: boolean): void {
-    const form = this.selected();
-    if (!form) return;
-    if (key === 'email') {
-      this.alerts.showInfo('Email stays on every form — it’s how each response is matched to a person.');
-      return;
-    }
-    const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
-    this.patch({ fields });
-  }
-
-  protected toggleRequired(key: string): void {
-    const form = this.selected();
-    if (!form) return;
-    if (key === 'email') {
-      this.alerts.showInfo('Email is always required — a response can’t create a person without it.');
-      return;
-    }
-    const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
-    this.patch({ fields });
-  }
-
-  protected addTag(raw: string): void {
-    const form = this.selected();
-    if (!form) return;
-    const tag = raw
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '');
-    if (!tag) return;
-    if (form.target_tags.includes(tag)) {
-      this.alerts.showInfo(`“${tag}” is already applied to responses.`);
-      return;
-    }
-    this.patch({ target_tags: [...form.target_tags, tag] });
-  }
-
-  protected removeTag(tag: string): void {
-    const form = this.selected();
-    if (!form) return;
-    this.patch({ target_tags: form.target_tags.filter((t) => t !== tag) });
-  }
-
-  protected addList(id: string): void {
-    const form = this.selected();
-    if (!form || !id || form.target_lists.includes(id)) return;
-    this.patch({ target_lists: [...form.target_lists, id] });
-  }
-
-  protected removeList(id: string): void {
-    const form = this.selected();
-    if (!form) return;
-    this.patch({ target_lists: form.target_lists.filter((l) => l !== id) });
-  }
-
-  protected listName(id: string): string {
-    return this.lists().find((l) => l.id === id)?.name ?? id;
-  }
-
-  private patch(p: UpdateFormType): void {
-    const form = this.selected();
-    if (!form) return;
-    // Optimistic local update so the preview reflects the change immediately.
-    this.replaceForm({ ...form, ...(p as Partial<FormDetail>) });
-    Object.assign(this.pendingPatch, p);
-    this.saveDebounced();
-  }
-
-  private async flushPatch(): Promise<void> {
-    const id = this.selectedId();
-    const patch = this.pendingPatch;
-    this.pendingPatch = {};
-    if (!id || Object.keys(patch).length === 0) return;
-    try {
-      const updated = await this.formsSvc.updateLive(id, patch);
-      this.replaceForm(updated);
-    } catch {
-      this.alerts.showError('Couldn’t save that change. Check your connection and try again.');
-    }
-  }
-
-  // ── Archive / delete (edit mode) ───────────────────────────────────────
-
-  protected canDelete(form: FormDetail): boolean {
-    return form.status === 'draft' && (form.submission_count ?? 0) === 0;
-  }
-
-  protected async deleteDraft(): Promise<void> {
-    const form = this.selected();
-    if (!form || !this.canDelete(form)) return;
-    const ok = await this.confirm.confirm({
-      title: `Delete “${form.name}”?`,
-      message: 'This draft has no responses. Deleting it can’t be undone — archiving is the reversible option.',
-      variant: 'danger',
-    });
-    if (!ok) return;
-    try {
-      await this.formsSvc.deleteDraft(form.id);
-      this.forms.update((list) => list.filter((f) => f.id !== form.id));
-      this.selectedId.set(this.forms()[0]?.id ?? null);
-      this.mode.set('browse');
-      this.alerts.showSuccess(`Deleted “${form.name}”.`);
-    } catch {
-      this.alerts.showError('Could not delete the form. Please try again.');
-    }
-  }
-
-  // ── Public link ────────────────────────────────────────────────────────
-
-  protected openPublicLink(): void {
-    const url = this.publicUrl();
-    if (url) window.open(url, '_blank', 'noopener');
-  }
-
-  protected async copyLink(): Promise<void> {
-    const url = this.publicUrl();
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Public link copied to your clipboard.');
-    } catch {
-      this.alerts.showError('Couldn’t copy the link — copy it manually from the address bar.');
-    }
-  }
-
-  // ── Responses ──────────────────────────────────────────────────────────
-
-  private async loadSubmissions(): Promise<void> {
-    const id = this.selectedId();
-    if (!id) return;
-    this.submissionsLoading.set(true);
-    try {
-      const res = await this.formsSvc.getSubmissions(id);
-      this.submissions.set(res.items);
-      this.submissionsTotal.set(res.total);
-    } catch {
-      this.alerts.showError('Could not load responses. Please try again.');
-    } finally {
-      this.submissionsLoading.set(false);
-    }
-  }
-
-  protected answerSummary(row: FormSubmissionRow): string {
-    const skip = new Set(['email', 'full_name', 'first_name', 'last_name']);
-    const parts: string[] = [];
-    for (const [key, value] of Object.entries(row.answers)) {
-      if (skip.has(key) || value == null || value === '') continue;
-      parts.push(Array.isArray(value) ? value.join(' · ') : String(value));
-      if (parts.length >= 2) break;
-    }
-    return parts.join(' · ');
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────────
-
-  protected requiredFieldsPresent(form: FormDetail): boolean {
-    return form.fields.some((f) => f.on && f.required);
-  }
-
-  private replaceForm(updated: FormDetail): void {
-    this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
-  }
-
-  private appOrigin(): string {
-    if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
+  private apiBase(): string {
     return environment.apiUrl.replace(/\/$/, '');
-  }
-
-  private templateLabel(type: FormType): string {
-    const map: Record<FormType, string> = {
-      signup: 'Signup — name, email, availability',
-      pledge: 'Pledge — name, email, amount',
-      rsvp: 'RSVP — name, email, seats',
-      request: 'Request — name, email, address, notes',
-      survey: 'Survey — name, issues, open answer',
-    };
-    return map[type];
-  }
-
-  protected typeChip(type: FormType | null): string {
-    if (!type) return 'Form';
-    return type.charAt(0).toUpperCase() + type.slice(1);
-  }
-
-  protected templateSubmitLabel(type: FormType): string {
-    return FORM_TEMPLATES[type].submitLabel;
   }
 }
 ```
@@ -16744,6 +15719,1509 @@ export class EmailPersonRail {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/forms/services/forms-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  AddWebFormType,
+  CreateFormType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  FormField,
+  FormStatus,
+  FormType,
+  UpdateFormType,
+  UpdateWebFormType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+/** A form as consumed by the new Forms experience (fields normalized to objects by the server). */
+export interface FormDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  redirect_url: string | null;
+  status: FormStatus;
+  type: FormType | null;
+  slug: string | null;
+  submit_label: string | null;
+  thanks_title: string | null;
+  thanks_body: string | null;
+  send_confirmation: boolean;
+  confirm_subject: string | null;
+  confirm_body: string | null;
+  notify_team_on: boolean;
+  target_tags: string[];
+  target_lists: string[];
+  fields: FormField[];
+  submission_count: number;
+  updated_at: Date | string;
+  created_at: Date | string;
+}
+
+export interface FormSubmissionRow {
+  id: string;
+  person_id: string;
+  person_name: string | null;
+  answers: Record<string, unknown>;
+  created_at: Date | string;
+}
+
+@Service()
+export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType | UpdateWebFormType> {
+  protected override readonly endpointName = 'webForms';
+
+  public add(row: AddWebFormType) {
+    return this.api.webForms.add.mutate(row);
+  }
+
+  public addMany(_rows: AddWebFormType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return Promise.resolve(0);
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public async getAll(options?: getAllOptionsType) {
+    const result = await this.api.webForms.getAllWithCounts.query(options, { signal: this.ac.signal });
+    const rows = (result?.rows ?? []).map((row: any) => this.normalize(row));
+    const count = result?.count != null ? Number(result.count) : rows.length;
+    return { rows, count };
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public async getById(id: string) {
+    const record = await this.api.webForms.getById.query(id);
+    return this.normalize(record);
+  }
+
+  public async getTags(_id: string) {
+    return [];
+  }
+
+  public update(id: string, data: UpdateWebFormType) {
+    return this.api.webForms.update.mutate({ id, data });
+  }
+
+  public getSubmissionsCount(id: string): Promise<number> {
+    return this.api.webForms.getSubmissionsCount.query(id);
+  }
+
+  // --- North Star lifecycle endpoints (new Forms experience) ---
+
+  public listForms(): Promise<FormDetail[]> {
+    return this.api.webForms.list.query(undefined, { signal: this.ac.signal }) as Promise<FormDetail[]>;
+  }
+
+  public getForEdit(id: string): Promise<FormDetail> {
+    return this.api.webForms.getForEdit.query(id) as Promise<FormDetail>;
+  }
+
+  public createForm(input: CreateFormType): Promise<FormDetail> {
+    return this.api.webForms.create.mutate(input) as Promise<FormDetail>;
+  }
+
+  public updateLive(id: string, data: UpdateFormType): Promise<FormDetail> {
+    return this.api.webForms.updateLive.mutate({ id, data }) as Promise<FormDetail>;
+  }
+
+  public publish(id: string): Promise<FormDetail> {
+    return this.api.webForms.publish.mutate(id) as Promise<FormDetail>;
+  }
+
+  public unpublish(id: string): Promise<FormDetail> {
+    return this.api.webForms.unpublish.mutate(id) as Promise<FormDetail>;
+  }
+
+  public archive(id: string): Promise<FormDetail> {
+    return this.api.webForms.archive.mutate(id) as Promise<FormDetail>;
+  }
+
+  public restore(id: string): Promise<FormDetail> {
+    return this.api.webForms.restore.mutate(id) as Promise<FormDetail>;
+  }
+
+  public deleteDraft(id: string): Promise<unknown> {
+    return this.api.webForms.deleteDraft.mutate(id);
+  }
+
+  public getSubmissions(
+    id: string,
+    cursor?: number,
+  ): Promise<{ items: FormSubmissionRow[]; total: number; nextCursor: number | null }> {
+    return this.api.webForms.submissions.query({ id, cursor }) as Promise<{
+      items: FormSubmissionRow[];
+      total: number;
+      nextCursor: number | null;
+    }>;
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('Export CSV not supported for forms.'));
+  }
+
+  private normalize(record: any) {
+    if (!record) return record;
+    const asDate = (value: unknown) => {
+      if (!value) return null;
+      if (value instanceof Date) return value;
+      const date = new Date(value as string);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+    return {
+      ...record,
+      tenant_id: record.tenant_id != null ? String(record.tenant_id) : record.tenant_id,
+      createdby_id: record.createdby_id != null ? String(record.createdby_id) : record.createdby_id,
+      updatedby_id: record.updatedby_id != null ? String(record.updatedby_id) : record.updatedby_id,
+      created_at: asDate(record.created_at) ?? new Date(),
+      updated_at: asDate(record.updated_at) ?? new Date(),
+      target_tags: Array.isArray(record.target_tags) ? record.target_tags : [],
+      target_lists: Array.isArray(record.target_lists) ? record.target_lists : [],
+    };
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/forms/ui/form-render.ts
+
+```typescript
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { FormField } from '../../../../../../../libs/common/src';
+
+import { FormDetail } from '../services/forms-service';
+
+/**
+ * Presentational render of a form's public card — the 440px card shown in the preview pane and,
+ * later, on the public /f/:slug page. Phase 2 renders it read-only (structure only); the public
+ * page (Phase 4) layers interactivity and validation on top.
+ */
+@Component({
+  selector: 'pc-form-render',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div
+      class="mx-auto w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm"
+      [class.opacity-70]="closed()"
+    >
+      <div class="mb-4 flex items-center gap-2">
+        <div
+          class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
+        >
+          {{ orgInitials() }}
+        </div>
+        <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
+      </div>
+
+      @if (closed()) {
+        <h2 class="mb-2 text-xl font-semibold text-base-content">This form is closed</h2>
+        <p class="text-sm text-base-content/60">{{ orgName() }} isn’t taking new responses here right now.</p>
+      } @else {
+        <h2 class="mb-1 text-xl font-semibold text-base-content">{{ form().name }}</h2>
+        @if (form().description) {
+          <p class="mb-6 text-sm leading-relaxed text-base-content/60">{{ form().description }}</p>
+        } @else {
+          <div class="mb-6"></div>
+        }
+
+        <div class="flex flex-col gap-5">
+          @for (field of enabledFields(); track field.key) {
+            <div class="flex flex-col gap-2">
+              <label class="text-sm font-medium text-base-content">
+                {{ field.label }}
+                @if (field.required) {
+                  <span class="text-base-content/50"> *</span>
+                }
+              </label>
+
+              @switch (field.type) {
+                @case ('area') {
+                  <textarea
+                    class="textarea textarea-bordered min-h-[76px] w-full resize-none bg-base-100 text-sm"
+                    [placeholder]="field.placeholder ?? ''"
+                    disabled
+                  ></textarea>
+                }
+                @case ('select') {
+                  <select class="select select-bordered w-full bg-base-100 text-sm" disabled>
+                    @for (opt of field.options ?? []; track opt) {
+                      <option>{{ opt }}</option>
+                    }
+                  </select>
+                }
+                @case ('checks') {
+                  <div class="flex flex-col gap-2">
+                    @for (opt of field.options ?? []; track opt) {
+                      <label class="flex items-center gap-2 text-sm text-base-content">
+                        <input type="checkbox" class="checkbox checkbox-sm" disabled />
+                        {{ opt }}
+                      </label>
+                    }
+                  </div>
+                }
+                @default {
+                  <input
+                    class="input input-bordered w-full bg-base-100 text-sm"
+                    [placeholder]="field.placeholder ?? ''"
+                    disabled
+                  />
+                }
+              }
+
+              @if (field.help) {
+                <span class="text-xs text-base-content/50">{{ field.help }}</span>
+              }
+            </div>
+          }
+
+          <button class="btn btn-primary mt-1 w-full" type="button" disabled>
+            {{ form().submit_label || 'Submit' }}
+          </button>
+        </div>
+      }
+
+      <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+    </div>
+  `,
+})
+export class FormRenderComponent {
+  public readonly form = input.required<FormDetail>();
+  public readonly orgName = input<string>('Your organization');
+  /** When true, render the "closed" card instead of the form (archived/unpublished public page). */
+  public readonly closed = input<boolean>(false);
+
+  protected readonly enabledFields = computed<FormField[]>(() => this.form().fields.filter((f) => f.on));
+
+  protected readonly orgInitials = computed(() => {
+    const name = this.orgName().trim();
+    if (!name) return 'pC';
+    const parts = name.split(/\s+/).slice(0, 2);
+    return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
+  });
+}
+```
+
+## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
+
+```html
+<!-- Preview panel (shared by browse + edit) ---------------------------------->
+<ng-template #previewPanel let-showEdit="showEdit">
+  @if (selected(); as form) {
+  <div class="rounded-2xl border border-base-300 bg-base-100">
+    <!-- Actions row -->
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-base-200 px-4 py-3">
+      <div class="join">
+        <button
+          class="btn join-item btn-sm"
+          [class.btn-active]="tab() === 'form'"
+          (click)="setTab('form')"
+          type="button"
+        >
+          Form
+        </button>
+        <button
+          class="btn join-item btn-sm"
+          [class.btn-active]="tab() === 'responses'"
+          (click)="setTab('responses')"
+          type="button"
+        >
+          Responses
+          <span class="badge badge-sm badge-ghost tabular-nums">{{ form.submission_count }}</span>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2">
+        @if (showEdit) {
+        <button class="btn btn-ghost btn-sm gap-1" (click)="enterEdit()" type="button">
+          <pc-icon name="pencil-square" [size]="4"></pc-icon>
+          Edit form
+        </button>
+        } @switch (form.status) { @case ('draft') {
+        <button class="btn btn-primary btn-sm" (click)="publish()" [disabled]="mutating()" type="button">
+          Publish
+        </button>
+        } @case ('published') {
+        <button class="btn btn-outline btn-sm" (click)="unpublish()" [disabled]="mutating()" type="button">
+          Unpublish
+        </button>
+        } @case ('archived') {
+        <button class="btn btn-primary btn-sm" (click)="restore()" [disabled]="mutating()" type="button">
+          Restore
+        </button>
+        } }
+      </div>
+    </div>
+
+    <!-- Public link row -->
+    <div class="flex items-center gap-3 bg-base-200/60 px-4 py-2.5">
+      <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Public link</span>
+      <span class="min-w-0 flex-1 truncate font-mono text-xs text-base-content/70">{{ publicUrl() }}</span>
+      <div class="flex items-center gap-1">
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openPublicLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Open the live page' : 'Publish the form to get a live page'"
+          type="button"
+          aria-label="Open public page"
+        >
+          <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="copyLink()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Copy the public link' : 'Publish the form to get a live link'"
+          type="button"
+          aria-label="Copy public link"
+        >
+          <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        </button>
+        <button
+          class="btn btn-ghost btn-xs btn-square"
+          (click)="openEmbed()"
+          [disabled]="form.status !== 'published'"
+          [title]="form.status === 'published' ? 'Embed this form' : 'Publish the form to embed it'"
+          type="button"
+          aria-label="Embed form"
+        >
+          <pc-icon name="file-code" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- State banner -->
+    @if (form.status === 'draft') {
+    <div class="border-b border-base-200 bg-info/10 px-4 py-2 text-xs text-info-content/80">
+      Draft — only your team can see this preview. Publish to accept responses.
+    </div>
+    } @else if (form.status === 'archived') {
+    <div class="border-b border-base-200 bg-base-200 px-4 py-2 text-xs text-base-content/70">
+      Archived — the public link shows a closed notice. Restore to edit or publish again.
+    </div>
+    }
+
+    <!-- Tab content -->
+    @if (tab() === 'form') {
+    <div class="bg-base-200/40 p-6">
+      <pc-form-render [form]="form" [orgName]="orgName()" [closed]="form.status === 'archived'"></pc-form-render>
+    </div>
+    } @else {
+    <div class="p-4">
+      @if (submissionsLoading()) {
+      <div class="flex justify-center py-12"><span class="loading loading-spinner text-primary"></span></div>
+      } @else if (submissions().length > 0) {
+      <div class="overflow-x-auto">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Person</th>
+              <th>Submitted</th>
+              <th>Answers</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of submissions(); track row.id) {
+            <tr>
+              <td>
+                <a class="link link-primary" [routerLink]="['/persons', row.person_id]">
+                  {{ row.person_name || 'View person' }}
+                </a>
+              </td>
+              <td class="whitespace-nowrap text-base-content/60">{{ row.created_at | date: 'MMM d, y' }}</td>
+              <td class="text-base-content/70">{{ answerSummary(row) }}</td>
+            </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-3 flex items-center justify-between px-1 text-xs text-base-content/50">
+        <span>Showing latest {{ submissions().length }} of {{ submissionsTotal() }}</span>
+      </div>
+      <p class="mt-2 px-1 text-xs text-base-content/50">
+        Each response created or updated a person, applied the form’s tags and joined its lists.
+      </p>
+      } @else {
+      <div class="flex flex-col items-center gap-2 py-12 text-center">
+        <pc-icon name="inbox-stack" [size]="8" class="text-base-content/30"></pc-icon>
+        @switch (form.status) { @case ('draft') {
+        <p class="text-sm text-base-content/60">Publish the form to open the link and start collecting responses.</p>
+        } @case ('published') {
+        <p class="text-sm text-base-content/60">
+          Share the link to start collecting responses — each one becomes a person.
+        </p>
+        } @case ('archived') {
+        <p class="text-sm text-base-content/60">No responses yet — anything collected stayed on people’s records.</p>
+        } }
+      </div>
+      }
+    </div>
+    }
+  </div>
+  }
+</ng-template>
+
+<!-- Page ---------------------------------------------------------------------->
+@if (loading() && forms().length === 0) {
+<div class="flex flex-col gap-4">
+  <div class="skeleton h-10 w-48"></div>
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+    <div class="flex flex-col gap-3">
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+      <div class="skeleton h-20 w-full"></div>
+    </div>
+    <div class="skeleton h-96 w-full"></div>
+  </div>
+</div>
+} @else if (mode() === 'browse') {
+<!-- ── Browse mode ─────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold text-base-content">Forms</h1>
+      <p class="mt-1 text-sm text-base-content/60">{{ countSentence() }}</p>
+    </div>
+    <button class="btn btn-primary gap-1" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="5"></pc-icon>
+      New form
+    </button>
+  </div>
+
+  @if (forms().length === 0) {
+  <div class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-base-300 py-16 text-center">
+    <pc-icon name="clipboard-document-list" [size]="10" class="text-base-content/30"></pc-icon>
+    <p class="text-base-content/60">No forms yet — create one to start collecting signups, RSVPs and more.</p>
+    <button class="btn btn-primary btn-sm gap-1" (click)="openNewForm()" type="button">
+      <pc-icon name="add-form" [size]="4"></pc-icon>
+      New form
+    </button>
+  </div>
+  } @else {
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
+    <!-- Left rail -->
+    <div class="flex flex-col gap-2">
+      @for (form of activeForms(); track form.id) {
+      <button
+        class="flex flex-col gap-1 rounded-xl border p-3 text-left transition-colors"
+        [class.border-primary]="form.id === selectedId()"
+        [class.bg-primary]="form.id === selectedId()"
+        [class.bg-opacity-[0.06]]="form.id === selectedId()"
+        [class.border-base-300]="form.id !== selectedId()"
+        [class.hover:border-base-content]="form.id !== selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-base-content">{{ form.name }}</span>
+          <span class="badge badge-ghost badge-sm">{{ typeChip(form.type) }}</span>
+          <span
+            class="badge badge-sm"
+            [class.badge-success]="form.status === 'published'"
+            [class.badge-ghost]="form.status !== 'published'"
+          >
+            {{ form.status === 'published' ? 'Published' : 'Draft' }}
+          </span>
+        </div>
+        <span class="text-xs text-base-content/50">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }} · Updated {{
+          form.updated_at | date: 'MMM d' }}
+        </span>
+      </button>
+      } @if (archivedForms().length > 0) {
+      <button
+        class="mt-2 flex items-center gap-1 px-1 text-sm text-base-content/60 hover:text-base-content"
+        (click)="toggleArchived()"
+        type="button"
+      >
+        <pc-icon [name]="archivedOpen() ? 'chevron-down' : 'chevron-right'" [size]="4"></pc-icon>
+        Archived ({{ archivedForms().length }})
+      </button>
+      @if (archivedOpen()) { @for (form of archivedForms(); track form.id) {
+      <button
+        class="flex flex-col gap-1 rounded-xl border border-base-300 p-3 text-left opacity-[0.78] transition-colors hover:opacity-100"
+        [class.border-primary]="form.id === selectedId()"
+        (click)="select(form.id)"
+        type="button"
+      >
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-base-content">{{ form.name }}</span>
+          <span class="badge badge-ghost badge-sm">{{ typeChip(form.type) }}</span>
+          <span class="badge badge-sm badge-ghost">Archived</span>
+        </div>
+        <span class="text-xs text-base-content/50">
+          {{ form.submission_count }} {{ form.submission_count === 1 ? 'submission' : 'submissions' }}
+        </span>
+      </button>
+      } } }
+
+      <p class="mt-3 px-1 text-xs text-base-content/40">
+        Responses land in People with the form’s tag applied — no copy-paste step.
+      </p>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: true }"></ng-container>
+  </div>
+  }
+</div>
+} @else if (selected(); as form) {
+<!-- ── Edit mode ───────────────────────────────────────────────────────── -->
+<div class="flex flex-col gap-6">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <button
+        class="mb-1 flex items-center gap-1 text-sm text-base-content/60 hover:text-base-content"
+        (click)="exitEdit()"
+        type="button"
+      >
+        <pc-icon name="arrow-left" [size]="4"></pc-icon>
+        All forms
+      </button>
+      <div class="flex items-center gap-2">
+        <h1 class="text-2xl font-semibold text-base-content">{{ form.name }}</h1>
+        <span class="badge badge-info badge-sm">Editing</span>
+      </div>
+      <p class="mt-1 text-sm text-base-content/60">Changes apply to the live form instantly — nothing to save.</p>
+    </div>
+    <button class="btn btn-primary gap-1" (click)="exitEdit()" type="button">
+      <pc-icon name="check-circle" [size]="5"></pc-icon>
+      Done editing
+    </button>
+  </div>
+
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-[340px_1fr]">
+    <!-- Settings column -->
+    <div class="flex flex-col gap-6">
+      <!-- FORM -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Form</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Form name</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.name"
+            (input)="editName($any($event.target).value)"
+          />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Public description</span>
+          <textarea
+            class="textarea textarea-bordered textarea-sm min-h-[64px] w-full"
+            (input)="editDescription($any($event.target).value)"
+          >
+{{ form.description }}</textarea
+          >
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Redirect after submit (optional)</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.redirect_url ?? ''"
+            (input)="editRedirect($any($event.target).value)"
+            placeholder="https://…"
+          />
+          <span class="text-xs text-base-content/50">Blank shows the thank-you card on the right.</span>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Submit button label</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            [value]="form.submit_label ?? ''"
+            (input)="editSubmitLabel($any($event.target).value)"
+          />
+        </label>
+      </section>
+
+      <!-- AFTER SUBMIT -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">After submit</h2>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.send_confirmation"
+            (change)="toggleConfirmEmail($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Confirmation email</span>
+            <span class="text-xs text-base-content/50">Thanks the person by email after they submit.</span>
+            @if (form.send_confirmation) {
+            <button
+              class="mt-1 self-start text-xs text-primary hover:underline"
+              (click)="$event.preventDefault(); $event.stopPropagation(); openConfirmEmail()"
+              type="button"
+            >
+              Edit the confirmation email
+            </button>
+            }
+          </span>
+        </label>
+        <label class="flex items-start gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary toggle-sm mt-0.5"
+            [checked]="form.notify_team_on"
+            (change)="toggleNotifyTeam($any($event.target).checked)"
+          />
+          <span class="flex flex-col">
+            <span class="text-sm font-medium text-base-content">Notify the team</span>
+            <span class="text-xs text-base-content/50">Emails admins when a response lands.</span>
+          </span>
+        </label>
+      </section>
+
+      <!-- FIELDS -->
+      <section class="flex flex-col gap-2">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Fields</h2>
+        @for (field of form.fields; track field.key) {
+        <div class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            [checked]="field.on"
+            [disabled]="field.key === 'email'"
+            (change)="toggleField(field.key, $any($event.target).checked)"
+          />
+          <span
+            class="flex-1 text-sm text-base-content"
+            [class.text-base-content]="field.on"
+            [class.text-base-content/40]="!field.on"
+          >
+            {{ field.label }}
+          </span>
+          <button
+            class="badge badge-sm"
+            [class.badge-primary]="field.required"
+            [class.badge-ghost]="!field.required"
+            (click)="toggleRequired(field.key)"
+            type="button"
+          >
+            {{ field.required ? 'Required' : 'Optional' }}
+          </button>
+        </div>
+        }
+        <p class="mt-1 text-xs text-base-content/50">Every response creates or updates a person either way.</p>
+      </section>
+
+      <!-- AUDIENCE -->
+      <section class="flex flex-col gap-3">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Audience</h2>
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Add responses to a list</span>
+          <select
+            class="select select-bordered select-sm w-full"
+            (change)="addList($any($event.target).value); $any($event.target).value = ''"
+          >
+            <option value="">Choose a list…</option>
+            @for (list of lists(); track list.id) {
+            <option [value]="list.id">{{ list.name }}</option>
+            }
+          </select>
+        </label>
+        @if (form.target_lists.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (id of form.target_lists; track id) {
+          <span class="badge badge-outline gap-1">
+            {{ listName(id) }}
+            <button (click)="removeList(id)" type="button" aria-label="Remove list">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+
+        <label class="flex flex-col gap-1">
+          <span class="text-sm font-medium text-base-content">Apply tags to responses</span>
+          <input
+            class="input input-bordered input-sm w-full"
+            placeholder="Add a tag, press Enter"
+            #tagInput
+            (keydown.enter)="$event.preventDefault(); addTag(tagInput.value); tagInput.value = ''"
+          />
+        </label>
+        @if (form.target_tags.length > 0) {
+        <div class="flex flex-wrap gap-2">
+          @for (tag of form.target_tags; track tag) {
+          <span class="badge badge-primary badge-outline gap-1">
+            {{ tag }}
+            <button (click)="removeTag(tag)" type="button" aria-label="Remove tag">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>
+            </button>
+          </span>
+          }
+        </div>
+        }
+        <p class="text-xs text-base-content/50">
+          A system tag <span class="rounded bg-base-200 px-1 font-mono text-[11px]">Source: {{ form.name }}</span> is
+          applied automatically.
+        </p>
+      </section>
+
+      <!-- ARCHIVE -->
+      <section class="flex flex-col gap-3 border-t border-base-200 pt-4">
+        <h2 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Archive</h2>
+        @if (canDelete(form)) {
+        <p class="text-xs text-base-content/60">
+          This draft has no responses, so you can delete it outright. Once a form has responses it can only be archived.
+        </p>
+        } @else {
+        <p class="text-xs text-base-content/60">
+          Forms with responses are archived, never deleted — receipts and person timelines keep pointing at them.
+        </p>
+        }
+        <div class="flex gap-2">
+          @if (form.status !== 'archived') {
+          <button class="btn btn-outline btn-sm gap-1" (click)="archiveForm()" [disabled]="mutating()" type="button">
+            <pc-icon name="archive-box" [size]="4"></pc-icon>
+            Archive form
+          </button>
+          } @if (canDelete(form)) {
+          <button class="btn btn-outline btn-error btn-sm gap-1" (click)="deleteDraft()" type="button">
+            <pc-icon name="trash-forever" [size]="4"></pc-icon>
+            Delete draft
+          </button>
+          }
+        </div>
+      </section>
+    </div>
+
+    <!-- Preview -->
+    <ng-container [ngTemplateOutlet]="previewPanel" [ngTemplateOutletContext]="{ showEdit: false }"></ng-container>
+  </div>
+</div>
+}
+
+<!-- New form dialog ----------------------------------------------------------->
+<dialog #newFormDialog class="modal">
+  <div class="modal-box max-w-md">
+    <div class="mb-4 flex items-center gap-2">
+      <div class="flex size-9 items-center justify-center rounded-lg bg-primary/10">
+        <pc-icon name="clipboard-document-list" [size]="5" class="text-primary"></pc-icon>
+      </div>
+      <h3 class="text-lg font-semibold text-base-content">New form</h3>
+    </div>
+
+    <form (submit)="$event.preventDefault(); createForm()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Form name</span>
+        <input
+          class="input input-bordered w-full"
+          [class.input-error]="!!newFormError()"
+          [value]="newFormName()"
+          (input)="newFormName.set($any($event.target).value); newFormError.set(null)"
+          placeholder="June phone bank signup"
+          autofocus
+        />
+        @if (newFormError()) {
+        <span class="text-xs text-error">{{ newFormError() }}</span>
+        }
+      </label>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Start from</span>
+        <select
+          class="select select-bordered w-full"
+          [value]="newFormType()"
+          (change)="newFormType.set($any($event.target).value)"
+        >
+          @for (opt of templateOptions; track opt.type) {
+          <option [value]="opt.type">{{ opt.label }}</option>
+          }
+        </select>
+        <span class="text-xs text-base-content/50"
+          >Starts as a draft with the template’s fields — publish when it’s ready.</span
+        >
+      </label>
+
+      <div class="flex justify-end gap-2">
+        <button class="btn btn-ghost" (click)="closeNewForm()" type="button">Cancel</button>
+        <button class="btn btn-primary" [disabled]="creating()" type="submit">Create draft</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Embed dialog -------------------------------------------------------------->
+<dialog #embedDialog class="modal">
+  <div class="modal-box max-w-2xl">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="flex items-center gap-2 text-lg font-semibold text-base-content">
+        <pc-icon name="file-code" [size]="5" class="text-primary"></pc-icon>
+        Embed this form
+      </h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeEmbed()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <div class="join mb-3">
+      <button
+        class="btn join-item btn-sm"
+        [class.btn-active]="embedMode() === 'iframe'"
+        (click)="embedMode.set('iframe')"
+        type="button"
+      >
+        Embed (iframe)
+      </button>
+      <button
+        class="btn join-item btn-sm"
+        [class.btn-active]="embedMode() === 'html'"
+        (click)="embedMode.set('html')"
+        type="button"
+      >
+        Raw HTML form
+      </button>
+    </div>
+
+    <p class="mb-2 text-xs text-base-content/60">
+      @if (embedMode() === 'iframe') { Drops the hosted form into any page — updates automatically when you edit the
+      form. } @else { A plain HTML form posting straight to PeopleCRM. Reflects the form’s currently enabled fields. }
+    </p>
+
+    <pre class="max-h-72 overflow-auto rounded-lg bg-base-200 p-3 font-mono text-xs text-base-content">
+{{ embedCode() }}</pre
+    >
+
+    <div class="mt-4 flex justify-end">
+      <button class="btn btn-primary btn-sm gap-1" (click)="copyEmbed()" type="button">
+        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+        Copy code
+      </button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<!-- Confirmation-email dialog ------------------------------------------------->
+<dialog #confirmEmailDialog class="modal">
+  <div class="modal-box max-w-lg">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-base-content">Confirmation email</h3>
+      <button class="btn btn-ghost btn-sm btn-circle" (click)="closeConfirmEmail()" type="button" aria-label="Close">
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <form (submit)="$event.preventDefault(); saveConfirmEmail()" novalidate class="flex flex-col gap-4">
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Subject</span>
+        <input
+          class="input input-bordered w-full"
+          [value]="confirmSubjectDraft()"
+          (input)="confirmSubjectDraft.set($any($event.target).value)"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-sm font-medium text-base-content">Body</span>
+        <textarea
+          class="textarea textarea-bordered min-h-[140px] w-full"
+          [value]="confirmBodyDraft()"
+          (input)="confirmBodyDraft.set($any($event.target).value)"
+        ></textarea>
+      </label>
+      <p class="text-xs text-base-content/50">
+        Use <span class="rounded bg-base-200 px-1 font-mono text-[11px]">[First name]</span> to personalize the
+        greeting.
+      </p>
+      <div class="flex justify-end gap-2">
+        <button class="btn btn-ghost" (click)="closeConfirmEmail()" type="button">Cancel</button>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+```
+
+## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
+
+```typescript
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
+import { FormRenderComponent } from './form-render';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { environment } from '../../../../environments/environment';
+
+interface TemplateOption {
+  type: FormType;
+  label: string;
+}
+
+@Component({
+  selector: 'pc-forms-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe],
+  templateUrl: './forms-page.html',
+})
+export class FormsPageComponent implements OnInit {
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly settings = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly confirm = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly forms = signal<FormDetail[]>([]);
+  protected readonly selectedId = signal<string | null>(null);
+  protected readonly mode = signal<'browse' | 'edit'>('browse');
+  protected readonly tab = signal<'form' | 'responses'>('form');
+  protected readonly archivedOpen = signal(false);
+  protected readonly mutating = signal(false);
+  protected readonly orgName = signal('Your organization');
+  protected readonly lists = signal<{ id: string; name: string }[]>([]);
+
+  protected readonly submissions = signal<FormSubmissionRow[]>([]);
+  protected readonly submissionsTotal = signal(0);
+  protected readonly submissionsLoading = signal(false);
+
+  // New-form dialog state.
+  protected readonly newFormName = signal('');
+  protected readonly newFormType = signal<FormType>('signup');
+  protected readonly newFormError = signal<string | null>(null);
+  protected readonly creating = signal(false);
+  private readonly newFormDialog = viewChild<ElementRef<HTMLDialogElement>>('newFormDialog');
+  private readonly embedDialog = viewChild<ElementRef<HTMLDialogElement>>('embedDialog');
+  private readonly confirmEmailDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmEmailDialog');
+
+  protected readonly templateOptions: TemplateOption[] = FORM_TYPES.map((type) => ({
+    type,
+    label: this.templateLabel(type),
+  }));
+
+  protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
+  protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
+  protected readonly archivedForms = computed(() => this.forms().filter((f) => f.status === 'archived'));
+
+  protected readonly totalSubmissions = computed(() =>
+    this.forms().reduce((sum, f) => sum + (f.submission_count ?? 0), 0),
+  );
+
+  protected readonly countSentence = computed(() => {
+    const total = this.forms().length;
+    const subs = this.totalSubmissions();
+    const archived = this.archivedForms().length;
+    const parts = [
+      `${total} ${total === 1 ? 'form' : 'forms'}`,
+      `${subs} ${subs === 1 ? 'submission' : 'submissions'}`,
+    ];
+    if (archived > 0) parts.push(`${archived} archived`);
+    return parts.join(' · ');
+  });
+
+  protected readonly publicUrl = computed(() => {
+    const form = this.selected();
+    if (!form?.slug) return '';
+    const origin = this.appOrigin();
+    return `${origin}/f/${form.slug}`;
+  });
+
+  private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
+  private pendingPatch: UpdateFormType = {};
+
+  public ngOnInit(): void {
+    void Promise.all([this.loadForms(), this.loadOrg(), this.loadLists()]);
+  }
+
+  // ── Loading ────────────────────────────────────────────────────────────
+
+  private async loadForms(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const rows = await this.formsSvc.listForms();
+      this.forms.set(rows);
+      const first = rows[0];
+      if (!this.selectedId() && first) {
+        this.selectedId.set(first.id);
+      }
+    } catch {
+      this.alerts.showError('Could not load your forms. Please try again.');
+    } finally {
+      end();
+    }
+  }
+
+  private async loadOrg(): Promise<void> {
+    try {
+      await this.settings.load();
+      const name = this.settings.getValue<string>('organization.name', '');
+      if (name) this.orgName.set(name);
+    } catch {
+      /* org name is decorative; fall back to the default */
+    }
+  }
+
+  private async loadLists(): Promise<void> {
+    try {
+      const res = await this.listsSvc.getAllWithCounts();
+      const rows = (res?.rows ?? []) as Array<Record<string, unknown>>;
+      this.lists.set(rows.map((r) => ({ id: String(r['id']), name: String(r['name'] ?? '') })));
+    } catch {
+      /* audience list picker degrades gracefully to empty */
+    }
+  }
+
+  // ── Selection / navigation ─────────────────────────────────────────────
+
+  protected select(id: string): void {
+    if (this.selectedId() === id) return;
+    this.selectedId.set(id);
+    this.tab.set('form');
+    this.submissions.set([]);
+    this.submissionsTotal.set(0);
+  }
+
+  protected setTab(tab: 'form' | 'responses'): void {
+    this.tab.set(tab);
+    if (tab === 'responses') void this.loadSubmissions();
+  }
+
+  protected enterEdit(): void {
+    if (!this.selected()) return;
+    this.mode.set('edit');
+    this.tab.set('form');
+  }
+
+  protected exitEdit(): void {
+    this.mode.set('browse');
+  }
+
+  protected toggleArchived(): void {
+    this.archivedOpen.update((v) => !v);
+  }
+
+  // ── Status verbs ───────────────────────────────────────────────────────
+
+  protected async publish(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.publish(id),
+      (f) => `Published “${f.name}” — the link now accepts responses.`,
+    );
+  }
+
+  protected async unpublish(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.unpublish(id),
+      (f) => `Unpublished “${f.name}” — the public link is paused.`,
+    );
+  }
+
+  protected async archiveForm(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.archive(id),
+      (f) => `Archived “${f.name}” — the public link now shows a closed notice.`,
+    );
+    this.mode.set('browse');
+  }
+
+  protected async restore(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.restore(id),
+      (f) => `Restored “${f.name}” as a draft.`,
+    );
+  }
+
+  private async runVerb(
+    action: (id: string) => Promise<FormDetail>,
+    message: (f: FormDetail) => string,
+  ): Promise<void> {
+    const id = this.selectedId();
+    if (!id || this.mutating()) return;
+    this.mutating.set(true);
+    try {
+      const updated = await action(id);
+      this.replaceForm(updated);
+      this.alerts.showSuccess(message(updated));
+    } catch {
+      this.alerts.showError('That action didn’t go through. Please try again.');
+    } finally {
+      this.mutating.set(false);
+    }
+  }
+
+  // ── New form dialog ────────────────────────────────────────────────────
+
+  protected openNewForm(): void {
+    this.newFormName.set('');
+    this.newFormType.set('signup');
+    this.newFormError.set(null);
+    this.newFormDialog()?.nativeElement.showModal();
+  }
+
+  protected closeNewForm(): void {
+    this.newFormDialog()?.nativeElement.close();
+  }
+
+  protected async createForm(): Promise<void> {
+    const name = this.newFormName().trim();
+    if (!name) {
+      this.newFormError.set('Give your form a name so you can find it later.');
+      return;
+    }
+    if (this.creating()) return;
+    this.creating.set(true);
+    try {
+      const type = this.newFormType();
+      const created = await this.formsSvc.createForm({ name, type });
+      this.forms.update((list) => [created, ...list]);
+      this.selectedId.set(created.id);
+      this.closeNewForm();
+      this.mode.set('edit');
+      this.tab.set('form');
+      this.alerts.showSuccess(
+        `Draft created from the ${this.templateLabel(type)} template — adjust its fields, then publish.`,
+      );
+    } catch {
+      this.newFormError.set('Could not create the form. Please try again.');
+    } finally {
+      this.creating.set(false);
+    }
+  }
+
+  // ── Live editing (debounced patch) ─────────────────────────────────────
+
+  protected editName(value: string): void {
+    this.patch({ name: value });
+  }
+
+  protected editDescription(value: string): void {
+    this.patch({ description: value });
+  }
+
+  protected editRedirect(value: string): void {
+    this.patch({ redirect_url: value });
+  }
+
+  protected editSubmitLabel(value: string): void {
+    this.patch({ submit_label: value });
+  }
+
+  protected toggleConfirmEmail(on: boolean): void {
+    this.patch({ confirm_email_on: on });
+  }
+
+  protected toggleNotifyTeam(on: boolean): void {
+    this.patch({ notify_team_on: on });
+  }
+
+  protected toggleField(key: string, on: boolean): void {
+    const form = this.selected();
+    if (!form) return;
+    if (key === 'email') {
+      this.alerts.showInfo('Email stays on every form — it’s how each response is matched to a person.');
+      return;
+    }
+    const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
+    this.patch({ fields });
+  }
+
+  protected toggleRequired(key: string): void {
+    const form = this.selected();
+    if (!form) return;
+    if (key === 'email') {
+      this.alerts.showInfo('Email is always required — a response can’t create a person without it.');
+      return;
+    }
+    const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
+    this.patch({ fields });
+  }
+
+  protected addTag(raw: string): void {
+    const form = this.selected();
+    if (!form) return;
+    const tag = raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+    if (!tag) return;
+    if (form.target_tags.includes(tag)) {
+      this.alerts.showInfo(`“${tag}” is already applied to responses.`);
+      return;
+    }
+    this.patch({ target_tags: [...form.target_tags, tag] });
+  }
+
+  protected removeTag(tag: string): void {
+    const form = this.selected();
+    if (!form) return;
+    this.patch({ target_tags: form.target_tags.filter((t) => t !== tag) });
+  }
+
+  protected addList(id: string): void {
+    const form = this.selected();
+    if (!form || !id || form.target_lists.includes(id)) return;
+    this.patch({ target_lists: [...form.target_lists, id] });
+  }
+
+  protected removeList(id: string): void {
+    const form = this.selected();
+    if (!form) return;
+    this.patch({ target_lists: form.target_lists.filter((l) => l !== id) });
+  }
+
+  protected listName(id: string): string {
+    return this.lists().find((l) => l.id === id)?.name ?? id;
+  }
+
+  private patch(p: UpdateFormType): void {
+    const form = this.selected();
+    if (!form) return;
+    // Optimistic local update so the preview reflects the change immediately.
+    this.replaceForm({ ...form, ...(p as Partial<FormDetail>) });
+    Object.assign(this.pendingPatch, p);
+    this.saveDebounced();
+  }
+
+  private async flushPatch(): Promise<void> {
+    const id = this.selectedId();
+    const patch = this.pendingPatch;
+    this.pendingPatch = {};
+    if (!id || Object.keys(patch).length === 0) return;
+    try {
+      const updated = await this.formsSvc.updateLive(id, patch);
+      this.replaceForm(updated);
+    } catch {
+      this.alerts.showError('Couldn’t save that change. Check your connection and try again.');
+    }
+  }
+
+  // ── Archive / delete (edit mode) ───────────────────────────────────────
+
+  protected canDelete(form: FormDetail): boolean {
+    return form.status === 'draft' && (form.submission_count ?? 0) === 0;
+  }
+
+  protected async deleteDraft(): Promise<void> {
+    const form = this.selected();
+    if (!form || !this.canDelete(form)) return;
+    const ok = await this.confirm.confirm({
+      title: `Delete “${form.name}”?`,
+      message: 'This draft has no responses. Deleting it can’t be undone — archiving is the reversible option.',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await this.formsSvc.deleteDraft(form.id);
+      this.forms.update((list) => list.filter((f) => f.id !== form.id));
+      this.selectedId.set(this.forms()[0]?.id ?? null);
+      this.mode.set('browse');
+      this.alerts.showSuccess(`Deleted “${form.name}”.`);
+    } catch {
+      this.alerts.showError('Could not delete the form. Please try again.');
+    }
+  }
+
+  // ── Public link ────────────────────────────────────────────────────────
+
+  protected openPublicLink(): void {
+    const url = this.publicUrl();
+    if (url) window.open(url, '_blank', 'noopener');
+  }
+
+  protected async copyLink(): Promise<void> {
+    const url = this.publicUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.alerts.showSuccess('Public link copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy the link — copy it manually from the address bar.');
+    }
+  }
+
+  // ── Embed dialog ───────────────────────────────────────────────────────
+
+  protected readonly embedMode = signal<'iframe' | 'html'>('iframe');
+  protected readonly embedCode = computed(() =>
+    this.embedMode() === 'iframe' ? this.iframeSnippet() : this.rawHtmlSnippet(),
+  );
+
+  protected openEmbed(): void {
+    this.embedMode.set('iframe');
+    this.embedDialog()?.nativeElement.showModal();
+  }
+
+  protected closeEmbed(): void {
+    this.embedDialog()?.nativeElement.close();
+  }
+
+  protected async copyEmbed(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.embedCode());
+      this.alerts.showSuccess('Embed code copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy — select the code and copy it manually.');
+    }
+  }
+
+  private iframeSnippet(): string {
+    const form = this.selected();
+    if (!form) return '';
+    return `<iframe src="${this.publicUrl()}" width="100%" height="640" style="border:0" title="${this.escapeAttr(form.name)}"></iframe>`;
+  }
+
+  private rawHtmlSnippet(): string {
+    const form = this.selected();
+    if (!form) return '';
+    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.id}`;
+    const lines: string[] = [`<form action="${action}" method="POST">`];
+    for (const field of form.fields.filter((f) => f.on)) {
+      const req = field.required ? ' required' : '';
+      const star = field.required ? ' *' : '';
+      const label = this.escapeAttr(field.label);
+      if (field.type === 'area') {
+        lines.push(`  <label>${label}${star}<br><textarea name="${field.key}"${req}></textarea></label>`);
+      } else if (field.type === 'select') {
+        lines.push(`  <label>${label}${star}<br><select name="${field.key}"${req}>`);
+        for (const opt of field.options ?? []) lines.push(`    <option>${this.escapeAttr(opt)}</option>`);
+        lines.push(`  </select></label>`);
+      } else if (field.type === 'checks') {
+        lines.push(`  <fieldset><legend>${label}${star}</legend>`);
+        for (const opt of field.options ?? []) {
+          lines.push(
+            `    <label><input type="checkbox" name="${field.key}" value="${this.escapeAttr(opt)}"> ${this.escapeAttr(opt)}</label>`,
+          );
+        }
+        lines.push(`  </fieldset>`);
+      } else {
+        const type = field.key === 'email' ? 'email' : 'text';
+        lines.push(`  <label>${label}${star}<br><input type="${type}" name="${field.key}"${req}></label>`);
+      }
+    }
+    lines.push(`  <button type="submit">${this.escapeAttr(form.submit_label || 'Submit')}</button>`);
+    lines.push(`</form>`);
+    return lines.join('\n');
+  }
+
+  private escapeAttr(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Confirmation-email dialog ──────────────────────────────────────────
+
+  protected readonly confirmSubjectDraft = signal('');
+  protected readonly confirmBodyDraft = signal('');
+
+  protected openConfirmEmail(): void {
+    const form = this.selected();
+    if (!form) return;
+    this.confirmSubjectDraft.set(form.confirm_subject ?? '');
+    this.confirmBodyDraft.set(form.confirm_body ?? '');
+    this.confirmEmailDialog()?.nativeElement.showModal();
+  }
+
+  protected closeConfirmEmail(): void {
+    this.confirmEmailDialog()?.nativeElement.close();
+  }
+
+  protected saveConfirmEmail(): void {
+    this.patch({ confirm_subject: this.confirmSubjectDraft(), confirm_body: this.confirmBodyDraft() });
+    this.closeConfirmEmail();
+    this.alerts.showSuccess('Confirmation email updated.');
+  }
+
+  // ── Responses ──────────────────────────────────────────────────────────
+
+  private async loadSubmissions(): Promise<void> {
+    const id = this.selectedId();
+    if (!id) return;
+    this.submissionsLoading.set(true);
+    try {
+      const res = await this.formsSvc.getSubmissions(id);
+      this.submissions.set(res.items);
+      this.submissionsTotal.set(res.total);
+    } catch {
+      this.alerts.showError('Could not load responses. Please try again.');
+    } finally {
+      this.submissionsLoading.set(false);
+    }
+  }
+
+  protected answerSummary(row: FormSubmissionRow): string {
+    const skip = new Set(['email', 'full_name', 'first_name', 'last_name']);
+    const parts: string[] = [];
+    for (const [key, value] of Object.entries(row.answers)) {
+      if (skip.has(key) || value == null || value === '') continue;
+      parts.push(Array.isArray(value) ? value.join(' · ') : String(value));
+      if (parts.length >= 2) break;
+    }
+    return parts.join(' · ');
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  protected requiredFieldsPresent(form: FormDetail): boolean {
+    return form.fields.some((f) => f.on && f.required);
+  }
+
+  private replaceForm(updated: FormDetail): void {
+    this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
+  }
+
+  private appOrigin(): string {
+    if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
+    return environment.apiUrl.replace(/\/$/, '');
+  }
+
+  private templateLabel(type: FormType): string {
+    const map: Record<FormType, string> = {
+      signup: 'Signup — name, email, availability',
+      pledge: 'Pledge — name, email, amount',
+      rsvp: 'RSVP — name, email, seats',
+      request: 'Request — name, email, address, notes',
+      survey: 'Survey — name, issues, open answer',
+    };
+    return map[type];
+  }
+
+  protected typeChip(type: FormType | null): string {
+    if (!type) return 'Form';
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+
+  protected templateSubmitLabel(type: FormType): string {
+    return FORM_TEMPLATES[type].submitLabel;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.html
 
 ```html
@@ -17770,40 +18248,79 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
     id: 'forms',
     category: 'engagement',
     title: 'Web forms',
-    summary: 'Publish forms that feed the CRM directly — signups, surveys, and volunteer interest, no retyping.',
-    keywords: ['form', 'web form', 'signup form', 'survey', 'embed', 'subscribe', 'submission'],
-    related: ['newsletters', 'automations', 'import'],
+    summary:
+      'Signups, RSVPs, pledges and surveys as living pages: draft → publish → archive, edited live beside a preview, with responses that are people.',
+    keywords: [
+      'form',
+      'web form',
+      'signup form',
+      'survey',
+      'rsvp',
+      'pledge',
+      'embed',
+      'subscribe',
+      'submission',
+      'publish',
+      'archive',
+      'responses',
+    ],
+    related: ['newsletters', 'automations', 'import', 'tags-issues'],
     blocks: [
       {
         kind: 'p',
-        text: 'Forms turn your audience’s interest into records. A form you build under [Forms](/forms) gets a public page you can share anywhere; submissions arrive as contacts and updates in real time, not as a spreadsheet to import on Friday.',
+        text: 'A form under [Forms](/forms) is a living page with a lifecycle — **draft**, **published**, **archived**. You pick a type when you create it (Signup, Pledge, RSVP, Request, Survey), edit it live beside a preview, and share one public link. Every response creates or updates a person, so submissions arrive as records — never a spreadsheet to import on Friday.',
       },
-      { kind: 'h2', id: 'build', text: 'Build and publish' },
+      { kind: 'h2', id: 'create', text: 'Create from a template' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Open [Forms](/forms) and click +',
-            detail: 'Add the fields you actually need — short forms convert better.',
+            title: 'Open [Forms](/forms) and click New form',
+            detail: 'Name it and pick a starting template — it opens as a draft in edit mode.',
           },
-          { title: 'Publish and share the link', detail: 'The form works as a standalone page.' },
           {
-            title: 'Watch submissions arrive',
-            detail: 'Each submission creates or updates a contact, ready to tag, list, and email.',
+            title: 'Turn fields on and set what’s required',
+            detail:
+              'Check a field to add it; click its Optional/Required pill to toggle. Changes apply to the live form instantly — there is nothing to save.',
+          },
+          {
+            title: 'Publish when it’s ready',
+            detail:
+              'Publish activates the public link and the form starts accepting responses. Unpublish pauses it; the link keeps working again the moment you republish.',
           },
         ],
       },
       {
         kind: 'callout',
         tone: 'info',
-        title: 'Double opt-in and your forms',
-        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new web-form subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
+        title: 'Email is the identity key',
+        text: 'Every form always collects an email, always required — it’s how each response is matched to (or creates) a person. That’s why the email field can’t be turned off or made optional.',
+      },
+      { kind: 'h2', id: 'responses', text: 'Responses are people' },
+      {
+        kind: 'p',
+        text: 'The **Responses** tab lists each submission and links straight to the person it created or updated. Every response also applies the form’s tags — including an automatic `Source: <form name>` tag — and joins the lists you chose under **Audience**, so your segmentation stays effortless. Export the responses to CSV anytime.',
+      },
+      { kind: 'h2', id: 'share', text: 'Share and embed' },
+      {
+        kind: 'list',
+        items: [
+          'Copy the public link or open the standalone page from the link row.',
+          'Use the `</>` embed to drop the form into any site — an auto-updating iframe, or a raw HTML form that reflects your currently enabled fields.',
+          'Turn on a confirmation email to thank people automatically, or notify your team when a response lands (both under **After submit**).',
+        ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Tag at the source',
-        text: 'Give each form a distinct tag for its signups and your segmentation stays effortless — you will always know who came from where. See [Tags and issues](/help/tags-issues).',
+        title: 'Archive, don’t delete',
+        text: 'A form with responses can be archived — its public link shows a friendly closed notice and every record keeps pointing at it. Restore brings it back as a draft. Only an untouched draft with zero responses can be deleted outright.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Double opt-in and your forms',
+        text: 'If your workspace enables double opt-in (**Workspace → Communications**), new subscribers confirm by email before receiving newsletters — better list quality and compliance in one setting.',
       },
     ],
   },
@@ -25890,6 +26407,56 @@ export class DataGridUtilsService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-dropdown.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+
+/**
+ * Desktop filter dropdown shell shared by the tags/issues/list toolbar
+ * dropdowns: a `dropdown-content` panel with a title and an optional
+ * "Clear Filter" action, with the actual filter control projected in.
+ *
+ * Rendered as the projected content of a `pc-grid-tool-btn`, so it uses
+ * `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ */
+@Component({
+  selector: 'pc-dg-filter-dropdown',
+  template: `
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+    >
+      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
+        <span>{{ title() }}</span>
+        @if (active()) {
+          <button
+            i18n
+            class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
+            (click)="clear.emit()"
+          >
+            Clear Filter
+          </button>
+        }
+      </div>
+      <ng-content></ng-content>
+    </div>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridFilterDropdownComponent {
+  public title = input.required<string>();
+  public active = input(false);
+  public clear = output<void>();
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
 
 ```html
@@ -25996,6 +26563,75 @@ export class DataGridFilterPanelComponent {
   public optionsFor = input<(field: string) => string[] | null>((_f) => null);
   public panelFields = input<string[]>([]);
   public panelFilters = input<Record<string, { op: string; value: unknown }>>({});
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-section.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+
+/**
+ * Mobile collapsible filter section shared by the narrow/tags/issues/list
+ * rows inside the combined mobile filter panel: a `<details>` with an active
+ * dot indicator, title, optional "Clear" action, and a rotating chevron.
+ * The filter control itself is projected in.
+ *
+ * Uses `display: contents` so the `<details>` stays a direct flex child of
+ * the surrounding panel column.
+ */
+@Component({
+  selector: 'pc-dg-filter-section',
+  imports: [Icon],
+  template: `
+    <details class="group" [class.border-t]="bordered()" [class.border-base-200]="bordered()" [open]="open()">
+      <summary
+        class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+      >
+        <span class="flex items-center gap-1.5">
+          @if (active()) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+          }
+          {{ title() }}
+        </span>
+        <div class="flex items-center gap-1">
+          @if (active() && clearable()) {
+            <button
+              i18n
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="clear.emit(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+          }
+          <pc-icon
+            name="chevron-down"
+            [size]="3"
+            class="transition-transform group-open:rotate-180 text-base-content/40"
+          ></pc-icon>
+        </div>
+      </summary>
+      <div class="pt-1 pb-2">
+        <ng-content></ng-content>
+      </div>
+    </details>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridFilterSectionComponent {
+  public title = input.required<string>();
+  public active = input(false);
+  public open = input(false);
+  public bordered = input(true);
+  public clearable = input(true);
+  public clear = output<void>();
 }
 ```
 
@@ -26448,6 +27084,10 @@ export const appRoutes = [
     path: 'confirm-subscription',
     loadComponent: () =>
       import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'f/:slug',
+    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
   },
   {
     path: 'verify-email',
@@ -35099,123 +35739,325 @@ export class DataGridTableService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-dropdown.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
 
-```typescript
-import { Component, input, output } from '@angular/core';
+```html
+<!-- Mobile toolbar -->
+<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
+    [tip]="'Delete selected row(s)'"
+    icon="trash"
+    (action)="onDeleteSelected()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
 
-/**
- * Desktop filter dropdown shell shared by the tags/issues/list toolbar
- * dropdowns: a `dropdown-content` panel with a title and an optional
- * "Clear Filter" action, with the actual filter control projected in.
- *
- * Rendered as the projected content of a `pc-grid-tool-btn`, so it uses
- * `display: contents` to stay a direct child of the DaisyUI `<details>`.
- */
-@Component({
-  selector: 'pc-dg-filter-dropdown',
-  template: `
+  <!-- Combined filter panel -->
+  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
+  grid.showListFilter()) {
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Filters"
+    [hasDropdown]="true"
+    [dropdownEnd]="false"
+    [active]="
+      grid.selectedNarrowType() !== null ||
+      grid.selectedTags().length > 0 ||
+      grid.selectedIssues().length > 0 ||
+      grid.selectedListId() !== null ||
+      grid.hasActiveFilters() ||
+      grid.hasActiveAdvancedFilters()
+    "
+  >
     <div
       tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
     >
-      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
-        <span>{{ title() }}</span>
-        @if (active()) {
-          <button
-            i18n
-            class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
-            (click)="clear.emit()"
-          >
-            Clear Filter
-          </button>
-        }
-      </div>
-      <ng-content></ng-content>
-    </div>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class DataGridFilterDropdownComponent {
-  public title = input.required<string>();
-  public active = input(false);
-  public clear = output<void>();
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-section.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-/**
- * Mobile collapsible filter section shared by the narrow/tags/issues/list
- * rows inside the combined mobile filter panel: a `<details>` with an active
- * dot indicator, title, optional "Clear" action, and a rotating chevron.
- * The filter control itself is projected in.
- *
- * Uses `display: contents` so the `<details>` stays a direct flex child of
- * the surrounding panel column.
- */
-@Component({
-  selector: 'pc-dg-filter-section',
-  imports: [Icon],
-  template: `
-    <details class="group" [class.border-t]="bordered()" [class.border-base-200]="bordered()" [open]="open()">
-      <summary
-        class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+      @if (grid.showTagFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Tags'"
+        [active]="grid.selectedTags().length > 0"
+        [open]="grid.selectedTags().length > 0"
+        (clear)="grid.clearTagsFilter()"
       >
-        <span class="flex items-center gap-1.5">
-          @if (active()) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-          }
-          {{ title() }}
-        </span>
-        <div class="flex items-center gap-1">
-          @if (active() && clearable()) {
-            <button
-              i18n
-              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
-              (click)="clear.emit(); $event.stopPropagation()"
-            >
-              Clear
-            </button>
-          }
-          <pc-icon
-            name="chevron-down"
-            [size]="3"
-            class="transition-transform group-open:rotate-180 text-base-content/40"
-          ></pc-icon>
-        </div>
-      </summary>
-      <div class="pt-1 pb-2">
-        <ng-content></ng-content>
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="grid.filteredAvailableTags()"
+          [selected]="grid.selectedTags()"
+          [searchQuery]="grid.tagSearchQuery()"
+          (searchQueryChange)="grid.tagSearchQuery.set($event)"
+          (selectAll)="grid.selectAllTags()"
+          (clearVisible)="grid.clearAllTagsVisible()"
+          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showIssueFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by Issues'"
+        [active]="grid.selectedIssues().length > 0"
+        [open]="grid.selectedIssues().length > 0"
+        (clear)="grid.clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="grid.filteredAvailableIssues()"
+          [selected]="grid.selectedIssues()"
+          [searchQuery]="grid.issueSearchQuery()"
+          (searchQueryChange)="grid.issueSearchQuery.set($event)"
+          (selectAll)="grid.selectAllIssues()"
+          (clearVisible)="grid.clearAllIssuesVisible()"
+          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.showListFilter()) {
+      <pc-dg-filter-section
+        [title]="'Filter by List'"
+        [active]="grid.selectedListId() !== null"
+        [open]="grid.selectedListId() !== null"
+        (clear)="grid.clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="grid.selectedListId()"
+          [radioName]="'selectedListMobile'"
+          (select)="grid.selectListFilter($event)"
+        />
+      </pc-dg-filter-section>
+      } @if (grid.allowFilter()) {
+      <div class="border-t border-base-200 pt-1 flex flex-col">
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
+          [disabled]="grid.hasActiveAdvancedFilters()"
+          (click)="onToggleFilters()"
+        >
+          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
+        </button>
+        <button
+          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
+          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+          (click)="grid.openAdvancedFilterBuilder()"
+        >
+          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
+        </button>
       </div>
-    </details>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
       }
-    `,
-  ],
-})
-export class DataGridFilterSectionComponent {
-  public title = input.required<string>();
-  public active = input(false);
-  public open = input(false);
-  public bordered = input(true);
-  public clearable = input(true);
-  public clear = output<void>();
-}
+    </div>
+  </pc-grid-tool-btn>
+  }
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <!-- Overflow: secondary actions -->
+  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
+      <li
+        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
+        [class.cursor-not-allowed]="grid.disableRefresh()"
+        [class.text-neutral-400]="grid.disableRefresh()"
+        [class.pointer-events-none]="grid.disableRefresh()"
+      >
+        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
+      </li>
+      @if (grid.addRoute() || !grid.disableMerge()) {
+      <div class="divider my-0"></div>
+      } @if (grid.addRoute()) {
+      <li
+        [class.disabled]="!grid.hasSingleSelection()"
+        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
+        [class.text-neutral-400]="!grid.hasSingleSelection()"
+        [class.pointer-events-none]="!grid.hasSingleSelection()"
+      >
+        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
+      </li>
+      } @if (!grid.disableMerge()) {
+      <li
+        [class.disabled]="grid.getCountRowSelected() !== 2"
+        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
+        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
+        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
+      >
+        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
+      </li>
+      } @if (!grid.disableImport() || !grid.disableExport()) {
+      <div class="divider my-0"></div>
+      } @if (!grid.disableImport()) {
+      <li>
+        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
+      </li>
+      } @if (!grid.disableExport()) {
+      <li>
+        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
+      </li>
+      } @if (grid.showArchiveIcon()) {
+      <li>
+        <a (click)="onToggleArchive()">
+          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
+        </a>
+      </li>
+      }
+    </ul>
+  </pc-grid-tool-btn>
+</ul>
+
+<!-- Desktop toolbar -->
+<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
+  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
+  <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
+    [spinning]="grid.isRefreshing()"
+    [tip]="'Refresh the grid'"
+    icon="arrow-path"
+    (action)="onRefresh()"
+  />
+  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
+  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableImport()"
+    [tip]="'Import data from CSV'"
+    icon="arrow-up-tray"
+    (action)="onImportCsv()"
+  />
+  <pc-grid-tool-btn
+    [enabled]="!grid.disableExport()"
+    [tip]="'Download as CSV'"
+    icon="arrow-down-tray"
+    (action)="onExportCsv()"
+  />
+
+  @if (grid.showTagFilter()) {
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+  } @if (grid.showTagFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'label'"
+    [tip]="'Filter by Tags'"
+    [active]="grid.selectedTags().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedTags().length"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by Tags'"
+      [active]="grid.selectedTags().length > 0"
+      (clear)="grid.clearTagsFilter()"
+    >
+      <pc-multiselect-filter
+        [label]="'Tags'"
+        [options]="grid.filteredAvailableTags()"
+        [selected]="grid.selectedTags()"
+        [searchQuery]="grid.tagSearchQuery()"
+        (searchQueryChange)="grid.tagSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllTags()"
+        (clearVisible)="grid.clearAllTagsVisible()"
+        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
+      />
+      <p
+        class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+        i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
+      >
+        Checked tags combine with OR and land as one chip.
+      </p>
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  } @if (grid.showIssueFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'shield-exclamation'"
+    [tip]="'Filter by Issues'"
+    [active]="grid.selectedIssues().length > 0"
+    [hasDropdown]="true"
+    [badge]="grid.selectedIssues().length"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by Issues'"
+      [active]="grid.selectedIssues().length > 0"
+      (clear)="grid.clearIssuesFilter()"
+    >
+      <pc-multiselect-filter
+        [label]="'Issues'"
+        [options]="grid.filteredAvailableIssues()"
+        [selected]="grid.selectedIssues()"
+        [searchQuery]="grid.issueSearchQuery()"
+        (searchQueryChange)="grid.issueSearchQuery.set($event)"
+        [maxHeight]="14"
+        (selectAll)="grid.selectAllIssues()"
+        (clearVisible)="grid.clearAllIssuesVisible()"
+        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
+      />
+      <p
+        class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+        i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
+      >
+        Checked issues combine with OR and land as one chip.
+      </p>
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  } @if (grid.showListFilter()) {
+  <pc-grid-tool-btn
+    [icon]="'queue-list'"
+    [tip]="'Filter by List'"
+    [active]="grid.selectedListId() !== null"
+    [hasDropdown]="true"
+  >
+    <pc-dg-filter-dropdown
+      [title]="'Filter by List'"
+      [active]="grid.selectedListId() !== null"
+      (clear)="grid.clearListFilter()"
+    >
+      <pc-singleselect-filter
+        [label]="'List'"
+        [options]="listOptions()"
+        [selected]="grid.selectedListId()"
+        [radioName]="'selectedList'"
+        [maxHeight]="14"
+        (select)="grid.selectListFilter($event)"
+      />
+    </pc-dg-filter-dropdown>
+  </pc-grid-tool-btn>
+  }
+
+  <pc-grid-tool-btn
+    icon="funnel"
+    tip="Advanced Filters"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveAdvancedFilters()"
+    (action)="onToggleFilters()"
+  />
+  <pc-grid-tool-btn
+    icon="adjustments-horizontal"
+    tip="Advanced Query Builder"
+    [hidden]="!grid.allowFilter()"
+    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
+    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
+    (action)="grid.openAdvancedFilterBuilder()"
+  />
+
+  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
+
+  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
+    <pc-dg-columns-dropdown [grid]="grid" />
+  </pc-grid-tool-btn>
+
+  <pc-grid-tool-btn
+    [icon]="grid.archiveIcon()"
+    [tip]="grid.archiveTip()"
+    [hidden]="!grid.showArchiveIcon()"
+    [active]="grid.archiveModeState()"
+    (action)="onToggleArchive()"
+  />
+</ul>
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
@@ -43343,6 +44185,73 @@ export class FavouriteToggle {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
+
+```typescript
+import { Component, computed, input } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
+
+/**
+ * Column visibility dropdown shared by the mobile and desktop toolbars.
+ * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
+ * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ *
+ * The grid is passed in as an input rather than injected: as projected
+ * content it does not reliably resolve the same `DataGrid` instance.
+ *
+ * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
+ * in after init, so as an isolated component this would render once and stay
+ * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
+ * signal) to recompute once the columns are populated.
+ */
+@Component({
+  selector: 'pc-dg-columns-dropdown',
+  template: `
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
+      </li>
+      @for (col of cols(); track col.field) {
+        @if (col.field) {
+          <li>
+            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
+                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
+              />
+              <span class="label-text">{{ col.headerName || col.field }}</span>
+            </label>
+          </li>
+        }
+      }
+    </ul>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridColumnsDropdownComponent {
+  public readonly grid = input.required<DataGrid<keyof Models, unknown>>();
+
+  protected readonly cols = computed<ColDef[]>(() => {
+    // Establish a reactive dependency on the colVisibility signal so the list
+    // recomputes once the (non-signal) column defs are populated after init.
+    this.grid().getColVisibilityMap();
+    return this.grid().getColDefsForToolbar();
+  });
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
 
 ```typescript
@@ -43363,6 +44272,101 @@ export class DataGridRowComponent {
   toId = input<(row: GridRow) => string>((r) => String(r?.['id'] ?? ''));
   onRowCheckboxChange = input<(row: GridRow, checked: boolean) => void>((_r, _c) => undefined);
   onMouseOverRow = input<(row: GridRow) => void>((_r) => undefined);
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+
+```typescript
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
+
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
+
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
+
+  public onAdd() {
+    this.grid.doAdd();
+  }
+
+  public onClone() {
+    this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
+
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    void this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
+  }
 }
 ```
 
@@ -47358,327 +48362,6 @@ export class TeamFormComponent implements OnInit {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
-```html
-<!-- Mobile toolbar -->
-<ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableDelete() && grid.hasSelectionState()"
-    [tip]="'Delete selected row(s)'"
-    icon="trash"
-    (action)="onDeleteSelected()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <!-- Combined filter panel -->
-  @if (grid.allowFilter() || grid.showNarrowTypeFilter() || grid.showTagFilter() || grid.showIssueFilter() ||
-  grid.showListFilter()) {
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Filters"
-    [hasDropdown]="true"
-    [dropdownEnd]="false"
-    [active]="
-      grid.selectedNarrowType() !== null ||
-      grid.selectedTags().length > 0 ||
-      grid.selectedIssues().length > 0 ||
-      grid.selectedListId() !== null ||
-      grid.hasActiveFilters() ||
-      grid.hasActiveAdvancedFilters()
-    "
-  >
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col text-left gap-0 z-[50] max-h-[80vh] overflow-y-auto"
-    >
-      @if (grid.showTagFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Tags'"
-        [active]="grid.selectedTags().length > 0"
-        [open]="grid.selectedTags().length > 0"
-        (clear)="grid.clearTagsFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Tags'"
-          [options]="grid.filteredAvailableTags()"
-          [selected]="grid.selectedTags()"
-          [searchQuery]="grid.tagSearchQuery()"
-          (searchQueryChange)="grid.tagSearchQuery.set($event)"
-          (selectAll)="grid.selectAllTags()"
-          (clearVisible)="grid.clearAllTagsVisible()"
-          (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showIssueFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by Issues'"
-        [active]="grid.selectedIssues().length > 0"
-        [open]="grid.selectedIssues().length > 0"
-        (clear)="grid.clearIssuesFilter()"
-      >
-        <pc-multiselect-filter
-          [label]="'Issues'"
-          [options]="grid.filteredAvailableIssues()"
-          [selected]="grid.selectedIssues()"
-          [searchQuery]="grid.issueSearchQuery()"
-          (searchQueryChange)="grid.issueSearchQuery.set($event)"
-          (selectAll)="grid.selectAllIssues()"
-          (clearVisible)="grid.clearAllIssuesVisible()"
-          (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.showListFilter()) {
-      <pc-dg-filter-section
-        [title]="'Filter by List'"
-        [active]="grid.selectedListId() !== null"
-        [open]="grid.selectedListId() !== null"
-        (clear)="grid.clearListFilter()"
-      >
-        <pc-singleselect-filter
-          [label]="'List'"
-          [options]="listOptions()"
-          [selected]="grid.selectedListId()"
-          [radioName]="'selectedListMobile'"
-          (select)="grid.selectListFilter($event)"
-        />
-      </pc-dg-filter-section>
-      } @if (grid.allowFilter()) {
-      <div class="border-t border-base-200 pt-1 flex flex-col">
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showFiltersState() || (grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters())"
-          [disabled]="grid.hasActiveAdvancedFilters()"
-          (click)="onToggleFilters()"
-        >
-          <pc-icon name="funnel" [size]="4"></pc-icon> Advanced Filter
-        </button>
-        <button
-          class="btn btn-ghost btn-sm justify-start gap-2 text-xs"
-          [class.text-primary]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-          [disabled]="grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-          (click)="grid.openAdvancedFilterBuilder()"
-        >
-          <pc-icon name="adjustments-horizontal" [size]="4"></pc-icon> Advanced Query Builder
-        </button>
-      </div>
-      }
-    </div>
-  </pc-grid-tool-btn>
-  }
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <!-- Overflow: secondary actions -->
-  <pc-grid-tool-btn icon="ellipsis-vertical" tip="More" [hasDropdown]="true" [dropdownEnd]="true">
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[50] w-52 p-2 shadow">
-      <li
-        [class.disabled]="grid.disableRefresh() || grid.isRefreshing()"
-        [class.cursor-not-allowed]="grid.disableRefresh()"
-        [class.text-neutral-400]="grid.disableRefresh()"
-        [class.pointer-events-none]="grid.disableRefresh()"
-      >
-        <a (click)="onRefresh()"><pc-icon name="arrow-path" [size]="4"></pc-icon> Refresh</a>
-      </li>
-      @if (grid.addRoute() || !grid.disableMerge()) {
-      <div class="divider my-0"></div>
-      } @if (grid.addRoute()) {
-      <li
-        [class.disabled]="!grid.hasSingleSelection()"
-        [class.cursor-not-allowed]="!grid.hasSingleSelection()"
-        [class.text-neutral-400]="!grid.hasSingleSelection()"
-        [class.pointer-events-none]="!grid.hasSingleSelection()"
-      >
-        <a (click)="onClone()"><pc-icon name="document-duplicate" [size]="4"></pc-icon> Clone</a>
-      </li>
-      } @if (!grid.disableMerge()) {
-      <li
-        [class.disabled]="grid.getCountRowSelected() !== 2"
-        [class.cursor-not-allowed]="grid.getCountRowSelected() !== 2"
-        [class.text-neutral-400]="grid.getCountRowSelected() !== 2"
-        [class.pointer-events-none]="grid.getCountRowSelected() !== 2"
-      >
-        <a (click)="onMergeSelected()"><pc-icon name="merge" [size]="4"></pc-icon> Merge</a>
-      </li>
-      } @if (!grid.disableImport() || !grid.disableExport()) {
-      <div class="divider my-0"></div>
-      } @if (!grid.disableImport()) {
-      <li>
-        <a (click)="onImportCsv()"><pc-icon name="arrow-up-tray" [size]="4"></pc-icon> Import CSV</a>
-      </li>
-      } @if (!grid.disableExport()) {
-      <li>
-        <a (click)="onExportCsv()"><pc-icon name="arrow-down-tray" [size]="4"></pc-icon> Export CSV</a>
-      </li>
-      } @if (grid.showArchiveIcon()) {
-      <li>
-        <a (click)="onToggleArchive()">
-          <pc-icon [name]="grid.archiveIcon()" [size]="4"></pc-icon> {{ grid.archiveTip() }}
-        </a>
-      </li>
-      }
-    </ul>
-  </pc-grid-tool-btn>
-</ul>
-
-<!-- Desktop toolbar -->
-<ul class="menu menu-horizontal hidden lg:flex flex-row pl-0 relative z-30">
-  <pc-grid-tool-btn [enabled]="!!grid.addRoute()" [tip]="'Add'" [icon]="grid.plusIcon()" (action)="onAdd()" />
-  <!-- Delete / Merge / Clone live in the bulk action bar (shown on selection), not the toolbar (§2). -->
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableRefresh() && !grid.isRefreshing()"
-    [spinning]="grid.isRefreshing()"
-    [tip]="'Refresh the grid'"
-    icon="arrow-path"
-    (action)="onRefresh()"
-  />
-  <pc-grid-tool-btn [enabled]="!!grid.canUndo()" [tip]="'Undo'" icon="arrow-uturn-left" (action)="onUndo()" />
-  <pc-grid-tool-btn [enabled]="!!grid.canRedo()" [tip]="'Redo'" icon="arrow-uturn-right" (action)="onRedo()" />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableImport()"
-    [tip]="'Import data from CSV'"
-    icon="arrow-up-tray"
-    (action)="onImportCsv()"
-  />
-  <pc-grid-tool-btn
-    [enabled]="!grid.disableExport()"
-    [tip]="'Download as CSV'"
-    icon="arrow-down-tray"
-    (action)="onExportCsv()"
-  />
-
-  @if (grid.showTagFilter()) {
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-  } @if (grid.showTagFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'label'"
-    [tip]="'Filter by Tags'"
-    [active]="grid.selectedTags().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedTags().length"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by Tags'"
-      [active]="grid.selectedTags().length > 0"
-      (clear)="grid.clearTagsFilter()"
-    >
-      <pc-multiselect-filter
-        [label]="'Tags'"
-        [options]="grid.filteredAvailableTags()"
-        [selected]="grid.selectedTags()"
-        [searchQuery]="grid.tagSearchQuery()"
-        (searchQueryChange)="grid.tagSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllTags()"
-        (clearVisible)="grid.clearAllTagsVisible()"
-        (toggle)="grid.toggleTagFilter($event.value, $event.checked)"
-      />
-      <p
-        class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
-        i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
-      >
-        Checked tags combine with OR and land as one chip.
-      </p>
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  } @if (grid.showIssueFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'shield-exclamation'"
-    [tip]="'Filter by Issues'"
-    [active]="grid.selectedIssues().length > 0"
-    [hasDropdown]="true"
-    [badge]="grid.selectedIssues().length"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by Issues'"
-      [active]="grid.selectedIssues().length > 0"
-      (clear)="grid.clearIssuesFilter()"
-    >
-      <pc-multiselect-filter
-        [label]="'Issues'"
-        [options]="grid.filteredAvailableIssues()"
-        [selected]="grid.selectedIssues()"
-        [searchQuery]="grid.issueSearchQuery()"
-        (searchQueryChange)="grid.issueSearchQuery.set($event)"
-        [maxHeight]="14"
-        (selectAll)="grid.selectAllIssues()"
-        (clearVisible)="grid.clearAllIssuesVisible()"
-        (toggle)="grid.toggleIssueFilter($event.value, $event.checked)"
-      />
-      <p
-        class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
-        i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
-      >
-        Checked issues combine with OR and land as one chip.
-      </p>
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  } @if (grid.showListFilter()) {
-  <pc-grid-tool-btn
-    [icon]="'queue-list'"
-    [tip]="'Filter by List'"
-    [active]="grid.selectedListId() !== null"
-    [hasDropdown]="true"
-  >
-    <pc-dg-filter-dropdown
-      [title]="'Filter by List'"
-      [active]="grid.selectedListId() !== null"
-      (clear)="grid.clearListFilter()"
-    >
-      <pc-singleselect-filter
-        [label]="'List'"
-        [options]="listOptions()"
-        [selected]="grid.selectedListId()"
-        [radioName]="'selectedList'"
-        [maxHeight]="14"
-        (select)="grid.selectListFilter($event)"
-      />
-    </pc-dg-filter-dropdown>
-  </pc-grid-tool-btn>
-  }
-
-  <pc-grid-tool-btn
-    icon="funnel"
-    tip="Advanced Filters"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showFiltersState() || grid.hasActiveFilters() && !grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveAdvancedFilters()"
-    (action)="onToggleFilters()"
-  />
-  <pc-grid-tool-btn
-    icon="adjustments-horizontal"
-    tip="Advanced Query Builder"
-    [hidden]="!grid.allowFilter()"
-    [active]="grid.showAdvancedFilterBuilder() || grid.hasActiveAdvancedFilters()"
-    [enabled]="!grid.hasActiveFilters() || grid.hasActiveAdvancedFilters()"
-    (action)="grid.openAdvancedFilterBuilder()"
-  />
-
-  <pc-icon name="ellipsis-vertical" class="text-neutral-400 mt-1" [size]="6"></pc-icon>
-
-  <pc-grid-tool-btn [icon]="'view-column'" [tip]="'Columns'" [hasDropdown]="true">
-    <pc-dg-columns-dropdown [grid]="grid" />
-  </pc-grid-tool-btn>
-
-  <pc-grid-tool-btn
-    [icon]="grid.archiveIcon()"
-    [tip]="grid.archiveTip()"
-    [hidden]="!grid.showArchiveIcon()"
-    [active]="grid.archiveModeState()"
-    (action)="onToggleArchive()"
-  />
-</ul>
 ```
 
 ## File: apps/frontend/src/app/dashboard.routes.ts
@@ -51826,168 +52509,6 @@ export class TeamViewComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-import type { DataGrid } from '../datagrid';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
-
-/**
- * Column visibility dropdown shared by the mobile and desktop toolbars.
- * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
- * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
- *
- * The grid is passed in as an input rather than injected: as projected
- * content it does not reliably resolve the same `DataGrid` instance.
- *
- * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
- * in after init, so as an isolated component this would render once and stay
- * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
- * signal) to recompute once the columns are populated.
- */
-@Component({
-  selector: 'pc-dg-columns-dropdown',
-  template: `
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
-      </li>
-      @for (col of cols(); track col.field) {
-        @if (col.field) {
-          <li>
-            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
-                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
-              />
-              <span class="label-text">{{ col.headerName || col.field }}</span>
-            </label>
-          </li>
-        }
-      }
-    </ul>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class DataGridColumnsDropdownComponent {
-  public readonly grid = input.required<DataGrid<keyof Models, unknown>>();
-
-  protected readonly cols = computed<ColDef[]>(() => {
-    // Establish a reactive dependency on the colVisibility signal so the list
-    // recomputes once the (non-signal) column defs are populated after init.
-    this.grid().getColVisibilityMap();
-    return this.grid().getColDefsForToolbar();
-  });
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
-
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid = inject(DataGrid);
-
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
-
-  public onAdd() {
-    this.grid.doAdd();
-  }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    void this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
 }
 ```
 
