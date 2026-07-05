@@ -39,7 +39,7 @@ const KNOWN_APP_ROUTES = new Set([
   '/tags',
   '/issues',
   '/users',
-  '/configuration',
+  '/workspace',
   '/settings',
   '/profile',
   '/help',

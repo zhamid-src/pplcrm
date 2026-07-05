@@ -258,7 +258,7 @@ export class EmailsStore {
           cancelText: 'Cancel',
         });
         if (confirmed) {
-          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
+          void this.router.navigate(['/workspace'], { queryParams: { tab: 'email-sync' } });
         }
       } else {
         this.alerts.showError(getUserErrorMessage(e, 'Sync failed. Please try again.'));

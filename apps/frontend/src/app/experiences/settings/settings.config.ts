@@ -44,28 +44,28 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     fields: [
       {
         key: 'organization.name',
-        label: 'Organization Name',
+        label: 'Organization name',
         type: 'text',
         placeholder: 'PeopleCRM',
         defaultValue: '',
       },
       {
         key: 'organization.contact_email',
-        label: 'Primary Contact Email',
+        label: 'Primary contact email',
         type: 'email',
         placeholder: 'hello@example.com',
         defaultValue: '',
       },
       {
         key: 'organization.phone',
-        label: 'Contact Phone',
+        label: 'Contact phone',
         type: 'tel',
         placeholder: '(555) 555-1234',
         defaultValue: '',
       },
       {
         key: 'organization.address',
-        label: 'Mailing Address',
+        label: 'Mailing address',
         type: 'textarea',
         placeholder: '123 Main St, Springfield, USA',
         defaultValue: '',
@@ -80,28 +80,28 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     fields: [
       {
         key: 'communications.default_from_name',
-        label: 'Default From Name',
+        label: 'Default from name',
         type: 'text',
         placeholder: 'PeopleCRM Team',
         defaultValue: '',
       },
       {
         key: 'communications.default_from_email',
-        label: 'Default From Email',
+        label: 'Default from email',
         type: 'select',
         defaultValue: '',
         options: [],
       },
       {
         key: 'communications.reply_to',
-        label: 'Reply-to Email',
+        label: 'Reply-to email',
         type: 'select',
         defaultValue: '',
         options: [],
       },
       {
         key: 'communications.footer_disclaimer',
-        label: 'Email Footer Disclaimer',
+        label: 'Email footer disclaimer',
         type: 'textarea',
         placeholder: 'Paid for by PeopleCRM Campaign…',
         defaultValue: '',
@@ -109,7 +109,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       },
       {
         key: 'communications.double_opt_in',
-        label: 'Require Double Opt-in',
+        label: 'Require double opt-in',
         type: 'toggle',
         defaultValue: false,
         helper: 'Require new web-form subscribers to confirm via email before they receive newsletters.',
@@ -124,79 +124,79 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     fields: [
       {
         key: 'notifications.mention_in_comment',
-        label: 'Mentioned in Comment',
+        label: 'Mentioned in comment',
         type: 'toggle',
         helper: 'Alerts when someone mentions you in a thread',
         defaultValue: true,
       },
       {
         key: 'notifications.mention_in_comment_in_app',
-        label: 'Mentioned in Comment (In-App)',
+        label: 'Mentioned in comment (in-app)',
         type: 'toggle',
         defaultValue: true,
       },
       {
         key: 'notifications.task_assigned',
-        label: 'Task Assigned',
+        label: 'Task assigned',
         type: 'toggle',
         helper: 'Alerts when a task is assigned to you',
         defaultValue: true,
       },
       {
         key: 'notifications.task_assigned_in_app',
-        label: 'Task Assigned (In-App)',
+        label: 'Task assigned (in-app)',
         type: 'toggle',
         defaultValue: true,
       },
       {
         key: 'notifications.task_due',
-        label: 'Task Due Today / Overdue',
+        label: 'Task due today / overdue',
         type: 'toggle',
         helper: 'Daily reminder check of active tasks due',
         defaultValue: true,
       },
       {
         key: 'notifications.task_due_in_app',
-        label: 'Task Due Today / Overdue (In-App)',
+        label: 'Task due today / overdue (in-app)',
         type: 'toggle',
         defaultValue: true,
       },
       {
         key: 'notifications.person_assigned',
-        label: 'Person Assigned',
+        label: 'Person assigned',
         type: 'toggle',
         helper: 'Alerts when a contact ownership is assigned to you',
         defaultValue: true,
       },
       {
         key: 'notifications.person_assigned_in_app',
-        label: 'Person Assigned (In-App)',
+        label: 'Person assigned (in-app)',
         type: 'toggle',
         defaultValue: true,
       },
       {
         key: 'notifications.export_ready',
-        label: 'Export Ready',
+        label: 'Export ready',
         type: 'toggle',
         helper: 'Receive download link when CSV export finishes',
         defaultValue: true,
       },
       {
         key: 'notifications.export_ready_in_app',
-        label: 'Export Ready (In-App)',
+        label: 'Export ready (in-app)',
         type: 'toggle',
         defaultValue: true,
       },
       {
         key: 'notifications.import_summary',
-        label: 'Import Summary',
+        label: 'Import summary',
         type: 'toggle',
         helper: 'Spreadsheet import completion stats report',
         defaultValue: true,
       },
       {
         key: 'notifications.import_summary_in_app',
-        label: 'Import Summary (In-App)',
+        label: 'Import summary (in-app)',
         type: 'toggle',
         defaultValue: true,
       },
@@ -204,13 +204,13 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
   },
   {
     id: 'access',
-    title: 'Teams & Access',
+    title: 'Teams & access',
     description: 'Default role for new invites and tenant-wide MFA enforcement.',
     icon: 'user-group',
     fields: [
       {
         key: 'access.default_role',
-        label: 'Default Invite Role',
+        label: 'Default invite role',
         type: 'select',
         defaultValue: 'editor',
         options: [
@@ -231,21 +231,21 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
 
   {
     id: 'sla',
-    title: 'SLA Configuration',
+    title: 'Service levels',
     description:
       'Configure Service Level Agreements (SLAs) for tasks and emails, including working days, business hours, and status warning/critical thresholds.',
     icon: 'clock',
     fields: [
       {
         key: 'sla.tasks_hours',
-        label: 'Task SLA Target (working hours)',
+        label: 'Task SLA target (working hours)',
         type: 'number',
         defaultValue: 24,
         helper: 'Maximum working hours allowed to resolve or close a task before it is considered an SLA breach.',
       },
       {
         key: 'sla.emails_hours',
-        label: 'Email SLA Target (working hours)',
+        label: 'Email SLA target (working hours)',
         type: 'number',
         defaultValue: 24,
         helper:
@@ -253,49 +253,49 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       },
       {
         key: 'sla.email_warning_threshold',
-        label: 'Email SLA Warning Threshold (breaches)',
+        label: 'Email SLA warning threshold (breaches)',
         type: 'number',
         defaultValue: 1,
         helper: 'Number of active open email breaches that triggers a "Warning" (yellow) status on the dashboard.',
       },
       {
         key: 'sla.email_critical_threshold',
-        label: 'Email SLA Critical Threshold (breaches)',
+        label: 'Email SLA critical threshold (breaches)',
         type: 'number',
         defaultValue: 4,
         helper: 'Number of active open email breaches that triggers a "Critical" (red) status on the dashboard.',
       },
       {
         key: 'sla.task_warning_threshold',
-        label: 'Task SLA Warning Threshold (breaches)',
+        label: 'Task SLA warning threshold (breaches)',
         type: 'number',
         defaultValue: 1,
         helper: 'Number of active open task breaches that triggers a "Warning" (yellow) status on the dashboard.',
       },
       {
         key: 'sla.task_critical_threshold',
-        label: 'Task SLA Critical Threshold (breaches)',
+        label: 'Task SLA critical threshold (breaches)',
         type: 'number',
         defaultValue: 4,
         helper: 'Number of active open task breaches that triggers a "Critical" (red) status on the dashboard.',
       },
       {
         key: 'sla.working_days',
-        label: 'Working Days (comma-separated: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0=Sun)',
+        label: 'Working days (comma-separated: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0=Sun)',
         type: 'text',
         defaultValue: '1,2,3,4,5',
         helper: 'Days of the week counted towards the SLA response and resolution calculations.',
       },
       {
         key: 'sla.working_hours_start',
-        label: 'Working Hours Start (HH:MM)',
+        label: 'Working hours start (HH:MM)',
         type: 'text',
         defaultValue: '09:00',
         helper: 'Beginning of the business day for working time tracking.',
       },
       {
         key: 'sla.working_hours_end',
-        label: 'Working Hours End (HH:MM)',
+        label: 'Working hours end (HH:MM)',
         type: 'text',
         defaultValue: '17:00',
         helper: 'End of the business day for working time tracking.',
@@ -310,7 +310,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     fields: [
       {
         key: 'appearance.theme',
-        label: 'Default Theme',
+        label: 'Default theme',
         type: 'select',
         defaultValue: 'system',
         options: [
@@ -321,7 +321,7 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
       },
       {
         key: 'appearance.date_format',
-        label: 'Date Format',
+        label: 'Date format',
         type: 'select',
         defaultValue: 'MMMM d, yyyy',
         options: [
@@ -340,14 +340,14 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
     fields: [
       {
         key: 'integrations.webhook_api_key',
-        label: 'Webhook API Key',
+        label: 'Webhook API key',
         type: 'text',
         placeholder: 'Not generated yet',
         defaultValue: '',
       },
       {
         key: 'integrations.webhook_api_secret',
-        label: 'Webhook API Secret',
+        label: 'Webhook API secret',
         type: 'password',
         placeholder: 'Not generated yet',
         defaultValue: '',

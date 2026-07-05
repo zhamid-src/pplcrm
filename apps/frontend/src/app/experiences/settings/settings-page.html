@@ -1,36 +1,62 @@
-<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
-  <header class="mb-8 space-y-2">
-    <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">
-      @switch (currentMode) { @case ('settings') { Personal } @case ('configuration') { Workspace } }
-    </p>
-    <h1 class="text-3xl font-bold tracking-tight">
-      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Workspace settings } }
-    </h1>
-    <p class="text-base-content/70">
-      @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
-      ('configuration') { Control tenant-wide defaults and account management for PeopleCRM. } }
-    </p>
+<div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+  <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <p class="text-[10px] font-semibold uppercase tracking-widest text-base-content/50">
+        @switch (currentMode) { @case ('settings') { Personal } @case ('workspace') { Workspace } }
+      </p>
+      <h1 class="text-xl font-bold tracking-tight">
+        @switch (currentMode) { @case ('settings') { Settings } @case ('workspace') { Workspace settings } }
+      </h1>
+      <p class="text-xs text-base-content/60">
+        @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
+        ('workspace') { Applies to everyone in this workspace. Changes take effect on save. } }
+      </p>
+    </div>
+
+    <!-- Header actions act on the currently selected config-driven section (§save-in-header) -->
+    @if (hasLoaded() && headerSection(); as section) {
+    <div class="flex shrink-0 items-center gap-2">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm"
+        (click)="resetSection(section)"
+        [disabled]="!isSectionDirty(section) || isSaving(section)"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary btn-sm"
+        (click)="saveSection(section)"
+        [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+      >
+        @if (isSaving(section)) {
+        <span class="loading loading-spinner loading-xs"></span>
+        } Save settings
+      </button>
+    </div>
+    }
   </header>
 
   @if (hasLoaded()) {
-  <div class="flex flex-col gap-8 md:flex-row md:items-start lg:gap-12">
+  <div class="flex flex-col gap-6 md:flex-row md:items-start lg:gap-8">
     <!-- Sidebar Navigation -->
-    <aside class="w-48 md:sticky md:top-8 shrink-0">
-      <nav class="flex flex-row overflow-x-auto pb-4 md:flex-col md:pb-0 gap-1" aria-label="Settings sections">
+    <aside class="w-full md:w-56 md:sticky md:top-8 shrink-0">
+      <nav
+        class="flex flex-row gap-0.5 overflow-x-auto rounded-xl border border-base-200 bg-base-100 p-1.5 shadow-sm md:flex-col md:overflow-visible"
+        aria-label="Settings sections"
+      >
         @for (section of visibleSections; track trackSection($index, section)) {
         <button
           type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected(section.config.id)"
-          [class.text-base-content]="isSelected(section.config.id)"
-          [class.text-base-content]="!isSelected(section.config.id)"
-          [class.opacity-70]="!isSelected(section.config.id)"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected(section.config.id) ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection(section.config.id)"
         >
           <pc-icon
             [name]="section.config.icon"
-            class="mr-2 opacity-80"
             [class.text-primary]="isSelected(section.config.id)"
+            [class.opacity-70]="!isSelected(section.config.id)"
             [size]="5"
           />
           {{ section.config.title }}
@@ -48,64 +74,65 @@
         <button
           id="settings-nav-passkeys"
           type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('passkeys')"
-          [class.opacity-70]="!isSelected('passkeys')"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('passkeys') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('passkeys')"
         >
           <pc-icon
             name="lock-closed"
-            class="mr-2 opacity-80"
             [class.text-primary]="isSelected('passkeys')"
+            [class.opacity-70]="!isSelected('passkeys')"
             [size]="5"
           />
           Passkeys
         </button>
-        } @if (currentMode === 'configuration') {
+        } @if (currentMode === 'workspace') {
         <!-- Email Sync custom section -->
         <button
           id="settings-nav-email-sync"
           type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('email-sync')"
-          [class.opacity-70]="!isSelected('email-sync')"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('email-sync') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('email-sync')"
         >
-          <pc-icon name="envelope" class="mr-2 opacity-80" [class.text-primary]="isSelected('email-sync')" [size]="5" />
-          Email Sync
+          <pc-icon
+            name="envelope"
+            [class.text-primary]="isSelected('email-sync')"
+            [class.opacity-70]="!isSelected('email-sync')"
+            [size]="5"
+          />
+          Email sync
         </button>
 
         <!-- Domains custom section -->
         <button
           id="settings-nav-domains"
           type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('domains')"
-          [class.opacity-70]="!isSelected('domains')"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('domains') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('domains')"
         >
           <pc-icon
             name="globe-americas"
-            class="mr-2 opacity-80"
             [class.text-primary]="isSelected('domains')"
+            [class.opacity-70]="!isSelected('domains')"
             [size]="5"
           />
-          Domain Verification
+          Domain verification
         </button>
 
         <!-- Donations custom section -->
         <button
           id="settings-nav-donations"
           type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('donations')"
-          [class.opacity-70]="!isSelected('donations')"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('donations') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('donations')"
         >
           <pc-icon
             name="currency-dollar"
-            class="mr-2 opacity-80"
             [class.text-primary]="isSelected('donations')"
+            [class.opacity-70]="!isSelected('donations')"
             [size]="5"
           />
           Donations
@@ -115,12 +142,16 @@
         <button
           id="settings-nav-billing"
           type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('billing')"
-          [class.opacity-70]="!isSelected('billing')"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('billing') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('billing')"
         >
-          <pc-icon name="credit-card" class="mr-2 opacity-80" [class.text-primary]="isSelected('billing')" [size]="5" />
+          <pc-icon
+            name="credit-card"
+            [class.text-primary]="isSelected('billing')"
+            [class.opacity-70]="!isSelected('billing')"
+            [size]="5"
+          />
           Billing
         </button>
 
@@ -128,12 +159,16 @@
         <button
           id="settings-nav-account"
           type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('account')"
-          [class.opacity-70]="!isSelected('account')"
+          class="flex items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors"
+          [ngClass]="isSelected('account') ? 'bg-primary/10 text-primary' : 'text-base-content/70 hover:bg-base-200/60'"
           (click)="selectSection('account')"
         >
-          <pc-icon name="user-circle" class="mr-2 opacity-80" [class.text-primary]="isSelected('account')" [size]="5" />
+          <pc-icon
+            name="user-circle"
+            [class.text-primary]="isSelected('account')"
+            [class.opacity-70]="!isSelected('account')"
+            [size]="5"
+          />
           Account
         </button>
         }
@@ -143,23 +178,23 @@
     <!-- Main Content Area -->
     <main class="flex-1 w-full max-w-4xl">
       @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
         @if (section.config.id !== 'notifications') {
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">{{ section.config.title }}</h2>
-          <p class="mt-1 text-sm text-base-content/60">{{ section.config.description }}</p>
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">{{ section.config.description }}</p>
         </header>
         }
 
         <!-- (form content) -->
-        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-8" novalidate>
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-5" novalidate>
           @if (section.config.id === 'integrations') {
           <div class="border-b border-base-200 pb-6 mb-6">
             <div
               class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
               <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Webhook API Credentials</h4>
+                <h4 class="text-sm font-bold text-base-content/90">Webhook API credentials</h4>
                 <p class="text-xs text-base-content/50">
                   Generate a secure API key and signing secret to verify webhooks from pplcrm.
                 </p>
@@ -175,11 +210,11 @@
           </div>
           }
 
-          <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
+          <div class="grid gap-x-5 gap-y-4 md:grid-cols-2">
             @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
             'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1.5">
-              <label [attr.for]="field.controlName" class="text-sm font-semibold text-base-content/90">
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1">
+              <label [attr.for]="field.controlName" class="text-[13px] font-medium text-base-content/70">
                 {{ field.config.label }}
               </label>
 
@@ -272,7 +307,7 @@
           @if (section.config.id === 'communications') {
           <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
             <div class="space-y-1">
-              <h3 class="text-base font-semibold text-base-content/90">Verified Sender Email Addresses</h3>
+              <h3 class="text-sm font-semibold text-base-content/90">Verified sender email addresses</h3>
               <p class="text-xs text-base-content/50">
                 Add and verify email addresses to select them as campaign defaults.
               </p>
@@ -327,7 +362,7 @@
 
             <!-- List of verified emails -->
             <div class="space-y-2">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified Sender Emails</h4>
+              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified sender emails</h4>
               @if (verifiedEmailsList().length === 0) {
               <p class="text-sm text-base-content/50 italic">
                 No verified sender emails yet. Add one above to request verification.
@@ -350,7 +385,7 @@
               class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
             >
               <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Address Fingerprints Maintenance</h4>
+                <h4 class="text-sm font-bold text-base-content/90">Address fingerprints maintenance</h4>
                 <p class="text-xs text-base-content/50">
                   Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
                   changed.
@@ -374,9 +409,9 @@
             </div>
           </div>
           } @if (section.config.id === 'notifications') {
-          <div class="space-y-6">
-            <div class="border-b border-base-200 pb-5 space-y-1">
-              <h2 class="text-2xl font-semibold tracking-tight">My Notification Preferences</h2>
+          <div class="space-y-5">
+            <div class="border-b border-base-200 pb-3 space-y-1">
+              <h2 class="text-sm font-semibold tracking-tight">My notification preferences</h2>
               <p class="text-sm text-base-content/60">
                 Customize which email and in-app notifications you would like to receive for your own account.
               </p>
@@ -426,49 +461,18 @@
           </div>
           }
 
-          <!-- Sticky Action Footer inside the card -->
-          <div
-            class="sticky bottom-4 z-10 mt-8 -mx-6 -mb-6 md:-mx-8 md:-mb-8 border-t border-base-200 bg-base-100/95 backdrop-blur px-6 py-4 md:px-8 rounded-b-2xl flex items-center justify-between gap-4"
-          >
-            <div>
-              @if (isSaving(section)) {
-              <span class="text-sm font-medium text-base-content/60 flex items-center">
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                Saving changes…
-              </span>
-              }
-            </div>
-
-            <div class="flex items-center gap-3">
-              <button
-                type="button"
-                class="btn btn-ghost hover:bg-base-200"
-                (click)="resetSection(section)"
-                [disabled]="!isSectionDirty(section) || isSaving(section)"
-              >
-                Reset
-              </button>
-              <button
-                type="submit"
-                class="btn btn-primary min-w-[120px]"
-                [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-              >
-                @if (isSaving(section)) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Save
-              </button>
-            </div>
-          </div>
+          <!-- Save/Cancel live in the page header (§save-in-header); hidden submit keeps Enter-to-save working -->
+          <button type="submit" class="hidden" aria-hidden="true" tabindex="-1"></button>
         </form>
       </section>
       } }
 
       <!-- Email Sync custom section -->
-      @if (currentMode === 'configuration' && isSelected('email-sync')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Email Sync</h2>
-          <p class="mt-1 text-sm text-base-content/60">
+      @if (currentMode === 'workspace' && isSelected('email-sync')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Email sync</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
             Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
           </p>
         </header>
@@ -519,11 +523,11 @@
       }
 
       <!-- Domains custom section -->
-      @if (currentMode === 'configuration' && isSelected('domains')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Domain Verification</h2>
-          <p class="mt-1 text-sm text-base-content/60">
+      @if (currentMode === 'workspace' && isSelected('domains')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Domain verification</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
             Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
           </p>
         </header>
@@ -532,11 +536,11 @@
       }
 
       <!-- Donations custom section -->
-      @if (currentMode === 'configuration' && isSelected('donations')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Donations</h2>
-          <p class="mt-1 text-sm text-base-content/60">
+      @if (currentMode === 'workspace' && isSelected('donations')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Donations</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
             Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
             account.
           </p>
@@ -546,11 +550,11 @@
       }
 
       <!-- Billing custom section -->
-      @if (currentMode === 'configuration' && isSelected('billing')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Billing</h2>
-          <p class="mt-1 text-sm text-base-content/60">
+      @if (currentMode === 'workspace' && isSelected('billing')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Billing</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
             Manage your subscription plans, view invoice details, and update payment methods.
           </p>
         </header>
@@ -560,10 +564,10 @@
 
       <!-- Passkeys custom section -->
       @if (currentMode === 'settings' && isSelected('passkeys')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Passkeys</h2>
-          <p class="mt-1 text-sm text-base-content/60">
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Passkeys</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
             Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
           </p>
         </header>
@@ -572,11 +576,11 @@
       }
 
       <!-- Account custom section -->
-      @if (currentMode === 'configuration' && isSelected('account')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Account</h2>
-          <p class="mt-1 text-sm text-base-content/60">
+      @if (currentMode === 'workspace' && isSelected('account')) {
+      <section class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+        <header class="border-b border-base-200 pb-3">
+          <h2 class="text-sm font-semibold tracking-tight">Account</h2>
+          <p class="mt-0.5 text-xs text-base-content/60">
             Manage your organization account — pause billing or permanently delete all data.
           </p>
         </header>

@@ -215,7 +215,7 @@ export const SidebarItems: ISidebarItem[] = [
       },
       {
         name: 'Workspace',
-        route: '/configuration',
+        route: '/workspace',
         icon: 'wrench-screwdriver',
       },
       {

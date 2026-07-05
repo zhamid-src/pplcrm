@@ -96,7 +96,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone and uses a deliberate **Save** with a leave-guard.',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **System** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
       },
       { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
       {
@@ -107,15 +107,15 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
           '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
         ],
       },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace configuration' },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace settings' },
       {
         kind: 'list',
         items: [
           '**Organization** — your name, contact details, and mailing address.',
           '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
           '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & Access** — default role for invitations and the MFA requirement.',
-          '**SLA Configuration** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Teams & access** — default role for invitations and the MFA requirement.',
+          '**Service levels** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
           '**Appearance** — default theme and date format for the workspace.',
           '**Integrations & API** — webhook keys and connected services.',
           '**Billing** — your plan and payment details.',

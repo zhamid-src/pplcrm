@@ -1,9 +1,10 @@
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { DatePipe, NgClass } from '@angular/common';
+import { Component, DestroyRef, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
 import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 
 import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
 import { AuthService } from '../../auth/auth-service';
@@ -44,17 +45,20 @@ interface SectionState {
     AccountSettingsComponent,
     PasskeySettingsComponent,
     DatePipe,
+    NgClass,
   ],
   templateUrl: './settings-page.html',
 })
 export class SettingsPage implements OnInit {
   private readonly alerts = inject(AlertService);
   private readonly auth = inject(AuthService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
 
-  protected readonly currentMode: 'settings' | 'configuration';
+  protected readonly currentMode: 'settings' | 'workspace';
   protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
   protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
   protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
@@ -79,6 +83,12 @@ export class SettingsPage implements OnInit {
   protected readonly sectionStates: SectionState[];
   protected readonly sections = SETTINGS_SECTIONS;
   protected readonly selectedSectionId = signal<string>('');
+  // The config-driven section currently shown, so the header Save/Cancel act on it.
+  // Custom self-saving sections (billing, domains, email-sync, etc.) aren't in sectionStates → returns null.
+  protected readonly headerSection = computed<SectionState | null>(() => {
+    const id = this.selectedSectionId();
+    return this.visibleSections.find((s) => s.config.id === id) ?? null;
+  });
   protected readonly senderEmailInput = signal('');
   protected readonly settingsSvc = inject(SettingsService);
   private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
@@ -93,8 +103,22 @@ export class SettingsPage implements OnInit {
   public readonly section = input<string>();
 
   constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration') || 'settings';
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'workspace') || 'settings';
     this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    // Own the navbar breadcrumb strip; without this the page inherits the previous
+    // page's stale trail (e.g. "Households" from the grid it was reached from).
+    this.breadcrumbs.set({
+      crumbs: [{ label: this.currentMode === 'workspace' ? 'Workspace' : 'Settings' }],
+      positionLabel: null,
+      hasPrev: false,
+      hasNext: false,
+      prevLabel: 'Previous record',
+      nextLabel: 'Next record',
+      onPrev: () => undefined,
+      onNext: () => undefined,
+    });
+    this.destroyRef.onDestroy(() => this.breadcrumbs.clear());
 
     effect(() => {
       const s = this.section();
@@ -103,7 +127,7 @@ export class SettingsPage implements OnInit {
       } else {
         if (this.currentMode === 'settings') {
           this.selectedSectionId.set('notifications');
-        } else if (this.currentMode === 'configuration') {
+        } else if (this.currentMode === 'workspace') {
           this.selectedSectionId.set('organization');
         }
       }
@@ -142,7 +166,7 @@ export class SettingsPage implements OnInit {
     if (this.currentMode === 'settings') {
       return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
     }
-    if (this.currentMode === 'configuration') {
+    if (this.currentMode === 'workspace') {
       return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
     }
     return [];
