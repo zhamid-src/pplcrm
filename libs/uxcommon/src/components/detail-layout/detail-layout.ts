@@ -19,6 +19,7 @@ import { DetailHeader } from '../detail-header/detail-header';
           [subtitle]="subtitle()"
           [crumbs]="crumbs()"
           [eyebrow]="eyebrow()"
+          [statusChip]="statusChip()"
           [icon]="icon()"
           [iconSize]="iconSize()"
           [isLoading]="isLoading()"
@@ -70,6 +71,8 @@ export class DetailLayout {
   public subtitle = input<string | null | undefined>();
   public crumbs = input<PcBreadcrumb[]>([]);
   public eyebrow = input<string>('');
+  /** Optional success-tinted status chip beside the title (§3). */
+  public statusChip = input<string | null>(null);
   public icon = input<PcIconNameType | null | undefined>();
   public iconSize = input<number>(6);
   public isLoading = input.required<boolean>();

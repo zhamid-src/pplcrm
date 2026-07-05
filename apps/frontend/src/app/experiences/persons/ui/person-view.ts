@@ -157,6 +157,15 @@ export class PersonView {
     { label: this.fullName() || 'Person' },
   ]);
 
+  // Status chip beside the name (§3), derived honestly from the person's tags.
+  protected readonly statusChip = computed<string | null>(() => {
+    const tags = this.tags().map((t) => t.toLowerCase());
+    if (tags.includes('donor')) return 'Donor';
+    if (tags.includes('volunteer')) return 'Volunteer';
+    if (tags.includes('host')) return 'Host';
+    return null;
+  });
+
   // Social icons
   public socialLinks = computed<SocialLinkDef[]>(() => {
     const p = this.person();

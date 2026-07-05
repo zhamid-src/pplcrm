@@ -1,6 +1,7 @@
 <pc-detail-layout
   [title]="fullName() || 'Person'"
   [eyebrow]="'Person'"
+  [statusChip]="statusChip()"
   [crumbs]="crumbs()"
   [isLoading]="isLoading()"
   [hasRecord]="!initialized() || !!person()"
