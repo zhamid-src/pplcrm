@@ -153,6 +153,7 @@ export const dashboardRoutes: Routes = [
         path: 'add',
         loadComponent: () =>
           import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+        canDeactivate: [unsavedChangesGuard],
       },
       {
         path: ':id',

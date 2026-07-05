@@ -1,509 +1,613 @@
 @if (mode() === 'options') {
-<div class="flex h-full bg-base-200">
-  <div class="hidden flex-1 flex-col items-center justify-center px-10 lg:flex">
-    <div class="max-w-md text-center lg:text-left">
-      <h2 class="text-2xl font-semibold">Create a newsletter</h2>
-      <p class="mt-2 text-base text-base-content/70">
-        Choose the type of newsletter you'd like to send and walk through a guided setup that covers the summary,
-        design, audience, and timing of your send.
-      </p>
-    </div>
-  </div>
-
-  <aside class="flex w-full max-w-2xl flex-col border-l border-base-300 bg-base-100 shadow-xl">
-    <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
-      <div class="flex items-center gap-3">
-        <button class="btn btn-ghost btn-sm" (click)="close()">
-          <pc-icon name="arrow-uturn-left" class="mr-1"></pc-icon>
-          Back
-        </button>
-        <h1 class="text-lg font-semibold">New newsletter</h1>
-      </div>
-    </header>
-
-    <section class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
-      <div class="flex flex-col gap-5">
-        <div class="rounded-lg border border-base-200 bg-base-100 p-5 shadow-sm">
-          <h2 class="text-lg font-semibold">How would you like to send?</h2>
-          <p class="mt-1 text-sm text-base-content/70">
-            Pick from a traditional newsletter or set up automations for ongoing sends.
-          </p>
-        </div>
-
-        <button
-          class="card card-compact border border-base-300 bg-base-100 transition hover:border-primary"
-          type="button"
-          (click)="selectRegular()"
-        >
-          <div class="card-body flex-row items-center gap-4">
-            <div class="rounded-full bg-primary/10 p-3 text-primary">
-              <pc-icon name="star" [size]="6"></pc-icon>
-            </div>
-            <div class="flex-1 text-left">
-              <h3 class="text-lg font-semibold">Regular</h3>
-              <p class="text-sm text-base-content/70">
-                Build a one-time newsletter, design it, choose who receives it, and decide when it goes out.
-              </p>
-            </div>
-            <pc-icon name="chevron-right" [size]="5" class="text-base-content/60"></pc-icon>
-          </div>
-        </button>
-
-        <button
-          class="card card-compact border border-base-200 bg-base-100 opacity-80 transition hover:border-base-300"
-          type="button"
-          (click)="selectAutomated()"
-        >
-          <div class="card-body flex-row items-center gap-4">
-            <div class="rounded-full bg-base-300/70 p-3 text-base-content/70">
-              <pc-icon name="arrow-path" [size]="6"></pc-icon>
-            </div>
-            <div class="flex-1 text-left">
-              <h3 class="text-lg font-semibold">Automated</h3>
-              <p class="text-sm text-base-content/60">
-                Set up drip campaigns or recurring sends triggered by events. (Coming soon)
-              </p>
-            </div>
-            <pc-icon name="information-circle" [size]="5" class="text-base-content/50"></pc-icon>
-          </div>
-        </button>
-      </div>
-    </section>
-  </aside>
-</div>
-} @else if (mode() === 'regular') {
 <div class="flex h-full flex-col bg-base-100">
-  <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
-    <div class="flex items-center gap-3">
-      <h1 class="text-lg font-semibold">Regular newsletter</h1>
-    </div>
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="close()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletters
+    </button>
+    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
   </header>
 
   <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
+    <div class="mx-auto flex w-full max-w-2xl flex-col gap-5">
+      <div>
+        <h2 class="text-[15px] font-semibold">How would you like to send?</h2>
+        <p class="mt-1 text-sm text-base-content/60">Pick a one-time newsletter, or set up ongoing automated sends.</p>
+      </div>
+
+      <button
+        type="button"
+        class="flex items-center gap-4 rounded-lg border border-base-300 bg-base-100 p-5 text-left transition-colors hover:border-primary"
+        (click)="selectRegular()"
+      >
+        <div class="rounded-full bg-primary/10 p-3 text-primary"><pc-icon name="envelope" [size]="6"></pc-icon></div>
+        <div class="flex-1">
+          <h3 class="text-[15px] font-semibold">Regular newsletter</h3>
+          <p class="text-sm text-base-content/60">Build it, choose who receives it, and decide when it goes out.</p>
+        </div>
+        <pc-icon name="chevron-right" [size]="5" class="text-base-content/50"></pc-icon>
+      </button>
+
+      <div class="rounded-lg border border-base-200 bg-base-200/40 p-5">
+        <div class="flex items-center gap-4">
+          <div class="rounded-full bg-base-300/70 p-3 text-base-content/60">
+            <pc-icon name="arrow-path" [size]="6"></pc-icon>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <h3 class="text-[15px] font-semibold text-base-content/70">Automated</h3>
+              <span
+                class="rounded-full bg-base-300 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-base-content/60"
+                >Coming soon</span
+              >
+            </div>
+            <p class="text-sm text-base-content/55">Drip campaigns and recurring sends triggered by events.</p>
+          </div>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost mt-3 text-primary" (click)="selectRegular()">
+          Create a regular newsletter instead
+        </button>
+      </div>
+    </div>
+  </main>
+</div>
+} @else if (mode() === 'regular') {
+<div class="flex h-full flex-col bg-base-100">
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="close()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletters
+    </button>
+    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">New newsletter</h1>
+
+    <!-- Pill steps: current = solid, completed = tint & clickable, future = muted & locked (narrates why) -->
+    <ol class="mt-4 flex flex-wrap gap-2">
+      @for (label of steps; track label; let idx = $index) { @let stepNo = idx + 1; @let isCurrent = currentStep() ===
+      stepNo; @let isDone = currentStep() > stepNo; @let isLocked = stepNo > currentStep();
+      <li>
+        <button
+          type="button"
+          class="flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium transition-colors"
+          [class.bg-primary]="isCurrent"
+          [class.text-primary-content]="isCurrent"
+          [class.bg-primary/10]="isDone"
+          [class.text-primary]="isDone"
+          [class.cursor-pointer]="isDone"
+          [class.hover:bg-primary/20]="isDone"
+          [class.bg-base-200]="isLocked"
+          [class.text-base-content/50]="isLocked"
+          [class.cursor-not-allowed]="isLocked"
+          [class.tooltip]="isLocked"
+          [class.tooltip-bottom]="isLocked"
+          [attr.data-tip]="isLocked ? lockedStepTooltip : null"
+          [attr.aria-disabled]="isLocked"
+          (click)="goToStep(stepNo)"
+        >
+          <span
+            class="flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold"
+            [class.bg-primary-content/25]="isCurrent"
+            [class.bg-primary/15]="isDone"
+            [class.bg-base-300]="isLocked"
+          >
+            @if (isDone) { <pc-icon name="check-circle" [size]="3"></pc-icon> } @else { {{ stepNo }} }
+          </span>
+          <span>{{ label }}</span>
+        </button>
+      </li>
+      }
+    </ol>
+  </header>
+
+  <main class="flex-1 overflow-y-auto px-6 py-6">
     <form
       [formGroup]="regularForm"
-      class="mx-auto flex w-full flex-col gap-6 transition-all duration-300"
+      class="mx-auto flex w-full flex-col gap-6"
       [class.max-w-3xl]="currentStep() !== 2"
       [class.max-w-none]="currentStep() === 2"
     >
-      <ol class="steps steps-horizontal w-full overflow-x-auto pb-2">
-        @for (label of steps; track label; let idx = $index) {
-        <li
-          class="step transition hover:text-primary"
-          [class.step-primary]="currentStep() >= idx + 1"
-          [class.cursor-pointer]="currentStep() > idx + 1"
-          [style.pointer-events]="currentStep() > idx + 1 ? 'auto' : 'none'"
-          (click)="goToStep(idx + 1)"
+      @switch (currentStep()) {
+
+      <!-- ============ STEP 1 · TEMPLATE ============ -->
+      @case (1) {
+      <div class="grid gap-5 sm:grid-cols-2">
+        @for (t of templateOptions; track t.id) {
+        <button
+          type="button"
+          class="overflow-hidden rounded-xl border text-left transition-colors"
+          [class.border-primary]="selectedTemplate() === t.id"
+          [class.bg-primary/5]="selectedTemplate() === t.id"
+          [class.border-base-300]="selectedTemplate() !== t.id"
+          [class.hover:border-primary/50]="selectedTemplate() !== t.id"
+          (click)="selectTemplate(t.id)"
         >
-          <span class="text-xs font-medium">{{ label }}</span>
-        </li>
+          <div
+            class="flex h-40 items-center justify-center border-b border-base-200 bg-base-200/40 text-xs text-base-content/40"
+          >
+            template preview
+          </div>
+          <div class="flex items-start gap-3 p-4">
+            <div class="rounded-lg bg-primary/10 p-2 text-primary"><pc-icon [name]="t.icon" [size]="5"></pc-icon></div>
+            <div>
+              <h4 class="text-[15px] font-semibold text-base-content">{{ t.name }}</h4>
+              <p class="mt-0.5 text-xs text-base-content/60">{{ t.description }}</p>
+            </div>
+          </div>
+        </button>
         }
-      </ol>
-
-      @switch (currentStep()) { @case (1) {
-      <div class="space-y-6">
-        <div class="rounded border border-base-300 bg-base-100 p-4">
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Layout Templates</h3>
-          <p class="mt-1 text-sm text-base-content/70">
-            Choose a starting design template for your newsletter. You will customize its contents and styling in the
-            next step.
-          </p>
-        </div>
-
-        <div class="grid gap-6 sm:grid-cols-2">
-          <!-- WELCOME CARD -->
-          <button
-            type="button"
-            class="card card-compact border transition text-left w-full h-auto overflow-hidden group hover:shadow-md cursor-pointer"
-            [class.border-primary]="selectedTemplate() === 'welcome'"
-            [class.bg-primary/5]="selectedTemplate() === 'welcome'"
-            [class.border-base-300]="selectedTemplate() !== 'welcome'"
-            [class.bg-base-100]="selectedTemplate() !== 'welcome'"
-            (click)="selectTemplate('welcome')"
-          >
-            <div
-              class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors"
-            >
-              <img
-                src="assets/newsletters/welcome.png"
-                alt="Welcome Email Preview"
-                class="h-full w-auto object-contain rounded shadow-md border border-base-300/50 transition-transform duration-300 group-hover:scale-102"
-              />
-            </div>
-            <div class="p-4 flex items-start gap-3">
-              <div class="rounded-lg bg-primary/10 p-2.5 text-primary text-xl">👋</div>
-              <div>
-                <h4 class="text-base font-bold text-base-content">Welcome Email</h4>
-                <p class="text-xs text-base-content/60 mt-0.5 font-normal">
-                  Warm greeting, hero image, social links & footer.
-                </p>
-              </div>
-            </div>
-          </button>
-
-          <!-- PRODUCT CARD -->
-          <button
-            type="button"
-            class="card card-compact border transition text-left w-full h-auto overflow-hidden group hover:shadow-md cursor-pointer"
-            [class.border-primary]="selectedTemplate() === 'product'"
-            [class.bg-primary/5]="selectedTemplate() === 'product'"
-            [class.border-base-300]="selectedTemplate() !== 'product'"
-            [class.bg-base-100]="selectedTemplate() !== 'product'"
-            (click)="selectTemplate('product')"
-          >
-            <div
-              class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors"
-            >
-              <img
-                src="assets/newsletters/product.png"
-                alt="Product Announcement Preview"
-                class="h-full w-auto object-contain rounded shadow-md border border-base-300/50 transition-transform duration-300 group-hover:scale-102"
-              />
-            </div>
-            <div class="p-4 flex items-start gap-3">
-              <div class="rounded-lg bg-success/10 p-2.5 text-success text-xl">🚀</div>
-              <div>
-                <h4 class="text-base font-bold text-base-content">Product Announcement</h4>
-                <p class="text-xs text-base-content/60 mt-0.5 font-normal">
-                  Hero image, list of updates, CTA button & footer.
-                </p>
-              </div>
-            </div>
-          </button>
-
-          <!-- NEWSLETTER CARD -->
-          <button
-            type="button"
-            class="card card-compact border transition text-left w-full h-auto overflow-hidden group hover:shadow-md cursor-pointer"
-            [class.border-primary]="selectedTemplate() === 'newsletter'"
-            [class.bg-primary/5]="selectedTemplate() === 'newsletter'"
-            [class.border-base-300]="selectedTemplate() !== 'newsletter'"
-            [class.bg-base-100]="selectedTemplate() !== 'newsletter'"
-            (click)="selectTemplate('newsletter')"
-          >
-            <div
-              class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors"
-            >
-              <img
-                src="assets/newsletters/newsletter.png"
-                alt="Weekly Digest Preview"
-                class="h-full w-auto object-contain rounded shadow-md border border-base-300/50 transition-transform duration-300 group-hover:scale-102"
-              />
-            </div>
-            <div class="p-4 flex items-start gap-3">
-              <div class="rounded-lg bg-warning/10 p-2.5 text-warning text-xl">📰</div>
-              <div>
-                <h4 class="text-base font-bold text-base-content">Weekly Digest</h4>
-                <p class="text-xs text-base-content/60 mt-0.5 font-normal">
-                  Heading divider, weekly digest content & footer.
-                </p>
-              </div>
-            </div>
-          </button>
-
-          <!-- EMPTY CARD -->
-          <button
-            type="button"
-            class="card card-compact border transition text-left w-full h-auto overflow-hidden group hover:shadow-md cursor-pointer"
-            [class.border-primary]="selectedTemplate() === 'empty'"
-            [class.bg-primary/5]="selectedTemplate() === 'empty'"
-            [class.border-base-300]="selectedTemplate() !== 'empty'"
-            [class.bg-base-100]="selectedTemplate() !== 'empty'"
-            (click)="selectTemplate('empty')"
-          >
-            <div
-              class="h-60 w-full bg-base-200/50 flex items-center justify-center p-4 border-b border-base-200 group-hover:bg-base-200 transition-colors"
-            >
-              <img
-                src="assets/newsletters/empty.png"
-                alt="Empty Canvas Preview"
-                class="h-full w-auto object-contain rounded shadow-md border border-base-300/50 transition-transform duration-300 group-hover:scale-102"
-              />
-            </div>
-            <div class="p-4 flex items-start gap-3">
-              <div class="rounded-lg bg-base-300/70 p-2.5 text-base-content text-xl">📄</div>
-              <div>
-                <h4 class="text-base font-bold text-base-content">Empty Canvas</h4>
-                <p class="text-xs text-base-content/60 mt-0.5 font-normal">
-                  Start from scratch with a single heading block.
-                </p>
-              </div>
-            </div>
-          </button>
-        </div>
       </div>
-      } @case (2) {
+      }
+
+      <!-- ============ STEP 2 · CONTENT ============ -->
+      @case (2) {
       <div class="space-y-4">
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-base-200 bg-base-100 p-3"
+        >
+          <p class="max-w-xl text-xs text-base-content/60">
+            Personalize with merge fields like
+            <code class="rounded bg-base-200 px-1 py-0.5 font-mono text-[11px] text-base-content/80"
+              >{{ mergeFieldExample }}</code
+            >. The footer disclaimer and unsubscribe link are appended automatically from
+            <a [routerLink]="commsSettingsLink" class="link link-primary">Workspace settings → Communications</a>.
+          </p>
+          <button type="button" class="btn btn-sm btn-outline" (click)="sendTestEmail()">
+            <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+            Send test email
+          </button>
+        </div>
         <pc-visual-newsletter-editor
           [htmlContent]="regularForm.get('htmlContent')?.value || ''"
           [plainTextContent]="regularForm.get('plainTextContent')?.value || ''"
-          (htmlContentChange)="regularForm.get('htmlContent')?.setValue($event)"
+          (htmlContentChange)="regularForm.get('htmlContent')?.setValue($event); onFieldInput()"
           (plainTextContentChange)="regularForm.get('plainTextContent')?.setValue($event)"
         ></pc-visual-newsletter-editor>
       </div>
-      } @case (3) {
+      }
+
+      <!-- ============ STEP 3 · AUDIENCE & DETAILS ============ -->
+      @case (3) {
       <div class="grid gap-6 md:grid-cols-2">
-        <!-- LEFT: EMAIL DETAILS -->
-        <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-          <div class="border-b border-base-200 pb-3 mb-2">
-            <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/75 flex items-center gap-2">
-              <pc-icon name="document-text" [size]="4" class="text-primary"></pc-icon>
-              Email Details
-            </h3>
-            <p class="text-xs text-base-content/50 mt-1">Specify subject and sender info.</p>
+        <!-- Email details -->
+        <div class="space-y-4 rounded-xl border border-base-200 bg-base-100 p-5">
+          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
+            <pc-icon name="document-text" [size]="4" class="text-primary"></pc-icon>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/70">Email details</h3>
           </div>
 
           <div>
-            <label class="label text-xs font-semibold py-1">Subject</label>
-            <input class="input input-bordered w-full input-sm" formControlName="subject" placeholder="Subject line" />
-            @if (isInvalid('subject')) {
-            <p class="mt-1 text-xs text-error">Subject is required.</p>
-            }
-          </div>
-          <div>
-            <label class="label text-xs font-semibold py-1">Preview text</label>
+            <label class="mb-1 block text-xs font-medium">Subject</label>
             <input
-              class="input input-bordered w-full input-sm"
+              #subjectInput
+              class="input input-bordered input-sm w-full"
+              formControlName="subject"
+              placeholder="What recipients see first"
+              (input)="onFieldInput()"
+            />
+            <p
+              class="mt-1 text-xs"
+              [class.text-error]="isInvalid('subject')"
+              [class.text-base-content/55]="!isInvalid('subject')"
+            >
+              {{ subjectCoach }}
+            </p>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium">Preview text</label>
+            <input
+              class="input input-bordered input-sm w-full"
               formControlName="previewText"
-              placeholder="Optional preview text"
+              placeholder="Optional — shows after the subject in most inboxes"
+              (input)="onFieldInput()"
             />
           </div>
+
           <div>
-            <label class="label text-xs font-semibold py-1">From name</label>
+            <label class="mb-1 block text-xs font-medium">From name</label>
             <input
-              class="input input-bordered w-full input-sm"
+              #fromNameInput
+              class="input input-bordered input-sm w-full"
               formControlName="fromName"
-              placeholder="Who is sending?"
+              placeholder="Who is sending"
+              (input)="onFieldInput()"
             />
             @if (isInvalid('fromName')) {
-            <p class="mt-1 text-xs text-error">From name is required.</p>
+            <p class="mt-1 text-xs text-error">{{ fromNameCoach }}</p>
             }
           </div>
+
           <div>
-            <label class="label text-xs font-semibold py-1">From address</label>
-            <input
-              class="input input-bordered w-full input-sm"
+            <label class="mb-1 block text-xs font-medium">From address</label>
+            @if (verifiedSenders().length) {
+            <select
+              #fromAddressInput
+              class="select select-bordered select-sm w-full"
               formControlName="fromAddress"
-              placeholder="sender@example.com"
-            />
-            @if (isInvalid('fromAddress')) {
-            <p class="mt-1 text-xs text-error">Enter a valid email address.</p>
+              (change)="onFieldInput()"
+            >
+              <option value="" disabled>Choose a verified sender</option>
+              @for (sender of verifiedSenders(); track sender) {
+              <option [value]="sender">{{ sender }}</option>
+              }
+            </select>
+            <button type="button" class="link link-primary mt-1 text-xs" (click)="goToVerifySender()">
+              Verify a new sender…
+            </button>
+            } @else {
+            <div class="rounded-lg border border-dashed border-base-300 p-4 text-center">
+              <p class="text-xs text-base-content/60">
+                No verified senders yet — a verified address stops your sends from bouncing or spoofing.
+              </p>
+              <button type="button" class="btn btn-xs btn-primary mt-2" (click)="goToVerifySender()">
+                Verify a sender
+              </button>
+            </div>
+            } @if (isInvalid('fromAddress')) {
+            <p class="mt-1 text-xs text-error">{{ fromAddressCoach }}</p>
+            } @if (verifiedSenders().length) {
+            <p class="mt-1 text-xs text-base-content/50">Prefilled from Workspace settings → Communications.</p>
             }
           </div>
         </div>
 
-        <!-- RIGHT: AUDIENCE & RECIPIENTS -->
-        <div class="space-y-6 rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-          <div class="border-b border-base-200 pb-3">
-            <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/75 flex items-center gap-2">
+        <!-- Audience -->
+        <div class="space-y-5 rounded-xl border border-base-200 bg-base-100 p-5">
+          <div class="flex items-center gap-2 border-b border-base-200 pb-3">
+            <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-base-content/70">Audience</h3>
+          </div>
+
+          <!-- Include lists -->
+          <div>
+            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Include lists</h4>
+            @if (loadingLists()) {
+            <div class="skeleton h-5 w-2/3"></div>
+            } @else {
+            <div class="flex flex-wrap gap-1.5">
+              @for (id of includeListIds(); track id) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+              >
+                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
+                <button type="button" (click)="removeIncludeList(id)" aria-label="Remove list">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (l of includeListSuggestions(); track l.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-primary hover:text-primary"
+                (click)="addIncludeList(l.id)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
+              </button>
+              } @if (!includeListIds().length && !includeListSuggestions().length) {
+              <span class="text-xs text-base-content/50">No lists yet — create one to target contacts.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Include tags -->
+          <div>
+            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Include tags</h4>
+            @if (loadingTags()) {
+            <div class="skeleton h-5 w-2/3"></div>
+            } @else {
+            <div class="flex flex-wrap gap-1.5">
+              @for (name of includeTagsList(); track name) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-secondary/15 px-2.5 py-1 text-xs font-medium text-secondary"
+              >
+                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
+                <button type="button" (click)="removeIncludeTag(name)" aria-label="Remove tag">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (t of includeTagSuggestions(); track t.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-secondary hover:text-secondary"
+                (click)="addIncludeTag(t.name)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
+              </button>
+              } @if (!includeTagsList().length && !includeTagSuggestions().length) {
+              <span class="text-xs text-base-content/50">No tags yet.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Exclude lists -->
+          <div>
+            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Exclude lists</h4>
+            @if (!loadingLists()) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (id of excludeListIds(); track id) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
+              >
+                <span class="tabular-nums">{{ listName(id) }} · {{ formatCount(listSize(id)) }}</span>
+                <button type="button" (click)="removeExcludeList(id)" aria-label="Remove exclusion">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (l of excludeListSuggestions(); track l.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
+                (click)="addExcludeList(l.id)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ l.name }} · {{ formatCount(l.size) }}</span>
+              </button>
+              } @if (!excludeListIds().length && !excludeListSuggestions().length) {
+              <span class="text-xs text-base-content/50">No lists to exclude.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Exclude tags -->
+          <div>
+            <h4 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-base-content/55">Exclude tags</h4>
+            @if (!loadingTags()) {
+            <div class="flex flex-wrap gap-1.5">
+              @for (name of excludeTagsList(); track name) {
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-error/10 px-2.5 py-1 text-xs font-medium text-error"
+              >
+                <span class="tabular-nums">{{ name }} · {{ formatCount(tagUsage(name)) }}</span>
+                <button type="button" (click)="removeExcludeTag(name)" aria-label="Remove exclusion">
+                  <pc-icon name="x-mark" [size]="3"></pc-icon>
+                </button>
+              </span>
+              } @for (t of excludeTagSuggestions(); track t.id) {
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-xs font-medium text-base-content/70 transition-colors hover:border-error hover:text-error"
+                (click)="addExcludeTag(t.name)"
+              >
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                <span class="tabular-nums">{{ t.name }} · {{ formatCount(t.usage) }}</span>
+              </button>
+              } @if (!excludeTagsList().length && !excludeTagSuggestions().length) {
+              <span class="text-xs text-base-content/50">No tags to exclude.</span>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Estimated audience — the math, in public -->
+          <div class="rounded-lg border border-base-300 bg-base-200/30 p-4">
+            <div class="mb-3 flex items-center gap-2">
               <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-              Target Audience
-            </h3>
-            <p class="text-xs text-base-content/50 mt-1">Select recipient lists and tags.</p>
-          </div>
-
-          <div>
-            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60">Send to lists</h4>
-            @if (loadingLists()) {
-            <div class="mt-2 space-y-2">
-              <div class="skeleton h-4 w-1/2"></div>
-              <div class="skeleton h-4 w-2/3"></div>
+              <span class="text-[11px] font-semibold uppercase tracking-wide text-base-content/60"
+                >Estimated audience</span
+              >
             </div>
-            } @else if (!availableLists().length) {
-            <p class="mt-2 text-xs text-base-content/60">No lists available yet. Create a list to target contacts.</p>
-            } @else {
-            <select class="select select-bordered select-sm mt-2 w-full" (change)="handleIncludeListSelect($event)">
-              <option value="">Select a list to include</option>
-              @for (list of availableLists(); track list.id) {
-              <option [value]="list.id" [disabled]="includeListIds().includes(list.id)">{{ list.name }}</option>
+            @if (hasAudienceSelection()) {
+            <dl class="space-y-1.5 text-sm">
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">In included lists</dt>
+                <dd class="tabular-nums">+{{ formatCount(includedListsTotal()) }}</dd>
+              </div>
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Matching included tags</dt>
+                <dd class="tabular-nums">+{{ formatCount(includedTagsTotal()) }}</dd>
+              </div>
+              @if (excludedListsTotal()) {
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Excluded by lists</dt>
+                <dd class="tabular-nums">−{{ formatCount(excludedListsTotal()) }}</dd>
+              </div>
+              } @if (excludedTagsTotal()) {
+              <div class="flex items-center justify-between">
+                <dt class="text-base-content/70">Excluded by tags</dt>
+                <dd class="tabular-nums">−{{ formatCount(excludedTagsTotal()) }}</dd>
+              </div>
               }
-            </select>
-            <div class="mt-2 flex flex-wrap gap-1.5">
-              @if (!includeListIds().length) {
-              <span class="text-[11px] text-base-content/50">No lists selected.</span>
-              } @else { @for (listId of includeListIds(); track listId) {
-              <pc-tagitem [name]="listName(listId)" (close)="removeIncludeList(listId)"></pc-tagitem>
-              } }
-            </div>
-            }
-          </div>
-
-          <div>
-            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60">Send to tags</h4>
-            @if (loadingTags()) {
-            <div class="mt-2 space-y-2">
-              <div class="skeleton h-4 w-1/2"></div>
-            </div>
+              <div class="flex items-center justify-between border-t border-base-300 pt-2 font-semibold">
+                <dt>Total</dt>
+                <dd class="tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
+              </div>
+            </dl>
+            <p class="mt-2 text-[11px] text-base-content/55">
+              @if (skipBounced()) { Overlap between lists and tags is removed, and previously bounced addresses are
+              skipped, when you send. } @else { Overlap is removed when you send. Bounced addresses are
+              <strong>not</strong> being skipped (Workspace setting). }
+            </p>
             } @else {
-            <div class="mt-2 rounded border border-base-200 bg-base-50 p-2">
-              <pc-tags
-                [tags]="includeTagsList()"
-                [enableAutoComplete]="true"
-                placeholder="Search tags to include"
-                (tagsChange)="handleIncludeTagsChange($event)"
-              ></pc-tags>
-            </div>
+            <p class="text-sm text-base-content/60">Add a list or tag above to see who this newsletter reaches.</p>
             }
-          </div>
-
-          <div>
-            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60">Exclude lists</h4>
-            @if (loadingLists()) {
-            <div class="mt-2 space-y-2">
-              <div class="skeleton h-4 w-1/2"></div>
-            </div>
-            } @else if (!availableLists().length) {
-            <p class="mt-2 text-xs text-base-content/60">No lists to exclude.</p>
-            } @else {
-            <select class="select select-bordered select-sm mt-2 w-full" (change)="handleExcludeListSelect($event)">
-              <option value="">Select a list to exclude</option>
-              @for (list of availableLists(); track list.id) {
-              <option [value]="list.id" [disabled]="excludeListIds().includes(list.id)">{{ list.name }}</option>
-              }
-            </select>
-            <div class="mt-2 flex flex-wrap gap-1.5">
-              @if (!excludeListIds().length) {
-              <span class="text-[11px] text-base-content/50">No exclusions.</span>
-              } @else { @for (listId of excludeListIds(); track listId) {
-              <pc-tagitem [name]="listName(listId)" (close)="removeExcludeList(listId)"></pc-tagitem>
-              } }
-            </div>
-            }
-          </div>
-
-          <div>
-            <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/60">Exclude tags</h4>
-            @if (loadingTags()) {
-            <div class="mt-2 space-y-2">
-              <div class="skeleton h-4 w-1/2"></div>
-            </div>
-            } @else {
-            <div class="mt-2 rounded border border-base-200 bg-base-50 p-2">
-              <pc-tags
-                [tags]="excludeTagsList()"
-                [enableAutoComplete]="true"
-                placeholder="Search tags to exclude"
-                (tagsChange)="handleExcludeTagsChange($event)"
-              ></pc-tags>
-            </div>
-            }
-          </div>
-
-          <div class="rounded-lg border border-primary/20 bg-primary/5 p-3 flex items-center justify-between">
-            <div>
-              <span class="text-xs font-semibold uppercase tracking-wider text-primary">Estimated Audience</span>
-              <p class="text-[11px] text-base-content/60 mt-0.5">Calculated target contact count.</p>
-            </div>
-            <span class="badge badge-primary font-bold">{{ estimatedAudienceCount() }} recipients</span>
           </div>
         </div>
       </div>
-      } @case (4) {
-      <div class="space-y-5">
-        <div>
-          <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">Send timing</h3>
-          <p class="mt-1 text-sm text-base-content/70">Send immediately or schedule for later.</p>
-        </div>
-        <div class="space-y-3">
-          <label class="flex cursor-pointer items-center gap-3 rounded border border-base-200 px-4 py-3">
-            <input type="radio" class="radio" value="now" formControlName="timingMode" />
-            <div>
-              <p class="font-medium">Send now</p>
-              <p class="text-sm text-base-content/70">We’ll queue and send as soon as you hit send.</p>
+      }
+
+      <!-- ============ STEP 4 · REVIEW & SEND ============ -->
+      @case (4) {
+      <div class="grid gap-6 md:grid-cols-2">
+        <!-- Review -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
+          <h3
+            class="mb-3 border-b border-base-200 pb-3 text-[11px] font-semibold uppercase tracking-wide text-base-content/70"
+          >
+            Review
+          </h3>
+          <dl class="divide-y divide-base-200 text-sm">
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Template</dt>
+              <dd class="font-medium">{{ selectedTemplateName() }}</dd>
             </div>
-          </label>
-          <label class="flex cursor-pointer items-center gap-3 rounded border border-base-200 px-4 py-3">
-            <input type="radio" class="radio" value="schedule" formControlName="timingMode" />
-            <div>
-              <p class="font-medium">Schedule for later</p>
-              <p class="text-sm text-base-content/70">Pick a date and time. We’ll deliver it automatically.</p>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Subject</dt>
+              <dd class="truncate text-right font-medium">{{ regularForm.get('subject')?.value || '—' }}</dd>
             </div>
-          </label>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">From</dt>
+              <dd class="truncate text-right font-medium">
+                {{ regularForm.get('fromName')?.value }} &lt;{{ regularForm.get('fromAddress')?.value || '—' }}&gt;
+              </dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Audience</dt>
+              <dd class="font-medium tabular-nums text-primary">{{ peopleLabel(estimatedAudienceCount()) }}</dd>
+            </div>
+            <div class="flex items-center justify-between gap-4 py-2.5">
+              <dt class="text-base-content/60">Timing</dt>
+              <dd class="text-right font-medium">
+                @if (regularForm.get('timingMode')?.value === 'schedule') { {{ scheduledDateDisplay() }} } @else { Send
+                now }
+              </dd>
+            </div>
+          </dl>
         </div>
-        @if (regularForm.get('timingMode')?.value === 'schedule') {
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div class="relative flex flex-col gap-2">
-            <label class="label">Send date</label>
-            <button
-              type="button"
-              class="btn btn-outline normal-case justify-between w-full"
-              (click)="toggleDatePicker()"
+
+        <!-- Send timing -->
+        <div class="rounded-xl border border-base-200 bg-base-100 p-5">
+          <h3
+            class="mb-3 border-b border-base-200 pb-3 text-[11px] font-semibold uppercase tracking-wide text-base-content/70"
+          >
+            Send timing
+          </h3>
+          <div class="space-y-3">
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
             >
-              <span>{{ scheduledDateDisplay() }}</span>
-              <pc-icon name="chevron-down" [size]="4"></pc-icon>
-            </button>
-            @if (showDatePicker()) {
-            <div class="absolute left-0 top-full z-20 mt-2">
-              <calendar-date
-                class="cally bg-base-100 border border-base-300 shadow-lg rounded-box"
-                [value]="scheduledDateValue()"
-                (change)="onScheduledDateChange($event)"
-              >
-                <calendar-month></calendar-month>
-              </calendar-date>
+              <input
+                type="radio"
+                class="radio radio-sm radio-primary mt-0.5"
+                value="now"
+                formControlName="timingMode"
+                (change)="onTimingChange()"
+              />
+              <span>
+                <span class="block text-sm font-medium">Send now</span>
+                <span class="block text-xs text-base-content/60">Queued the moment you confirm.</span>
+              </span>
+            </label>
+            <label
+              class="flex cursor-pointer items-start gap-3 rounded-lg border border-base-200 p-3 has-[:checked]:border-primary has-[:checked]:bg-primary/5"
+            >
+              <input
+                type="radio"
+                class="radio radio-sm radio-primary mt-0.5"
+                value="schedule"
+                formControlName="timingMode"
+                (change)="onTimingChange()"
+              />
+              <span>
+                <span class="block text-sm font-medium">Schedule for later</span>
+                <span class="block text-xs text-base-content/60">Delivered automatically at the time you pick.</span>
+              </span>
+            </label>
+          </div>
+
+          @if (regularForm.get('timingMode')?.value === 'schedule') {
+          <div class="mt-4 grid gap-4 sm:grid-cols-2">
+            <div class="relative flex flex-col gap-1">
+              <label class="text-xs font-medium">Send date</label>
+              <button type="button" class="btn btn-sm btn-outline justify-between" (click)="toggleDatePicker()">
+                <span>{{ scheduledDateDisplay() }}</span>
+                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+              </button>
+              @if (showDatePicker()) {
+              <div class="absolute left-0 top-full z-20 mt-2">
+                <calendar-date
+                  class="cally rounded-box border border-base-300 bg-base-100 shadow-lg"
+                  [value]="scheduledDateValue()"
+                  (change)="onScheduledDateChange($event)"
+                >
+                  <calendar-month></calendar-month>
+                </calendar-date>
+              </div>
+              }
+              <input type="hidden" formControlName="scheduledDate" />
             </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-xs font-medium">Send time</label>
+              <input
+                type="time"
+                class="input input-bordered input-sm w-full"
+                formControlName="scheduledTime"
+                (input)="onTimingChange()"
+              />
+            </div>
+            @if (timingNeedsDate() && showFieldErrors()) {
+            <p class="text-xs text-error sm:col-span-2">{{ scheduleCoach }}</p>
             }
-            <input type="hidden" formControlName="scheduledDate" />
           </div>
-          <div>
-            <label class="label">Send time</label>
-            <input type="time" class="input input-bordered w-full" formControlName="scheduledTime" />
-          </div>
-          @if (timingNeedsDate()) {
-          <p class="sm:col-span-2 text-sm text-error">Select both a date and time to schedule the send.</p>
           }
         </div>
-        }
       </div>
       } }
-
-      <div class="mt-4 flex items-center justify-between border-t border-base-200 pt-4">
-        <div>
-          <button type="button" class="btn btn-ghost" (click)="handleBack()">
-            @if (currentStep() === 1) {
-            <pc-icon name="chevron-left" class="mr-1"></pc-icon>
-            Types } @else {
-            <pc-icon name="chevron-left" class="mr-1"></pc-icon>
-            Back }
-          </button>
-        </div>
-        <div class="flex gap-3">
-          @if (currentStep() < steps.length) {
-          <button type="button" class="btn btn-primary" (click)="handleNext()">
-            Next
-            <pc-icon name="chevron-right" class="ml-1"></pc-icon>
-          </button>
-          } @else {
-          <button type="button" class="btn btn-primary" (click)="sendRegular()">
-            <pc-icon name="paper-airplane" class="mr-1"></pc-icon>
-            Send
-          </button>
-          }
-        </div>
-      </div>
     </form>
   </main>
+
+  <!-- Persistent footer: Back/Cancel · Save draft · [spacer] · Next / Send to N people -->
+  <footer class="flex items-center gap-3 border-t border-base-200 bg-base-100 px-6 py-4">
+    <button type="button" class="btn btn-ghost btn-sm" (click)="handleBack()">
+      <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      @if (currentStep() === 1) { Back } @else { Back }
+    </button>
+    <button type="button" class="btn btn-ghost btn-sm" [disabled]="saving()" (click)="saveDraft()">
+      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } Save draft
+    </button>
+    <div class="flex-1"></div>
+    @if (currentStep() < 4) {
+    <button type="button" class="btn btn-primary btn-sm" (click)="handleNext()">
+      Next
+      <pc-icon name="chevron-right" [size]="4"></pc-icon>
+    </button>
+    } @else {
+    <button type="button" class="btn btn-primary btn-sm" [disabled]="saving()" (click)="sendRegular()">
+      @if (saving()) { <span class="loading loading-spinner loading-xs"></span> } @else {
+      <pc-icon name="paper-airplane" [size]="4"></pc-icon> } @if (regularForm.get('timingMode')?.value === 'schedule') {
+      Schedule for {{ peopleLabel(estimatedAudienceCount()) }} } @else { Send to {{
+      peopleLabel(estimatedAudienceCount()) }} }
+    </button>
+    }
+  </footer>
 </div>
 } @else {
 <div class="flex h-full flex-col bg-base-100">
-  <header class="flex items-center justify-between border-b border-base-200 px-6 py-4">
-    <div class="flex items-center gap-3">
-      <button class="btn btn-ghost btn-sm" (click)="close()">
-        <pc-icon name="arrow-uturn-left" class="mr-1"></pc-icon>
-        Back
-      </button>
-      <h1 class="text-lg font-semibold">Automated journeys</h1>
-    </div>
+  <header class="border-b border-base-200 px-6 py-4">
+    <button
+      type="button"
+      class="mb-2 flex items-center gap-1 text-xs text-base-content/60 hover:text-primary"
+      (click)="switchToOptions()"
+    >
+      <pc-icon name="chevron-left" [size]="3"></pc-icon>
+      Newsletter types
+    </button>
+    <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-base-content/50">Newsletter</p>
+    <h1 class="text-[22px] font-bold text-base-content">Automated journeys</h1>
   </header>
 
   <main class="flex-1 overflow-y-auto px-6 pb-10 pt-6">
     <div class="mx-auto max-w-xl rounded-lg border border-dashed border-base-300 bg-base-100 p-6 text-center">
-      <pc-icon name="information-circle" [size]="10" class="mx-auto text-base-content/50"></pc-icon>
-      <h3 class="mt-4 text-lg font-semibold">Automations coming soon</h3>
-      <p class="mt-2 text-sm text-base-content/70">
-        We’re working on automated journeys. Until then, create a regular newsletter.
+      <pc-icon name="arrow-path" [size]="10" class="mx-auto text-base-content/50"></pc-icon>
+      <h3 class="mt-4 text-[15px] font-semibold">Automations are coming soon</h3>
+      <p class="mt-2 text-sm text-base-content/60">
+        Until then, create a regular newsletter and send it now or on a schedule.
       </p>
-      <button class="btn btn-primary mt-4" type="button" (click)="selectRegular()">Create regular newsletter</button>
+      <button type="button" class="btn btn-primary btn-sm mt-4" (click)="selectRegular()">
+        Create a regular newsletter
+      </button>
     </div>
   </main>
 </div>

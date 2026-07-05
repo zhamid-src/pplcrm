@@ -4,6 +4,19 @@ import { sql } from 'kysely';
 import { BaseController } from '../../lib/base.controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
+
+const DEFAULT_FROM_NAME = 'PeopleCRM Team';
+const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
+
+export interface SendTestEmailInput {
+  subject: string;
+  html: string;
+  text?: string;
+  to: string;
+  fromName?: string;
+  fromEmail?: string;
+}
 
 export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
   constructor() {
@@ -217,6 +230,53 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       .execute();
 
     return updated;
+  }
+
+  public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
+    const db = this.getRepo().db;
+
+    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
+    // from name/email, otherwise fall back to the workspace Communications settings.
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenant_id)
+      .where('key', 'in', [
+        'communications.sendgrid_api_key',
+        'communications.sendgrid_subuser_username',
+        'communications.default_from_name',
+        'communications.default_from_email',
+        'communications.reply_to',
+      ])
+      .execute();
+
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingsRows) {
+      if (typeof row.value === 'string') {
+        settingsMap[row.key] = row.value;
+      }
+    }
+
+    const fromName = input.fromName || settingsMap['communications.default_from_name'] || DEFAULT_FROM_NAME;
+    const fromEmail = input.fromEmail || settingsMap['communications.default_from_email'] || DEFAULT_FROM_EMAIL;
+    const replyTo = settingsMap['communications.reply_to'] || undefined;
+    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+
+    const mailSvc = new NewsletterEmailService();
+    const delivered = await mailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients: [input.to],
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+      sendgridApiKey,
+      subuserUsername,
+    });
+
+    return { to: input.to, delivered };
   }
 
   public async getEngagementStats(tenant_id: string, id: string): Promise<any> {

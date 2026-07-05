@@ -5,26 +5,35 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { TagsService } from '@experiences/tags/services/tags-service';
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { SettingsService } from '../../settings/services/settings-service';
 import { NewsletterAddComponent } from './newsletter-add';
 import { NewslettersService } from '../services/newsletters-service';
 
 describe('NewsletterAddComponent', () => {
   let component: NewsletterAddComponent;
   let fixture: ComponentFixture<NewsletterAddComponent>;
-  let mockAlertSvc: any;
-  let mockListsSvc: any;
-  let mockTagsSvc: any;
-  let mockNewslettersSvc: any;
-  let mockRouter: any;
-  let mockActivatedRoute: any;
+  let mockAlertSvc: { showSuccess: ReturnType<typeof vi.fn>; showError: ReturnType<typeof vi.fn> };
+  let mockListsSvc: { getAll: ReturnType<typeof vi.fn> };
+  let mockTagsSvc: { getAll: ReturnType<typeof vi.fn> };
+  let mockNewslettersSvc: {
+    add: ReturnType<typeof vi.fn>;
+    send: ReturnType<typeof vi.fn>;
+    sendTest: ReturnType<typeof vi.fn>;
+  };
+  let mockRouter: { navigate: ReturnType<typeof vi.fn>; navigateByUrl: ReturnType<typeof vi.fn> };
+  let mockActivatedRoute: unknown;
+  let mockAuthSvc: { getUser: ReturnType<typeof vi.fn> };
+  let mockConfirmDlg: { confirm: ReturnType<typeof vi.fn> };
+  let mockSettingsSvc: { load: ReturnType<typeof vi.fn>; getValue: ReturnType<typeof vi.fn> };
+
+  const validDetails = { subject: 'Big News', fromName: 'Jane', fromAddress: 'jane@example.com' };
 
   beforeEach(async () => {
     mockAlertSvc = { showSuccess: vi.fn(), showError: vi.fn() };
     mockListsSvc = {
-      getAll: vi.fn().mockResolvedValue({
-        rows: [{ id: 'l1', name: 'VIP Donors', list_size: 50 }],
-        count: 1,
-      }),
+      getAll: vi.fn().mockResolvedValue({ rows: [{ id: 'l1', name: 'VIP Donors', list_size: 50 }], count: 1 }),
     };
     mockTagsSvc = {
       getAll: vi.fn().mockResolvedValue({
@@ -35,9 +44,16 @@ describe('NewsletterAddComponent', () => {
     mockNewslettersSvc = {
       add: vi.fn().mockResolvedValue({ id: 'nl-1' }),
       send: vi.fn().mockResolvedValue({ success: true }),
+      sendTest: vi.fn().mockResolvedValue({ to: 'me@example.com', delivered: 1 }),
     };
-    mockRouter = { navigate: vi.fn() };
+    mockRouter = { navigate: vi.fn(), navigateByUrl: vi.fn() };
     mockActivatedRoute = { snapshot: { paramMap: { get: () => null } } };
+    mockAuthSvc = { getUser: vi.fn().mockReturnValue({ email: 'me@example.com' }) };
+    mockConfirmDlg = { confirm: vi.fn().mockResolvedValue(true) };
+    mockSettingsSvc = {
+      load: vi.fn().mockResolvedValue({}),
+      getValue: vi.fn((_key: string, fallback: unknown) => fallback),
+    };
 
     await TestBed.configureTestingModule({
       imports: [NewsletterAddComponent],
@@ -49,6 +65,9 @@ describe('NewsletterAddComponent', () => {
         { provide: NewslettersService, useValue: mockNewslettersSvc },
         { provide: Router, useValue: mockRouter },
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
+        { provide: AuthService, useValue: mockAuthSvc },
+        { provide: ConfirmDialogService, useValue: mockConfirmDlg },
+        { provide: SettingsService, useValue: mockSettingsSvc },
       ],
     }).compileComponents();
 
@@ -58,14 +77,14 @@ describe('NewsletterAddComponent', () => {
     await fixture.whenStable();
   });
 
-  it('should load available lists and tags on init', () => {
+  it('loads available lists and tags on init', () => {
     expect(mockListsSvc.getAll).toHaveBeenCalledWith({ limit: 100, startRow: 0 });
     expect(mockTagsSvc.getAll).toHaveBeenCalledWith({ limit: 100, startRow: 0 });
     expect(component['availableLists']()).toEqual([{ id: 'l1', name: 'VIP Donors', size: 50 }]);
     expect(component['availableTags']()).toEqual([{ id: 't1', name: 'volunteer', usage: 15 }]);
   });
 
-  it('should switch between options, regular, and automated modes', () => {
+  it('switches between options, regular, and automated modes', () => {
     component['selectRegular']();
     expect(component['mode']()).toBe('regular');
     expect(component['currentStep']()).toBe(1);
@@ -77,7 +96,7 @@ describe('NewsletterAddComponent', () => {
     expect(component['mode']()).toBe('automated');
   });
 
-  it('should populate the html/plain text content when a template is selected', () => {
+  it('populates the html/plain text content when a template is selected', () => {
     component['selectRegular']();
     component['selectTemplate']('product');
 
@@ -86,7 +105,13 @@ describe('NewsletterAddComponent', () => {
     expect(component['regularForm'].get('plainTextContent')?.value).toContain('Introducing Visual Newsletters!');
   });
 
-  it('should not advance past step 3 when required summary fields are invalid', () => {
+  it('exposes sentence-case template names for the review step', () => {
+    component['selectRegular']();
+    component['selectTemplate']('welcome');
+    expect(component['selectedTemplateName']()).toBe('Welcome email');
+  });
+
+  it('does not advance past step 3 when required detail fields are invalid, and coaches', () => {
     component['selectRegular']();
     component['currentStep'].set(3);
 
@@ -94,27 +119,34 @@ describe('NewsletterAddComponent', () => {
 
     expect(component['currentStep']()).toBe(3);
     expect(component['isInvalid']('subject')).toBe(true);
+    expect(mockAlertSvc.showError).toHaveBeenCalledWith(component['subjectCoach']);
   });
 
-  it('should advance to step 4 once required summary fields are valid', () => {
+  it('advances to step 4 once required detail fields are valid', () => {
     component['selectRegular']();
     component['currentStep'].set(3);
-    component['regularForm'].patchValue({
-      subject: 'Hello',
-      fromName: 'Jane',
-      fromAddress: 'jane@example.com',
-    });
+    component['regularForm'].patchValue(validDetails);
 
     component['handleNext']();
 
     expect(component['currentStep']()).toBe(4);
   });
 
-  it('should add and remove included list ids, refreshing the audience estimate', () => {
+  it('only lets you jump to completed or current steps, never a locked future step', () => {
     component['selectRegular']();
-    const select = { value: 'l1' } as unknown as HTMLSelectElement;
+    component['currentStep'].set(2);
 
-    component['handleIncludeListSelect']({ target: select } as unknown as Event);
+    component['goToStep'](4); // locked future step
+    expect(component['currentStep']()).toBe(2);
+
+    component['goToStep'](1); // completed step
+    expect(component['currentStep']()).toBe(1);
+  });
+
+  it('adds and removes included lists, refreshing the audience estimate', () => {
+    component['selectRegular']();
+
+    component['addIncludeList']('l1');
     expect(component['includeListIds']()).toEqual(['l1']);
     expect(component['estimatedAudienceCount']()).toBe(50);
 
@@ -123,54 +155,79 @@ describe('NewsletterAddComponent', () => {
     expect(component['estimatedAudienceCount']()).toBe(0);
   });
 
-  it('should subtract excluded list sizes from the estimated audience', () => {
+  it('subtracts excluded tag usage from the estimated audience', () => {
     component['selectRegular']();
-    component['includeListIds'].set(['l1']);
-    component['handleExcludeTagsChange'](['volunteer']);
+    component['addIncludeList']('l1');
+    component['addExcludeTag']('volunteer');
 
-    // include list (50) + include tag usage (0, none included) - exclude tag usage (15)
+    // include list (50) - exclude tag usage (15)
     expect(component['estimatedAudienceCount']()).toBe(35);
   });
 
-  it('should resolve list names for the audience summary', () => {
+  it('does not offer the same list as both an include and exclude suggestion', () => {
+    component['selectRegular']();
+    component['addIncludeList']('l1');
+
+    expect(component['includeListSuggestions']().some((l) => l.id === 'l1')).toBe(false);
+    // moving it to exclude removes it from includes
+    component['addExcludeList']('l1');
+    expect(component['includeListIds']()).toEqual([]);
+    expect(component['excludeListIds']()).toEqual(['l1']);
+  });
+
+  it('resolves list names and sizes for chips', () => {
     component['selectRegular']();
     expect(component['listName']('l1')).toBe('VIP Donors');
+    expect(component['listSize']('l1')).toBe(50);
     expect(component['listName']('unknown')).toBe('List');
   });
 
-  it('should block sendRegular when the form is invalid', async () => {
-    component['selectRegular']();
-
-    await component['sendRegular']();
-
-    expect(mockNewslettersSvc.add).not.toHaveBeenCalled();
+  it('formats an honest people label', () => {
+    expect(component['peopleLabel'](1)).toBe('1 person');
+    expect(component['peopleLabel'](1312)).toBe('1,312 people');
   });
 
-  it('should save and send immediately when timing mode is "now"', async () => {
+  it('blocks send when required detail fields are missing and returns to step 3', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue({
-      subject: 'Big News',
-      fromName: 'Jane',
-      fromAddress: 'jane@example.com',
-      timingMode: 'now',
-    });
+    component['currentStep'].set(4);
 
     await component['sendRegular']();
 
+    expect(mockConfirmDlg.confirm).not.toHaveBeenCalled();
+    expect(mockNewslettersSvc.add).not.toHaveBeenCalled();
+    expect(component['currentStep']()).toBe(3);
+  });
+
+  it('runs a send preflight and, on confirm, saves then sends immediately for "now"', async () => {
+    component['selectRegular']();
+    component['regularForm'].patchValue({ ...validDetails, timingMode: 'now' });
+
+    await component['sendRegular']();
+
+    expect(mockConfirmDlg.confirm).toHaveBeenCalled();
     expect(mockNewslettersSvc.add).toHaveBeenCalledWith(
       expect.objectContaining({ subject: 'Big News', status: 'draft' }),
     );
     expect(mockNewslettersSvc.send).toHaveBeenCalledWith('nl-1');
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Newsletter sent successfully!');
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith(expect.stringContaining('Queued "Big News"'));
     expect(mockRouter.navigate).toHaveBeenCalled();
   });
 
-  it('should save without sending when timing mode is scheduled with a valid date/time', async () => {
+  it('does not send when the preflight is cancelled', async () => {
+    mockConfirmDlg.confirm.mockResolvedValueOnce(false);
+    component['selectRegular']();
+    component['regularForm'].patchValue({ ...validDetails, timingMode: 'now' });
+
+    await component['sendRegular']();
+
+    expect(mockNewslettersSvc.add).not.toHaveBeenCalled();
+    expect(mockNewslettersSvc.send).not.toHaveBeenCalled();
+  });
+
+  it('schedules (status scheduled, no immediate send) with a valid date/time', async () => {
     component['selectRegular']();
     component['regularForm'].patchValue({
-      subject: 'Scheduled News',
-      fromName: 'Jane',
-      fromAddress: 'jane@example.com',
+      ...validDetails,
       timingMode: 'schedule',
       scheduledDate: '2026-12-01',
       scheduledTime: '09:00',
@@ -180,39 +237,70 @@ describe('NewsletterAddComponent', () => {
 
     expect(mockNewslettersSvc.add).toHaveBeenCalledWith(expect.objectContaining({ status: 'scheduled' }));
     expect(mockNewslettersSvc.send).not.toHaveBeenCalled();
-    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Newsletter scheduled successfully.');
   });
 
-  it('should require a schedule date/time before sending a scheduled newsletter', async () => {
+  it('requires a schedule date/time before sending a scheduled newsletter', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue({
-      subject: 'Scheduled News',
-      fromName: 'Jane',
-      fromAddress: 'jane@example.com',
-      timingMode: 'schedule',
-    });
+    component['regularForm'].patchValue({ ...validDetails, timingMode: 'schedule' });
 
     await component['sendRegular']();
 
+    expect(mockConfirmDlg.confirm).not.toHaveBeenCalled();
     expect(mockNewslettersSvc.add).not.toHaveBeenCalled();
+    expect(mockAlertSvc.showError).toHaveBeenCalledWith(component['scheduleCoach']);
   });
 
-  it('should show an error alert when saving the newsletter fails', async () => {
+  it('saves a draft and exits with a toast', async () => {
     component['selectRegular']();
-    component['regularForm'].patchValue({
-      subject: 'Big News',
-      fromName: 'Jane',
-      fromAddress: 'jane@example.com',
-      timingMode: 'now',
-    });
-    mockNewslettersSvc.add.mockRejectedValue(new Error('Save failed'));
+    component['regularForm'].patchValue(validDetails);
+
+    await component['saveDraft']();
+
+    expect(mockNewslettersSvc.add).toHaveBeenCalledWith(expect.objectContaining({ status: 'draft' }));
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Saved draft "Big News" — find it in Newsletters');
+    expect(mockRouter.navigate).toHaveBeenCalled();
+  });
+
+  it('sends a test email to the current user and confirms the recipient', async () => {
+    component['selectRegular']();
+    component['regularForm'].patchValue({ subject: 'Big News' });
+
+    await component['sendTestEmail']();
+
+    expect(mockNewslettersSvc.sendTest).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'me@example.com', subject: 'Big News' }),
+    );
+    expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Sent a test of "Big News" to me@example.com');
+  });
+
+  it('shows an error when the newsletter fails to save', async () => {
+    component['selectRegular']();
+    component['regularForm'].patchValue({ ...validDetails, timingMode: 'now' });
+    mockNewslettersSvc.add.mockRejectedValueOnce(new Error('Save failed'));
 
     await component['sendRegular']();
 
     expect(mockAlertSvc.showError).toHaveBeenCalledWith('Save failed');
   });
 
-  it('should navigate to the parent route on close', () => {
+  it('lets you leave freely when nothing has changed', async () => {
+    component['selectRegular']();
+    await expect(component.canDeactivate()).resolves.toBe(true);
+    expect(mockConfirmDlg.confirm).not.toHaveBeenCalled();
+  });
+
+  it('guards against losing an in-progress draft on leave', async () => {
+    component['selectRegular']();
+    component['selectTemplate']('product'); // a real user edit marks the wizard dirty
+
+    await component.canDeactivate();
+
+    expect(mockConfirmDlg.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ cancelText: 'Keep editing', emphasizeCancel: true }),
+    );
+  });
+
+  it('navigates to the parent route on close', () => {
     component['close']();
     expect(mockRouter.navigate).toHaveBeenCalledWith(['../'], { relativeTo: mockActivatedRoute });
   });

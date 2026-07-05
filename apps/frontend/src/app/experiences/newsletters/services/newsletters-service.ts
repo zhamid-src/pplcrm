@@ -66,6 +66,17 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
     return this.api.newsletters.send.mutate(id);
   }
 
+  public sendTest(input: {
+    subject: string;
+    html: string;
+    text?: string;
+    to: string;
+    fromName?: string;
+    fromEmail?: string;
+  }): Promise<{ to: string; delivered: number }> {
+    return this.api.newsletters.sendTest.mutate(input);
+  }
+
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.newsletters.exportCsv.mutate(input);
   }
