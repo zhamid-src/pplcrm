@@ -77,17 +77,18 @@ export class EmailActivities {
   }
 
   protected getActivityDotClass(activity: string): string {
+    // Semantic tokens so the timeline reads correctly in both themes (§7.1).
     switch (activity) {
       case 'assign':
-        return 'bg-blue-100 text-blue-600';
+        return 'bg-info/15 text-info';
       case 'unassign':
-        return 'bg-gray-100 text-gray-500';
+        return 'bg-base-300 text-base-content/50';
       case 'close':
-        return 'bg-green-100 text-green-600';
+        return 'bg-success/15 text-success';
       case 'reopen':
-        return 'bg-amber-100 text-amber-600';
+        return 'bg-warning/15 text-warning';
       default:
-        return 'bg-gray-100 text-gray-400';
+        return 'bg-base-300 text-base-content/40';
     }
   }
 
