@@ -2191,6 +2191,7 @@ CREATE TABLE public.tenants (
     admin_id bigint,
     createdby_id bigint,
     name text NOT NULL,
+    slug text,
     mobile text,
     email text,
     email2 text,
@@ -2226,6 +2227,12 @@ CREATE TABLE public.tenants (
 
 
 ALTER TABLE public.tenants OWNER TO zeehamid;
+
+--
+-- Name: idx_tenants_slug; Type: INDEX; Schema: public; Owner: zeehamid
+--
+
+CREATE UNIQUE INDEX idx_tenants_slug ON public.tenants USING btree (slug) WHERE (slug IS NOT NULL);
 
 --
 -- Name: tenants_id_seq; Type: SEQUENCE; Schema: public; Owner: zeehamid

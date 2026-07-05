@@ -34,6 +34,9 @@ export interface IAuthUser {
   tenant_deletion_scheduled_at?: Date | null;
 
   tenant_paused_at?: Date | null;
+
+  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
+  tenant_slug?: string | null;
 }
 
 export interface IUserStatsSnapshot {

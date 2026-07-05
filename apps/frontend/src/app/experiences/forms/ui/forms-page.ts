@@ -16,6 +16,7 @@ import { Icon } from '@icons/icon';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
 import { FormRenderComponent } from './form-render';
@@ -39,6 +40,7 @@ export class FormsPageComponent implements OnInit {
   private readonly settings = inject(SettingsService);
   private readonly alerts = inject(AlertService);
   private readonly confirm = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
 
   private readonly _loading = createLoadingGate();
   protected readonly loading = this._loading.visible;
@@ -93,8 +95,13 @@ export class FormsPageComponent implements OnInit {
   protected readonly publicUrl = computed(() => {
     const form = this.selected();
     if (!form?.slug) return '';
-    const origin = this.appOrigin();
-    return `${origin}/f/${form.slug}`;
+    const tenantSlug = this.auth.getUser()?.tenant_slug;
+    const base = environment.publicFormsBaseDomain;
+    if (tenantSlug && base) {
+      return `https://${tenantSlug}.${base}/f/${form.slug}`;
+    }
+    // Dev fallback when no tenant subdomain is configured — current origin.
+    return `${this.appOrigin()}/f/${form.slug}`;
   });
 
   private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);

@@ -24,14 +24,13 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
   }
 
   /**
-   * Resolve a slug for the unauthenticated public page. The public URL (/f/:slug) carries no tenant
-   * context — a public form page is cross-tenant by design (anyone on the internet reaches it) — so
-   * this intentionally queries without a tenant_id scope. It only returns a public artifact (a form
-   * meant to be public) and leaks no other tenant data, so the tenant-safety rule is waived here.
+   * Resolve a tenant id from its public subdomain slug. The public form page identifies the tenant by
+   * Host (`<slug>.<baseDomain>`), then this scopes the form lookup — no cross-tenant form query. The
+   * `tenants` table is a tenant-safety allow-listed table (you look it up *by* its own key).
    */
-  // eslint-disable-next-line local/no-unscoped-db-query -- public /f/:slug lookup is cross-tenant by design; see doc comment.
-  public async getBySlugAnyTenant(slug: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx).selectAll().where('slug', '=', slug).orderBy('created_at', 'asc').executeTakeFirst();
+  public async getTenantIdBySlug(tenantSlug: string): Promise<string | null> {
+    const row = await this.db.selectFrom('tenants').select('id').where('slug', '=', tenantSlug).executeTakeFirst();
+    return row ? String(row.id) : null;
   }
 
   public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
