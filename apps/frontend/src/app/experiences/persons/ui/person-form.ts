@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
+import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
 import { form, validateStandardSchema } from '@angular/forms/signals';
 import { Router, RouterModule } from '@angular/router';
 import { type IAuthUser, UpdatePersonsType, UpdatePersonsObj } from '../../../../../../../libs/common/src';
@@ -42,6 +42,7 @@ export class PersonForm implements OnInit {
   private readonly router = inject(Router);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
   private _loading = createLoadingGate();
   private usersById = new Map<string, IAuthUser>();
@@ -237,7 +238,15 @@ export class PersonForm implements OnInit {
 
   public save(done?: () => void) {
     this.form().markAsTouched();
-    if (this.form().invalid()) return;
+    if (this.form().invalid()) {
+      // §4: Save never disables — instead of blocking, surface the errors and
+      // move focus to the first invalid field so the user knows what to fix.
+      queueMicrotask(() => {
+        const el = this.host.nativeElement.querySelector<HTMLElement>('.input-error input, [aria-invalid="true"]');
+        el?.focus();
+      });
+      return;
+    }
     const raw = this.payload();
     const data = {
       ...raw,

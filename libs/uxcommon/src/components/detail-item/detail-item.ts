@@ -1,4 +1,4 @@
-import { Component, inject, input } from '@angular/core';
+import { Component, inject, input, output } from '@angular/core';
 import { AlertService } from '../alerts/alert-service';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
@@ -15,13 +15,23 @@ import { PcIconNameType } from '@icons/icons.index';
         @if (icon()) {
           <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
         }
-        <span class="text-sm font-medium text-base-content break-words">
-          @if (value()) {
+        @if (value() && link()) {
+          <button
+            type="button"
+            class="text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
+            (click)="linkClicked.emit()"
+          >
             {{ value() }}
-          } @else {
-            <span class="italic text-base-content/30">Not provided</span>
-          }
-        </span>
+          </button>
+        } @else {
+          <span class="text-sm font-medium text-base-content break-words">
+            @if (value()) {
+              {{ value() }}
+            } @else {
+              <span class="italic text-base-content/30">Not provided</span>
+            }
+          </span>
+        }
         @if (value() && copyable()) {
           <button
             type="button"
@@ -41,6 +51,9 @@ export class DetailItem {
   public value = input<string | null | undefined>();
   public icon = input<PcIconNameType | null | undefined>();
   public copyable = input<boolean>(false);
+  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
+  public link = input<boolean>(false);
+  public readonly linkClicked = output<void>();
 
   private readonly alertSvc = inject(AlertService);
 
