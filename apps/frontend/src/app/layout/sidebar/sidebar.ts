@@ -36,8 +36,6 @@ export class Sidebar {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected hoveringSidebar = signal(false);
-
   // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
   private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
   private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
@@ -128,10 +126,6 @@ export class Sidebar {
 
   protected isMobileOpen() {
     return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected onSidebarHover(state: boolean) {
-    this.hoveringSidebar.set(state);
   }
 
   protected toggleCollapse(name: string) {

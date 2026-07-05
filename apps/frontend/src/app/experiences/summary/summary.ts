@@ -97,6 +97,8 @@ export class Summary implements OnInit {
   protected readonly linePath = signal('');
   protected readonly areaPath = signal('');
   protected readonly linePoints = signal<any[]>([]);
+  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
+  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
   protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
   protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
   protected readonly closedRepBars = signal<any[]>([]);

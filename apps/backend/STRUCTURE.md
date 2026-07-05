@@ -521,6 +521,164 @@ export function isIncompleteAddress(input: {
 }
 ```
 
+## File: apps/backend/src/app/lib/common-passwords.ts
+
+```typescript
+export const COMMON_PASSWORDS = new Set([
+  '123456',
+  '123456789',
+  '12345678',
+  '12345',
+  '1234567',
+  '1234567890',
+  'password',
+  'password1',
+  'password123',
+  'qwerty',
+  'qwerty123',
+  'qwertyuiop',
+  'abc123',
+  'iloveyou',
+  'admin',
+  'admin123',
+  'letmein',
+  'welcome',
+  'welcome1',
+  'monkey',
+  'dragon',
+  'master',
+  'login',
+  'hello',
+  'hello123',
+  'sunshine',
+  'princess',
+  'shadow',
+  'superman',
+  'michael',
+  'football',
+  'baseball',
+  'soccer',
+  'hockey',
+  'batman',
+  'trustno1',
+  'passw0rd',
+  'pass123',
+  'pass1234',
+  '111111',
+  '1111111',
+  '11111111',
+  '000000',
+  '0000000',
+  '00000000',
+  '123123',
+  '1234',
+  '12341234',
+  'test',
+  'test123',
+  'asdf',
+  'asdfgh',
+  'asdfghjkl',
+  'zxcvbn',
+  'zxcvbnm',
+  'qazwsx',
+  'q1w2e3r4',
+  '1q2w3e4r',
+  '1qaz2wsx',
+  'temp',
+  'changeme',
+  'nothing',
+  'ninja',
+  'mustang',
+  'access',
+  'charlie',
+  'donald',
+  'password2',
+  'root',
+  'toor',
+  'guest',
+  'secret',
+  'abc',
+  'abcd',
+  'abcd1234',
+  '654321',
+  '123321',
+  '112233',
+  'qweasd',
+  'hunter2',
+  'hunter',
+  'flower',
+  'cheese',
+  'butter',
+  'cookie',
+  'coffee',
+  'happy',
+  'love',
+  'love123',
+  'sexy',
+  'fuckyou',
+  'fuck',
+  'shit',
+  'bitch',
+  'asshole',
+  '696969',
+  '999999',
+  '888888',
+  '777777',
+  '666666',
+  '555555',
+  '444444',
+  '333333',
+  '222222',
+]);
+```
+
+## File: apps/backend/src/app/lib/hibp.ts
+
+```typescript
+import { createHash } from 'crypto';
+
+// Fail open — returns 0 if HIBP API is unreachable, so an outage never blocks users
+export async function getPwnedCount(password: string): Promise<number> {
+  const sha1 = createHash('sha1').update(password).digest('hex').toUpperCase();
+  const prefix = sha1.slice(0, 5);
+  const suffix = sha1.slice(5);
+  try {
+    const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
+      headers: { 'Add-Padding': 'true' },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return 0;
+    const text = await res.text();
+    const line = text.split('\n').find((l) => l.startsWith(suffix));
+    if (!line) return 0;
+    return parseInt(line.split(':')[1] ?? '0', 10);
+  } catch {
+    return 0;
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/password-hash.ts
+
+```typescript
+import argon2 from 'argon2';
+
+const ARGON2_OPTIONS: argon2.Options = {
+  type: argon2.argon2id,
+  memoryCost: 65536, // 64 MB
+  timeCost: 3,
+  parallelism: 4,
+};
+
+export async function hashPassword(password: string): Promise<string> {
+  return argon2.hash(password, ARGON2_OPTIONS);
+}
+
+export async function verifyPassword(password: string, hash: string): Promise<boolean> {
+  return argon2.verify(hash, password);
+}
+```
+
 ## File: apps/backend/src/app/lib/token-hash.ts
 
 ```typescript
@@ -532,6 +690,27 @@ export function generateToken(): string {
 
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+```
+
+## File: apps/backend/src/app/lib/webauthn-challenges.ts
+
+```typescript
+const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+const store = new Map<string, { challenge: string; expiresAt: number }>();
+
+export function storeChallenge(key: string, challenge: string): void {
+  store.set(key, { challenge, expiresAt: Date.now() + CHALLENGE_TTL_MS });
+}
+
+// Returns the challenge and removes it (one-time use)
+export function consumeChallenge(key: string): string | null {
+  const entry = store.get(key);
+  if (!entry) return null;
+  store.delete(key);
+  if (Date.now() > entry.expiresAt) return null;
+  return entry.challenge;
 }
 ```
 
@@ -577,6 +756,78 @@ import { BaseRepository } from '../../../lib/base.repo';
 export class TenantsRepo extends BaseRepository<'tenants'> {
   constructor() {
     super('tenants');
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/auth/auth-tokens.ts
+
+```typescript
+import { createSigner } from 'fast-jwt';
+import type { Transaction } from 'kysely';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { generateToken, hashToken } from '../../lib/token-hash';
+import { SessionsRepo } from './repositories/sessions.repo';
+import { InternalError, ServerMisconfigError } from '../../errors/app-errors';
+
+const sessions = new SessionsRepo();
+
+const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export async function createTokens(
+  input: {
+    user_id: string;
+    tenant_id: string;
+    name: string;
+    oldSession?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    rememberMe?: boolean;
+    existingExpiresAt?: Date | null;
+  },
+  trx?: Transaction<Models>,
+): Promise<{ auth_token: string; refresh_token: string }> {
+  if (input.oldSession) await sessions.deleteBySessionId(input.oldSession, trx);
+
+  const plainSessionId = generateToken();
+  const plainRefreshToken = generateToken();
+
+  const now = new Date();
+  const expiresAt =
+    input.existingExpiresAt !== undefined
+      ? input.existingExpiresAt
+      : new Date(now.getTime() + (input.rememberMe ? REMEMBER_ME_EXPIRY_MS : SESSION_EXPIRY_MS));
+
+  const row = {
+    user_id: input.user_id,
+    tenant_id: input.tenant_id,
+    ip_address: input.ipAddress || '',
+    user_agent: input.userAgent || '',
+    status: 'active',
+    session_id: hashToken(plainSessionId),
+    refresh_token: hashToken(plainRefreshToken),
+    expires_at: expiresAt,
+    last_used_at: now,
+  } as OperationDataType<'sessions', 'insert'>;
+
+  const currentSession = await sessions.add({ row }, trx);
+  if (!currentSession) throw new InternalError('Session creation failed');
+
+  const key = process.env['SHARED_SECRET'];
+  if (!key) throw new ServerMisconfigError('Server misconfiguration');
+
+  const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '30m' });
+  try {
+    const auth_token = signer({
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      name: input.name,
+      session_id: plainSessionId,
+    });
+    return { auth_token, refresh_token: plainRefreshToken };
+  } catch (err) {
+    throw new InternalError('Token creation failed', undefined, { cause: err });
   }
 }
 ```
@@ -4446,117 +4697,6 @@ export function useTestTransaction(): TestTransactionContext {
 }
 ````
 
-## File: apps/backend/src/app/lib/common-passwords.ts
-
-```typescript
-export const COMMON_PASSWORDS = new Set([
-  '123456',
-  '123456789',
-  '12345678',
-  '12345',
-  '1234567',
-  '1234567890',
-  'password',
-  'password1',
-  'password123',
-  'qwerty',
-  'qwerty123',
-  'qwertyuiop',
-  'abc123',
-  'iloveyou',
-  'admin',
-  'admin123',
-  'letmein',
-  'welcome',
-  'welcome1',
-  'monkey',
-  'dragon',
-  'master',
-  'login',
-  'hello',
-  'hello123',
-  'sunshine',
-  'princess',
-  'shadow',
-  'superman',
-  'michael',
-  'football',
-  'baseball',
-  'soccer',
-  'hockey',
-  'batman',
-  'trustno1',
-  'passw0rd',
-  'pass123',
-  'pass1234',
-  '111111',
-  '1111111',
-  '11111111',
-  '000000',
-  '0000000',
-  '00000000',
-  '123123',
-  '1234',
-  '12341234',
-  'test',
-  'test123',
-  'asdf',
-  'asdfgh',
-  'asdfghjkl',
-  'zxcvbn',
-  'zxcvbnm',
-  'qazwsx',
-  'q1w2e3r4',
-  '1q2w3e4r',
-  '1qaz2wsx',
-  'temp',
-  'changeme',
-  'nothing',
-  'ninja',
-  'mustang',
-  'access',
-  'charlie',
-  'donald',
-  'password2',
-  'root',
-  'toor',
-  'guest',
-  'secret',
-  'abc',
-  'abcd',
-  'abcd1234',
-  '654321',
-  '123321',
-  '112233',
-  'qweasd',
-  'hunter2',
-  'hunter',
-  'flower',
-  'cheese',
-  'butter',
-  'cookie',
-  'coffee',
-  'happy',
-  'love',
-  'love123',
-  'sexy',
-  'fuckyou',
-  'fuck',
-  'shit',
-  'bitch',
-  'asshole',
-  '696969',
-  '999999',
-  '888888',
-  '777777',
-  '666666',
-  '555555',
-  '444444',
-  '333333',
-  '222222',
-]);
-```
-
 ## File: apps/backend/src/app/lib/csv-stream.ts
 
 ```typescript
@@ -4632,32 +4772,6 @@ import type { FastifyRequest } from 'fastify';
 export type IdParam = FastifyRequest<{
   Params: { id: string };
 }>;
-```
-
-## File: apps/backend/src/app/lib/hibp.ts
-
-```typescript
-import { createHash } from 'crypto';
-
-// Fail open — returns 0 if HIBP API is unreachable, so an outage never blocks users
-export async function getPwnedCount(password: string): Promise<number> {
-  const sha1 = createHash('sha1').update(password).digest('hex').toUpperCase();
-  const prefix = sha1.slice(0, 5);
-  const suffix = sha1.slice(5);
-  try {
-    const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
-      headers: { 'Add-Padding': 'true' },
-      signal: AbortSignal.timeout(3000),
-    });
-    if (!res.ok) return 0;
-    const text = await res.text();
-    const line = text.split('\n').find((l) => l.startsWith(suffix));
-    if (!line) return 0;
-    return parseInt(line.split(':')[1] ?? '0', 10);
-  } catch {
-    return 0;
-  }
-}
 ```
 
 ## File: apps/backend/src/app/lib/oauth-state.ts
@@ -4779,27 +4893,6 @@ export function verifyFileDownloadToken(st: string, fileId: string): SignedDownl
     throw new UnauthorizedError('Unauthorized: Invalid download token');
   }
   return parsed as SignedDownloadPayload;
-}
-```
-
-## File: apps/backend/src/app/lib/webauthn-challenges.ts
-
-```typescript
-const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-const store = new Map<string, { challenge: string; expiresAt: number }>();
-
-export function storeChallenge(key: string, challenge: string): void {
-  store.set(key, { challenge, expiresAt: Date.now() + CHALLENGE_TTL_MS });
-}
-
-// Returns the challenge and removes it (one-time use)
-export function consumeChallenge(key: string): string | null {
-  const entry = store.get(key);
-  if (!entry) return null;
-  store.delete(key);
-  if (Date.now() > entry.expiresAt) return null;
-  return entry.challenge;
 }
 ```
 
@@ -5583,6 +5676,7 @@ export const FilesRouter = router({
 
 ```typescript
 import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '../../../../../../libs/common/src';
+import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
 import { NewslettersController } from './controller';
@@ -5591,6 +5685,15 @@ import { createCrudRouter } from '../../lib/crud-router';
 const newsletters = new NewslettersController();
 
 const crud = createCrudRouter(newsletters, AddMarketingEmailObj, UpdateMarketingEmailObj);
+
+const sendTestSchema = z.object({
+  subject: z.string(),
+  html: z.string(),
+  text: z.string().optional(),
+  to: z.email(),
+  fromName: z.string().optional(),
+  fromEmail: z.string().optional(),
+});
 
 export const NewslettersRouter = router({
   ...crud,
@@ -5602,6 +5705,10 @@ export const NewslettersRouter = router({
   send: authProcedure
     .input(idSchema)
     .mutation(async ({ input, ctx }) => newsletters.sendNewsletter(ctx.auth.tenant_id, input, ctx.auth.user_id)),
+
+  sendTest: authProcedure
+    .input(sendTestSchema)
+    .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
 });
 ```
 
@@ -6346,6 +6453,87 @@ export const logger = pino.pino({
     target: 'pino-pretty',
   },
 });
+```
+
+## File: apps/backend/src/env.ts
+
+```typescript
+import { z } from 'zod';
+
+const envSchema = z.object({
+  HOST: z.string().default('localhost'),
+  PORT: z.coerce.number().default(3000),
+  DB_USER: z.string().min(1, 'DB_USER is required'),
+  DB_NAME: z.string().min(1, 'DB_NAME is required'),
+  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
+  DB_PORT: z.coerce.number().default(5432),
+  DB_HOST: z.string().default('localhost'),
+  DB_SSL: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
+  API_URL: z.string().url().default('http://localhost:3000'),
+  APP_URL: z.string().url().default('http://localhost:4200'),
+  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
+  MS_CLIENT_ID: z.string().optional(),
+  MS_CLIENT_SECRET: z.string().optional(),
+  MS_TENANT_ID: z.string().optional().default('common'),
+  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
+  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
+  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
+  STRIPE_PLAN_REPRESENTATIVE_PRICE_ID: z.string().optional(),
+  POSTMARK_SERVER_TOKEN: z.string().optional(),
+  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
+  SENDGRID_API_KEY: z.string().optional(),
+  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
+  WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
+});
+
+const parsedEnv = envSchema.parse(process.env);
+
+export const env = {
+  host: parsedEnv.HOST,
+  port: parsedEnv.PORT,
+  db: {
+    user: parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
+  },
+  apiUrl: parsedEnv.API_URL,
+  appUrl: parsedEnv.APP_URL,
+  sharedSecret: parsedEnv.SHARED_SECRET,
+  msClientId: parsedEnv.MS_CLIENT_ID,
+  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
+  msTenantId: parsedEnv.MS_TENANT_ID,
+  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
+  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
+  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
+  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
+  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
+  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
+  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
+  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
+  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
+  stripePlanRepresentativePriceId: parsedEnv.STRIPE_PLAN_REPRESENTATIVE_PRICE_ID,
+  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
+  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
+  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
+  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
+  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
+  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
+};
 ```
 
 ## File: apps/backend/src/main.ts
@@ -12684,6 +12872,77 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 \unrestrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
 ```
 
+## File: apps/backend/src/app/lib/mail/mentions-util.ts
+
+```typescript
+import { TransactionalEmailService } from './transactional-mail.service';
+import { logger } from '../../logger';
+
+export async function processMentions(
+  db: any,
+  tenantId: string,
+  commentText: string,
+  commentLink: string,
+  authorId: string,
+): Promise<void> {
+  if (!commentText || !commentText.trim()) return;
+
+  // Find matches for @username (characters, numbers, dots, dashes, underscores)
+  const matches = [...commentText.matchAll(/\B@([a-zA-Z0-9._-]+)/g)].flatMap((m) => (m[1] ? [m[1].toLowerCase()] : []));
+  if (matches.length === 0) return;
+
+  try {
+    // Retrieve all users in the tenant
+    const users = await db
+      .selectFrom('authusers')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select(['authusers.id', 'authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .where('authusers.tenant_id', '=', tenantId)
+      .execute();
+
+    const mailService = new TransactionalEmailService();
+
+    // Map over matching users and send them notifications
+    for (const user of users) {
+      const userIdStr = String(user.id);
+      if (userIdStr === String(authorId)) continue; // Don't notify the author
+
+      const emailPrefix = user.email.split('@')[0]?.toLowerCase() || '';
+      const firstNameLower = user.first_name?.toLowerCase() || '';
+
+      // Match either @first_name or the email username prefix (e.g. @john)
+      const isMentioned = matches.includes(firstNameLower) || matches.includes(emailPrefix);
+
+      if (isMentioned && user.email) {
+        let optedIn = true;
+        const profileJson = user.profile_json;
+        if (profileJson) {
+          try {
+            const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
+            if (json?.notifications?.mention_in_comment === false) {
+              optedIn = false;
+            }
+          } catch (e) {
+            logger.error({ err: e }, 'Failed to parse profile json in processMentions');
+          }
+        }
+
+        if (optedIn) {
+          await mailService.sendMail({
+            to: user.email,
+            subject: 'You were mentioned in CampaignRaven',
+            text: `Hi ${user.first_name || 'there'},\n\nYou were mentioned in a comment:\n\n"${commentText}"\n\nView comment: ${commentLink}`,
+            html: `<p>Hi ${user.first_name || 'there'},</p><p>You were mentioned in a comment:</p><blockquote>"${commentText}"</blockquote><p><a href="${commentLink}">View Comment</a></p>`,
+          });
+        }
+      }
+    }
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to process comment mentions');
+  }
+}
+```
+
 ## File: apps/backend/src/app/lib/mail/sanitize-util.ts
 
 ```typescript
@@ -13172,24 +13431,41 @@ export function attachmentDisposition(filename: string | null | undefined): stri
 }
 ```
 
-## File: apps/backend/src/app/lib/password-hash.ts
+## File: apps/backend/src/app/lib/rate-limiter.ts
 
 ```typescript
-import argon2 from 'argon2';
+import { TooManyRequestsError } from '../errors/app-errors';
 
-const ARGON2_OPTIONS: argon2.Options = {
-  type: argon2.argon2id,
-  memoryCost: 65536, // 64 MB
-  timeCost: 3,
-  parallelism: 4,
-};
+const store = new Map<string, number[]>();
 
-export async function hashPassword(password: string): Promise<string> {
-  return argon2.hash(password, ARGON2_OPTIONS);
+// Periodically evict keys whose newest hit is older than any window we use, so
+// the map doesn't grow unbounded with distinct IP/action keys over time.
+const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_RETENTION_MS = 60 * 60 * 1000; // longest rate-limit window in use
+let lastSweep = Date.now();
+
+function sweep(now: number): void {
+  if (now - lastSweep < SWEEP_INTERVAL_MS) return;
+  lastSweep = now;
+  for (const [key, hits] of store) {
+    const newest = hits[hits.length - 1] ?? 0;
+    if (now - newest > MAX_RETENTION_MS) {
+      store.delete(key);
+    }
+  }
 }
 
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return argon2.verify(hash, password);
+export function checkRateLimit(key: string, limit: number, windowMs: number): void {
+  const now = Date.now();
+  sweep(now);
+  const hits = (store.get(key) ?? []).filter((t) => now - t < windowMs);
+  hits.push(now);
+  store.set(key, hits);
+  if (hits.length > limit) {
+    const firstHit = hits[0] ?? now;
+    const retryAfterSec = Math.ceil((firstHit + windowMs - now) / 1000);
+    throw new TooManyRequestsError(`Too many requests. Retry in ${retryAfterSec} seconds.`, { retryAfterSec });
+  }
 }
 ```
 
@@ -13485,76 +13761,299 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
 type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
 ```
 
-## File: apps/backend/src/app/modules/auth/auth-tokens.ts
+## File: apps/backend/src/app/modules/auth/trpc.router.ts
 
 ```typescript
-import { createSigner } from 'fast-jwt';
-import type { Transaction } from 'kysely';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { generateToken, hashToken } from '../../lib/token-hash';
-import { SessionsRepo } from './repositories/sessions.repo';
-import { InternalError, ServerMisconfigError } from '../../errors/app-errors';
+import {
+  InviteAuthUserObj,
+  Verify2FAObj,
+  getAllOptions,
+  signInInputObj,
+  signUpInputObj,
+  idSchema,
+  UpdateAuthUserObj,
+} from '../../../../../../libs/common/src';
 
-const sessions = new SessionsRepo();
+import z from 'zod';
 
-const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
+import { AuthController } from './controller';
+import { PasskeyController } from './passkey.controller';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/types';
 
-export async function createTokens(
-  input: {
-    user_id: string;
-    tenant_id: string;
-    name: string;
-    oldSession?: string;
-    ipAddress?: string;
-    userAgent?: string;
-    rememberMe?: boolean;
-    existingExpiresAt?: Date | null;
-  },
-  trx?: Transaction<Models>,
-): Promise<{ auth_token: string; refresh_token: string }> {
-  if (input.oldSession) await sessions.deleteBySessionId(input.oldSession, trx);
+const MIN15 = 15 * 60 * 1000;
+const HOUR1 = 60 * 60 * 1000;
 
-  const plainSessionId = generateToken();
-  const plainRefreshToken = generateToken();
-
-  const now = new Date();
-  const expiresAt =
-    input.existingExpiresAt !== undefined
-      ? input.existingExpiresAt
-      : new Date(now.getTime() + (input.rememberMe ? REMEMBER_ME_EXPIRY_MS : SESSION_EXPIRY_MS));
-
-  const row = {
-    user_id: input.user_id,
-    tenant_id: input.tenant_id,
-    ip_address: input.ipAddress || '',
-    user_agent: input.userAgent || '',
-    status: 'active',
-    session_id: hashToken(plainSessionId),
-    refresh_token: hashToken(plainRefreshToken),
-    expires_at: expiresAt,
-    last_used_at: now,
-  } as OperationDataType<'sessions', 'insert'>;
-
-  const currentSession = await sessions.add({ row }, trx);
-  if (!currentSession) throw new InternalError('Session creation failed');
-
-  const key = process.env['SHARED_SECRET'];
-  if (!key) throw new ServerMisconfigError('Server misconfiguration');
-
-  const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '30m' });
-  try {
-    const auth_token = signer({
-      user_id: input.user_id,
-      tenant_id: input.tenant_id,
-      name: input.name,
-      session_id: plainSessionId,
-    });
-    return { auth_token, refresh_token: plainRefreshToken };
-  } catch (err) {
-    throw new InternalError('Token creation failed', undefined, { cause: err });
-  }
+function currentUser() {
+  return authProcedure.query(({ ctx }) => controller.currentUser(ctx.auth));
 }
+
+function count() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
+}
+
+function getAllWithCounts() {
+  return adminOrOwnerProcedure.input(getAllOptions).query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
+}
+
+function getById() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
+    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
+}
+
+function renewAuthToken() {
+  return publicProcedure
+    .input(z.object({ auth_token: z.string(), refresh_token: z.string() }))
+    .mutation(({ input }) => controller.renewAuthToken(input));
+}
+
+function resetPassword() {
+  return publicProcedure.input(z.object({ password: z.string(), code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resetPassword`, 5, MIN15);
+    return controller.resetPassword(input.password, input.code);
+  });
+}
+
+function sendPasswordResetEmail() {
+  return publicProcedure
+    .input(z.object({ email: z.string().trim().email('Invalid email address') }))
+    .mutation(({ input, ctx }) => {
+      const ip = ctx.req?.ip ?? 'unknown';
+      checkRateLimit(`${ip}:sendPasswordResetEmail`, 3, HOUR1);
+      return controller.sendPasswordResetEmail(input.email);
+    });
+}
+
+function signIn() {
+  return publicProcedure.input(signInInputObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:signIn`, 10, MIN15);
+    const ua = ctx.req?.headers?.['user-agent'] || '';
+    return controller.signIn(input, ip, ua);
+  });
+}
+
+function verify2FA() {
+  return publicProcedure.input(Verify2FAObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
+    const ua = ctx.req?.headers?.['user-agent'] || '';
+    return controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
+  });
+}
+
+function scheduleAccountDeletion() {
+  return authProcedure.mutation(({ ctx }) => controller.scheduleAccountDeletion(ctx.auth));
+}
+
+function cancelAccountDeletion() {
+  return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
+}
+
+function getTenantAccountStatus() {
+  return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
+}
+
+function cancelTenantDeletionByToken() {
+  return publicProcedure
+    .input(z.object({ tenantId: z.string(), token: z.string() }))
+    .mutation(({ input }) => controller.cancelTenantDeletionByToken(input.tenantId, input.token));
+}
+
+function scheduleTenantDeletion() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.scheduleTenantDeletion(ctx.auth));
+}
+
+function cancelTenantDeletion() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelTenantDeletion(ctx.auth));
+}
+
+function pauseTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.pauseTenant(ctx.auth));
+}
+
+function resumeTenant() {
+  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.resumeTenant(ctx.auth));
+}
+
+function cancelEmailChange() {
+  return authProcedure.mutation(({ ctx }) => controller.cancelEmailChange(ctx.auth));
+}
+
+function uploadAvatar() {
+  return authProcedure
+    .input(
+      z.object({
+        dataBase64: z.string().min(1),
+        mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
+        filename: z.string().min(1).max(255),
+      }),
+    )
+    .mutation(({ input, ctx }) => controller.uploadAvatar(ctx.auth, input));
+}
+
+function deleteAvatar() {
+  return authProcedure.mutation(({ ctx }) => controller.deleteAvatar(ctx.auth));
+}
+
+function adminTriggerPasswordReset() {
+  return adminOrOwnerProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
+}
+
+function invite() {
+  return adminOrOwnerProcedure
+    .input(InviteAuthUserObj)
+    .mutation(({ input, ctx }) => controller.inviteUser(ctx.auth, input));
+}
+
+function signOut() {
+  return authProcedure.mutation(({ ctx }) => controller.signOut(ctx.auth));
+}
+
+function signUp() {
+  return publicProcedure.input(signUpInputObj).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:signUp`, 5, HOUR1);
+    return controller.signUp(input);
+  });
+}
+
+function deleteOne() {
+  return adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => controller.deleteUser(ctx.auth, input));
+}
+
+function verifyEmail() {
+  return publicProcedure.input(z.object({ code: z.string() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:verifyEmail`, 10, MIN15);
+    return controller.verifyEmail(input.code);
+  });
+}
+
+function resendVerificationEmail() {
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:resendVerification`, 5, MIN15);
+    checkRateLimit(`resendVerification:${input.email}`, 5, MIN15);
+    return controller.resendVerificationEmail(input.email);
+  });
+}
+
+function dismissPasskeyPrompt() {
+  return authProcedure.mutation(({ ctx }) => controller.dismissPasskeyPrompt(ctx.auth));
+}
+
+const controller = new AuthController();
+const passkeyController = new PasskeyController();
+
+function passkeyRegistrationOptions() {
+  return authProcedure.query(({ ctx }) => passkeyController.getRegistrationOptions(ctx.auth));
+}
+
+function verifyPasskeyRegistration() {
+  return authProcedure
+    .input(
+      z.object({
+        response: z.any().transform((v) => v as RegistrationResponseJSON),
+        friendlyName: z.string().max(100).optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => passkeyController.verifyRegistration(ctx.auth, input.response, input.friendlyName));
+}
+
+function passkeyAuthenticationOptions() {
+  return publicProcedure.query(() => passkeyController.getAuthenticationOptions());
+}
+
+function checkEmail() {
+  return publicProcedure.input(z.object({ email: z.string().trim().email() })).query(({ input, ctx }) => {
+    const ip = ctx.req?.ip ?? 'unknown';
+    checkRateLimit(`${ip}:checkEmail`, 20, MIN15);
+    return passkeyController.checkEmailPasskeys(input.email);
+  });
+}
+
+function verifyPasskeyAuthentication() {
+  return publicProcedure
+    .input(
+      z.object({
+        response: z.any().transform((v) => v as AuthenticationResponseJSON),
+        nonce: z.string(),
+        rememberMe: z.boolean().optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => {
+      const ip = ctx.req?.ip ?? 'unknown';
+      checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
+      const ua = ctx.req?.headers?.['user-agent'] ?? '';
+      return passkeyController.verifyAuthentication(input.response, input.nonce, ip, ua, input.rememberMe);
+    });
+}
+
+function listPasskeys() {
+  return authProcedure.query(({ ctx }) => passkeyController.listPasskeys(ctx.auth));
+}
+
+function deletePasskey() {
+  return authProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(({ input, ctx }) => passkeyController.deletePasskey(ctx.auth, input.id));
+}
+
+function updatePasskeyName() {
+  return authProcedure
+    .input(z.object({ id: z.string(), friendlyName: z.string().min(1).max(100) }))
+    .mutation(({ input, ctx }) => passkeyController.updatePasskeyName(ctx.auth, input.id, input.friendlyName));
+}
+
+export const AuthRouter = router({
+  signUp: signUp(),
+  signIn: signIn(),
+  signOut: signOut(),
+  currentUser: currentUser(),
+  getAllWithCounts: getAllWithCounts(),
+  getById: getById(),
+  invite: invite(),
+  update: update(),
+  delete: deleteOne(),
+  count: count(),
+  resetPassword: resetPassword(),
+  renewAuthToken: renewAuthToken(),
+  sendPasswordResetEmail: sendPasswordResetEmail(),
+  verifyEmail: verifyEmail(),
+  resendVerificationEmail: resendVerificationEmail(),
+  verify2FA: verify2FA(),
+  scheduleAccountDeletion: scheduleAccountDeletion(),
+  cancelAccountDeletion: cancelAccountDeletion(),
+  cancelEmailChange: cancelEmailChange(),
+  getTenantAccountStatus: getTenantAccountStatus(),
+  scheduleTenantDeletion: scheduleTenantDeletion(),
+  cancelTenantDeletion: cancelTenantDeletion(),
+  cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
+  pauseTenant: pauseTenant(),
+  resumeTenant: resumeTenant(),
+  adminTriggerPasswordReset: adminTriggerPasswordReset(),
+  uploadAvatar: uploadAvatar(),
+  deleteAvatar: deleteAvatar(),
+  passkeyRegistrationOptions: passkeyRegistrationOptions(),
+  verifyPasskeyRegistration: verifyPasskeyRegistration(),
+  passkeyAuthenticationOptions: passkeyAuthenticationOptions(),
+  checkEmail: checkEmail(),
+  verifyPasskeyAuthentication: verifyPasskeyAuthentication(),
+  listPasskeys: listPasskeys(),
+  deletePasskey: deletePasskey(),
+  updatePasskeyName: updatePasskeyName(),
+  dismissPasskeyPrompt: dismissPasskeyPrompt(),
+});
 ```
 
 ## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
@@ -16066,87 +16565,6 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
 }
 ```
 
-## File: apps/backend/src/env.ts
-
-```typescript
-import { z } from 'zod';
-
-const envSchema = z.object({
-  HOST: z.string().default('localhost'),
-  PORT: z.coerce.number().default(3000),
-  DB_USER: z.string().min(1, 'DB_USER is required'),
-  DB_NAME: z.string().min(1, 'DB_NAME is required'),
-  DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
-  DB_PORT: z.coerce.number().default(5432),
-  DB_HOST: z.string().default('localhost'),
-  DB_SSL: z
-    .string()
-    .optional()
-    .transform((val) => val === 'true'),
-  API_URL: z.string().url().default('http://localhost:3000'),
-  APP_URL: z.string().url().default('http://localhost:4200'),
-  SHARED_SECRET: z.string().min(1, 'SHARED_SECRET is required'),
-  MS_CLIENT_ID: z.string().optional(),
-  MS_CLIENT_SECRET: z.string().optional(),
-  MS_TENANT_ID: z.string().optional().default('common'),
-  MS_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/ms/callback'),
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  GOOGLE_REDIRECT_URI: z.string().optional().default('http://localhost:3000/auth/google/callback'),
-  AZURE_STORAGE_CONNECTION_STRING: z.string().optional().default('UseDevelopmentStorage=true'),
-  AZURE_STORAGE_CONTAINER: z.string().optional().default('uploads'),
-  STRIPE_SECRET_KEY: z.string().optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PLAN_GRASSROOTS_PRICE_ID: z.string().optional(),
-  STRIPE_PLAN_REPRESENTATIVE_PRICE_ID: z.string().optional(),
-  POSTMARK_SERVER_TOKEN: z.string().optional(),
-  POSTMARK_FROM_EMAIL: z.string().email().default('pplcrm@campaignraven.com'),
-  SENDGRID_API_KEY: z.string().optional(),
-  SENDGRID_WEBHOOK_VERIFICATION_KEY: z.string().optional(),
-  GOOGLE_MAPS_API_KEY: z.string().optional(),
-  WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
-  WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
-});
-
-const parsedEnv = envSchema.parse(process.env);
-
-export const env = {
-  host: parsedEnv.HOST,
-  port: parsedEnv.PORT,
-  db: {
-    user: parsedEnv.DB_USER,
-    database: parsedEnv.DB_NAME,
-    password: parsedEnv.DB_PASSWORD,
-    port: parsedEnv.DB_PORT,
-    host: parsedEnv.DB_HOST,
-    ssl: parsedEnv.DB_SSL,
-  },
-  apiUrl: parsedEnv.API_URL,
-  appUrl: parsedEnv.APP_URL,
-  sharedSecret: parsedEnv.SHARED_SECRET,
-  msClientId: parsedEnv.MS_CLIENT_ID,
-  msClientSecret: parsedEnv.MS_CLIENT_SECRET,
-  msTenantId: parsedEnv.MS_TENANT_ID,
-  msRedirectUri: parsedEnv.MS_REDIRECT_URI,
-  googleClientId: parsedEnv.GOOGLE_CLIENT_ID,
-  googleClientSecret: parsedEnv.GOOGLE_CLIENT_SECRET,
-  googleRedirectUri: parsedEnv.GOOGLE_REDIRECT_URI,
-  azureStorageConnectionString: parsedEnv.AZURE_STORAGE_CONNECTION_STRING,
-  azureStorageContainer: parsedEnv.AZURE_STORAGE_CONTAINER,
-  stripeSecretKey: parsedEnv.STRIPE_SECRET_KEY,
-  stripeWebhookSecret: parsedEnv.STRIPE_WEBHOOK_SECRET,
-  stripePlanGrassrootsPriceId: parsedEnv.STRIPE_PLAN_GRASSROOTS_PRICE_ID,
-  stripePlanRepresentativePriceId: parsedEnv.STRIPE_PLAN_REPRESENTATIVE_PRICE_ID,
-  postmarkServerToken: parsedEnv.POSTMARK_SERVER_TOKEN,
-  postmarkFromEmail: parsedEnv.POSTMARK_FROM_EMAIL,
-  sendgridApiKey: parsedEnv.SENDGRID_API_KEY,
-  sendgridWebhookVerificationKey: parsedEnv.SENDGRID_WEBHOOK_VERIFICATION_KEY,
-  googleMapsApiKey: parsedEnv.GOOGLE_MAPS_API_KEY ?? process.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
-  webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
-};
-```
-
 ## File: apps/backend/project.json
 
 ```json
@@ -16242,56 +16660,6 @@ export const env = {
     }
   }
 }
-```
-
-## File: apps/backend/vite.config.ts
-
-```typescript
-/// <reference types='vitest' />
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
-
-// Local/dev DB credentials come from a gitignored `.env.test` file at the repo root
-// (DB_USER, DB_NAME, DB_PASSWORD, DB_PORT, DB_HOST, DB_SSL, JWT_SECRET, SHARED_SECRET —
-// see apps/backend/src/env.ts for the full schema). CI/production set these as real
-// env vars instead, so loading the file is best-effort only.
-const envTestPath = resolve(__dirname, '../../.env.test');
-if (existsSync(envTestPath)) {
-  process.loadEnvFile(envTestPath);
-}
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/apps/backend',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [],
-  test: {
-    name: 'backend',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'node',
-    env: {
-      DB_USER: process.env['DB_USER'] ?? '',
-      DB_NAME: process.env['DB_NAME'] ?? '',
-      DB_PASSWORD: process.env['DB_PASSWORD'] ?? '',
-      JWT_SECRET: process.env['JWT_SECRET'] ?? '',
-      SHARED_SECRET: process.env['SHARED_SECRET'] ?? '',
-      DB_PORT: process.env['DB_PORT'] ?? '5432',
-      DB_HOST: process.env['DB_HOST'] ?? 'localhost',
-      DB_SSL: process.env['DB_SSL'] ?? 'false',
-    },
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/apps/backend',
-      provider: 'v8' as const,
-    },
-  },
-}));
 ```
 
 ## File: apps/backend/src/app/\_migrations/0001_baseline.ts
@@ -17842,77 +18210,6 @@ export class BackgroundJobWorker {
       this.timer = null;
     }
     this.poll();
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/mail/mentions-util.ts
-
-```typescript
-import { TransactionalEmailService } from './transactional-mail.service';
-import { logger } from '../../logger';
-
-export async function processMentions(
-  db: any,
-  tenantId: string,
-  commentText: string,
-  commentLink: string,
-  authorId: string,
-): Promise<void> {
-  if (!commentText || !commentText.trim()) return;
-
-  // Find matches for @username (characters, numbers, dots, dashes, underscores)
-  const matches = [...commentText.matchAll(/\B@([a-zA-Z0-9._-]+)/g)].flatMap((m) => (m[1] ? [m[1].toLowerCase()] : []));
-  if (matches.length === 0) return;
-
-  try {
-    // Retrieve all users in the tenant
-    const users = await db
-      .selectFrom('authusers')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.id', 'authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
-      .where('authusers.tenant_id', '=', tenantId)
-      .execute();
-
-    const mailService = new TransactionalEmailService();
-
-    // Map over matching users and send them notifications
-    for (const user of users) {
-      const userIdStr = String(user.id);
-      if (userIdStr === String(authorId)) continue; // Don't notify the author
-
-      const emailPrefix = user.email.split('@')[0]?.toLowerCase() || '';
-      const firstNameLower = user.first_name?.toLowerCase() || '';
-
-      // Match either @first_name or the email username prefix (e.g. @john)
-      const isMentioned = matches.includes(firstNameLower) || matches.includes(emailPrefix);
-
-      if (isMentioned && user.email) {
-        let optedIn = true;
-        const profileJson = user.profile_json;
-        if (profileJson) {
-          try {
-            const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-            if (json?.notifications?.mention_in_comment === false) {
-              optedIn = false;
-            }
-          } catch (e) {
-            logger.error({ err: e }, 'Failed to parse profile json in processMentions');
-          }
-        }
-
-        if (optedIn) {
-          await mailService.sendMail({
-            to: user.email,
-            subject: 'You were mentioned in CampaignRaven',
-            text: `Hi ${user.first_name || 'there'},\n\nYou were mentioned in a comment:\n\n"${commentText}"\n\nView comment: ${commentLink}`,
-            html: `<p>Hi ${user.first_name || 'there'},</p><p>You were mentioned in a comment:</p><blockquote>"${commentText}"</blockquote><p><a href="${commentLink}">View Comment</a></p>`,
-          });
-        }
-      }
-    }
-  } catch (error) {
-    logger.error({ err: error }, 'Failed to process comment mentions');
   }
 }
 ```
@@ -19904,80 +20201,425 @@ export class DashboardController {
 }
 ```
 
-## File: apps/backend/src/app/modules/donations/repositories/pledges.repo.ts
+## File: apps/backend/src/app/modules/emails/services/email-ingester.service.ts
 
 ```typescript
-import type { Selectable } from 'kysely';
+import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository } from '../../../lib/base.repo';
+import { StorageService } from '../../../lib/storage.service';
+import { env } from '../../../../env';
+import crypto from 'crypto';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { logger } from '../../../logger';
 
-export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
-  constructor() {
-    super('donation_pledges');
-  }
+export interface IngestableEmail {
+  id: string; // Remote provider's unique message ID
+  internetMessageId?: string | null;
+  fromEmail: string | null;
+  toEmail: string | null;
+  subject: string | null;
+  dateSent: Date;
+  bodyHtml: string;
+  recipients: Array<{
+    kind: 'to' | 'cc' | 'bcc';
+    name: string | null;
+    email: string;
+  }>;
+  attachments: Array<{
+    name: string;
+    contentType: string;
+    size: number;
+    contentId: string | null;
+    isInline: boolean;
+    fetchContent: () => Promise<Buffer>;
+  }>;
+}
 
-  public async getAllForTenant(tenantId: string) {
-    return this.db
-      .selectFrom('donation_pledges')
-      .leftJoin('persons', 'persons.id', 'donation_pledges.person_id')
-      .select([
-        'donation_pledges.id',
-        'donation_pledges.tenant_id',
-        'donation_pledges.person_id',
-        'donation_pledges.stripe_subscription_id',
-        'donation_pledges.stripe_customer_id',
-        'donation_pledges.monthly_amount',
-        'donation_pledges.status',
-        'donation_pledges.started_at',
-        'donation_pledges.cancelled_at',
-        'donation_pledges.next_billing_date',
-        'donation_pledges.state',
-        'donation_pledges.country',
-        'donation_pledges.created_at',
-        this.db.fn.coalesce('persons.first_name', 'donation_pledges.first_name').as('person_first_name'),
-        this.db.fn.coalesce('persons.last_name', 'donation_pledges.last_name').as('person_last_name'),
-        this.db.fn.coalesce('persons.email', 'donation_pledges.email').as('person_email'),
-      ])
-      .where('donation_pledges.tenant_id', '=', tenantId)
-      .orderBy('donation_pledges.created_at', 'desc')
-      .execute();
-  }
+export class EmailIngesterService {
+  private readonly storageService = new StorageService();
 
-  public async getForPerson(tenantId: string, personId: string): Promise<Selectable<Models['donation_pledges']>[]> {
-    return this.db
-      .selectFrom('donation_pledges')
-      .selectAll()
+  constructor(
+    private readonly db: Kysely<Models>,
+    private readonly prefix: string, // 'ms' or 'google'
+  ) {}
+
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    const matchedEmails = await this.db
+      .selectFrom('emails')
+      .select('id')
       .where('tenant_id', '=', tenantId)
-      .where('person_id', '=', personId)
-      .orderBy('created_at', 'desc')
+      .where('preview', 'like', `${this.prefix}:%`)
       .execute();
+
+    if (matchedEmails.length === 0) return;
+    const emailIds = matchedEmails.map((e) => String(e.id));
+
+    // Capture attachment file references before the rows are deleted.
+    const fileIds = await this.getAttachmentFileIds(tenantId, emailIds);
+
+    await this.db.transaction().execute(async (trx) => {
+      // Delete from dependent tables sequentially to prevent foreign key constraint issues
+      await trx
+        .deleteFrom('email_comments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_bodies')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_headers')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_recipients')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx
+        .deleteFrom('email_attachments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', 'in', emailIds)
+        .execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
+
+      // Delete from emails table
+      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
+    });
+
+    await this.purgeOrphanedFiles(tenantId, fileIds);
   }
 
-  // TODO: is this called from anywhere?
-  public async getByStripeSubscriptionId(
-    subscriptionId: string,
-  ): Promise<Selectable<Models['donation_pledges']> | undefined> {
-    return this.db
-      .selectFrom('donation_pledges')
-      .selectAll()
-      .where('stripe_subscription_id', '=', subscriptionId)
+  public async deleteMessage(tenantId: string, remoteId: string): Promise<void> {
+    const dedupeKey = `${this.prefix}:${remoteId}`;
+    const existing = await this.db
+      .selectFrom('emails')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .where('preview', '=', dedupeKey)
       .executeTakeFirst();
+
+    if (!existing) return;
+    const emailId = String(existing.id);
+
+    // Capture attachment file references before the rows are deleted.
+    const fileIds = await this.getAttachmentFileIds(tenantId, [emailId]);
+
+    await this.db.transaction().execute(async (trx) => {
+      // Delete from dependent tables sequentially to prevent foreign key constraint issues
+      await trx
+        .deleteFrom('email_comments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
+      await trx.deleteFrom('email_bodies').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx.deleteFrom('email_headers').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+      await trx
+        .deleteFrom('email_recipients')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
+      await trx
+        .deleteFrom('email_attachments')
+        .where('tenant_id', '=', tenantId)
+        .where('email_id', '=', emailId)
+        .execute();
+      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
+
+      // Delete from emails table
+      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();
+    });
+
+    await this.purgeOrphanedFiles(tenantId, fileIds);
+  }
+
+  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
+  private async getAttachmentFileIds(tenantId: string, emailIds: string[]): Promise<string[]> {
+    if (emailIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom('email_attachments')
+      .select('file_id')
+      .distinct()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', 'in', emailIds)
+      .where('file_id', 'is not', null)
+      .execute();
+    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
   }
 
   /**
-   * Sum of monthly_amount for all active pledges for a person.
-   * Used for conservative limit enforcement: counts committed future payments.
+   * Delete file rows + storage blobs for files no longer referenced by any
+   * remaining attachment (files are sha256-deduped and can be shared). Storage
+   * deletion is best-effort and must not throw.
    */
-  public async getActivePledgeMonthlyTotal(tenantId: string, personId: string): Promise<number> {
-    const result = await this.db
-      .selectFrom('donation_pledges')
-      .select(({ fn }) => [fn.sum<string | number>('monthly_amount').as('total')])
+  private async purgeOrphanedFiles(tenantId: string, fileIds: string[]): Promise<void> {
+    for (const fileId of fileIds) {
+      try {
+        const stillReferenced = await this.db
+          .selectFrom('email_attachments')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('file_id', '=', fileId)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (stillReferenced) continue;
+
+        const file = await this.db
+          .selectFrom('files')
+          .select(['id', 'storage_key'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', fileId)
+          .executeTakeFirst();
+
+        if (!file) continue;
+
+        await this.db.deleteFrom('files').where('tenant_id', '=', tenantId).where('id', '=', fileId).execute();
+
+        if (file.storage_key) {
+          try {
+            await this.storageService.delete(file.storage_key);
+          } catch (err) {
+            logger.error({ err }, `Failed to delete storage blob ${file.storage_key} for file ${fileId}`);
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, `Failed to purge orphaned file ${fileId}`);
+      }
+    }
+  }
+
+  public async ingestEmail(
+    email: IngestableEmail,
+    tenantId: string,
+    requestedBy: string,
+    folderId: string,
+  ): Promise<boolean> {
+    const dedupeKey = `${this.prefix}:${email.id}`;
+
+    // Dedup: use remote message ID stored in email preview field (prefixed)
+    const existing = await this.db
+      .selectFrom('emails')
+      .select('id')
       .where('tenant_id', '=', tenantId)
-      .where('person_id', '=', personId)
-      .where('status', '=', 'active')
+      .where('preview', '=', dedupeKey)
       .executeTakeFirst();
 
-    return Number(result?.total || 0);
+    if (existing) return false;
+
+    // Try finding by internetMessageId in email_headers to match locally composed
+    // & sent emails. The provider may reassign a message's ID when it moves
+    // between folders (e.g. MS Graph changes the ID on Drafts -> Sent), so the
+    // preview-based dedup above can miss the local copy. The Message-ID header is
+    // stable across that move, so use it as a folder-aware fallback.
+    if (email.internetMessageId) {
+      const matches = await this.db
+        .selectFrom('emails')
+        .innerJoin('email_headers', 'email_headers.email_id', 'emails.id')
+        .select(['emails.id as id', 'emails.folder_id as folder_id', 'emails.preview as preview'])
+        .where('emails.tenant_id', '=', tenantId)
+        .where('email_headers.tenant_id', '=', tenantId)
+        .where('email_headers.raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
+        .execute();
+
+      // 1. Same message already present in THIS folder. This is the same item
+      //    re-synced (possibly under a new provider ID) — refresh the dedupe key
+      //    so future syncs match by preview, and skip insertion.
+      const sameFolder = matches.find((m) => String(m.folder_id) === String(folderId));
+      if (sameFolder) {
+        if (sameFolder.preview !== dedupeKey) {
+          await this.db
+            .updateTable('emails')
+            .set({ preview: dedupeKey, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(sameFolder.id))
+            .execute();
+        }
+        return false;
+      }
+
+      // 2. An untagged (locally composed, not yet provider-tagged) copy exists in
+      //    another folder — claim it: tag with the provider ID and align its folder.
+      const untagged = matches.find((m) => !(m.preview?.startsWith('ms:') || m.preview?.startsWith('google:')));
+      if (untagged) {
+        await this.db
+          .updateTable('emails')
+          .set({ preview: dedupeKey, folder_id: folderId, updated_at: new Date() })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', String(untagged.id))
+          .execute();
+
+        return false; // prevent duplicate insertion
+      }
+
+      // 3. Otherwise the message only exists in other folders and is already
+      //    provider-tagged — this is a genuine cross-folder copy (e.g.
+      //    send-to-self in both Sent and Inbox). Fall through and insert fresh.
+    }
+
+    // Upload attachment files to storage outside database transaction
+
+    const uploadResults = await Promise.all(
+      email.attachments.map(async (att) => {
+        try {
+          const buffer = await att.fetchContent();
+          const sha256_hex = crypto.createHash('sha256').update(buffer).digest('hex');
+          const fileUUID = crypto.randomUUID();
+          const storage_key = `emails/attachments/${fileUUID}_${att.name}`;
+
+          await this.storageService.upload(storage_key, buffer, att.contentType);
+
+          return {
+            filename: att.name,
+            content_type: att.contentType,
+            size_bytes: att.size,
+            storage_key,
+            sha256_hex,
+            cid: att.contentId,
+            is_inline: att.isInline,
+          };
+        } catch (err) {
+          logger.error({ err }, `Failed to upload attachment ${att.name} for message ${email.id} to storage`);
+          return null;
+        }
+      }),
+    );
+
+    const uploadedFiles = uploadResults.filter((f): f is NonNullable<typeof f> => f !== null);
+
+    return this.db.transaction().execute(async (trx) => {
+      // 1. Insert into emails
+      const emailRow = await trx
+        .insertInto('emails')
+        .values({
+          tenant_id: tenantId,
+          folder_id: folderId,
+          from_email: email.fromEmail,
+          to_email: email.toEmail,
+          subject: email.subject,
+          preview: dedupeKey, // store ID as dedup key
+          assigned_to: null,
+          is_favourite: false,
+          deleted_at: null,
+          status: 'open',
+          createdby_id: requestedBy,
+          updatedby_id: requestedBy,
+        })
+        .returningAll()
+        .executeTakeFirst();
+
+      if (!emailRow) return false;
+
+      const emailId = String(emailRow.id);
+
+      // 2. Rewrite inline CID references in body content, then insert body
+      let bodyHtml = sanitizeHtml(email.bodyHtml);
+      for (const file of uploadedFiles) {
+        if (file.is_inline && file.cid) {
+          const cidEscaped = file.cid.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const regex = new RegExp(`src=['"]cid:${cidEscaped}['"]`, 'gi');
+          bodyHtml = bodyHtml.replace(regex, `src="${env.apiUrl}/api/emails/${emailId}/attachments/cid/${file.cid}"`);
+        }
+      }
+
+      await trx
+        .insertInto('email_bodies')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          body_html: bodyHtml,
+          createdby_id: requestedBy,
+          updatedby_id: requestedBy,
+        })
+        .execute();
+
+      // 3. Insert files and email_attachments metadata
+      for (const [i, file] of uploadedFiles.entries()) {
+        let fileId: string;
+
+        // Persist (or reuse, via sha256 dedup) the file row, then link the
+        // attachment to it so downloads can resolve the stored blob.
+        const existingFile = await trx
+          .selectFrom('files')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('sha256_hex', '=', file.sha256_hex)
+          .executeTakeFirst();
+
+        if (existingFile) {
+          fileId = String(existingFile.id);
+        } else {
+          const fileResult = await trx
+            .insertInto('files')
+            .values({
+              tenant_id: tenantId,
+              filename: file.filename,
+              mime_type: file.content_type,
+              size_bytes: file.size_bytes,
+              storage_key: file.storage_key,
+              sha256_hex: file.sha256_hex,
+              uploaded_by: requestedBy,
+            })
+            .returning('id')
+            .executeTakeFirstOrThrow();
+          fileId = String(fileResult.id);
+        }
+
+        await trx
+          .insertInto('email_attachments')
+          .values({
+            tenant_id: tenantId,
+            email_id: emailId,
+            filename: file.filename,
+            content_type: file.content_type,
+            size_bytes: file.size_bytes,
+            cid: file.cid,
+            is_inline: file.is_inline,
+            pos: i + 1,
+            file_id: fileId,
+            createdby_id: requestedBy,
+            updatedby_id: requestedBy,
+          })
+          .execute();
+      }
+
+      // 4. Insert headers
+      const internetMessageId = email.internetMessageId ?? '';
+      const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${email.subject ?? ''}\r\nFrom: ${email.fromEmail ?? ''}\r\nTo: ${email.toEmail ?? ''}\r\nDate: ${email.dateSent.toUTCString()}\r\n`;
+
+      await trx
+        .insertInto('email_headers')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          headers_json: JSON.stringify({ internetMessageId }),
+          raw_headers: rawHeaders,
+          date_sent: email.dateSent,
+          createdby_id: requestedBy,
+          updatedby_id: requestedBy,
+        })
+        .execute();
+
+      // 5. Insert recipients
+      if (email.recipients.length > 0) {
+        const recipientRows = email.recipients.map((r, i) => ({
+          tenant_id: tenantId,
+          email_id: emailId,
+          kind: r.kind,
+          name: r.name,
+          email: r.email,
+          pos: i,
+          createdby_id: requestedBy,
+          updatedby_id: requestedBy,
+        }));
+        await trx.insertInto('email_recipients').values(recipientRows).execute();
+      }
+
+      return true;
+    });
   }
 }
 ```
@@ -21173,6 +21815,252 @@ export class HouseholdsController extends BaseController<'households', Household
         max_attempts: 3,
       })
       .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/lists/repositories/lists.repo.ts
+
+```typescript
+import type { SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export class ListsRepo extends BaseRepository<'lists'> {
+  constructor() {
+    super('lists');
+  }
+
+  public override async getAllWithCounts(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'lists' | 'map_lists_persons' | 'map_lists_households' | 'authusers'>;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const options: JoinedQueryParams = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
+
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
+
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .leftJoin('map_lists_persons', 'map_lists_persons.list_id', 'lists.id')
+        .leftJoin('map_lists_households', 'map_lists_households.list_id', 'lists.id')
+        .leftJoin('authusers', 'authusers.id', 'lists.createdby_id')
+        .where('lists.tenant_id', '=', tenantId)
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+              LOWER(lists.name) LIKE ${text} OR
+              LOWER(lists.description) LIKE ${text} OR
+              LOWER(COALESCE(authusers.first_name, '')) LIKE ${text} OR
+              LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
+              LOWER(COALESCE(authusers.first_name || ' ' || authusers.last_name, '')) LIKE ${text}
+            )`,
+          );
+        })
+        // Column filters
+        .$if(!!filterModel['name']?.value, (q) => q.where('lists.name', 'ilike', `%${filterModel['name'].value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('lists.description', 'ilike', `%${filterModel['description'].value}%`),
+        )
+        .$if(!!filterModel['object']?.value || typeof filterModel['object'] === 'string', (q) => {
+          const raw: unknown = filterModel['object']?.value ?? filterModel['object'];
+          const v = String(raw || '')
+            .trim()
+            .toLowerCase();
+          if (!v) return q;
+          if (v === 'people' || v === 'households') return q.where('lists.object', '=', v as 'people' | 'households');
+          return q.where('lists.object', '=', v as 'people' | 'households');
+        })
+        .$if(!!filterModel['created_by']?.value || typeof filterModel['created_by'] === 'string', (q) => {
+          const raw: unknown = filterModel['created_by']?.value ?? filterModel['created_by'];
+          const val = String(raw || '').trim();
+          if (!val) return q;
+          const isNumeric = /^\d+$/.test(val);
+          if (isNumeric) {
+            return q.where(
+              sql<boolean>`(
+                COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'} OR
+                lists.createdby_id = ${Number(val)}
+              )`,
+            );
+          }
+          return q.where(
+            sql<boolean>`COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'}`,
+          );
+        })
+        .$if(!!filterModel['updated_at']?.value, (q) =>
+          q.where(sql<boolean>`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}`),
+        );
+
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT lists.id`).as('total')])
+      .execute();
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    const rowsRaw = await applyFilters(this.getSelect(trx))
+      .select(() => [
+        'lists.id',
+        'lists.name',
+        'lists.description',
+        'lists.object',
+        'lists.is_dynamic',
+        'lists.updated_at',
+        'lists.last_refreshed_at',
+        sql<number>`COUNT(DISTINCT map_lists_persons.person_id)`.as('people_count'),
+        sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
+        sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)`.as('created_by'),
+      ])
+      .groupBy([
+        'lists.id',
+        'lists.name',
+        'lists.description',
+        'lists.object',
+        'lists.is_dynamic',
+        'lists.updated_at',
+        'lists.last_refreshed_at',
+        'authusers.first_name',
+        'authusers.last_name',
+      ])
+      .$if(!!options.sortModel?.length, (qb) => {
+        const sorts = options.sortModel ?? [];
+        const createdSort = sorts.find((s) => s.colId === 'created_by');
+        const listSizeSort = sorts.find((s) => s.colId === 'list_size');
+        const usedInSort = sorts.find((s) => s.colId === 'used_in');
+        const others = sorts.filter(
+          (s) => s.colId !== 'created_by' && s.colId !== 'list_size' && s.colId !== 'used_in',
+        );
+        let acc = qb;
+        // created_by sort: sort by full name of creator
+        if (createdSort) {
+          acc = acc.orderBy(sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '')`, createdSort.sort);
+        }
+        // list_size sort: derived from people_count vs household_count
+        if (listSizeSort) {
+          acc = acc.orderBy(
+            sql`CASE WHEN lists.object = 'people' THEN COUNT(DISTINCT map_lists_persons.person_id) ELSE COUNT(DISTINCT map_lists_households.household_id) END`,
+            listSizeSort.sort,
+          );
+        }
+        // used_in sort: field is a UI placeholder; sort by a stable column instead (updated_at)
+        if (usedInSort) {
+          acc = acc.orderBy('lists.updated_at', usedInSort.sort);
+        }
+        for (const s of others) acc = acc.orderBy(s.colId, s.sort);
+        return acc;
+      })
+      .offset(startRow)
+      .limit(endRow - startRow)
+      .execute();
+
+    const rows = rowsRaw.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      object: r.object,
+      is_dynamic: r.is_dynamic,
+      updated_at: r.updated_at,
+      last_refreshed_at: r.last_refreshed_at,
+      list_size: r.object === 'people' ? Number(r.people_count) : Number(r.household_count),
+      used_in: 0,
+      created_by: r.created_by,
+    }));
+
+    return { rows, count };
+  }
+
+  public async getHouseholdsByListId(
+    input: { tenant_id: string; list_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const qb = this.getSelect(trx)
+      .innerJoin('map_lists_households as mlh', 'mlh.list_id', 'lists.id')
+      .innerJoin('households', 'households.id', 'mlh.household_id')
+      .where('lists.tenant_id', '=', input.tenant_id)
+      .where('lists.id', '=', input.list_id);
+
+    const countResult = await qb
+      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
+      .executeTakeFirst();
+    const total = countResult?.total;
+
+    const rows = await qb
+      .select([
+        'households.id',
+        'households.street1',
+        'households.street_num',
+        'households.city',
+        'households.state',
+        'households.zip',
+      ])
+      .groupBy([
+        'households.id',
+        'households.street1',
+        'households.street_num',
+        'households.city',
+        'households.state',
+        'households.zip',
+      ])
+      .execute();
+
+    return { rows, count: Number(total || 0) };
+  }
+
+  public async getPersonsByListId(
+    input: { tenant_id: string; list_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
+    const qb = this.getSelect(trx)
+      .innerJoin('map_lists_persons as mlp', 'mlp.list_id', 'lists.id')
+      .innerJoin('persons', 'persons.id', 'mlp.person_id')
+      .leftJoin('households', 'households.id', 'persons.household_id')
+      .where('lists.tenant_id', '=', input.tenant_id)
+      .where('lists.id', '=', input.list_id);
+
+    const countResult2 = await qb
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
+      .executeTakeFirst();
+    const total = countResult2?.total;
+
+    const rows = await qb
+      .select([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.household_id',
+        'households.city',
+        'households.state',
+        'households.street1',
+        'households.street_num',
+        'households.zip',
+      ])
+      .groupBy([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.household_id',
+        'households.city',
+        'households.state',
+        'households.street1',
+        'households.street_num',
+        'households.zip',
+      ])
+      .execute();
+
+    return { rows, count: Number(total || 0) };
   }
 }
 ```
@@ -23229,6 +24117,301 @@ export class FastifyServer {
 }
 ```
 
+## File: apps/backend/vite.config.ts
+
+```typescript
+/// <reference types='vitest' />
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { defineConfig } from 'vite';
+
+// Local/dev DB credentials come from a gitignored `.env.test` file at the repo root
+// (DB_USER, DB_NAME, DB_PASSWORD, DB_PORT, DB_HOST, DB_SSL, JWT_SECRET, SHARED_SECRET —
+// see apps/backend/src/env.ts for the full schema). CI/production set these as real
+// env vars instead, so loading the file is best-effort only.
+const envTestPath = resolve(__dirname, '../../.env.test');
+if (existsSync(envTestPath)) {
+  process.loadEnvFile(envTestPath);
+}
+
+export default defineConfig(() => ({
+  root: __dirname,
+  cacheDir: '../../node_modules/.vite/apps/backend',
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [],
+  test: {
+    name: 'backend',
+    watch: false,
+    globals: true,
+    passWithNoTests: true,
+    environment: 'node',
+    env: {
+      DB_USER: process.env['DB_USER'] ?? '',
+      DB_NAME: process.env['DB_NAME'] ?? '',
+      DB_PASSWORD: process.env['DB_PASSWORD'] ?? '',
+      JWT_SECRET: process.env['JWT_SECRET'] ?? '',
+      SHARED_SECRET: process.env['SHARED_SECRET'] ?? '',
+      DB_PORT: process.env['DB_PORT'] ?? '5432',
+      DB_HOST: process.env['DB_HOST'] ?? 'localhost',
+      DB_SSL: process.env['DB_SSL'] ?? 'false',
+    },
+    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/apps/backend',
+      provider: 'v8' as const,
+      // Coverage ratchet: set just under the measured baseline (2026-07-04:
+      // 46.85% stmts / 33.24% branch / 55.24% funcs / 48% lines). These may
+      // only ever be raised, never lowered — if your change drops coverage
+      // below them, add tests rather than editing the thresholds.
+      thresholds: {
+        statements: 45,
+        branches: 32,
+        functions: 54,
+        lines: 46,
+      },
+    },
+  },
+}));
+```
+
+## File: apps/backend/src/app/lib/gis/geocoding.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { isBlankAddress, isIncompleteAddress } from '../address-normalize';
+import { env } from '../../../env';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { logger } from '../../logger';
+
+let boundariesCache: any = null;
+
+export async function loadBoundaries(): Promise<any> {
+  if (boundariesCache) return boundariesCache;
+  const filePath = path.resolve(process.cwd(), 'apps/backend/src/app/lib/gis/boundaries.geojson');
+  try {
+    const data = await fs.readFile(filePath, 'utf8');
+    boundariesCache = JSON.parse(data);
+    return boundariesCache;
+  } catch (err) {
+    logger.warn({ err }, `Failed to read boundaries GeoJSON from ${filePath}. Using empty collection.`);
+    return { type: 'FeatureCollection', features: [] };
+  }
+}
+
+function isPointInRing(lng: number, lat: number, ring: number[][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i] ?? [];
+    const [xj, yj] = ring[j] ?? [];
+    if (xi === undefined || yi === undefined || xj === undefined || yj === undefined) continue;
+    const intersect = yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function isPointInPolygon(lng: number, lat: number, polygon: number[][][]): boolean {
+  const outerRing = polygon[0];
+  if (!outerRing || !isPointInRing(lng, lat, outerRing)) {
+    return false;
+  }
+  // If it's inside any inner rings (holes), it is NOT in the polygon
+  for (const innerRing of polygon.slice(1)) {
+    if (isPointInRing(lng, lat, innerRing)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function isPointInMultiPolygon(lng: number, lat: number, multipolygon: number[][][][]): boolean {
+  for (const polygon of multipolygon) {
+    if (isPointInPolygon(lng, lat, polygon)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function matchCoordinatesToDistrict(
+  lat: number,
+  lng: number,
+): Promise<{ district: string | null; precinct: string | null; ward: string | null }> {
+  const geojson = await loadBoundaries();
+  if (!geojson || !geojson.features) {
+    return { district: null, precinct: null, ward: null };
+  }
+
+  for (const feature of geojson.features) {
+    const geometry = feature.geometry;
+    const properties = feature.properties || {};
+
+    if (geometry.type === 'Polygon') {
+      if (isPointInPolygon(lng, lat, geometry.coordinates)) {
+        return {
+          district: properties.district || null,
+          precinct: properties.precinct || null,
+          ward: properties.ward || null,
+        };
+      }
+    } else if (geometry.type === 'MultiPolygon') {
+      if (isPointInMultiPolygon(lng, lat, geometry.coordinates)) {
+        return {
+          district: properties.district || null,
+          precinct: properties.precinct || null,
+          ward: properties.ward || null,
+        };
+      }
+    }
+  }
+
+  return { district: null, precinct: null, ward: null };
+}
+
+export async function geocodeAndMapHousehold(householdId: string, tenantId: string, db: Kysely<Models>): Promise<void> {
+  const hh = await db
+    .selectFrom('households')
+    .selectAll()
+    .where('id', '=', householdId)
+    .where('tenant_id', '=', tenantId)
+    .executeTakeFirst();
+
+  if (!hh) {
+    logger.warn(`Geocoding job skipped: Household ${householdId} not found.`);
+    return;
+  }
+
+  // 1. Check if the address is blank or incomplete
+  if (isBlankAddress(hh) || isIncompleteAddress(hh)) {
+    logger.info(`Geocoding job: Household ${householdId} has a blank or incomplete address. Marking as failed.`);
+    await db
+      .updateTable('households')
+      .set({
+        geocoding_status: 'failed',
+        district: null,
+        precinct: null,
+        ward: null,
+        updated_at: new Date(),
+      })
+      .where('id', '=', householdId)
+      .where('tenant_id', '=', tenantId)
+      .execute();
+    return;
+  }
+
+  // 2. Throttle API calls to protect rate limits (e.g. 200ms sleep)
+  await new Promise((resolve) => setTimeout(resolve, 200));
+
+  let lat: number | null = null;
+  let lng: number | null = null;
+  let formattedAddress: string | null = null;
+  let addressType: string | null = null;
+
+  const apiKey = env.googleMapsApiKey;
+  const isMockOrTest = !apiKey || apiKey.includes('mock') || process.env['NODE_ENV'] === 'test';
+
+  const addressStr = [hh.street_num, hh.street1, hh.street2, hh.city, hh.state, hh.zip, hh.country]
+    .filter(Boolean)
+    .join(', ');
+
+  if (!isMockOrTest) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+        addressStr,
+      )}&key=${apiKey}`;
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Google Maps Geocoding API returned status ${response.status}`);
+      }
+      const data: any = await response.json();
+
+      if (data.status === 'OK' && data.results && data.results.length > 0) {
+        const result = data.results[0];
+        lat = result.geometry.location.lat;
+        lng = result.geometry.location.lng;
+        formattedAddress = result.formatted_address;
+        addressType = result.geometry.location_type;
+      } else if (data.status === 'ZERO_RESULTS') {
+        logger.info(`Geocoding job: Address "${addressStr}" returned zero results. Marking as failed.`);
+        await db
+          .updateTable('households')
+          .set({
+            geocoding_status: 'failed',
+            district: null,
+            precinct: null,
+            ward: null,
+            updated_at: new Date(),
+          })
+          .where('id', '=', householdId)
+          .where('tenant_id', '=', tenantId)
+          .execute();
+        return;
+      } else {
+        // Transient error like OVER_QUERY_LIMIT, REQUEST_DENIED, etc.
+        throw new Error(`Google Maps Geocoding API error status: ${data.status}`);
+      }
+    } catch (err) {
+      logger.error({ err }, `Geocoding API call failed for household ${householdId}`);
+      // Re-throw to trigger worker retry with backoff
+      throw err;
+    }
+  } else {
+    // 3. Fallback deterministic coordinates for testing and development
+    // Create a simple hash of the address string to get reproducible coordinates
+    let hash = 0;
+    for (let i = 0; i < addressStr.length; i++) {
+      hash = addressStr.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const val = Math.abs(hash % 1000) / 1000; // Value between 0 and 1
+
+    // Map address to Chicago Loop, North Side, or West Side coordinates
+    // Lat bounds: 41.85 to 41.93. Lng bounds: -87.69 to -87.61
+    lat = 41.85 + val * 0.08;
+    lng = -87.69 + val * 0.08;
+    formattedAddress = `${hh.street_num || '123'} ${hh.street1 || 'Main St'}, ${hh.city || 'Chicago'}, ${hh.state || 'IL'} ${hh.zip || '60601'}`;
+    addressType = 'rooftop';
+    logger.info(`Geocoding job simulated in dev/test for household ${householdId} at lat=${lat}, lng=${lng}`);
+  }
+
+  // 4. Match against GIS Boundaries
+  let district: string | null = null;
+  let precinct: string | null = null;
+  let ward: string | null = null;
+
+  if (lat !== null && lng !== null) {
+    const matched = await matchCoordinatesToDistrict(lat, lng);
+    district = matched.district;
+    precinct = matched.precinct;
+    ward = matched.ward;
+  }
+
+  // 5. Update household record
+  await db
+    .updateTable('households')
+    .set({
+      lat,
+      lng,
+      formatted_address: formattedAddress,
+      type: addressType,
+      district,
+      precinct,
+      ward,
+      geocoding_status: 'success',
+      updated_at: new Date(),
+    })
+    .where('id', '=', householdId)
+    .where('tenant_id', '=', tenantId)
+    .execute();
+
+  logger.info(`Geocoding & GIS mapping completed successfully for household ${householdId}. Status set to success.`);
+}
+```
+
 ## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
 
 ```typescript
@@ -23768,40 +24951,80 @@ export class TransactionalEmailService {
 }
 ```
 
-## File: apps/backend/src/app/lib/rate-limiter.ts
+## File: apps/backend/src/app/modules/donations/repositories/pledges.repo.ts
 
 ```typescript
-import { TooManyRequestsError } from '../errors/app-errors';
+import type { Selectable } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../../../lib/base.repo';
 
-const store = new Map<string, number[]>();
-
-// Periodically evict keys whose newest hit is older than any window we use, so
-// the map doesn't grow unbounded with distinct IP/action keys over time.
-const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
-const MAX_RETENTION_MS = 60 * 60 * 1000; // longest rate-limit window in use
-let lastSweep = Date.now();
-
-function sweep(now: number): void {
-  if (now - lastSweep < SWEEP_INTERVAL_MS) return;
-  lastSweep = now;
-  for (const [key, hits] of store) {
-    const newest = hits[hits.length - 1] ?? 0;
-    if (now - newest > MAX_RETENTION_MS) {
-      store.delete(key);
-    }
+export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
+  constructor() {
+    super('donation_pledges');
   }
-}
 
-export function checkRateLimit(key: string, limit: number, windowMs: number): void {
-  const now = Date.now();
-  sweep(now);
-  const hits = (store.get(key) ?? []).filter((t) => now - t < windowMs);
-  hits.push(now);
-  store.set(key, hits);
-  if (hits.length > limit) {
-    const firstHit = hits[0] ?? now;
-    const retryAfterSec = Math.ceil((firstHit + windowMs - now) / 1000);
-    throw new TooManyRequestsError(`Too many requests. Retry in ${retryAfterSec} seconds.`, { retryAfterSec });
+  public async getAllForTenant(tenantId: string) {
+    return this.db
+      .selectFrom('donation_pledges')
+      .leftJoin('persons', 'persons.id', 'donation_pledges.person_id')
+      .select([
+        'donation_pledges.id',
+        'donation_pledges.tenant_id',
+        'donation_pledges.person_id',
+        'donation_pledges.stripe_subscription_id',
+        'donation_pledges.stripe_customer_id',
+        'donation_pledges.monthly_amount',
+        'donation_pledges.status',
+        'donation_pledges.started_at',
+        'donation_pledges.cancelled_at',
+        'donation_pledges.next_billing_date',
+        'donation_pledges.state',
+        'donation_pledges.country',
+        'donation_pledges.created_at',
+        this.db.fn.coalesce('persons.first_name', 'donation_pledges.first_name').as('person_first_name'),
+        this.db.fn.coalesce('persons.last_name', 'donation_pledges.last_name').as('person_last_name'),
+        this.db.fn.coalesce('persons.email', 'donation_pledges.email').as('person_email'),
+      ])
+      .where('donation_pledges.tenant_id', '=', tenantId)
+      .orderBy('donation_pledges.created_at', 'desc')
+      .execute();
+  }
+
+  public async getForPerson(tenantId: string, personId: string): Promise<Selectable<Models['donation_pledges']>[]> {
+    return this.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
+      .orderBy('created_at', 'desc')
+      .execute();
+  }
+
+  // TODO: is this called from anywhere?
+  public async getByStripeSubscriptionId(
+    subscriptionId: string,
+  ): Promise<Selectable<Models['donation_pledges']> | undefined> {
+    return this.db
+      .selectFrom('donation_pledges')
+      .selectAll()
+      .where('stripe_subscription_id', '=', subscriptionId)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Sum of monthly_amount for all active pledges for a person.
+   * Used for conservative limit enforcement: counts committed future payments.
+   */
+  public async getActivePledgeMonthlyTotal(tenantId: string, personId: string): Promise<number> {
+    const result = await this.db
+      .selectFrom('donation_pledges')
+      .select(({ fn }) => [fn.sum<string | number>('monthly_amount').as('total')])
+      .where('tenant_id', '=', tenantId)
+      .where('person_id', '=', personId)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+
+    return Number(result?.total || 0);
   }
 }
 ```
@@ -24601,429 +25824,6 @@ export class DonationsController extends BaseController<'donations', DonationsRe
 }
 ```
 
-## File: apps/backend/src/app/modules/emails/services/email-ingester.service.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { StorageService } from '../../../lib/storage.service';
-import { env } from '../../../../env';
-import crypto from 'crypto';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-import { logger } from '../../../logger';
-
-export interface IngestableEmail {
-  id: string; // Remote provider's unique message ID
-  internetMessageId?: string | null;
-  fromEmail: string | null;
-  toEmail: string | null;
-  subject: string | null;
-  dateSent: Date;
-  bodyHtml: string;
-  recipients: Array<{
-    kind: 'to' | 'cc' | 'bcc';
-    name: string | null;
-    email: string;
-  }>;
-  attachments: Array<{
-    name: string;
-    contentType: string;
-    size: number;
-    contentId: string | null;
-    isInline: boolean;
-    fetchContent: () => Promise<Buffer>;
-  }>;
-}
-
-export class EmailIngesterService {
-  private readonly storageService = new StorageService();
-
-  constructor(
-    private readonly db: Kysely<Models>,
-    private readonly prefix: string, // 'ms' or 'google'
-  ) {}
-
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    const matchedEmails = await this.db
-      .selectFrom('emails')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .where('preview', 'like', `${this.prefix}:%`)
-      .execute();
-
-    if (matchedEmails.length === 0) return;
-    const emailIds = matchedEmails.map((e) => String(e.id));
-
-    // Capture attachment file references before the rows are deleted.
-    const fileIds = await this.getAttachmentFileIds(tenantId, emailIds);
-
-    await this.db.transaction().execute(async (trx) => {
-      // Delete from dependent tables sequentially to prevent foreign key constraint issues
-      await trx
-        .deleteFrom('email_comments')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx
-        .deleteFrom('email_bodies')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx
-        .deleteFrom('email_headers')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx
-        .deleteFrom('email_recipients')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx
-        .deleteFrom('email_attachments')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', 'in', emailIds)
-        .execute();
-      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', 'in', emailIds).execute();
-
-      // Delete from emails table
-      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', 'in', emailIds).execute();
-    });
-
-    await this.purgeOrphanedFiles(tenantId, fileIds);
-  }
-
-  public async deleteMessage(tenantId: string, remoteId: string): Promise<void> {
-    const dedupeKey = `${this.prefix}:${remoteId}`;
-    const existing = await this.db
-      .selectFrom('emails')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .where('preview', '=', dedupeKey)
-      .executeTakeFirst();
-
-    if (!existing) return;
-    const emailId = String(existing.id);
-
-    // Capture attachment file references before the rows are deleted.
-    const fileIds = await this.getAttachmentFileIds(tenantId, [emailId]);
-
-    await this.db.transaction().execute(async (trx) => {
-      // Delete from dependent tables sequentially to prevent foreign key constraint issues
-      await trx
-        .deleteFrom('email_comments')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', '=', emailId)
-        .execute();
-      await trx.deleteFrom('email_bodies').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-      await trx.deleteFrom('email_headers').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-      await trx
-        .deleteFrom('email_recipients')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', '=', emailId)
-        .execute();
-      await trx
-        .deleteFrom('email_attachments')
-        .where('tenant_id', '=', tenantId)
-        .where('email_id', '=', emailId)
-        .execute();
-      await trx.deleteFrom('email_trash').where('tenant_id', '=', tenantId).where('email_id', '=', emailId).execute();
-
-      // Delete from emails table
-      await trx.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', emailId).execute();
-    });
-
-    await this.purgeOrphanedFiles(tenantId, fileIds);
-  }
-
-  /** Distinct, non-null file_ids referenced by the given emails' attachments. */
-  private async getAttachmentFileIds(tenantId: string, emailIds: string[]): Promise<string[]> {
-    if (emailIds.length === 0) return [];
-    const rows = await this.db
-      .selectFrom('email_attachments')
-      .select('file_id')
-      .distinct()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', 'in', emailIds)
-      .where('file_id', 'is not', null)
-      .execute();
-    return rows.map((r) => String(r.file_id)).filter((id) => id !== 'null');
-  }
-
-  /**
-   * Delete file rows + storage blobs for files no longer referenced by any
-   * remaining attachment (files are sha256-deduped and can be shared). Storage
-   * deletion is best-effort and must not throw.
-   */
-  private async purgeOrphanedFiles(tenantId: string, fileIds: string[]): Promise<void> {
-    for (const fileId of fileIds) {
-      try {
-        const stillReferenced = await this.db
-          .selectFrom('email_attachments')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('file_id', '=', fileId)
-          .limit(1)
-          .executeTakeFirst();
-
-        if (stillReferenced) continue;
-
-        const file = await this.db
-          .selectFrom('files')
-          .select(['id', 'storage_key'])
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', fileId)
-          .executeTakeFirst();
-
-        if (!file) continue;
-
-        await this.db.deleteFrom('files').where('tenant_id', '=', tenantId).where('id', '=', fileId).execute();
-
-        if (file.storage_key) {
-          try {
-            await this.storageService.delete(file.storage_key);
-          } catch (err) {
-            logger.error({ err }, `Failed to delete storage blob ${file.storage_key} for file ${fileId}`);
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, `Failed to purge orphaned file ${fileId}`);
-      }
-    }
-  }
-
-  public async ingestEmail(
-    email: IngestableEmail,
-    tenantId: string,
-    requestedBy: string,
-    folderId: string,
-  ): Promise<boolean> {
-    const dedupeKey = `${this.prefix}:${email.id}`;
-
-    // Dedup: use remote message ID stored in email preview field (prefixed)
-    const existing = await this.db
-      .selectFrom('emails')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .where('preview', '=', dedupeKey)
-      .executeTakeFirst();
-
-    if (existing) return false;
-
-    // Try finding by internetMessageId in email_headers to match locally composed
-    // & sent emails. The provider may reassign a message's ID when it moves
-    // between folders (e.g. MS Graph changes the ID on Drafts -> Sent), so the
-    // preview-based dedup above can miss the local copy. The Message-ID header is
-    // stable across that move, so use it as a folder-aware fallback.
-    if (email.internetMessageId) {
-      const matches = await this.db
-        .selectFrom('emails')
-        .innerJoin('email_headers', 'email_headers.email_id', 'emails.id')
-        .select(['emails.id as id', 'emails.folder_id as folder_id', 'emails.preview as preview'])
-        .where('emails.tenant_id', '=', tenantId)
-        .where('email_headers.tenant_id', '=', tenantId)
-        .where('email_headers.raw_headers', 'like', `%Message-ID: ${email.internetMessageId}%`)
-        .execute();
-
-      // 1. Same message already present in THIS folder. This is the same item
-      //    re-synced (possibly under a new provider ID) — refresh the dedupe key
-      //    so future syncs match by preview, and skip insertion.
-      const sameFolder = matches.find((m) => String(m.folder_id) === String(folderId));
-      if (sameFolder) {
-        if (sameFolder.preview !== dedupeKey) {
-          await this.db
-            .updateTable('emails')
-            .set({ preview: dedupeKey, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(sameFolder.id))
-            .execute();
-        }
-        return false;
-      }
-
-      // 2. An untagged (locally composed, not yet provider-tagged) copy exists in
-      //    another folder — claim it: tag with the provider ID and align its folder.
-      const untagged = matches.find((m) => !(m.preview?.startsWith('ms:') || m.preview?.startsWith('google:')));
-      if (untagged) {
-        await this.db
-          .updateTable('emails')
-          .set({ preview: dedupeKey, folder_id: folderId, updated_at: new Date() })
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', String(untagged.id))
-          .execute();
-
-        return false; // prevent duplicate insertion
-      }
-
-      // 3. Otherwise the message only exists in other folders and is already
-      //    provider-tagged — this is a genuine cross-folder copy (e.g.
-      //    send-to-self in both Sent and Inbox). Fall through and insert fresh.
-    }
-
-    // Upload attachment files to storage outside database transaction
-
-    const uploadResults = await Promise.all(
-      email.attachments.map(async (att) => {
-        try {
-          const buffer = await att.fetchContent();
-          const sha256_hex = crypto.createHash('sha256').update(buffer).digest('hex');
-          const fileUUID = crypto.randomUUID();
-          const storage_key = `emails/attachments/${fileUUID}_${att.name}`;
-
-          await this.storageService.upload(storage_key, buffer, att.contentType);
-
-          return {
-            filename: att.name,
-            content_type: att.contentType,
-            size_bytes: att.size,
-            storage_key,
-            sha256_hex,
-            cid: att.contentId,
-            is_inline: att.isInline,
-          };
-        } catch (err) {
-          logger.error({ err }, `Failed to upload attachment ${att.name} for message ${email.id} to storage`);
-          return null;
-        }
-      }),
-    );
-
-    const uploadedFiles = uploadResults.filter((f): f is NonNullable<typeof f> => f !== null);
-
-    return this.db.transaction().execute(async (trx) => {
-      // 1. Insert into emails
-      const emailRow = await trx
-        .insertInto('emails')
-        .values({
-          tenant_id: tenantId,
-          folder_id: folderId,
-          from_email: email.fromEmail,
-          to_email: email.toEmail,
-          subject: email.subject,
-          preview: dedupeKey, // store ID as dedup key
-          assigned_to: null,
-          is_favourite: false,
-          deleted_at: null,
-          status: 'open',
-          createdby_id: requestedBy,
-          updatedby_id: requestedBy,
-        })
-        .returningAll()
-        .executeTakeFirst();
-
-      if (!emailRow) return false;
-
-      const emailId = String(emailRow.id);
-
-      // 2. Rewrite inline CID references in body content, then insert body
-      let bodyHtml = sanitizeHtml(email.bodyHtml);
-      for (const file of uploadedFiles) {
-        if (file.is_inline && file.cid) {
-          const cidEscaped = file.cid.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const regex = new RegExp(`src=['"]cid:${cidEscaped}['"]`, 'gi');
-          bodyHtml = bodyHtml.replace(regex, `src="${env.apiUrl}/api/emails/${emailId}/attachments/cid/${file.cid}"`);
-        }
-      }
-
-      await trx
-        .insertInto('email_bodies')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          body_html: bodyHtml,
-          createdby_id: requestedBy,
-          updatedby_id: requestedBy,
-        })
-        .execute();
-
-      // 3. Insert files and email_attachments metadata
-      for (const [i, file] of uploadedFiles.entries()) {
-        let fileId: string;
-
-        // Persist (or reuse, via sha256 dedup) the file row, then link the
-        // attachment to it so downloads can resolve the stored blob.
-        const existingFile = await trx
-          .selectFrom('files')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('sha256_hex', '=', file.sha256_hex)
-          .executeTakeFirst();
-
-        if (existingFile) {
-          fileId = String(existingFile.id);
-        } else {
-          const fileResult = await trx
-            .insertInto('files')
-            .values({
-              tenant_id: tenantId,
-              filename: file.filename,
-              mime_type: file.content_type,
-              size_bytes: file.size_bytes,
-              storage_key: file.storage_key,
-              sha256_hex: file.sha256_hex,
-              uploaded_by: requestedBy,
-            })
-            .returning('id')
-            .executeTakeFirstOrThrow();
-          fileId = String(fileResult.id);
-        }
-
-        await trx
-          .insertInto('email_attachments')
-          .values({
-            tenant_id: tenantId,
-            email_id: emailId,
-            filename: file.filename,
-            content_type: file.content_type,
-            size_bytes: file.size_bytes,
-            cid: file.cid,
-            is_inline: file.is_inline,
-            pos: i + 1,
-            file_id: fileId,
-            createdby_id: requestedBy,
-            updatedby_id: requestedBy,
-          })
-          .execute();
-      }
-
-      // 4. Insert headers
-      const internetMessageId = email.internetMessageId ?? '';
-      const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${email.subject ?? ''}\r\nFrom: ${email.fromEmail ?? ''}\r\nTo: ${email.toEmail ?? ''}\r\nDate: ${email.dateSent.toUTCString()}\r\n`;
-
-      await trx
-        .insertInto('email_headers')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          headers_json: JSON.stringify({ internetMessageId }),
-          raw_headers: rawHeaders,
-          date_sent: email.dateSent,
-          createdby_id: requestedBy,
-          updatedby_id: requestedBy,
-        })
-        .execute();
-
-      // 5. Insert recipients
-      if (email.recipients.length > 0) {
-        const recipientRows = email.recipients.map((r, i) => ({
-          tenant_id: tenantId,
-          email_id: emailId,
-          kind: r.kind,
-          name: r.name,
-          email: r.email,
-          pos: i,
-          createdby_id: requestedBy,
-          updatedby_id: requestedBy,
-        }));
-        await trx.insertInto('email_recipients').values(recipientRows).execute();
-      }
-
-      return true;
-    });
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/emails/controller.ts
 
 ```typescript
@@ -25584,6 +26384,356 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 }
 ```
 
+## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { GoogleOAuthService } from './google-oauth.service';
+import type { IngestableEmail } from '../emails/services/email-ingester.service';
+import { EmailIngesterService } from '../emails/services/email-ingester.service';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import { logger } from '../../logger';
+
+const MAX_MESSAGES_PER_SYNC = 50;
+
+async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    const res = await fetch(url, init);
+    if (res.status === 429 && attempt <= maxRetries) {
+      const retryAfterHeader = res.headers.get('Retry-After');
+      let delayMs = 5000;
+      if (retryAfterHeader) {
+        const parsed = parseInt(retryAfterHeader, 10);
+        if (!isNaN(parsed)) {
+          delayMs = parsed * 1000;
+        } else {
+          const parsedDate = Date.parse(retryAfterHeader);
+          if (!isNaN(parsedDate)) {
+            delayMs = Math.max(0, parsedDate - Date.now());
+          }
+        }
+      } else {
+        delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
+      }
+      logger.warn(
+        `Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+    return res;
+  }
+}
+
+export class GoogleSyncService {
+  private readonly ingester: EmailIngesterService;
+
+  constructor(
+    private readonly db: Kysely<Models>,
+    private readonly oauthSvc: GoogleOAuthService,
+  ) {
+    this.ingester = new EmailIngesterService(db, 'google');
+  }
+
+  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId);
+
+    // Map Gmail label names to pplcrm folder IDs
+    const syncFolders = [
+      { label: 'INBOX', pplcrmId: ALL_FOLDERS.INBOX },
+      { label: 'SENT', pplcrmId: ALL_FOLDERS.SENT },
+      { label: 'TRASH', pplcrmId: ALL_FOLDERS.TRASH },
+      { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
+    ];
+
+    // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds).
+    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
+    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
+    // positions after a successful sync, so no explicit clear is needed.
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
+    let deltaMap: Record<string, number> = {};
+    if (dbDeltaLink) {
+      try {
+        const parsed = JSON.parse(dbDeltaLink);
+        if (!parsed._needs_full_sync) {
+          deltaMap = parsed;
+        }
+        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
+      } catch {
+        deltaMap = {};
+      }
+    }
+
+    let inserted = 0;
+    const nextDeltaMap: Record<string, number> = { ...deltaMap };
+    const currentSyncTime = Math.floor(Date.now() / 1000);
+
+    for (const folder of syncFolders) {
+      const folderLastSync = deltaMap[folder.label] || 0;
+
+      let pageToken: string | null = null;
+      let hasMore = true;
+      const allMessageIds: string[] = [];
+
+      // Query Gmail messages: `label:<LABEL>` and `after:<epoch_seconds>` (with a small 60s overlap buffer)
+      const queryParts = [`label:${folder.label}`];
+      if (folderLastSync > 0) {
+        queryParts.push(`after:${folderLastSync - 60}`);
+      }
+      const q = queryParts.join(' ');
+
+      while (hasMore) {
+        const urlParams = new URLSearchParams({
+          maxResults: String(MAX_MESSAGES_PER_SYNC),
+          q,
+        });
+        if (pageToken) urlParams.set('pageToken', pageToken);
+
+        const res = await fetchWithRetry(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          },
+        );
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`Gmail API error: ${errText}`);
+        }
+
+        const data: any = await res.json();
+        const messages = data.messages ?? [];
+        allMessageIds.push(...messages.map((m: any) => m.id));
+
+        if (data.nextPageToken) {
+          pageToken = data.nextPageToken;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      // Process all messages fetched
+      for (const msgId of allMessageIds) {
+        try {
+          const wasSaved = await this.syncMessageDetails(accessToken, msgId, tenantId, requestedBy, folder.pplcrmId);
+          if (wasSaved) inserted++;
+        } catch (err) {
+          logger.error({ err }, `Failed to sync Gmail message details for ${msgId}`);
+        }
+      }
+
+      nextDeltaMap[folder.label] = currentSyncTime;
+
+      // Handle clean-up for deleted/moved emails
+      // If we performed a full sync (started with no previous sync time), we compare
+      // messages in Gmail with local emails having `google:` preview prefix in this folder.
+      if (folderLastSync === 0) {
+        const serverGoogleIds = new Set(allMessageIds);
+        const localEmails = await this.db
+          .selectFrom('emails')
+          .select(['id', 'preview'])
+          .where('tenant_id', '=', tenantId)
+          .where('folder_id', '=', folder.pplcrmId)
+          .where('preview', 'like', 'google:%')
+          .execute();
+
+        for (const localEmail of localEmails) {
+          const previewKey = localEmail.preview ?? '';
+          const googleId = previewKey.replace(/^google:/, '');
+          if (!serverGoogleIds.has(googleId)) {
+            await this.ingester.deleteMessage(tenantId, googleId);
+          }
+        }
+      }
+    }
+
+    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
+    return { inserted };
+  }
+
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    await this.ingester.removeAllLocalEmails(tenantId);
+  }
+
+  private async syncMessageDetails(
+    accessToken: string,
+    msgId: string,
+    tenantId: string,
+    requestedBy: string,
+    folderId: string,
+  ): Promise<boolean> {
+    const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        return false; // message deleted in the meantime
+      }
+      const errText = await res.text();
+      throw new Error(`Failed to fetch Gmail message ${msgId} details: ${errText}`);
+    }
+
+    const data: any = await res.json();
+    const payload = data.payload;
+    if (!payload) return false;
+
+    const headers = payload.headers ?? [];
+    const getHeader = (name: string) =>
+      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
+
+    const subject = getHeader('subject');
+    const fromVal = getHeader('from');
+    const toVal = getHeader('to');
+    const dateVal = getHeader('date');
+    const internetMessageId = getHeader('message-id');
+
+    // Parse email addresses from "Name <email@domain.com>" format
+    const extractEmail = (val: string | null): string | null => {
+      if (!val) return null;
+      const match = val.match(/<([^>]+)>/);
+      return match ? (match[1] as string) : val.trim();
+    };
+
+    const fromEmail = extractEmail(fromVal);
+    const toEmail = extractEmail(toVal);
+    let dateSent = dateVal ? new Date(dateVal) : new Date();
+    if (isNaN(dateSent.getTime())) {
+      dateSent = new Date();
+    }
+
+    // Parse body parts recursively
+    const parts = payload.parts ? payload.parts : [payload];
+    const { html, text, attachments } = this.parseGmailParts(parts);
+    const bodyHtml = html || text || '';
+
+    // Map attachments to the generic ingestable structure
+    const mappedAttachments = attachments.map((att: any) => ({
+      name: att.filename,
+      contentType: att.mimeType,
+      size: att.size,
+      contentId: att.cid,
+      isInline: att.isInline,
+      fetchContent: async () => {
+        const attRes = await fetchWithRetry(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${att.attachmentId}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+        );
+        if (!attRes.ok) {
+          throw new Error(`Failed to fetch attachment ${att.filename} from Gmail`);
+        }
+        const attData: any = await attRes.json();
+        return this.decodeBase64UrlToBuffer(attData.data);
+      },
+    }));
+
+    // Parse recipients
+    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
+
+    const parseRecipientHeader = (val: string | null, kind: 'to' | 'cc' | 'bcc') => {
+      if (!val) return;
+      // Split by comma, respecting quotes
+      const list = val.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+      list.forEach((item) => {
+        const trimmed = item.trim();
+        if (!trimmed) return;
+        const emailMatch = trimmed.match(/<([^>]+)>/);
+        const email = emailMatch ? (emailMatch[1] as string) : trimmed;
+        const nameMatch = trimmed.match(/^([^<]+)/);
+        let name = nameMatch ? (nameMatch[1] as string).trim() : null;
+        if (name) {
+          name = name.replace(/^["']|["']$/g, ''); // strip quotes
+        }
+        recipients.push({ kind, name, email });
+      });
+    };
+
+    parseRecipientHeader(getHeader('to'), 'to');
+    parseRecipientHeader(getHeader('cc'), 'cc');
+    parseRecipientHeader(getHeader('bcc'), 'bcc');
+
+    const ingestable: IngestableEmail = {
+      id: msgId,
+      internetMessageId,
+      fromEmail,
+      toEmail,
+      subject,
+      dateSent,
+      bodyHtml,
+      recipients,
+      attachments: mappedAttachments,
+    };
+
+    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+  }
+
+  private parseGmailParts(parts: any[]): { html: string; text: string; attachments: any[] } {
+    let html = '';
+    let text = '';
+    const attachments: any[] = [];
+
+    const traverse = (part: any) => {
+      const mimeType = part.mimeType?.toLowerCase();
+      const filename = part.filename;
+      const body = part.body;
+
+      if (filename && body?.attachmentId) {
+        const headers = part.headers ?? [];
+        const contentDisposition =
+          headers.find((h: any) => h.name.toLowerCase() === 'content-disposition')?.value ?? '';
+        const isInline = contentDisposition.toLowerCase().includes('inline');
+        const contentIdHeader = headers.find((h: any) => h.name.toLowerCase() === 'content-id')?.value ?? '';
+        const cid = contentIdHeader ? contentIdHeader.replace(/[<>]/g, '') : null;
+
+        attachments.push({
+          filename,
+          mimeType: part.mimeType,
+          attachmentId: body.attachmentId,
+          size: body.size ?? 0,
+          cid,
+          isInline,
+        });
+      } else if (mimeType === 'text/html' && body?.data) {
+        html += this.decodeBase64Url(body.data);
+      } else if (mimeType === 'text/plain' && body?.data) {
+        text += this.decodeBase64Url(body.data);
+      }
+
+      if (part.parts) {
+        for (const p of part.parts) {
+          traverse(p);
+        }
+      }
+    };
+
+    for (const part of parts) {
+      traverse(part);
+    }
+
+    return { html, text, attachments };
+  }
+
+  private decodeBase64Url(str: string): string {
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    return Buffer.from(base64, 'base64').toString('utf8');
+  }
+
+  private decodeBase64UrlToBuffer(str: string): Buffer {
+    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    return Buffer.from(base64, 'base64');
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/imports/controller.ts
 
 ```typescript
@@ -25778,252 +26928,6 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
       errorMessage: row.error_message,
       canDeleteContacts,
     };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/lists/repositories/lists.repo.ts
-
-```typescript
-import type { SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export class ListsRepo extends BaseRepository<'lists'> {
-  constructor() {
-    super('lists');
-  }
-
-  public override async getAllWithCounts(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'lists' | 'map_lists_persons' | 'map_lists_households' | 'authusers'>;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const options: JoinedQueryParams = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = ((options as JoinedQueryParams)?.filterModel ?? {}) as Record<string, any>;
-
-    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
-    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
-
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
-      qb
-        .leftJoin('map_lists_persons', 'map_lists_persons.list_id', 'lists.id')
-        .leftJoin('map_lists_households', 'map_lists_households.list_id', 'lists.id')
-        .leftJoin('authusers', 'authusers.id', 'lists.createdby_id')
-        .where('lists.tenant_id', '=', tenantId)
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-              LOWER(lists.name) LIKE ${text} OR
-              LOWER(lists.description) LIKE ${text} OR
-              LOWER(COALESCE(authusers.first_name, '')) LIKE ${text} OR
-              LOWER(COALESCE(authusers.last_name, '')) LIKE ${text} OR
-              LOWER(COALESCE(authusers.first_name || ' ' || authusers.last_name, '')) LIKE ${text}
-            )`,
-          );
-        })
-        // Column filters
-        .$if(!!filterModel['name']?.value, (q) => q.where('lists.name', 'ilike', `%${filterModel['name'].value}%`))
-        .$if(!!filterModel['description']?.value, (q) =>
-          q.where('lists.description', 'ilike', `%${filterModel['description'].value}%`),
-        )
-        .$if(!!filterModel['object']?.value || typeof filterModel['object'] === 'string', (q) => {
-          const raw: unknown = filterModel['object']?.value ?? filterModel['object'];
-          const v = String(raw || '')
-            .trim()
-            .toLowerCase();
-          if (!v) return q;
-          if (v === 'people' || v === 'households') return q.where('lists.object', '=', v as 'people' | 'households');
-          return q.where('lists.object', '=', v as 'people' | 'households');
-        })
-        .$if(!!filterModel['created_by']?.value || typeof filterModel['created_by'] === 'string', (q) => {
-          const raw: unknown = filterModel['created_by']?.value ?? filterModel['created_by'];
-          const val = String(raw || '').trim();
-          if (!val) return q;
-          const isNumeric = /^\d+$/.test(val);
-          if (isNumeric) {
-            return q.where(
-              sql<boolean>`(
-                COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'} OR
-                lists.createdby_id = ${Number(val)}
-              )`,
-            );
-          }
-          return q.where(
-            sql<boolean>`COALESCE(authusers.first_name || ' ' || authusers.last_name, '') ILIKE ${'%' + val + '%'}`,
-          );
-        })
-        .$if(!!filterModel['updated_at']?.value, (q) =>
-          q.where(sql<boolean>`CAST(lists.updated_at AS TEXT) ILIKE ${'%' + filterModel['updated_at'].value + '%'}`),
-        );
-
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT lists.id`).as('total')])
-      .execute();
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    const rowsRaw = await applyFilters(this.getSelect(trx))
-      .select(() => [
-        'lists.id',
-        'lists.name',
-        'lists.description',
-        'lists.object',
-        'lists.is_dynamic',
-        'lists.updated_at',
-        'lists.last_refreshed_at',
-        sql<number>`COUNT(DISTINCT map_lists_persons.person_id)`.as('people_count'),
-        sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
-        sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)`.as('created_by'),
-      ])
-      .groupBy([
-        'lists.id',
-        'lists.name',
-        'lists.description',
-        'lists.object',
-        'lists.is_dynamic',
-        'lists.updated_at',
-        'lists.last_refreshed_at',
-        'authusers.first_name',
-        'authusers.last_name',
-      ])
-      .$if(!!options.sortModel?.length, (qb) => {
-        const sorts = options.sortModel ?? [];
-        const createdSort = sorts.find((s) => s.colId === 'created_by');
-        const listSizeSort = sorts.find((s) => s.colId === 'list_size');
-        const usedInSort = sorts.find((s) => s.colId === 'used_in');
-        const others = sorts.filter(
-          (s) => s.colId !== 'created_by' && s.colId !== 'list_size' && s.colId !== 'used_in',
-        );
-        let acc = qb;
-        // created_by sort: sort by full name of creator
-        if (createdSort) {
-          acc = acc.orderBy(sql`COALESCE(authusers.first_name || ' ' || authusers.last_name, '')`, createdSort.sort);
-        }
-        // list_size sort: derived from people_count vs household_count
-        if (listSizeSort) {
-          acc = acc.orderBy(
-            sql`CASE WHEN lists.object = 'people' THEN COUNT(DISTINCT map_lists_persons.person_id) ELSE COUNT(DISTINCT map_lists_households.household_id) END`,
-            listSizeSort.sort,
-          );
-        }
-        // used_in sort: field is a UI placeholder; sort by a stable column instead (updated_at)
-        if (usedInSort) {
-          acc = acc.orderBy('lists.updated_at', usedInSort.sort);
-        }
-        for (const s of others) acc = acc.orderBy(s.colId, s.sort);
-        return acc;
-      })
-      .offset(startRow)
-      .limit(endRow - startRow)
-      .execute();
-
-    const rows = rowsRaw.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      description: r.description,
-      object: r.object,
-      is_dynamic: r.is_dynamic,
-      updated_at: r.updated_at,
-      last_refreshed_at: r.last_refreshed_at,
-      list_size: r.object === 'people' ? Number(r.people_count) : Number(r.household_count),
-      used_in: 0,
-      created_by: r.created_by,
-    }));
-
-    return { rows, count };
-  }
-
-  public async getHouseholdsByListId(
-    input: { tenant_id: string; list_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const qb = this.getSelect(trx)
-      .innerJoin('map_lists_households as mlh', 'mlh.list_id', 'lists.id')
-      .innerJoin('households', 'households.id', 'mlh.household_id')
-      .where('lists.tenant_id', '=', input.tenant_id)
-      .where('lists.id', '=', input.list_id);
-
-    const countResult = await qb
-      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
-      .executeTakeFirst();
-    const total = countResult?.total;
-
-    const rows = await qb
-      .select([
-        'households.id',
-        'households.street1',
-        'households.street_num',
-        'households.city',
-        'households.state',
-        'households.zip',
-      ])
-      .groupBy([
-        'households.id',
-        'households.street1',
-        'households.street_num',
-        'households.city',
-        'households.state',
-        'households.zip',
-      ])
-      .execute();
-
-    return { rows, count: Number(total || 0) };
-  }
-
-  public async getPersonsByListId(
-    input: { tenant_id: string; list_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: { [x: string]: any }[]; count: number }> {
-    const qb = this.getSelect(trx)
-      .innerJoin('map_lists_persons as mlp', 'mlp.list_id', 'lists.id')
-      .innerJoin('persons', 'persons.id', 'mlp.person_id')
-      .leftJoin('households', 'households.id', 'persons.household_id')
-      .where('lists.tenant_id', '=', input.tenant_id)
-      .where('lists.id', '=', input.list_id);
-
-    const countResult2 = await qb
-      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
-      .executeTakeFirst();
-    const total = countResult2?.total;
-
-    const rows = await qb
-      .select([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.household_id',
-        'households.city',
-        'households.state',
-        'households.street1',
-        'households.street_num',
-        'households.zip',
-      ])
-      .groupBy([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.household_id',
-        'households.city',
-        'households.state',
-        'households.street1',
-        'households.street_num',
-        'households.zip',
-      ])
-      .execute();
-
-    return { rows, count: Number(total || 0) };
   }
 }
 ```
@@ -26555,6 +27459,19 @@ import { sql } from 'kysely';
 import { BaseController } from '../../lib/base.controller';
 import { NewslettersRepo } from './repositories/newsletters.repo';
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { NewsletterEmailService } from '../../lib/mail/newsletter-mail.service';
+
+const DEFAULT_FROM_NAME = 'PeopleCRM Team';
+const DEFAULT_FROM_EMAIL = 'pplcrm@campaignraven.com';
+
+export interface SendTestEmailInput {
+  subject: string;
+  html: string;
+  text?: string;
+  to: string;
+  fromName?: string;
+  fromEmail?: string;
+}
 
 export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
   constructor() {
@@ -26768,6 +27685,53 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       .execute();
 
     return updated;
+  }
+
+  public async sendTestEmail(tenant_id: string, input: SendTestEmailInput): Promise<{ to: string; delivered: number }> {
+    const db = this.getRepo().db;
+
+    // Resolve sender the same way the real newsletter send does: prefer the caller-supplied
+    // from name/email, otherwise fall back to the workspace Communications settings.
+    const settingsRows = await db
+      .selectFrom('settings')
+      .select(['key', 'value'])
+      .where('tenant_id', '=', tenant_id)
+      .where('key', 'in', [
+        'communications.sendgrid_api_key',
+        'communications.sendgrid_subuser_username',
+        'communications.default_from_name',
+        'communications.default_from_email',
+        'communications.reply_to',
+      ])
+      .execute();
+
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingsRows) {
+      if (typeof row.value === 'string') {
+        settingsMap[row.key] = row.value;
+      }
+    }
+
+    const fromName = input.fromName || settingsMap['communications.default_from_name'] || DEFAULT_FROM_NAME;
+    const fromEmail = input.fromEmail || settingsMap['communications.default_from_email'] || DEFAULT_FROM_EMAIL;
+    const replyTo = settingsMap['communications.reply_to'] || undefined;
+    const sendgridApiKey = settingsMap['communications.sendgrid_api_key'];
+    const subuserUsername = settingsMap['communications.sendgrid_subuser_username'];
+
+    const mailSvc = new NewsletterEmailService();
+    const delivered = await mailSvc.sendNewsletter({
+      fromName,
+      fromEmail,
+      replyTo,
+      recipients: [input.to],
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+      sendgridApiKey,
+      subuserUsername,
+    });
+
+    return { to: input.to, delivered };
   }
 
   public async getEngagementStats(tenant_id: string, id: string): Promise<any> {
@@ -31233,536 +32197,6 @@ export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
 });
 ```
 
-## File: apps/backend/src/app/lib/gis/geocoding.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { isBlankAddress, isIncompleteAddress } from '../address-normalize';
-import { env } from '../../../env';
-import { promises as fs } from 'fs';
-import path from 'path';
-import { logger } from '../../logger';
-
-let boundariesCache: any = null;
-
-export async function loadBoundaries(): Promise<any> {
-  if (boundariesCache) return boundariesCache;
-  const filePath = path.resolve(process.cwd(), 'apps/backend/src/app/lib/gis/boundaries.geojson');
-  try {
-    const data = await fs.readFile(filePath, 'utf8');
-    boundariesCache = JSON.parse(data);
-    return boundariesCache;
-  } catch (err) {
-    logger.warn({ err }, `Failed to read boundaries GeoJSON from ${filePath}. Using empty collection.`);
-    return { type: 'FeatureCollection', features: [] };
-  }
-}
-
-function isPointInRing(lng: number, lat: number, ring: number[][]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i] ?? [];
-    const [xj, yj] = ring[j] ?? [];
-    if (xi === undefined || yi === undefined || xj === undefined || yj === undefined) continue;
-    const intersect = yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-export function isPointInPolygon(lng: number, lat: number, polygon: number[][][]): boolean {
-  const outerRing = polygon[0];
-  if (!outerRing || !isPointInRing(lng, lat, outerRing)) {
-    return false;
-  }
-  // If it's inside any inner rings (holes), it is NOT in the polygon
-  for (const innerRing of polygon.slice(1)) {
-    if (isPointInRing(lng, lat, innerRing)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-export function isPointInMultiPolygon(lng: number, lat: number, multipolygon: number[][][][]): boolean {
-  for (const polygon of multipolygon) {
-    if (isPointInPolygon(lng, lat, polygon)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-export async function matchCoordinatesToDistrict(
-  lat: number,
-  lng: number,
-): Promise<{ district: string | null; precinct: string | null; ward: string | null }> {
-  const geojson = await loadBoundaries();
-  if (!geojson || !geojson.features) {
-    return { district: null, precinct: null, ward: null };
-  }
-
-  for (const feature of geojson.features) {
-    const geometry = feature.geometry;
-    const properties = feature.properties || {};
-
-    if (geometry.type === 'Polygon') {
-      if (isPointInPolygon(lng, lat, geometry.coordinates)) {
-        return {
-          district: properties.district || null,
-          precinct: properties.precinct || null,
-          ward: properties.ward || null,
-        };
-      }
-    } else if (geometry.type === 'MultiPolygon') {
-      if (isPointInMultiPolygon(lng, lat, geometry.coordinates)) {
-        return {
-          district: properties.district || null,
-          precinct: properties.precinct || null,
-          ward: properties.ward || null,
-        };
-      }
-    }
-  }
-
-  return { district: null, precinct: null, ward: null };
-}
-
-export async function geocodeAndMapHousehold(householdId: string, tenantId: string, db: Kysely<Models>): Promise<void> {
-  const hh = await db
-    .selectFrom('households')
-    .selectAll()
-    .where('id', '=', householdId)
-    .where('tenant_id', '=', tenantId)
-    .executeTakeFirst();
-
-  if (!hh) {
-    logger.warn(`Geocoding job skipped: Household ${householdId} not found.`);
-    return;
-  }
-
-  // 1. Check if the address is blank or incomplete
-  if (isBlankAddress(hh) || isIncompleteAddress(hh)) {
-    logger.info(`Geocoding job: Household ${householdId} has a blank or incomplete address. Marking as failed.`);
-    await db
-      .updateTable('households')
-      .set({
-        geocoding_status: 'failed',
-        district: null,
-        precinct: null,
-        ward: null,
-        updated_at: new Date(),
-      })
-      .where('id', '=', householdId)
-      .where('tenant_id', '=', tenantId)
-      .execute();
-    return;
-  }
-
-  // 2. Throttle API calls to protect rate limits (e.g. 200ms sleep)
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  let lat: number | null = null;
-  let lng: number | null = null;
-  let formattedAddress: string | null = null;
-  let addressType: string | null = null;
-
-  const apiKey = env.googleMapsApiKey;
-  const isMockOrTest = !apiKey || apiKey.includes('mock') || process.env['NODE_ENV'] === 'test';
-
-  const addressStr = [hh.street_num, hh.street1, hh.street2, hh.city, hh.state, hh.zip, hh.country]
-    .filter(Boolean)
-    .join(', ');
-
-  if (!isMockOrTest) {
-    try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-        addressStr,
-      )}&key=${apiKey}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Google Maps Geocoding API returned status ${response.status}`);
-      }
-      const data: any = await response.json();
-
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const result = data.results[0];
-        lat = result.geometry.location.lat;
-        lng = result.geometry.location.lng;
-        formattedAddress = result.formatted_address;
-        addressType = result.geometry.location_type;
-      } else if (data.status === 'ZERO_RESULTS') {
-        logger.info(`Geocoding job: Address "${addressStr}" returned zero results. Marking as failed.`);
-        await db
-          .updateTable('households')
-          .set({
-            geocoding_status: 'failed',
-            district: null,
-            precinct: null,
-            ward: null,
-            updated_at: new Date(),
-          })
-          .where('id', '=', householdId)
-          .where('tenant_id', '=', tenantId)
-          .execute();
-        return;
-      } else {
-        // Transient error like OVER_QUERY_LIMIT, REQUEST_DENIED, etc.
-        throw new Error(`Google Maps Geocoding API error status: ${data.status}`);
-      }
-    } catch (err) {
-      logger.error({ err }, `Geocoding API call failed for household ${householdId}`);
-      // Re-throw to trigger worker retry with backoff
-      throw err;
-    }
-  } else {
-    // 3. Fallback deterministic coordinates for testing and development
-    // Create a simple hash of the address string to get reproducible coordinates
-    let hash = 0;
-    for (let i = 0; i < addressStr.length; i++) {
-      hash = addressStr.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const val = Math.abs(hash % 1000) / 1000; // Value between 0 and 1
-
-    // Map address to Chicago Loop, North Side, or West Side coordinates
-    // Lat bounds: 41.85 to 41.93. Lng bounds: -87.69 to -87.61
-    lat = 41.85 + val * 0.08;
-    lng = -87.69 + val * 0.08;
-    formattedAddress = `${hh.street_num || '123'} ${hh.street1 || 'Main St'}, ${hh.city || 'Chicago'}, ${hh.state || 'IL'} ${hh.zip || '60601'}`;
-    addressType = 'rooftop';
-    logger.info(`Geocoding job simulated in dev/test for household ${householdId} at lat=${lat}, lng=${lng}`);
-  }
-
-  // 4. Match against GIS Boundaries
-  let district: string | null = null;
-  let precinct: string | null = null;
-  let ward: string | null = null;
-
-  if (lat !== null && lng !== null) {
-    const matched = await matchCoordinatesToDistrict(lat, lng);
-    district = matched.district;
-    precinct = matched.precinct;
-    ward = matched.ward;
-  }
-
-  // 5. Update household record
-  await db
-    .updateTable('households')
-    .set({
-      lat,
-      lng,
-      formatted_address: formattedAddress,
-      type: addressType,
-      district,
-      precinct,
-      ward,
-      geocoding_status: 'success',
-      updated_at: new Date(),
-    })
-    .where('id', '=', householdId)
-    .where('tenant_id', '=', tenantId)
-    .execute();
-
-  logger.info(`Geocoding & GIS mapping completed successfully for household ${householdId}. Status set to success.`);
-}
-```
-
-## File: apps/backend/src/app/modules/auth/trpc.router.ts
-
-```typescript
-import {
-  InviteAuthUserObj,
-  Verify2FAObj,
-  getAllOptions,
-  signInInputObj,
-  signUpInputObj,
-  idSchema,
-  UpdateAuthUserObj,
-} from '../../../../../../libs/common/src';
-
-import z from 'zod';
-
-import { authProcedure, adminOrOwnerProcedure, publicProcedure, router } from '../../../trpc';
-import { AuthController } from './controller';
-import { PasskeyController } from './passkey.controller';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import type { RegistrationResponseJSON, AuthenticationResponseJSON } from '@simplewebauthn/types';
-
-const MIN15 = 15 * 60 * 1000;
-const HOUR1 = 60 * 60 * 1000;
-
-function currentUser() {
-  return authProcedure.query(({ ctx }) => controller.currentUser(ctx.auth));
-}
-
-function count() {
-  return adminOrOwnerProcedure.query(({ ctx }) => controller.getCount(ctx.auth.tenant_id));
-}
-
-function getAllWithCounts() {
-  return adminOrOwnerProcedure.input(getAllOptions).query(({ input, ctx }) => controller.getAllUsers(ctx.auth, input));
-}
-
-function getById() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => controller.getUserById(ctx.auth, input));
-}
-
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdateAuthUserObj }))
-    .mutation(({ input, ctx }) => controller.updateUser(ctx.auth, input.id, input.data));
-}
-
-function renewAuthToken() {
-  return publicProcedure
-    .input(z.object({ auth_token: z.string(), refresh_token: z.string() }))
-    .mutation(({ input }) => controller.renewAuthToken(input));
-}
-
-function resetPassword() {
-  return publicProcedure.input(z.object({ password: z.string(), code: z.string() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:resetPassword`, 5, MIN15);
-    return controller.resetPassword(input.password, input.code);
-  });
-}
-
-function sendPasswordResetEmail() {
-  return publicProcedure
-    .input(z.object({ email: z.string().trim().email('Invalid email address') }))
-    .mutation(({ input, ctx }) => {
-      const ip = ctx.req?.ip ?? 'unknown';
-      checkRateLimit(`${ip}:sendPasswordResetEmail`, 3, HOUR1);
-      return controller.sendPasswordResetEmail(input.email);
-    });
-}
-
-function signIn() {
-  return publicProcedure.input(signInInputObj).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:signIn`, 10, MIN15);
-    const ua = ctx.req?.headers?.['user-agent'] || '';
-    return controller.signIn(input, ip, ua);
-  });
-}
-
-function verify2FA() {
-  return publicProcedure.input(Verify2FAObj).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:verify2FA`, 5, MIN15);
-    const ua = ctx.req?.headers?.['user-agent'] || '';
-    return controller.verify2FA(input.email, input.code, ip, ua, input.rememberMe);
-  });
-}
-
-function scheduleAccountDeletion() {
-  return authProcedure.mutation(({ ctx }) => controller.scheduleAccountDeletion(ctx.auth));
-}
-
-function cancelAccountDeletion() {
-  return authProcedure.mutation(({ ctx }) => controller.cancelAccountDeletion(ctx.auth));
-}
-
-function getTenantAccountStatus() {
-  return adminOrOwnerProcedure.query(({ ctx }) => controller.getTenantAccountStatus(ctx.auth));
-}
-
-function cancelTenantDeletionByToken() {
-  return publicProcedure
-    .input(z.object({ tenantId: z.string(), token: z.string() }))
-    .mutation(({ input }) => controller.cancelTenantDeletionByToken(input.tenantId, input.token));
-}
-
-function scheduleTenantDeletion() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.scheduleTenantDeletion(ctx.auth));
-}
-
-function cancelTenantDeletion() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelTenantDeletion(ctx.auth));
-}
-
-function pauseTenant() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.pauseTenant(ctx.auth));
-}
-
-function resumeTenant() {
-  return adminOrOwnerProcedure.mutation(({ ctx }) => controller.resumeTenant(ctx.auth));
-}
-
-function cancelEmailChange() {
-  return authProcedure.mutation(({ ctx }) => controller.cancelEmailChange(ctx.auth));
-}
-
-function uploadAvatar() {
-  return authProcedure
-    .input(
-      z.object({
-        dataBase64: z.string().min(1),
-        mimeType: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
-        filename: z.string().min(1).max(255),
-      }),
-    )
-    .mutation(({ input, ctx }) => controller.uploadAvatar(ctx.auth, input));
-}
-
-function deleteAvatar() {
-  return authProcedure.mutation(({ ctx }) => controller.deleteAvatar(ctx.auth));
-}
-
-function adminTriggerPasswordReset() {
-  return adminOrOwnerProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => controller.adminTriggerPasswordReset(ctx.auth, input.id));
-}
-
-function invite() {
-  return adminOrOwnerProcedure
-    .input(InviteAuthUserObj)
-    .mutation(({ input, ctx }) => controller.inviteUser(ctx.auth, input));
-}
-
-function signOut() {
-  return authProcedure.mutation(({ ctx }) => controller.signOut(ctx.auth));
-}
-
-function signUp() {
-  return publicProcedure.input(signUpInputObj).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:signUp`, 5, HOUR1);
-    return controller.signUp(input);
-  });
-}
-
-function deleteOne() {
-  return adminOrOwnerProcedure.input(idSchema).mutation(({ input, ctx }) => controller.deleteUser(ctx.auth, input));
-}
-
-function verifyEmail() {
-  return publicProcedure.input(z.object({ code: z.string() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:verifyEmail`, 10, MIN15);
-    return controller.verifyEmail(input.code);
-  });
-}
-
-function resendVerificationEmail() {
-  return publicProcedure.input(z.object({ email: z.string().trim().email() })).mutation(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:resendVerification`, 5, MIN15);
-    checkRateLimit(`resendVerification:${input.email}`, 5, MIN15);
-    return controller.resendVerificationEmail(input.email);
-  });
-}
-
-function dismissPasskeyPrompt() {
-  return authProcedure.mutation(({ ctx }) => controller.dismissPasskeyPrompt(ctx.auth));
-}
-
-const controller = new AuthController();
-const passkeyController = new PasskeyController();
-
-function passkeyRegistrationOptions() {
-  return authProcedure.query(({ ctx }) => passkeyController.getRegistrationOptions(ctx.auth));
-}
-
-function verifyPasskeyRegistration() {
-  return authProcedure
-    .input(
-      z.object({
-        response: z.any().transform((v) => v as RegistrationResponseJSON),
-        friendlyName: z.string().max(100).optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => passkeyController.verifyRegistration(ctx.auth, input.response, input.friendlyName));
-}
-
-function passkeyAuthenticationOptions() {
-  return publicProcedure.query(() => passkeyController.getAuthenticationOptions());
-}
-
-function checkEmail() {
-  return publicProcedure.input(z.object({ email: z.string().trim().email() })).query(({ input, ctx }) => {
-    const ip = ctx.req?.ip ?? 'unknown';
-    checkRateLimit(`${ip}:checkEmail`, 20, MIN15);
-    return passkeyController.checkEmailPasskeys(input.email);
-  });
-}
-
-function verifyPasskeyAuthentication() {
-  return publicProcedure
-    .input(
-      z.object({
-        response: z.any().transform((v) => v as AuthenticationResponseJSON),
-        nonce: z.string(),
-        rememberMe: z.boolean().optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => {
-      const ip = ctx.req?.ip ?? 'unknown';
-      checkRateLimit(`${ip}:verifyPasskeyAuthentication`, 10, MIN15);
-      const ua = ctx.req?.headers?.['user-agent'] ?? '';
-      return passkeyController.verifyAuthentication(input.response, input.nonce, ip, ua, input.rememberMe);
-    });
-}
-
-function listPasskeys() {
-  return authProcedure.query(({ ctx }) => passkeyController.listPasskeys(ctx.auth));
-}
-
-function deletePasskey() {
-  return authProcedure
-    .input(z.object({ id: z.string() }))
-    .mutation(({ input, ctx }) => passkeyController.deletePasskey(ctx.auth, input.id));
-}
-
-function updatePasskeyName() {
-  return authProcedure
-    .input(z.object({ id: z.string(), friendlyName: z.string().min(1).max(100) }))
-    .mutation(({ input, ctx }) => passkeyController.updatePasskeyName(ctx.auth, input.id, input.friendlyName));
-}
-
-export const AuthRouter = router({
-  signUp: signUp(),
-  signIn: signIn(),
-  signOut: signOut(),
-  currentUser: currentUser(),
-  getAllWithCounts: getAllWithCounts(),
-  getById: getById(),
-  invite: invite(),
-  update: update(),
-  delete: deleteOne(),
-  count: count(),
-  resetPassword: resetPassword(),
-  renewAuthToken: renewAuthToken(),
-  sendPasswordResetEmail: sendPasswordResetEmail(),
-  verifyEmail: verifyEmail(),
-  resendVerificationEmail: resendVerificationEmail(),
-  verify2FA: verify2FA(),
-  scheduleAccountDeletion: scheduleAccountDeletion(),
-  cancelAccountDeletion: cancelAccountDeletion(),
-  cancelEmailChange: cancelEmailChange(),
-  getTenantAccountStatus: getTenantAccountStatus(),
-  scheduleTenantDeletion: scheduleTenantDeletion(),
-  cancelTenantDeletion: cancelTenantDeletion(),
-  cancelTenantDeletionByToken: cancelTenantDeletionByToken(),
-  pauseTenant: pauseTenant(),
-  resumeTenant: resumeTenant(),
-  adminTriggerPasswordReset: adminTriggerPasswordReset(),
-  uploadAvatar: uploadAvatar(),
-  deleteAvatar: deleteAvatar(),
-  passkeyRegistrationOptions: passkeyRegistrationOptions(),
-  verifyPasskeyRegistration: verifyPasskeyRegistration(),
-  passkeyAuthenticationOptions: passkeyAuthenticationOptions(),
-  checkEmail: checkEmail(),
-  verifyPasskeyAuthentication: verifyPasskeyAuthentication(),
-  listPasskeys: listPasskeys(),
-  deletePasskey: deletePasskey(),
-  updatePasskeyName: updatePasskeyName(),
-  dismissPasskeyPrompt: dismissPasskeyPrompt(),
-});
-```
-
 ## File: apps/backend/src/app/modules/billing/controller.ts
 
 ```typescript
@@ -32925,356 +33359,6 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default filesRoute;
-```
-
-## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { GoogleOAuthService } from './google-oauth.service';
-import type { IngestableEmail } from '../emails/services/email-ingester.service';
-import { EmailIngesterService } from '../emails/services/email-ingester.service';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import { logger } from '../../logger';
-
-const MAX_MESSAGES_PER_SYNC = 50;
-
-async function fetchWithRetry(url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
-  let attempt = 0;
-  while (true) {
-    attempt++;
-    const res = await fetch(url, init);
-    if (res.status === 429 && attempt <= maxRetries) {
-      const retryAfterHeader = res.headers.get('Retry-After');
-      let delayMs = 5000;
-      if (retryAfterHeader) {
-        const parsed = parseInt(retryAfterHeader, 10);
-        if (!isNaN(parsed)) {
-          delayMs = parsed * 1000;
-        } else {
-          const parsedDate = Date.parse(retryAfterHeader);
-          if (!isNaN(parsedDate)) {
-            delayMs = Math.max(0, parsedDate - Date.now());
-          }
-        }
-      } else {
-        delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
-      }
-      logger.warn(
-        `Google API rate limited (429) on ${url}. Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      continue;
-    }
-    return res;
-  }
-}
-
-export class GoogleSyncService {
-  private readonly ingester: EmailIngesterService;
-
-  constructor(
-    private readonly db: Kysely<Models>,
-    private readonly oauthSvc: GoogleOAuthService,
-  ) {
-    this.ingester = new EmailIngesterService(db, 'google');
-  }
-
-  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(tenantId);
-
-    // Map Gmail label names to pplcrm folder IDs
-    const syncFolders = [
-      { label: 'INBOX', pplcrmId: ALL_FOLDERS.INBOX },
-      { label: 'SENT', pplcrmId: ALL_FOLDERS.SENT },
-      { label: 'TRASH', pplcrmId: ALL_FOLDERS.TRASH },
-      { label: 'SPAM', pplcrmId: ALL_FOLDERS.SPAM },
-    ];
-
-    // Stored delta_link is a JSON-encoded map of label -> last_sync_time (epoch seconds).
-    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
-    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
-    // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
-    let deltaMap: Record<string, number> = {};
-    if (dbDeltaLink) {
-      try {
-        const parsed = JSON.parse(dbDeltaLink);
-        if (!parsed._needs_full_sync) {
-          deltaMap = parsed;
-        }
-        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
-      } catch {
-        deltaMap = {};
-      }
-    }
-
-    let inserted = 0;
-    const nextDeltaMap: Record<string, number> = { ...deltaMap };
-    const currentSyncTime = Math.floor(Date.now() / 1000);
-
-    for (const folder of syncFolders) {
-      const folderLastSync = deltaMap[folder.label] || 0;
-
-      let pageToken: string | null = null;
-      let hasMore = true;
-      const allMessageIds: string[] = [];
-
-      // Query Gmail messages: `label:<LABEL>` and `after:<epoch_seconds>` (with a small 60s overlap buffer)
-      const queryParts = [`label:${folder.label}`];
-      if (folderLastSync > 0) {
-        queryParts.push(`after:${folderLastSync - 60}`);
-      }
-      const q = queryParts.join(' ');
-
-      while (hasMore) {
-        const urlParams = new URLSearchParams({
-          maxResults: String(MAX_MESSAGES_PER_SYNC),
-          q,
-        });
-        if (pageToken) urlParams.set('pageToken', pageToken);
-
-        const res = await fetchWithRetry(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?${urlParams.toString()}`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          },
-        );
-
-        if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Gmail API error: ${errText}`);
-        }
-
-        const data: any = await res.json();
-        const messages = data.messages ?? [];
-        allMessageIds.push(...messages.map((m: any) => m.id));
-
-        if (data.nextPageToken) {
-          pageToken = data.nextPageToken;
-        } else {
-          hasMore = false;
-        }
-      }
-
-      // Process all messages fetched
-      for (const msgId of allMessageIds) {
-        try {
-          const wasSaved = await this.syncMessageDetails(accessToken, msgId, tenantId, requestedBy, folder.pplcrmId);
-          if (wasSaved) inserted++;
-        } catch (err) {
-          logger.error({ err }, `Failed to sync Gmail message details for ${msgId}`);
-        }
-      }
-
-      nextDeltaMap[folder.label] = currentSyncTime;
-
-      // Handle clean-up for deleted/moved emails
-      // If we performed a full sync (started with no previous sync time), we compare
-      // messages in Gmail with local emails having `google:` preview prefix in this folder.
-      if (folderLastSync === 0) {
-        const serverGoogleIds = new Set(allMessageIds);
-        const localEmails = await this.db
-          .selectFrom('emails')
-          .select(['id', 'preview'])
-          .where('tenant_id', '=', tenantId)
-          .where('folder_id', '=', folder.pplcrmId)
-          .where('preview', 'like', 'google:%')
-          .execute();
-
-        for (const localEmail of localEmails) {
-          const previewKey = localEmail.preview ?? '';
-          const googleId = previewKey.replace(/^google:/, '');
-          if (!serverGoogleIds.has(googleId)) {
-            await this.ingester.deleteMessage(tenantId, googleId);
-          }
-        }
-      }
-    }
-
-    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
-    return { inserted };
-  }
-
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    await this.ingester.removeAllLocalEmails(tenantId);
-  }
-
-  private async syncMessageDetails(
-    accessToken: string,
-    msgId: string,
-    tenantId: string,
-    requestedBy: string,
-    folderId: string,
-  ): Promise<boolean> {
-    const res = await fetchWithRetry(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}?format=full`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!res.ok) {
-      if (res.status === 404) {
-        return false; // message deleted in the meantime
-      }
-      const errText = await res.text();
-      throw new Error(`Failed to fetch Gmail message ${msgId} details: ${errText}`);
-    }
-
-    const data: any = await res.json();
-    const payload = data.payload;
-    if (!payload) return false;
-
-    const headers = payload.headers ?? [];
-    const getHeader = (name: string) =>
-      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value ?? null;
-
-    const subject = getHeader('subject');
-    const fromVal = getHeader('from');
-    const toVal = getHeader('to');
-    const dateVal = getHeader('date');
-    const internetMessageId = getHeader('message-id');
-
-    // Parse email addresses from "Name <email@domain.com>" format
-    const extractEmail = (val: string | null): string | null => {
-      if (!val) return null;
-      const match = val.match(/<([^>]+)>/);
-      return match ? (match[1] as string) : val.trim();
-    };
-
-    const fromEmail = extractEmail(fromVal);
-    const toEmail = extractEmail(toVal);
-    let dateSent = dateVal ? new Date(dateVal) : new Date();
-    if (isNaN(dateSent.getTime())) {
-      dateSent = new Date();
-    }
-
-    // Parse body parts recursively
-    const parts = payload.parts ? payload.parts : [payload];
-    const { html, text, attachments } = this.parseGmailParts(parts);
-    const bodyHtml = html || text || '';
-
-    // Map attachments to the generic ingestable structure
-    const mappedAttachments = attachments.map((att: any) => ({
-      name: att.filename,
-      contentType: att.mimeType,
-      size: att.size,
-      contentId: att.cid,
-      isInline: att.isInline,
-      fetchContent: async () => {
-        const attRes = await fetchWithRetry(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgId}/attachments/${att.attachmentId}`,
-          { headers: { Authorization: `Bearer ${accessToken}` } },
-        );
-        if (!attRes.ok) {
-          throw new Error(`Failed to fetch attachment ${att.filename} from Gmail`);
-        }
-        const attData: any = await attRes.json();
-        return this.decodeBase64UrlToBuffer(attData.data);
-      },
-    }));
-
-    // Parse recipients
-    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
-
-    const parseRecipientHeader = (val: string | null, kind: 'to' | 'cc' | 'bcc') => {
-      if (!val) return;
-      // Split by comma, respecting quotes
-      const list = val.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
-      list.forEach((item) => {
-        const trimmed = item.trim();
-        if (!trimmed) return;
-        const emailMatch = trimmed.match(/<([^>]+)>/);
-        const email = emailMatch ? (emailMatch[1] as string) : trimmed;
-        const nameMatch = trimmed.match(/^([^<]+)/);
-        let name = nameMatch ? (nameMatch[1] as string).trim() : null;
-        if (name) {
-          name = name.replace(/^["']|["']$/g, ''); // strip quotes
-        }
-        recipients.push({ kind, name, email });
-      });
-    };
-
-    parseRecipientHeader(getHeader('to'), 'to');
-    parseRecipientHeader(getHeader('cc'), 'cc');
-    parseRecipientHeader(getHeader('bcc'), 'bcc');
-
-    const ingestable: IngestableEmail = {
-      id: msgId,
-      internetMessageId,
-      fromEmail,
-      toEmail,
-      subject,
-      dateSent,
-      bodyHtml,
-      recipients,
-      attachments: mappedAttachments,
-    };
-
-    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
-  }
-
-  private parseGmailParts(parts: any[]): { html: string; text: string; attachments: any[] } {
-    let html = '';
-    let text = '';
-    const attachments: any[] = [];
-
-    const traverse = (part: any) => {
-      const mimeType = part.mimeType?.toLowerCase();
-      const filename = part.filename;
-      const body = part.body;
-
-      if (filename && body?.attachmentId) {
-        const headers = part.headers ?? [];
-        const contentDisposition =
-          headers.find((h: any) => h.name.toLowerCase() === 'content-disposition')?.value ?? '';
-        const isInline = contentDisposition.toLowerCase().includes('inline');
-        const contentIdHeader = headers.find((h: any) => h.name.toLowerCase() === 'content-id')?.value ?? '';
-        const cid = contentIdHeader ? contentIdHeader.replace(/[<>]/g, '') : null;
-
-        attachments.push({
-          filename,
-          mimeType: part.mimeType,
-          attachmentId: body.attachmentId,
-          size: body.size ?? 0,
-          cid,
-          isInline,
-        });
-      } else if (mimeType === 'text/html' && body?.data) {
-        html += this.decodeBase64Url(body.data);
-      } else if (mimeType === 'text/plain' && body?.data) {
-        text += this.decodeBase64Url(body.data);
-      }
-
-      if (part.parts) {
-        for (const p of part.parts) {
-          traverse(p);
-        }
-      }
-    };
-
-    for (const part of parts) {
-      traverse(part);
-    }
-
-    return { html, text, attachments };
-  }
-
-  private decodeBase64Url(str: string): string {
-    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) {
-      base64 += '=';
-    }
-    return Buffer.from(base64, 'base64').toString('utf8');
-  }
-
-  private decodeBase64UrlToBuffer(str: string): Buffer {
-    let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) {
-      base64 += '=';
-    }
-    return Buffer.from(base64, 'base64');
-  }
-}
 ```
 
 ## File: apps/backend/src/app/modules/ms-sync/ms-sync.service.ts
@@ -34732,6 +34816,879 @@ export class PersonsService {
 }
 ```
 
+## File: apps/backend/src/app/modules/web-forms/controller.ts
+
+```typescript
+import type { AddWebFormType, IAuthKeyPayload, UpdateWebFormType } from '../../../../../../libs/common/src';
+import { BaseController } from '../../lib/base.controller';
+import { WebFormsRepo } from './repositories/web-forms.repo';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { type Transaction, sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { createSigner, createVerifier } from 'fast-jwt';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import { HouseholdRepo } from '../households/repositories/households.repo';
+
+import { WorkflowsController } from '../workflows/controller';
+import { DonationsController } from '../donations/controller';
+import { logger } from '../../logger';
+
+// Sliding window memory for rate-limiting
+const ipSubmissionTimestamps = new Map<string, number[]>();
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+  constructor() {
+    super(new WebFormsRepo());
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const form = await super.getOneById(input);
+    if (!form) return form;
+    return this.resolveCreatorAndUpdater(input.tenant_id, form);
+  }
+
+  public async getFormPublic(id: string) {
+    return this.getRepo().getByIdPublic(id);
+  }
+
+  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
+    const row = {
+      tenant_id: auth.tenant_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      redirect_url: payload.redirect_url ?? null,
+      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
+      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
+      fields: payload.fields ? JSON.stringify(payload.fields) : null,
+      status: payload.status ?? 'active',
+      send_confirmation: payload.send_confirmation ?? true,
+      send_alert: payload.send_alert ?? true,
+      form_type: payload.form_type ?? 'standard',
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    return this.add(row as any);
+  }
+
+  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
+    if (!existing) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found.',
+      });
+    }
+
+    const row: any = {
+      updatedby_id: auth.user_id,
+      updated_at: new Date(),
+    };
+    if (payload.name !== undefined) row.name = payload.name;
+    if (payload.description !== undefined) row.description = payload.description;
+    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
+    if (payload.target_tags !== undefined)
+      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
+    if (payload.target_lists !== undefined)
+      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
+    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
+    if (payload.status !== undefined) row.status = payload.status;
+    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
+    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
+
+    const rawPayload = payload as any;
+    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Form type cannot be changed after the form has been created.',
+      });
+    }
+
+    return this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row,
+    });
+  }
+
+  public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
+    // 1. Rate limiting check
+    const now = Date.now();
+    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RATE_LIMIT_MAX) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. Please try again in a minute.',
+      });
+    }
+    timestamps.push(now);
+    // Prune empty keys to prevent unbounded Map growth
+    if (timestamps.length > 0) {
+      ipSubmissionTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSubmissionTimestamps.delete(clientIp);
+    }
+
+    // 2. Fetch Form by ID
+    const form = await this.getRepo().getByIdPublic(formId);
+    if (!form || form.status !== 'active') {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found or inactive.',
+      });
+    }
+
+    const tenantId = String(form.tenant_id);
+
+    // 3. Honeypot check
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
+      return { redirect_url: form.redirect_url || null };
+    }
+
+    // 4. Validate email
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Email address is required.',
+      });
+    }
+
+    // Parse configuration fields
+    const formFields: string[] = form.fields
+      ? Array.isArray(form.fields)
+        ? (form.fields as string[])
+        : JSON.parse(String(form.fields))
+      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    // Map payload key aliases helper
+    const getPayloadValue = (key: string): string => {
+      let value = '';
+      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
+      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
+      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
+      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
+      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
+      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
+      else value = payload[key] || '';
+      return String(value).trim();
+    };
+
+    // Validate user-configured required fields for standard forms
+    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+      const fieldLabels: Record<string, string> = {
+        first_name: 'First Name',
+        last_name: 'Last Name',
+        mobile: 'Mobile / Phone',
+        notes: 'Notes / Message',
+        street1: 'Street Address',
+        city: 'City',
+        state: 'State / Province',
+        zip: 'Zip / Postal Code',
+        country: 'Country',
+      };
+
+      for (const rawField of formFields) {
+        if (rawField.endsWith(':required')) {
+          const fieldName = rawField.replace(':required', '');
+          const val = getPayloadValue(fieldName);
+          if (!val) {
+            const label = fieldLabels[fieldName] || fieldName;
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `${label} is required.`,
+            });
+          }
+        }
+      }
+    }
+
+    // Parse and validate donation fields if form is a donation or recurring_donation form
+    let amountCents = 0;
+    let monthlyAmountCents = 0;
+    let country = '';
+    let state = '';
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
+      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
+      if (!firstName || !lastName) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'First name and last name are required for donations.',
+        });
+      }
+
+      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+      const city = (payload['city'] || '').trim();
+      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+      country = (payload['country'] || payload['residency_country'] || '').trim();
+      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+      if (!street1 || !city || !zip || !country || !state) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
+        });
+      }
+
+      // Check if email already exists to run eligibility checks
+      const existing = await this.getRepo()
+        .db.selectFrom('persons')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where(sql`lower(email)`, '=', email.toLowerCase())
+        .executeTakeFirst();
+
+      const donationsController = new DonationsController();
+
+      if (form.form_type === 'donation') {
+        const amountStr = payload['amount'] || payload['donation_amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
+        }
+        amountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          amountCents,
+          { country, state },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      } else {
+        // recurring_donation
+        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
+        }
+        monthlyAmountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          monthlyAmountCents,
+          { country, state },
+          { isRecurring: true },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
+      }
+    }
+
+    // 5. Gather submission fields
+    const firstName = payload['first_name'] || payload['firstName'] || null;
+    const lastName = payload['last_name'] || payload['lastName'] || null;
+    const mobile = payload['mobile'] || payload['phone'] || null;
+    const notes = payload['notes'] || payload['message'] || null;
+
+    let resolvedPersonId = '';
+    let resolvedCreatorId = '1';
+
+    // 6. Find or Create person & apply merges/tags
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        // Use the form's creator as the actor — they are the person who
+        // configured this form, which is the most correct attribution for
+        // contacts and data created via public submissions.
+        const creatorId = String(form.createdby_id);
+
+        resolvedCreatorId = creatorId;
+
+        if (!householdId) {
+          throw new Error('Tenant placeholder household is not configured.');
+        }
+
+        const campaignId = await this.getCampaignId(tenantId, trx);
+
+        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
+        // counted once they confirm via the emailed link (see confirm-subscription route).
+        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
+
+        let finalHouseholdId = householdId;
+
+        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+        const city = (payload['city'] || '').trim();
+        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+        const country = (payload['country'] || payload['residency_country'] || '').trim();
+        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+        const hasAddress = !!(street1 || city || zip || country || state);
+
+        if (hasAddress) {
+          const fp_street = fingerprintStreet({ street1 });
+          const fp_full = fingerprintFull({
+            street1,
+            city,
+            state,
+            zip,
+            country,
+          });
+
+          const householdRepo = new HouseholdRepo();
+          const existingHh = await trx
+            .selectFrom('households')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('campaign_id', '=', campaignId)
+            .where('address_fp_full', '=', fp_full)
+            .executeTakeFirst();
+
+          if (existingHh) {
+            finalHouseholdId = String(existingHh.id);
+          } else {
+            const createdHhs = await householdRepo.addMany(
+              {
+                rows: [
+                  {
+                    tenant_id: tenantId,
+                    campaign_id: campaignId,
+                    createdby_id: creatorId,
+                    updatedby_id: creatorId,
+                    street1,
+                    city,
+                    state,
+                    zip,
+                    country,
+                    address_fp_street: fp_street,
+                    address_fp_full: fp_full,
+                  } as any,
+                ],
+              },
+              trx,
+            );
+            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
+              finalHouseholdId = String(createdHhs[0].id);
+            }
+          }
+        }
+
+        // Check if email already exists
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = {
+            updatedby_id: creatorId,
+            updated_at: sql`now()`,
+          };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (form.form_type === 'donation' || hasAddress) {
+            updateRow.household_id = finalHouseholdId;
+          }
+          if (!existing.notes && notes) {
+            updateRow.notes = notes;
+          } else if (existing.notes && notes) {
+            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
+          }
+
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: finalHouseholdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            mobile: mobile,
+            notes: notes,
+            opt_in_status: doubleOptIn ? 'pending' : null,
+          };
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          // Trigger contact created workflow
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
+          }
+
+          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
+          if (doubleOptIn) {
+            await this.enqueueSubscriptionConfirmation(trx, {
+              tenantId,
+              personId,
+              email,
+              firstName,
+            });
+          }
+        }
+
+        resolvedPersonId = personId;
+
+        const workflowsController = new WorkflowsController();
+
+        // Add target custom tags & read-only system tag
+        const targetTags: string[] = Array.isArray(form.target_tags)
+          ? form.target_tags
+          : JSON.parse((form.target_tags as any) || '[]');
+        const systemTagName = `source: ${form.name}`;
+        const allTagsToApply = [...targetTags, systemTagName];
+        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+          allTagsToApply.push('donor');
+        }
+
+        for (const tagName of allTagsToApply) {
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
+
+          let tag = await trx
+            .selectFrom('tags')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('name', '=', normalizedTagName)
+            .where('type', '=', 'tag')
+            .executeTakeFirst();
+
+          if (!tag) {
+            const insertTagRes = await trx
+              .insertInto('tags')
+              .values({
+                tenant_id: tenantId,
+                name: normalizedTagName,
+                type: 'tag',
+                deletable: true,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            tag = { id: insertTagRes.id };
+          }
+
+          const mapExists = await trx
+            .selectFrom('map_peoples_tags')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('tag_id', '=', tag.id)
+            .executeTakeFirst();
+
+          if (!mapExists) {
+            await trx
+              .insertInto('map_peoples_tags')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                tag_id: tag.id,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger tag_added and specialized subscriber workflows
+            try {
+              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Add target lists
+        const targetLists: string[] = Array.isArray(form.target_lists)
+          ? form.target_lists
+          : JSON.parse((form.target_lists as any) || '[]');
+        for (const listId of targetLists) {
+          if (!listId) continue;
+          const listExists = await trx
+            .selectFrom('lists')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', listId)
+            .executeTakeFirst();
+
+          if (!listExists) continue;
+
+          const inList = await trx
+            .selectFrom('map_lists_persons')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('list_id', '=', listId)
+            .executeTakeFirst();
+
+          if (!inList) {
+            await trx
+              .insertInto('map_lists_persons')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                list_id: listId,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger list joined workflows
+            try {
+              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Trigger web form submitted workflows
+        try {
+          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
+        }
+
+        // Log user activity
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: creatorId,
+            activity: 'submission',
+            entity: 'web_forms',
+            entity_id: formId,
+            quantity: 1,
+            metadata: JSON.stringify({ person_id: personId, email }),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .execute();
+
+        // Queue email notification job in background
+        await trx
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'send-webform-notifications',
+              formId: String(form.id),
+              tenantId,
+              email,
+              firstName,
+              lastName,
+              mobile,
+              notes,
+            }),
+            run_at: new Date(),
+          })
+          .execute();
+      });
+
+    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const donationsController = new DonationsController();
+      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
+
+      if (form.form_type === 'donation') {
+        const checkoutSession = await donationsController.createCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          amountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      } else {
+        const checkoutSession = await donationsController.createRecurringCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          monthlyAmountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      }
+    }
+
+    return { redirect_url: form.redirect_url || null };
+  }
+
+  /**
+   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
+   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
+   */
+  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
+
+    let payload: any;
+    try {
+      payload = await verifier(token);
+    } catch {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
+    }
+
+    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
+    }
+
+    await this.getRepo()
+      .db.updateTable('persons')
+      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
+      .where('tenant_id', '=', String(payload.tenant_id))
+      .where('id', '=', String(payload.person_id))
+      .execute();
+
+    return { success: true };
+  }
+
+  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'communications.double_opt_in')
+      .executeTakeFirst();
+
+    return row?.value === true || row?.value === 'true';
+  }
+
+  /**
+   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
+   * runs only if the surrounding submission transaction commits, keeping the pending person and the
+   * confirmation email consistent.
+   */
+  private async enqueueSubscriptionConfirmation(
+    trx: Transaction<Models>,
+    args: { tenantId: string; personId: string; email: string; firstName: string | null },
+  ): Promise<void> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
+      return;
+    }
+
+    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
+    const token = signer({
+      tenant_id: args.tenantId,
+      person_id: args.personId,
+      email: args.email.toLowerCase().trim(),
+      purpose: 'confirm-subscription',
+    });
+    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
+
+    await trx
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: args.tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-subscription-confirmation',
+          tenantId: args.tenantId,
+          email: args.email,
+          firstName: args.firstName,
+          confirmUrl,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+  }
+
+  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'current_campaign')
+      .executeTakeFirst();
+
+    if (row) {
+      const value = row.value;
+      if (typeof value === 'number' || typeof value === 'string') {
+        return String(value);
+      }
+      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+        const id = (value as Record<string, unknown>)['id'];
+        if (typeof id === 'number' || typeof id === 'string') {
+          return String(id);
+        }
+      }
+    }
+
+    const campaignRow = await trx
+      .selectFrom('campaigns')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (campaignRow) {
+      return String(campaignRow.id);
+    }
+
+    throw new Error('No campaign found for this tenant.');
+  }
+
+  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
+    const res = await this.getRepo()
+      .db.selectFrom('user_activity')
+      .select(({ fn }) => fn.count('id').as('total'))
+      .where('tenant_id', '=', tenantId)
+      .where('entity', '=', 'web_forms')
+      .where('entity_id', '=', formId)
+      .where('activity', '=', 'submission')
+      .executeTakeFirst();
+    return Number(res?.total ?? 0);
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import Stripe from 'stripe';
+import { env } from '../../../../env';
+import { BaseRepository } from '../../../lib/base.repo';
+import { logger } from '../../../logger';
+
+const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req, reply) => {
+    const query = req.query as { token?: string };
+    const token = query.token;
+    if (!token) {
+      logger.error('Webhook error: Missing token query parameter');
+      return reply.code(400).send({ error: 'Missing token parameter' });
+    }
+
+    let tenantId = 'unknown';
+    try {
+      // Look up tenant setting donations.webhook_token with matching value
+      // eslint-disable-next-line local/no-unscoped-db-query
+      const tokenRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('tenant_id')
+        .where('key', '=', 'donations.webhook_token')
+        .where('value', '=', JSON.stringify(token))
+        .executeTakeFirst();
+
+      if (!tokenRow) {
+        logger.error(`Webhook error: Invalid webhook token: ${token}`);
+        return reply.code(400).send({ error: 'Invalid webhook token' });
+      }
+
+      tenantId = String(tokenRow.tenant_id);
+
+      const signature = (req.headers['stripe-signature'] as string) || '';
+      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
+
+      // 1. Look up settings for this tenant ID in Kysely
+      const secretRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('value')
+        .where('tenant_id', '=', tenantId)
+        .where('key', '=', 'donations.stripe_webhook_secret')
+        .executeTakeFirst();
+
+      const webhookSecret = secretRow?.value as string | undefined;
+
+      const keyRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('value')
+        .where('tenant_id', '=', tenantId)
+        .where('key', '=', 'donations.stripe_secret_key')
+        .executeTakeFirst();
+
+      const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
+
+      // Mock mode (unsigned payload parsing) is ONLY permitted outside production.
+      // In production we must never accept an unauthenticated webhook body, or an
+      // attacker who knows the tenant's webhook token could forge payment events.
+      const isProduction = process.env['NODE_ENV'] === 'production';
+      const isMock = !isProduction && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
+
+      let event: Stripe.Event;
+
+      if (isMock) {
+        // Direct parse in mock/local dev mode
+        event = JSON.parse(payload);
+      } else {
+        if (!stripeKey || stripeKey.includes('MockKey')) {
+          throw new Error('Tenant donations stripe secret key not configured.');
+        }
+        if (!webhookSecret) {
+          throw new Error('Tenant donations stripe webhook secret not configured.');
+        }
+        const stripe = new Stripe(stripeKey);
+        event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      }
+
+      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
+
+      // 2. Persist webhook event for background worker processing
+      await BaseRepository.dbInstance
+        .insertInto('webhook_events')
+        .values({
+          tenant_id: tenantId,
+          stripe_event_id: event.id,
+          type: event.type,
+          payload: JSON.stringify(event),
+          status: 'pending',
+        })
+        .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
+        .execute();
+
+      return reply.code(200).send({ received: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default donationsWebhookRoute;
+```
+
 ## File: apps/backend/src/app/modules/volunteer-events/controller.ts
 
 ```typescript
@@ -35661,767 +36618,862 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 }
 ```
 
-## File: apps/backend/src/app/modules/web-forms/controller.ts
+## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
 
 ```typescript
-import type { AddWebFormType, IAuthKeyPayload, UpdateWebFormType } from '../../../../../../libs/common/src';
-import { BaseController } from '../../lib/base.controller';
-import { WebFormsRepo } from './repositories/web-forms.repo';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { type Transaction, sql } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { createSigner, createVerifier } from 'fast-jwt';
-import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-import { HouseholdRepo } from '../households/repositories/households.repo';
-
-import { WorkflowsController } from '../workflows/controller';
-import { DonationsController } from '../donations/controller';
+import type { FastifyPluginCallback } from 'fastify';
+import { z } from 'zod';
+import { ZapierService } from './zapier.service';
+import { PersonsService } from '../persons/services/persons.service';
+import type { IAuthKeyPayload } from '@common';
 import { logger } from '../../logger';
 
-// Sliding window memory for rate-limiting
-const ipSubmissionTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const zapierService = new ZapierService();
+const personsService = new PersonsService();
 
-export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
-  constructor() {
-    super(new WebFormsRepo());
-  }
+const upsertPersonSchema = z.object({
+  email: z.string().email('Valid email required for person matching').max(255),
+  first_name: z.string().trim().max(100).optional(),
+  last_name: z.string().trim().max(100).optional(),
+  mobile: z.string().trim().max(30).optional(),
+  home_phone: z.string().trim().max(30).optional(),
+  notes: z.string().trim().max(10000).optional(),
+  linkedin: z.string().trim().max(255).optional(),
+  twitter: z.string().trim().max(255).optional(),
+  facebook: z.string().trim().max(255).optional(),
+  instagram: z.string().trim().max(255).optional(),
+});
 
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const form = await super.getOneById(input);
-    if (!form) return form;
-    return this.resolveCreatorAndUpdater(input.tenant_id, form);
-  }
+const tagActionSchema = z.object({
+  email: z.string().email('Valid email required to identify the person').max(255),
+  tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50),
+});
 
-  public async getFormPublic(id: string) {
-    return this.getRepo().getByIdPublic(id);
-  }
+async function resolveAuth(tenantId: string, db: any): Promise<IAuthKeyPayload | null> {
+  const owner = await db
+    .selectFrom('authusers')
+    .select(['id', 'first_name', 'last_name', 'role'])
+    .where('tenant_id', '=', tenantId)
+    .where('role', 'in', ['owner', 'admin'])
+    .orderBy('id', 'asc')
+    .limit(1)
+    .executeTakeFirst();
 
-  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
-    const row = {
-      tenant_id: auth.tenant_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      redirect_url: payload.redirect_url ?? null,
-      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
-      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
-      fields: payload.fields ? JSON.stringify(payload.fields) : null,
-      status: payload.status ?? 'active',
-      send_confirmation: payload.send_confirmation ?? true,
-      send_alert: payload.send_alert ?? true,
-      form_type: payload.form_type ?? 'standard',
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    return this.add(row as any);
-  }
+  if (!owner) return null;
 
-  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
-    if (!existing) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found.',
-      });
+  const name = [owner.first_name, owner.last_name].filter(Boolean).join(' ') || 'Zapier';
+
+  return {
+    user_id: String(owner.id),
+    tenant_id: tenantId,
+    session_id: 'zapier',
+    name,
+    role: owner.role ?? 'admin',
+    source: 'api',
+  } as IAuthKeyPayload;
+}
+
+async function extractTenantId(req: any): Promise<string | null> {
+  const authHeader = req.headers['authorization'] as string | undefined;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  const apiKey = authHeader.slice(7).trim();
+  if (!apiKey) return null;
+  return zapierService.lookupTenantByApiKey(apiKey);
+}
+
+const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/persons/upsert', async (req, reply) => {
+    const tenantId = await extractTenantId(req);
+    if (!tenantId) {
+      return reply.code(401).send({ error: 'Invalid or missing API key' });
     }
 
-    const row: any = {
-      updatedby_id: auth.user_id,
-      updated_at: new Date(),
-    };
-    if (payload.name !== undefined) row.name = payload.name;
-    if (payload.description !== undefined) row.description = payload.description;
-    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
-    if (payload.target_tags !== undefined)
-      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
-    if (payload.target_lists !== undefined)
-      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
-    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
-    if (payload.status !== undefined) row.status = payload.status;
-    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
-    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
-
-    const rawPayload = payload as any;
-    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Form type cannot be changed after the form has been created.',
-      });
+    const parsed = upsertPersonSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     }
 
-    return this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row,
-    });
-  }
+    const { email, ...fields } = parsed.data;
 
-  public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
-    }
-    timestamps.push(now);
-    // Prune empty keys to prevent unbounded Map growth
-    if (timestamps.length > 0) {
-      ipSubmissionTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSubmissionTimestamps.delete(clientIp);
-    }
-
-    // 2. Fetch Form by ID
-    const form = await this.getRepo().getByIdPublic(formId);
-    if (!form || form.status !== 'active') {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found or inactive.',
-      });
-    }
-
-    const tenantId = String(form.tenant_id);
-
-    // 3. Honeypot check
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
-      return { redirect_url: form.redirect_url || null };
-    }
-
-    // 4. Validate email
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Email address is required.',
-      });
-    }
-
-    // Parse configuration fields
-    const formFields: string[] = form.fields
-      ? Array.isArray(form.fields)
-        ? (form.fields as string[])
-        : JSON.parse(String(form.fields))
-      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-    // Map payload key aliases helper
-    const getPayloadValue = (key: string): string => {
-      let value = '';
-      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
-      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
-      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
-      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
-      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
-      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
-      else value = payload[key] || '';
-      return String(value).trim();
-    };
-
-    // Validate user-configured required fields for standard forms
-    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-      const fieldLabels: Record<string, string> = {
-        first_name: 'First Name',
-        last_name: 'Last Name',
-        mobile: 'Mobile / Phone',
-        notes: 'Notes / Message',
-        street1: 'Street Address',
-        city: 'City',
-        state: 'State / Province',
-        zip: 'Zip / Postal Code',
-        country: 'Country',
-      };
-
-      for (const rawField of formFields) {
-        if (rawField.endsWith(':required')) {
-          const fieldName = rawField.replace(':required', '');
-          const val = getPayloadValue(fieldName);
-          if (!val) {
-            const label = fieldLabels[fieldName] || fieldName;
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: `${label} is required.`,
-            });
-          }
-        }
-      }
-    }
-
-    // Parse and validate donation fields if form is a donation or recurring_donation form
-    let amountCents = 0;
-    let monthlyAmountCents = 0;
-    let country = '';
-    let state = '';
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
-      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
-      if (!firstName || !lastName) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'First name and last name are required for donations.',
-        });
+    try {
+      const db =
+        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const auth = await resolveAuth(tenantId, db);
+      if (!auth) {
+        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
       }
 
-      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-      const city = (payload['city'] || '').trim();
-      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-      country = (payload['country'] || payload['residency_country'] || '').trim();
-      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-      if (!street1 || !city || !zip || !country || !state) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message:
-            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
-        });
-      }
-
-      // Check if email already exists to run eligibility checks
-      const existing = await this.getRepo()
-        .db.selectFrom('persons')
-        .select('id')
+      const existing = await db
+        .selectFrom('persons')
+        .select(['id', 'email'])
         .where('tenant_id', '=', tenantId)
-        .where(sql`lower(email)`, '=', email.toLowerCase())
+        .where('email', 'ilike', email.trim())
         .executeTakeFirst();
 
-      const donationsController = new DonationsController();
-
-      if (form.form_type === 'donation') {
-        const amountStr = payload['amount'] || payload['donation_amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
-        }
-        amountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          amountCents,
-          { country, state },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
+      if (existing) {
+        const result = await personsService.updatePerson(String(existing.id), { email, ...fields } as any, auth);
+        return reply.code(200).send({ action: 'updated', person: result });
       } else {
-        // recurring_donation
-        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
-        }
-        monthlyAmountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          monthlyAmountCents,
-          { country, state },
-          { isRecurring: true },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
+        const result = await personsService.addPerson({ email, ...fields } as any, auth);
+        return reply.code(201).send({ action: 'created', person: result });
       }
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/upsert error');
+      return reply.code(500).send({ error: 'Failed to upsert person' });
+    }
+  });
+
+  fastify.post('/persons/tag', async (req, reply) => {
+    const tenantId = await extractTenantId(req);
+    if (!tenantId) {
+      return reply.code(401).send({ error: 'Invalid or missing API key' });
     }
 
-    // 5. Gather submission fields
-    const firstName = payload['first_name'] || payload['firstName'] || null;
-    const lastName = payload['last_name'] || payload['lastName'] || null;
-    const mobile = payload['mobile'] || payload['phone'] || null;
-    const notes = payload['notes'] || payload['message'] || null;
-
-    let resolvedPersonId = '';
-    let resolvedCreatorId = '1';
-
-    // 6. Find or Create person & apply merges/tags
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        // Use the form's creator as the actor — they are the person who
-        // configured this form, which is the most correct attribution for
-        // contacts and data created via public submissions.
-        const creatorId = String(form.createdby_id);
-
-        resolvedCreatorId = creatorId;
-
-        if (!householdId) {
-          throw new Error('Tenant placeholder household is not configured.');
-        }
-
-        const campaignId = await this.getCampaignId(tenantId, trx);
-
-        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
-        // counted once they confirm via the emailed link (see confirm-subscription route).
-        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
-
-        let finalHouseholdId = householdId;
-
-        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-        const city = (payload['city'] || '').trim();
-        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-        const country = (payload['country'] || payload['residency_country'] || '').trim();
-        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-        const hasAddress = !!(street1 || city || zip || country || state);
-
-        if (hasAddress) {
-          const fp_street = fingerprintStreet({ street1 });
-          const fp_full = fingerprintFull({
-            street1,
-            city,
-            state,
-            zip,
-            country,
-          });
-
-          const householdRepo = new HouseholdRepo();
-          const existingHh = await trx
-            .selectFrom('households')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('campaign_id', '=', campaignId)
-            .where('address_fp_full', '=', fp_full)
-            .executeTakeFirst();
-
-          if (existingHh) {
-            finalHouseholdId = String(existingHh.id);
-          } else {
-            const createdHhs = await householdRepo.addMany(
-              {
-                rows: [
-                  {
-                    tenant_id: tenantId,
-                    campaign_id: campaignId,
-                    createdby_id: creatorId,
-                    updatedby_id: creatorId,
-                    street1,
-                    city,
-                    state,
-                    zip,
-                    country,
-                    address_fp_street: fp_street,
-                    address_fp_full: fp_full,
-                  } as any,
-                ],
-              },
-              trx,
-            );
-            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
-              finalHouseholdId = String(createdHhs[0].id);
-            }
-          }
-        }
-
-        // Check if email already exists
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = {
-            updatedby_id: creatorId,
-            updated_at: sql`now()`,
-          };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (form.form_type === 'donation' || hasAddress) {
-            updateRow.household_id = finalHouseholdId;
-          }
-          if (!existing.notes && notes) {
-            updateRow.notes = notes;
-          } else if (existing.notes && notes) {
-            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
-          }
-
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: finalHouseholdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            mobile: mobile,
-            notes: notes,
-            opt_in_status: doubleOptIn ? 'pending' : null,
-          };
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          // Trigger contact created workflow
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
-          }
-
-          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
-          if (doubleOptIn) {
-            await this.enqueueSubscriptionConfirmation(trx, {
-              tenantId,
-              personId,
-              email,
-              firstName,
-            });
-          }
-        }
-
-        resolvedPersonId = personId;
-
-        const workflowsController = new WorkflowsController();
-
-        // Add target custom tags & read-only system tag
-        const targetTags: string[] = Array.isArray(form.target_tags)
-          ? form.target_tags
-          : JSON.parse((form.target_tags as any) || '[]');
-        const systemTagName = `source: ${form.name}`;
-        const allTagsToApply = [...targetTags, systemTagName];
-        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-          allTagsToApply.push('donor');
-        }
-
-        for (const tagName of allTagsToApply) {
-          const normalizedTagName = tagName.trim().toLowerCase();
-          if (!normalizedTagName) continue;
-
-          let tag = await trx
-            .selectFrom('tags')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('name', '=', normalizedTagName)
-            .where('type', '=', 'tag')
-            .executeTakeFirst();
-
-          if (!tag) {
-            const insertTagRes = await trx
-              .insertInto('tags')
-              .values({
-                tenant_id: tenantId,
-                name: normalizedTagName,
-                type: 'tag',
-                deletable: true,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .returning('id')
-              .executeTakeFirstOrThrow();
-            tag = { id: insertTagRes.id };
-          }
-
-          const mapExists = await trx
-            .selectFrom('map_peoples_tags')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('tag_id', '=', tag.id)
-            .executeTakeFirst();
-
-          if (!mapExists) {
-            await trx
-              .insertInto('map_peoples_tags')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                tag_id: tag.id,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger tag_added and specialized subscriber workflows
-            try {
-              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Add target lists
-        const targetLists: string[] = Array.isArray(form.target_lists)
-          ? form.target_lists
-          : JSON.parse((form.target_lists as any) || '[]');
-        for (const listId of targetLists) {
-          if (!listId) continue;
-          const listExists = await trx
-            .selectFrom('lists')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', listId)
-            .executeTakeFirst();
-
-          if (!listExists) continue;
-
-          const inList = await trx
-            .selectFrom('map_lists_persons')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('list_id', '=', listId)
-            .executeTakeFirst();
-
-          if (!inList) {
-            await trx
-              .insertInto('map_lists_persons')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                list_id: listId,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger list joined workflows
-            try {
-              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Trigger web form submitted workflows
-        try {
-          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
-        }
-
-        // Log user activity
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: creatorId,
-            activity: 'submission',
-            entity: 'web_forms',
-            entity_id: formId,
-            quantity: 1,
-            metadata: JSON.stringify({ person_id: personId, email }),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .execute();
-
-        // Queue email notification job in background
-        await trx
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'send-webform-notifications',
-              formId: String(form.id),
-              tenantId,
-              email,
-              firstName,
-              lastName,
-              mobile,
-              notes,
-            }),
-            run_at: new Date(),
-          })
-          .execute();
-      });
-
-    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const donationsController = new DonationsController();
-      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
-
-      if (form.form_type === 'donation') {
-        const checkoutSession = await donationsController.createCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          amountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      } else {
-        const checkoutSession = await donationsController.createRecurringCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          monthlyAmountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      }
+    const parsed = tagActionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
     }
 
-    return { redirect_url: form.redirect_url || null };
-  }
+    const { email, tag_name } = parsed.data;
 
-  /**
-   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
-   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
-   */
-  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
-
-    let payload: any;
     try {
-      payload = await verifier(token);
-    } catch {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
-    }
-
-    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
-    }
-
-    await this.getRepo()
-      .db.updateTable('persons')
-      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
-      .where('tenant_id', '=', String(payload.tenant_id))
-      .where('id', '=', String(payload.person_id))
-      .execute();
-
-    return { success: true };
-  }
-
-  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'communications.double_opt_in')
-      .executeTakeFirst();
-
-    return row?.value === true || row?.value === 'true';
-  }
-
-  /**
-   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
-   * runs only if the surrounding submission transaction commits, keeping the pending person and the
-   * confirmation email consistent.
-   */
-  private async enqueueSubscriptionConfirmation(
-    trx: Transaction<Models>,
-    args: { tenantId: string; personId: string; email: string; firstName: string | null },
-  ): Promise<void> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
-      return;
-    }
-
-    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
-    const token = signer({
-      tenant_id: args.tenantId,
-      person_id: args.personId,
-      email: args.email.toLowerCase().trim(),
-      purpose: 'confirm-subscription',
-    });
-    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
-
-    await trx
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: args.tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-subscription-confirmation',
-          tenantId: args.tenantId,
-          email: args.email,
-          firstName: args.firstName,
-          confirmUrl,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-  }
-
-  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'current_campaign')
-      .executeTakeFirst();
-
-    if (row) {
-      const value = row.value;
-      if (typeof value === 'number' || typeof value === 'string') {
-        return String(value);
+      const db =
+        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const auth = await resolveAuth(tenantId, db);
+      if (!auth) {
+        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
       }
-      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-        const id = (value as Record<string, unknown>)['id'];
-        if (typeof id === 'number' || typeof id === 'string') {
-          return String(id);
+
+      const person = await db
+        .selectFrom('persons')
+        .select(['id'])
+        .where('tenant_id', '=', tenantId)
+        .where('email', 'ilike', email.trim())
+        .executeTakeFirst();
+
+      if (!person) {
+        return reply.code(404).send({ error: 'No person found with that email' });
+      }
+
+      await personsService.attachTag(String(person.id), tag_name, 'tag', auth);
+      return reply.code(200).send({ success: true });
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/tag error');
+      return reply.code(500).send({ error: 'Failed to add tag' });
+    }
+  });
+
+  fastify.post('/persons/untag', async (req, reply) => {
+    const tenantId = await extractTenantId(req);
+    if (!tenantId) {
+      return reply.code(401).send({ error: 'Invalid or missing API key' });
+    }
+
+    const parsed = tagActionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
+    }
+
+    const { email, tag_name } = parsed.data;
+
+    try {
+      const db =
+        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const auth = await resolveAuth(tenantId, db);
+      if (!auth) {
+        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
+      }
+
+      const person = await db
+        .selectFrom('persons')
+        .select(['id'])
+        .where('tenant_id', '=', tenantId)
+        .where('email', 'ilike', email.trim())
+        .executeTakeFirst();
+
+      if (!person) {
+        return reply.code(404).send({ error: 'No person found with that email' });
+      }
+
+      await personsService.detachTag({
+        tenant_id: tenantId,
+        person_id: String(person.id),
+        name: tag_name,
+        type: 'tag',
+        user_id: auth.user_id,
+        source: auth.source,
+      });
+
+      return reply.code(200).send({ success: true });
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/untag error');
+      return reply.code(500).send({ error: 'Failed to remove tag' });
+    }
+  });
+
+  done();
+};
+
+export default zapierInboundRoute;
+```
+
+## File: apps/backend/src/app/lib/base.repo.ts
+
+```typescript
+// tsco:ignore
+
+import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
+
+import { promises as fs } from 'fs';
+import type {
+  DeleteQueryBuilder,
+  DeleteResult,
+  InsertQueryBuilder,
+  InsertResult,
+  OperandValueExpressionOrList,
+  OrderByExpression,
+  QueryResult,
+  ReferenceExpression,
+  SelectExpression,
+  SelectQueryBuilder,
+  Selectable,
+  Transaction,
+  UpdateObject,
+  UpdateQueryBuilder,
+  UpdateResult,
+} from 'kysely';
+import { FileMigrationProvider, Kysely, Migrator, PostgresDialect, sql } from 'kysely';
+import path from 'path';
+
+import type {
+  Models,
+  OperationDataType,
+  TypeId,
+  TypeTableColumns,
+  TypeTenantId,
+} from '../../../../../libs/common/src/lib/kysely.models';
+import { Pool } from 'pg';
+import { env } from '../../env';
+import Cursor from 'pg-cursor';
+const dialect = new PostgresDialect({
+  pool: new Pool(env.db),
+  cursor: Cursor,
+});
+
+type ColName<TB extends keyof Models> = keyof Models[TB] & string;
+
+export class BaseRepository<T extends keyof Models> {
+  private static _db = new Kysely<Models>({ dialect });
+  private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
+
+  public static get dbInstance(): Kysely<Models> {
+    return BaseRepository._db;
+  }
+
+  protected readonly table: T;
+
+  public static migrator = new Migrator({
+    db: BaseRepository._db,
+    provider: new FileMigrationProvider({
+      fs,
+      path,
+      migrationFolder: BaseRepository._migrationFolder,
+    }),
+  });
+
+  constructor(tableIn: T) {
+    this.table = tableIn;
+  }
+
+  public getTableName(): T {
+    return this.table;
+  }
+
+  public get db() {
+    return BaseRepository._db;
+  }
+
+  public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
+    const results = await this.addMany({ rows: [input.row] }, trx);
+    const first = results[0];
+    if (!first) {
+      throw new Error(`Insert into "${this.table}" returned no rows`);
+    }
+    return first;
+  }
+
+  public async addMany(input: { rows: OperationDataType<T, 'insert'>[] }, trx?: Transaction<Models>) {
+    return this.getInsert(trx).values(input.rows).returningAll().execute();
+  }
+
+  public async addOrGet<K extends keyof Models[T] & string>(
+    input: {
+      row: OperationDataType<T, 'insert'>;
+      onConflictColumn: K;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<Selectable<Models[T]> | undefined> {
+    const insertResult = await this.getInsert(trx)
+      .values(input.row)
+      .onConflict((oc) => oc.columns(['tenant_id', input.onConflictColumn]).doNothing())
+      .returningAll()
+      .executeTakeFirst();
+
+    if (insertResult) return insertResult as unknown as Selectable<Models[T]>;
+
+    const matchValue = input.row[input.onConflictColumn as unknown as keyof OperationDataType<T, 'insert'>];
+    if (matchValue === undefined) {
+      throw new Error(`Missing value for conflict column: ${String(input.onConflictColumn)}`);
+    }
+
+    const lhs = input.onConflictColumn as ReferenceExpression<Models, T>;
+    return this.getSelect(trx)
+      .selectAll()
+      .where(lhs, '=', matchValue)
+      .where('tenant_id', '=', input.row.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>)
+      .executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
+  }
+
+  public async count(tenant_id: TypeTenantId<T>, trx?: Transaction<Models>): Promise<number> {
+    let query = this.getSelect(trx).select(({ fn }) => [fn.countAll<number>().as('count')]);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', tenant_id);
+    }
+    const result = await query.executeTakeFirst();
+    return Number(result?.count ?? 0);
+  }
+
+  public async delete(input: { tenant_id: TypeTenantId<T>; id: TypeId<T> }, trx?: Transaction<Models>) {
+    return this.deleteMany({ tenant_id: input.tenant_id, ids: [input.id] }, trx);
+  }
+
+  public async deleteMany(input: { tenant_id: TypeTenantId<T>; ids: TypeId<T>[] }, trx?: Transaction<Models>) {
+    // Convert to numbers if needed
+    const numericIds = input.ids;
+
+    if (numericIds.length === 0) return false;
+
+    const deleteQuery = this.getDelete(trx);
+    let query = deleteQuery.where('id' as ReferenceExpression<Models, T>, 'in', numericIds);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    const result = await query.executeTakeFirst();
+
+    return Number(result?.numDeletedRows ?? 0) > 0;
+  }
+
+  public async exists(input: { key: string; column: keyof Models[T] }, trx?: Transaction<Models>): Promise<boolean> {
+    const columnRef = `${String(this.table)}.${String(input.column)}` as ReferenceExpression<Models, T>;
+    const result = await this.getSelect(trx).where(columnRef, '=', input.key).limit(1).execute();
+    return result.length > 0;
+  }
+
+  public find(
+    input: {
+      tenant_id: TypeTenantId<T>;
+      key: string;
+      column: ReferenceExpression<Models, T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    const options: QueryParams<T> = {
+      columns: [input.column],
+      limit: 3,
+    };
+
+    if (!input.key) {
+      // If no key provided, return empty result
+      return Promise.resolve([]);
+    }
+
+    let query = this.getSelectWithColumns(options, trx).where(input.column, 'ilike', input.key + '%');
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query.limit(3).execute();
+  }
+
+  public getAll(
+    input: {
+      tenant_id: TypeTenantId<T>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    let query = this.getSelectWithColumns(input.options, trx);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query.execute();
+  }
+
+  public async getAllWithCounts(
+    input: {
+      tenant_id: TypeTenantId<T>;
+      options?: any;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, any>[]; count: number }> {
+    const rows = await this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx);
+    return { rows: rows as Record<string, any>[], count: rows.length };
+  }
+
+  protected selectBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    let query = this.getSelectWithColumns(input.options, trx).where(
+      column as ReferenceExpression<Models, T>,
+      '=',
+      input.value as OperandValueExpressionOrList<Models, T, ReferenceExpression<Models, T>>,
+    );
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query;
+  }
+
+  public getOneBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.selectBy(column, input, trx).executeTakeFirst();
+  }
+
+  public getOneById(input: { tenant_id: TypeTenantId<T>; id: string }, trx?: Transaction<Models>) {
+    let query = this.getSelectWithColumns(undefined, trx).where(
+      'id' as ReferenceExpression<Models, T>,
+      '=',
+      input.id as TypeId<T>,
+    );
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query.executeTakeFirst();
+  }
+
+  protected getManyBy<C extends ColName<T>>(
+    column: C,
+    input: {
+      tenant_id: TypeTenantId<T>;
+      value: OperandValueExpressionOrList<Models, T, C>;
+      options?: QueryParams<T>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    return this.selectBy(column, input, trx).execute();
+  }
+
+  public async nowTime(): Promise<QueryResult<INow>> {
+    return (await sql`select now()::timestamp`.execute(BaseRepository._db)) as QueryResult<INow>;
+  }
+
+  public transaction() {
+    return BaseRepository._db.transaction();
+  }
+
+  public async update(
+    input: {
+      tenant_id: TypeTenantId<T>;
+      id: TypeId<T>;
+      row: OperationDataType<T, 'update'>;
+    },
+    trx?: Transaction<Models>,
+  ) {
+    if (Object.keys(input.row).length === 0) {
+      return 0; // or just return early, nothing to update
+    }
+    let query = this.getUpdate(trx)
+      .set(input.row as unknown as UpdateObject<Models, T, T>)
+      .where('id' as ReferenceExpression<Models, T>, '=', input.id);
+    if (this.table !== 'tenants') {
+      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
+    }
+    return query.returningAll().executeTakeFirst();
+  }
+
+  protected applyOptions(query: SelectQueryBuilder<Models, T, unknown>, options?: QueryParams<T>) {
+    const opts = options ?? {};
+    query = options?.columns
+      ? query.select(
+          options.columns.map((c) => {
+            if (typeof c === 'string' && !c.includes('.')) {
+              return `${String(this.table)}.${c}` as SelectExpression<Models, T>;
+            }
+            return c;
+          }) as SelectExpression<Models, T>[],
+        )
+      : query.selectAll(this.table);
+
+    // Map AG Grid pagination (startRow/endRow) to limit/offset if not provided explicitly
+    const hasLimit = typeof options?.limit === 'number';
+    const hasOffset = typeof options?.offset === 'number';
+    const startRow = typeof opts.startRow === 'number' ? opts.startRow : undefined;
+    const endRow = typeof opts.endRow === 'number' ? opts.endRow : undefined;
+    const derivedLimit = !hasLimit && typeof endRow === 'number' ? Math.max(0, endRow - (startRow ?? 0)) : undefined;
+    const derivedOffset = !hasOffset && typeof startRow === 'number' ? startRow : undefined;
+
+    const finalLimit = hasLimit ? options?.limit : derivedLimit;
+    const finalOffset = hasOffset ? options?.offset : derivedOffset;
+
+    query = typeof finalLimit === 'number' ? query.limit(finalLimit) : query;
+    query = typeof finalOffset === 'number' ? query.offset(finalOffset) : query;
+
+    // Map generic sortModel (from UI) to orderBy clauses when provided
+    if (opts.sortModel && Array.isArray(opts.sortModel) && opts.sortModel.length > 0) {
+      query = opts.sortModel.reduce((acc: typeof query, sort: { colId: string; sort: 'asc' | 'desc' }) => {
+        const direction: 'asc' | 'desc' = sort.sort === 'desc' ? 'desc' : 'asc';
+        let col = sort.colId;
+        if (typeof col === 'string' && !col.includes('.')) {
+          // Check standard columns first
+          const standardCols = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
+          if (standardCols.includes(col)) {
+            col = `${String(this.table)}.${col}`;
+          } else {
+            // Custom table columns checks
+            const tableColsMap: Record<string, string[]> = {
+              tasks: [
+                'name',
+                'details',
+                'due_at',
+                'status',
+                'priority',
+                'completed_at',
+                'position',
+                'assigned_to',
+                'team_id',
+                'file_id',
+              ],
+              persons: [
+                'campaign_id',
+                'household_id',
+                'first_name',
+                'middle_names',
+                'last_name',
+                'email',
+                'email2',
+                'mobile',
+                'home_phone',
+                'file_id',
+                'company_id',
+                'json',
+                'notes',
+                'linkedin',
+                'twitter',
+                'facebook',
+                'instagram',
+                'assigned_to',
+              ],
+            };
+            const cols = tableColsMap[this.table as string];
+            if (cols && cols.includes(col)) {
+              col = `${String(this.table)}.${col}`;
+            }
+          }
         }
+        // Skip dotted references that weren't resolved to a known table.column
+        if (typeof col === 'string' && col.includes('.') && !col.startsWith(`${String(this.table)}.`)) {
+          return acc;
+        }
+        // Defense-in-depth: only a safe SQL identifier (optionally table.column)
+        // may reach orderBy. Anything else from the client sortModel is dropped.
+        if (typeof col !== 'string' || !/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/i.test(col)) {
+          return acc;
+        }
+        return acc.orderBy(col as ReferenceExpression<Models, T>, direction);
+      }, query);
+    }
+    query = options?.orderBy ? query.orderBy(options.orderBy) : query;
+    query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
+    return query;
+  }
+
+  protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: unknown }) {
+    if (!filter) {
+      return query;
+    }
+    const op = filter.op || 'contains';
+    const val = filter.value;
+
+    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
+      if (val === undefined || val === null || String(val).trim() === '') {
+        return query;
       }
     }
 
-    const campaignRow = await trx
-      .selectFrom('campaigns')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .limit(1)
-      .executeTakeFirst();
+    // Allow users to type * as a wildcard character; normalize to SQL %.
+    // The operator's own wrapping (startsWith → trailing %, contains → both, etc.)
+    // is always applied on top — Postgres collapses consecutive %% automatically,
+    // so 'zee*' with contains becomes '%zee%%' → effectively '%zee%'.
+    const normalized = String(val).replace(/\*/g, '%');
 
-    if (campaignRow) {
-      return String(campaignRow.id);
+    switch (op) {
+      case 'equals':
+        return query.where(column, 'ilike', normalized);
+      case 'startsWith':
+        return query.where(column, 'ilike', `${normalized}%`);
+      case 'endsWith':
+        return query.where(column, 'ilike', `%${normalized}`);
+      case 'notContains':
+        return query.where(column, 'not ilike', `%${normalized}%`);
+      case 'notEquals':
+        return query.where(column, 'not ilike', normalized);
+      case 'isEmpty':
+        return query.where((eb: any) => eb.or([eb(column, 'is', null), eb(column, '=', '')]));
+      case 'isNotEmpty':
+        return query.where((eb: any) => eb.and([eb(column, 'is not', null), eb(column, '!=', '')]));
+      case 'contains':
+      default:
+        return query.where(column, 'ilike', `%${normalized}%`);
+    }
+  }
+
+  protected applyCastColumnFilter(
+    query: any,
+    sqlExpression: ReturnType<typeof sql>,
+    filter: { op?: string; value?: unknown },
+  ) {
+    if (!filter) {
+      return query;
+    }
+    const op = filter.op || 'contains';
+    const val = filter.value;
+
+    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
+      if (val === undefined || val === null || String(val).trim() === '') {
+        return query;
+      }
     }
 
-    throw new Error('No campaign found for this tenant.');
+    // Allow users to type * as a wildcard; normalize to SQL %.
+    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
+    const normalized = String(val).replace(/\*/g, '%');
+
+    switch (op) {
+      case 'equals':
+        return query.where(sql<boolean>`${sqlExpression} ILIKE ${normalized}`);
+      case 'startsWith':
+        return query.where(sql<boolean>`${sqlExpression} ILIKE ${normalized + '%'}`);
+      case 'endsWith':
+        return query.where(sql<boolean>`${sqlExpression} ILIKE ${'%' + normalized}`);
+      case 'notContains':
+        return query.where(sql<boolean>`${sqlExpression} NOT ILIKE ${'%' + normalized + '%'}`);
+      case 'notEquals':
+        return query.where(sql<boolean>`${sqlExpression} NOT ILIKE ${normalized}`);
+      case 'isEmpty':
+        return query.where(sql<boolean>`${sqlExpression} IS NULL OR ${sqlExpression} = ''`);
+      case 'isNotEmpty':
+        return query.where(sql<boolean>`${sqlExpression} IS NOT NULL AND ${sqlExpression} != ''`);
+      case 'contains':
+      default:
+        return query.where(sql<boolean>`${sqlExpression} ILIKE ${'%' + normalized + '%'}`);
+    }
   }
 
-  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
-    const res = await this.getRepo()
-      .db.selectFrom('user_activity')
-      .select(({ fn }) => fn.count('id').as('total'))
-      .where('tenant_id', '=', tenantId)
-      .where('entity', '=', 'web_forms')
-      .where('entity_id', '=', formId)
-      .where('activity', '=', 'submission')
-      .executeTakeFirst();
-    return Number(res?.total ?? 0);
+  protected normalizeSearch(raw: string | null | undefined): string | undefined {
+    if (!raw || !raw.trim()) return undefined;
+    const lower = raw.trim().toLowerCase().replace(/\*/g, '%');
+    return `%${lower}%`;
   }
+
+  protected getDelete(trx?: Transaction<Models>): DeleteQueryBuilder<Models, T, DeleteResult> {
+    return (trx
+      ? trx.deleteFrom(this.table)
+      : BaseRepository._db.deleteFrom(this.table)) as unknown as DeleteQueryBuilder<Models, T, DeleteResult>;
+  }
+
+  protected getInsert(trx?: Transaction<Models>): InsertQueryBuilder<Models, T, InsertResult> {
+    return trx ? trx.insertInto(this.table) : BaseRepository._db.insertInto(this.table);
+  }
+
+  protected getSelect(trx?: Transaction<Models>): SelectQueryBuilder<Models, T, Selectable<Models[T]>> {
+    const ret = trx ? trx.selectFrom(this.table) : BaseRepository._db.selectFrom(this.table);
+
+    return ret as unknown as SelectQueryBuilder<Models, T, Selectable<Models[T]>>;
+  }
+
+  protected getSelectWithColumns(options?: QueryParams<T>, trx?: Transaction<Models>) {
+    const query = this.getSelect(trx);
+    return this.applyOptions(query, options);
+  }
+
+  public getUpdate(trx?: Transaction<Models>): UpdateQueryBuilder<Models, T, T, UpdateResult> {
+    const ret = trx ? trx.updateTable(this.table) : BaseRepository._db.updateTable(this.table);
+    return ret as unknown as UpdateQueryBuilder<Models, T, T, UpdateResult>;
+  }
+
+  protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: unknown) {
+    // Allow users to type * as a wildcard; normalize to SQL %.
+    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
+    const normalized = String(val ?? '').replace(/\*/g, '%');
+
+    const pattern = op || 'contains';
+    switch (pattern) {
+      case 'equals':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized}` : eb(column, 'ilike', normalized);
+      case 'startsWith':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized + '%'}` : eb(column, 'ilike', `${normalized}%`);
+      case 'endsWith':
+        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + normalized}` : eb(column, 'ilike', `%${normalized}`);
+      case 'notContains':
+        return isCast
+          ? sql`${sql.raw(column)} NOT ILIKE ${'%' + normalized + '%'}`
+          : eb(column, 'not ilike', `%${normalized}%`);
+      case 'notEquals':
+        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${normalized}` : eb(column, 'not ilike', normalized);
+      case 'isEmpty':
+      case 'empty':
+        return isCast
+          ? sql`${sql.raw(column)} IS NULL OR ${sql.raw(column)} = ''`
+          : eb.or([eb(column, 'is', null), eb(column, '=', '')]);
+      case 'isNotEmpty':
+      case 'notempty':
+        return isCast
+          ? sql`${sql.raw(column)} IS NOT NULL AND ${sql.raw(column)} != ''`
+          : eb.and([eb(column, 'is not', null), eb(column, '!=', '')]);
+      case 'contains':
+      default:
+        return isCast
+          ? sql`${sql.raw(column)} ILIKE ${'%' + normalized + '%'}`
+          : eb(column, 'ilike', `%${normalized}%`);
+    }
+  }
+
+  protected applyAdvancedFilters(
+    query: any,
+    advancedFilterModel:
+      | QueryBuilderGroupNode
+      | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: unknown }[] }
+      | undefined,
+    columnMapping: Record<string, { col: string; isCast?: boolean }>,
+  ) {
+    if (!advancedFilterModel) {
+      return query;
+    }
+
+    const isLegacy = !('kind' in advancedFilterModel) || (advancedFilterModel as { kind: unknown }).kind !== 'group';
+    let rootGroup: QueryBuilderGroupNode;
+
+    if (isLegacy) {
+      const legacyModel = advancedFilterModel as {
+        conjunction: 'AND' | 'OR';
+        rules: { field: string; op: string; value: unknown }[];
+      };
+      if (!Array.isArray(legacyModel.rules) || legacyModel.rules.length === 0) {
+        return query;
+      }
+      rootGroup = {
+        kind: 'group',
+        id: 'legacy-root',
+        conjunction: legacyModel.conjunction,
+        rules: legacyModel.rules.map((r, i) => ({
+          kind: 'rule',
+          id: `legacy-rule-${i}`,
+          field: r.field,
+          op: r.op,
+          value: r.value,
+        })),
+      };
+    } else {
+      rootGroup = advancedFilterModel as QueryBuilderGroupNode;
+    }
+
+    return query.where((eb: any) => {
+      const expression = this.buildGroupExpression(eb, rootGroup, columnMapping);
+      return expression || sql`true`;
+    });
+  }
+
+  private buildGroupExpression(
+    eb: any,
+    group: QueryBuilderGroupNode,
+    columnMapping: Record<string, { col: string; isCast?: boolean }>,
+  ): any {
+    if (!group.rules || group.rules.length === 0) {
+      return null;
+    }
+
+    const expressions = group.rules
+      .map((node) => {
+        if (node.kind === 'rule') {
+          const mapping = columnMapping[node.field];
+          if (!mapping) return null;
+
+          if (node.op !== 'isEmpty' && node.op !== 'isNotEmpty' && node.op !== 'empty' && node.op !== 'notempty') {
+            if (node.value === undefined || node.value === null || String(node.value).trim() === '') {
+              return null;
+            }
+          }
+
+          const mappedOp = node.op === 'eq' ? 'equals' : node.op === 'neq' ? 'notEquals' : node.op;
+          return this.buildRuleExpression(eb, mapping.col, !!mapping.isCast, mappedOp, node.value);
+        } else {
+          return this.buildGroupExpression(eb, node, columnMapping);
+        }
+      })
+      .filter(Boolean);
+
+    if (expressions.length === 0) return null;
+    if (expressions.length === 1) return expressions[0];
+
+    return group.conjunction === 'OR' ? eb.or(expressions) : eb.and(expressions);
+  }
+}
+
+export type JoinedQueryParams = {
+  searchStr?: string;
+  startRow?: number;
+  endRow?: number;
+  sortModel?: {
+    colId: string;
+    sort: 'asc' | 'desc';
+  }[];
+  filterModel?: Record<string, unknown>;
+  columns?: (string | ReferenceExpression<Models, keyof Models> | TypeTableColumns<keyof Models>)[];
+  groupBy?: (string | SelectExpression<Models, keyof Models>)[];
+  limit?: number;
+  offset?: number;
+  orderBy?: OrderByExpression<Models, keyof Models, object>[];
+  advancedFilterModel?:
+    | QueryBuilderGroupNode
+    | {
+        conjunction: 'AND' | 'OR';
+        rules: { field: string; op: string; value: unknown }[];
+      };
+};
+
+export type QueryParams<T extends keyof Models> = {
+  searchStr?: string;
+  startRow?: number;
+  endRow?: number;
+  sortModel?: {
+    colId: string;
+    sort: 'asc' | 'desc';
+  }[];
+  filterModel?: Record<string, unknown>;
+  columns?: ReferenceExpression<Models, T>[];
+  groupBy?: (keyof Models[T])[];
+  limit?: number;
+  offset?: number;
+  orderBy?: OrderByExpression<Models, T, object>[];
+};
+
+export function ref<TTable extends keyof Models, TColumn extends keyof Models[TTable]>(
+  table: TTable,
+  column: TColumn,
+): ReferenceExpression<Models, TTable> {
+  return `${String(table)}.${String(column)}` as ReferenceExpression<Models, TTable>;
 }
 ```
 
@@ -36653,314 +37705,6 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       .executeTakeFirst();
   }
 }
-```
-
-## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import Stripe from 'stripe';
-import { env } from '../../../../env';
-import { BaseRepository } from '../../../lib/base.repo';
-import { logger } from '../../../logger';
-
-const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req, reply) => {
-    const query = req.query as { token?: string };
-    const token = query.token;
-    if (!token) {
-      logger.error('Webhook error: Missing token query parameter');
-      return reply.code(400).send({ error: 'Missing token parameter' });
-    }
-
-    let tenantId = 'unknown';
-    try {
-      // Look up tenant setting donations.webhook_token with matching value
-      // eslint-disable-next-line local/no-unscoped-db-query
-      const tokenRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('tenant_id')
-        .where('key', '=', 'donations.webhook_token')
-        .where('value', '=', JSON.stringify(token))
-        .executeTakeFirst();
-
-      if (!tokenRow) {
-        logger.error(`Webhook error: Invalid webhook token: ${token}`);
-        return reply.code(400).send({ error: 'Invalid webhook token' });
-      }
-
-      tenantId = String(tokenRow.tenant_id);
-
-      const signature = (req.headers['stripe-signature'] as string) || '';
-      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
-
-      // 1. Look up settings for this tenant ID in Kysely
-      const secretRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('value')
-        .where('tenant_id', '=', tenantId)
-        .where('key', '=', 'donations.stripe_webhook_secret')
-        .executeTakeFirst();
-
-      const webhookSecret = secretRow?.value as string | undefined;
-
-      const keyRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('value')
-        .where('tenant_id', '=', tenantId)
-        .where('key', '=', 'donations.stripe_secret_key')
-        .executeTakeFirst();
-
-      const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
-
-      // Mock mode (unsigned payload parsing) is ONLY permitted outside production.
-      // In production we must never accept an unauthenticated webhook body, or an
-      // attacker who knows the tenant's webhook token could forge payment events.
-      const isProduction = process.env['NODE_ENV'] === 'production';
-      const isMock = !isProduction && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
-
-      let event: Stripe.Event;
-
-      if (isMock) {
-        // Direct parse in mock/local dev mode
-        event = JSON.parse(payload);
-      } else {
-        if (!stripeKey || stripeKey.includes('MockKey')) {
-          throw new Error('Tenant donations stripe secret key not configured.');
-        }
-        if (!webhookSecret) {
-          throw new Error('Tenant donations stripe webhook secret not configured.');
-        }
-        const stripe = new Stripe(stripeKey);
-        event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
-      }
-
-      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
-
-      // 2. Persist webhook event for background worker processing
-      await BaseRepository.dbInstance
-        .insertInto('webhook_events')
-        .values({
-          tenant_id: tenantId,
-          stripe_event_id: event.id,
-          type: event.type,
-          payload: JSON.stringify(event),
-          status: 'pending',
-        })
-        .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
-        .execute();
-
-      return reply.code(200).send({ received: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
-      return reply.code(400).send({ error: message });
-    }
-  });
-
-  done();
-};
-
-export default donationsWebhookRoute;
-```
-
-## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { z } from 'zod';
-import { ZapierService } from './zapier.service';
-import { PersonsService } from '../persons/services/persons.service';
-import type { IAuthKeyPayload } from '@common';
-import { logger } from '../../logger';
-
-const zapierService = new ZapierService();
-const personsService = new PersonsService();
-
-const upsertPersonSchema = z.object({
-  email: z.string().email('Valid email required for person matching').max(255),
-  first_name: z.string().trim().max(100).optional(),
-  last_name: z.string().trim().max(100).optional(),
-  mobile: z.string().trim().max(30).optional(),
-  home_phone: z.string().trim().max(30).optional(),
-  notes: z.string().trim().max(10000).optional(),
-  linkedin: z.string().trim().max(255).optional(),
-  twitter: z.string().trim().max(255).optional(),
-  facebook: z.string().trim().max(255).optional(),
-  instagram: z.string().trim().max(255).optional(),
-});
-
-const tagActionSchema = z.object({
-  email: z.string().email('Valid email required to identify the person').max(255),
-  tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50),
-});
-
-async function resolveAuth(tenantId: string, db: any): Promise<IAuthKeyPayload | null> {
-  const owner = await db
-    .selectFrom('authusers')
-    .select(['id', 'first_name', 'last_name', 'role'])
-    .where('tenant_id', '=', tenantId)
-    .where('role', 'in', ['owner', 'admin'])
-    .orderBy('id', 'asc')
-    .limit(1)
-    .executeTakeFirst();
-
-  if (!owner) return null;
-
-  const name = [owner.first_name, owner.last_name].filter(Boolean).join(' ') || 'Zapier';
-
-  return {
-    user_id: String(owner.id),
-    tenant_id: tenantId,
-    session_id: 'zapier',
-    name,
-    role: owner.role ?? 'admin',
-    source: 'api',
-  } as IAuthKeyPayload;
-}
-
-async function extractTenantId(req: any): Promise<string | null> {
-  const authHeader = req.headers['authorization'] as string | undefined;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  const apiKey = authHeader.slice(7).trim();
-  if (!apiKey) return null;
-  return zapierService.lookupTenantByApiKey(apiKey);
-}
-
-const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/persons/upsert', async (req, reply) => {
-    const tenantId = await extractTenantId(req);
-    if (!tenantId) {
-      return reply.code(401).send({ error: 'Invalid or missing API key' });
-    }
-
-    const parsed = upsertPersonSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
-    }
-
-    const { email, ...fields } = parsed.data;
-
-    try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
-      const auth = await resolveAuth(tenantId, db);
-      if (!auth) {
-        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
-      }
-
-      const existing = await db
-        .selectFrom('persons')
-        .select(['id', 'email'])
-        .where('tenant_id', '=', tenantId)
-        .where('email', 'ilike', email.trim())
-        .executeTakeFirst();
-
-      if (existing) {
-        const result = await personsService.updatePerson(String(existing.id), { email, ...fields } as any, auth);
-        return reply.code(200).send({ action: 'updated', person: result });
-      } else {
-        const result = await personsService.addPerson({ email, ...fields } as any, auth);
-        return reply.code(201).send({ action: 'created', person: result });
-      }
-    } catch (err) {
-      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/upsert error');
-      return reply.code(500).send({ error: 'Failed to upsert person' });
-    }
-  });
-
-  fastify.post('/persons/tag', async (req, reply) => {
-    const tenantId = await extractTenantId(req);
-    if (!tenantId) {
-      return reply.code(401).send({ error: 'Invalid or missing API key' });
-    }
-
-    const parsed = tagActionSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
-    }
-
-    const { email, tag_name } = parsed.data;
-
-    try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
-      const auth = await resolveAuth(tenantId, db);
-      if (!auth) {
-        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
-      }
-
-      const person = await db
-        .selectFrom('persons')
-        .select(['id'])
-        .where('tenant_id', '=', tenantId)
-        .where('email', 'ilike', email.trim())
-        .executeTakeFirst();
-
-      if (!person) {
-        return reply.code(404).send({ error: 'No person found with that email' });
-      }
-
-      await personsService.attachTag(String(person.id), tag_name, 'tag', auth);
-      return reply.code(200).send({ success: true });
-    } catch (err) {
-      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/tag error');
-      return reply.code(500).send({ error: 'Failed to add tag' });
-    }
-  });
-
-  fastify.post('/persons/untag', async (req, reply) => {
-    const tenantId = await extractTenantId(req);
-    if (!tenantId) {
-      return reply.code(401).send({ error: 'Invalid or missing API key' });
-    }
-
-    const parsed = tagActionSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
-    }
-
-    const { email, tag_name } = parsed.data;
-
-    try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
-      const auth = await resolveAuth(tenantId, db);
-      if (!auth) {
-        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
-      }
-
-      const person = await db
-        .selectFrom('persons')
-        .select(['id'])
-        .where('tenant_id', '=', tenantId)
-        .where('email', 'ilike', email.trim())
-        .executeTakeFirst();
-
-      if (!person) {
-        return reply.code(404).send({ error: 'No person found with that email' });
-      }
-
-      await personsService.detachTag({
-        tenant_id: tenantId,
-        person_id: String(person.id),
-        name: tag_name,
-        type: 'tag',
-        user_id: auth.user_id,
-        source: auth.source,
-      });
-
-      return reply.code(200).send({ success: true });
-    } catch (err) {
-      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/untag error');
-      return reply.code(500).send({ error: 'Failed to remove tag' });
-    }
-  });
-
-  done();
-};
-
-export default zapierInboundRoute;
 ```
 
 ## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
@@ -37836,3088 +38580,6 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
     }
   }
 }
-```
-
-## File: apps/backend/src/app/lib/base.repo.ts
-
-```typescript
-// tsco:ignore
-
-import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
-
-import { promises as fs } from 'fs';
-import type {
-  DeleteQueryBuilder,
-  DeleteResult,
-  InsertQueryBuilder,
-  InsertResult,
-  OperandValueExpressionOrList,
-  OrderByExpression,
-  QueryResult,
-  ReferenceExpression,
-  SelectExpression,
-  SelectQueryBuilder,
-  Selectable,
-  Transaction,
-  UpdateObject,
-  UpdateQueryBuilder,
-  UpdateResult,
-} from 'kysely';
-import { FileMigrationProvider, Kysely, Migrator, PostgresDialect, sql } from 'kysely';
-import path from 'path';
-
-import type {
-  Models,
-  OperationDataType,
-  TypeId,
-  TypeTableColumns,
-  TypeTenantId,
-} from '../../../../../libs/common/src/lib/kysely.models';
-import { Pool } from 'pg';
-import { env } from '../../env';
-import Cursor from 'pg-cursor';
-const dialect = new PostgresDialect({
-  pool: new Pool(env.db),
-  cursor: Cursor,
-});
-
-type ColName<TB extends keyof Models> = keyof Models[TB] & string;
-
-export class BaseRepository<T extends keyof Models> {
-  private static _db = new Kysely<Models>({ dialect });
-  private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
-
-  public static get dbInstance(): Kysely<Models> {
-    return BaseRepository._db;
-  }
-
-  protected readonly table: T;
-
-  public static migrator = new Migrator({
-    db: BaseRepository._db,
-    provider: new FileMigrationProvider({
-      fs,
-      path,
-      migrationFolder: BaseRepository._migrationFolder,
-    }),
-  });
-
-  constructor(tableIn: T) {
-    this.table = tableIn;
-  }
-
-  public getTableName(): T {
-    return this.table;
-  }
-
-  public get db() {
-    return BaseRepository._db;
-  }
-
-  public async add(input: { row: OperationDataType<T, 'insert'> }, trx?: Transaction<Models>) {
-    const results = await this.addMany({ rows: [input.row] }, trx);
-    const first = results[0];
-    if (!first) {
-      throw new Error(`Insert into "${this.table}" returned no rows`);
-    }
-    return first;
-  }
-
-  public async addMany(input: { rows: OperationDataType<T, 'insert'>[] }, trx?: Transaction<Models>) {
-    return this.getInsert(trx).values(input.rows).returningAll().execute();
-  }
-
-  public async addOrGet<K extends keyof Models[T] & string>(
-    input: {
-      row: OperationDataType<T, 'insert'>;
-      onConflictColumn: K;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<Selectable<Models[T]> | undefined> {
-    const insertResult = await this.getInsert(trx)
-      .values(input.row)
-      .onConflict((oc) => oc.columns(['tenant_id', input.onConflictColumn]).doNothing())
-      .returningAll()
-      .executeTakeFirst();
-
-    if (insertResult) return insertResult as unknown as Selectable<Models[T]>;
-
-    const matchValue = input.row[input.onConflictColumn as unknown as keyof OperationDataType<T, 'insert'>];
-    if (matchValue === undefined) {
-      throw new Error(`Missing value for conflict column: ${String(input.onConflictColumn)}`);
-    }
-
-    const lhs = input.onConflictColumn as ReferenceExpression<Models, T>;
-    return this.getSelect(trx)
-      .selectAll()
-      .where(lhs, '=', matchValue)
-      .where('tenant_id', '=', input.row.tenant_id as OperandValueExpressionOrList<Models, T, 'tenant_id'>)
-      .executeTakeFirst() as unknown as Selectable<Models[T]> | undefined;
-  }
-
-  public async count(tenant_id: TypeTenantId<T>, trx?: Transaction<Models>): Promise<number> {
-    let query = this.getSelect(trx).select(({ fn }) => [fn.countAll<number>().as('count')]);
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', tenant_id);
-    }
-    const result = await query.executeTakeFirst();
-    return Number(result?.count ?? 0);
-  }
-
-  public async delete(input: { tenant_id: TypeTenantId<T>; id: TypeId<T> }, trx?: Transaction<Models>) {
-    return this.deleteMany({ tenant_id: input.tenant_id, ids: [input.id] }, trx);
-  }
-
-  public async deleteMany(input: { tenant_id: TypeTenantId<T>; ids: TypeId<T>[] }, trx?: Transaction<Models>) {
-    // Convert to numbers if needed
-    const numericIds = input.ids;
-
-    if (numericIds.length === 0) return false;
-
-    const deleteQuery = this.getDelete(trx);
-    let query = deleteQuery.where('id' as ReferenceExpression<Models, T>, 'in', numericIds);
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    const result = await query.executeTakeFirst();
-
-    return Number(result?.numDeletedRows ?? 0) > 0;
-  }
-
-  public async exists(input: { key: string; column: keyof Models[T] }, trx?: Transaction<Models>): Promise<boolean> {
-    const columnRef = `${String(this.table)}.${String(input.column)}` as ReferenceExpression<Models, T>;
-    const result = await this.getSelect(trx).where(columnRef, '=', input.key).limit(1).execute();
-    return result.length > 0;
-  }
-
-  public find(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      key: string;
-      column: ReferenceExpression<Models, T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    const options: QueryParams<T> = {
-      columns: [input.column],
-      limit: 3,
-    };
-
-    if (!input.key) {
-      // If no key provided, return empty result
-      return Promise.resolve([]);
-    }
-
-    let query = this.getSelectWithColumns(options, trx).where(input.column, 'ilike', input.key + '%');
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query.limit(3).execute();
-  }
-
-  public getAll(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    let query = this.getSelectWithColumns(input.options, trx);
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query.execute();
-  }
-
-  public async getAllWithCounts(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      options?: any;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, any>[]; count: number }> {
-    const rows = await this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx);
-    return { rows: rows as Record<string, any>[], count: rows.length };
-  }
-
-  protected selectBy<C extends ColName<T>>(
-    column: C,
-    input: {
-      tenant_id: TypeTenantId<T>;
-      value: OperandValueExpressionOrList<Models, T, C>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    let query = this.getSelectWithColumns(input.options, trx).where(
-      column as ReferenceExpression<Models, T>,
-      '=',
-      input.value as OperandValueExpressionOrList<Models, T, ReferenceExpression<Models, T>>,
-    );
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query;
-  }
-
-  public getOneBy<C extends ColName<T>>(
-    column: C,
-    input: {
-      tenant_id: TypeTenantId<T>;
-      value: OperandValueExpressionOrList<Models, T, C>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    return this.selectBy(column, input, trx).executeTakeFirst();
-  }
-
-  public getOneById(input: { tenant_id: TypeTenantId<T>; id: string }, trx?: Transaction<Models>) {
-    let query = this.getSelectWithColumns(undefined, trx).where(
-      'id' as ReferenceExpression<Models, T>,
-      '=',
-      input.id as TypeId<T>,
-    );
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query.executeTakeFirst();
-  }
-
-  protected getManyBy<C extends ColName<T>>(
-    column: C,
-    input: {
-      tenant_id: TypeTenantId<T>;
-      value: OperandValueExpressionOrList<Models, T, C>;
-      options?: QueryParams<T>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    return this.selectBy(column, input, trx).execute();
-  }
-
-  public async nowTime(): Promise<QueryResult<INow>> {
-    return (await sql`select now()::timestamp`.execute(BaseRepository._db)) as QueryResult<INow>;
-  }
-
-  public transaction() {
-    return BaseRepository._db.transaction();
-  }
-
-  public async update(
-    input: {
-      tenant_id: TypeTenantId<T>;
-      id: TypeId<T>;
-      row: OperationDataType<T, 'update'>;
-    },
-    trx?: Transaction<Models>,
-  ) {
-    if (Object.keys(input.row).length === 0) {
-      return 0; // or just return early, nothing to update
-    }
-    let query = this.getUpdate(trx)
-      .set(input.row as unknown as UpdateObject<Models, T, T>)
-      .where('id' as ReferenceExpression<Models, T>, '=', input.id);
-    if (this.table !== 'tenants') {
-      query = query.where('tenant_id' as ReferenceExpression<Models, T>, '=', input.tenant_id);
-    }
-    return query.returningAll().executeTakeFirst();
-  }
-
-  protected applyOptions(query: SelectQueryBuilder<Models, T, unknown>, options?: QueryParams<T>) {
-    const opts = options ?? {};
-    query = options?.columns
-      ? query.select(
-          options.columns.map((c) => {
-            if (typeof c === 'string' && !c.includes('.')) {
-              return `${String(this.table)}.${c}` as SelectExpression<Models, T>;
-            }
-            return c;
-          }) as SelectExpression<Models, T>[],
-        )
-      : query.selectAll(this.table);
-
-    // Map AG Grid pagination (startRow/endRow) to limit/offset if not provided explicitly
-    const hasLimit = typeof options?.limit === 'number';
-    const hasOffset = typeof options?.offset === 'number';
-    const startRow = typeof opts.startRow === 'number' ? opts.startRow : undefined;
-    const endRow = typeof opts.endRow === 'number' ? opts.endRow : undefined;
-    const derivedLimit = !hasLimit && typeof endRow === 'number' ? Math.max(0, endRow - (startRow ?? 0)) : undefined;
-    const derivedOffset = !hasOffset && typeof startRow === 'number' ? startRow : undefined;
-
-    const finalLimit = hasLimit ? options?.limit : derivedLimit;
-    const finalOffset = hasOffset ? options?.offset : derivedOffset;
-
-    query = typeof finalLimit === 'number' ? query.limit(finalLimit) : query;
-    query = typeof finalOffset === 'number' ? query.offset(finalOffset) : query;
-
-    // Map generic sortModel (from UI) to orderBy clauses when provided
-    if (opts.sortModel && Array.isArray(opts.sortModel) && opts.sortModel.length > 0) {
-      query = opts.sortModel.reduce((acc: typeof query, sort: { colId: string; sort: 'asc' | 'desc' }) => {
-        const direction: 'asc' | 'desc' = sort.sort === 'desc' ? 'desc' : 'asc';
-        let col = sort.colId;
-        if (typeof col === 'string' && !col.includes('.')) {
-          // Check standard columns first
-          const standardCols = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
-          if (standardCols.includes(col)) {
-            col = `${String(this.table)}.${col}`;
-          } else {
-            // Custom table columns checks
-            const tableColsMap: Record<string, string[]> = {
-              tasks: [
-                'name',
-                'details',
-                'due_at',
-                'status',
-                'priority',
-                'completed_at',
-                'position',
-                'assigned_to',
-                'team_id',
-                'file_id',
-              ],
-              persons: [
-                'campaign_id',
-                'household_id',
-                'first_name',
-                'middle_names',
-                'last_name',
-                'email',
-                'email2',
-                'mobile',
-                'home_phone',
-                'file_id',
-                'company_id',
-                'json',
-                'notes',
-                'linkedin',
-                'twitter',
-                'facebook',
-                'instagram',
-                'assigned_to',
-              ],
-            };
-            const cols = tableColsMap[this.table as string];
-            if (cols && cols.includes(col)) {
-              col = `${String(this.table)}.${col}`;
-            }
-          }
-        }
-        // Skip dotted references that weren't resolved to a known table.column
-        if (typeof col === 'string' && col.includes('.') && !col.startsWith(`${String(this.table)}.`)) {
-          return acc;
-        }
-        // Defense-in-depth: only a safe SQL identifier (optionally table.column)
-        // may reach orderBy. Anything else from the client sortModel is dropped.
-        if (typeof col !== 'string' || !/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/i.test(col)) {
-          return acc;
-        }
-        return acc.orderBy(col as ReferenceExpression<Models, T>, direction);
-      }, query);
-    }
-    query = options?.orderBy ? query.orderBy(options.orderBy) : query;
-    query = options?.groupBy ? query.groupBy(options.groupBy as any) : query;
-    return query;
-  }
-
-  protected applyColumnFilter(query: any, column: string, filter: { op?: string; value?: unknown }) {
-    if (!filter) {
-      return query;
-    }
-    const op = filter.op || 'contains';
-    const val = filter.value;
-
-    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
-      if (val === undefined || val === null || String(val).trim() === '') {
-        return query;
-      }
-    }
-
-    // Allow users to type * as a wildcard character; normalize to SQL %.
-    // The operator's own wrapping (startsWith → trailing %, contains → both, etc.)
-    // is always applied on top — Postgres collapses consecutive %% automatically,
-    // so 'zee*' with contains becomes '%zee%%' → effectively '%zee%'.
-    const normalized = String(val).replace(/\*/g, '%');
-
-    switch (op) {
-      case 'equals':
-        return query.where(column, 'ilike', normalized);
-      case 'startsWith':
-        return query.where(column, 'ilike', `${normalized}%`);
-      case 'endsWith':
-        return query.where(column, 'ilike', `%${normalized}`);
-      case 'notContains':
-        return query.where(column, 'not ilike', `%${normalized}%`);
-      case 'notEquals':
-        return query.where(column, 'not ilike', normalized);
-      case 'isEmpty':
-        return query.where((eb: any) => eb.or([eb(column, 'is', null), eb(column, '=', '')]));
-      case 'isNotEmpty':
-        return query.where((eb: any) => eb.and([eb(column, 'is not', null), eb(column, '!=', '')]));
-      case 'contains':
-      default:
-        return query.where(column, 'ilike', `%${normalized}%`);
-    }
-  }
-
-  protected applyCastColumnFilter(
-    query: any,
-    sqlExpression: ReturnType<typeof sql>,
-    filter: { op?: string; value?: unknown },
-  ) {
-    if (!filter) {
-      return query;
-    }
-    const op = filter.op || 'contains';
-    const val = filter.value;
-
-    if (op !== 'isEmpty' && op !== 'isNotEmpty') {
-      if (val === undefined || val === null || String(val).trim() === '') {
-        return query;
-      }
-    }
-
-    // Allow users to type * as a wildcard; normalize to SQL %.
-    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
-    const normalized = String(val).replace(/\*/g, '%');
-
-    switch (op) {
-      case 'equals':
-        return query.where(sql<boolean>`${sqlExpression} ILIKE ${normalized}`);
-      case 'startsWith':
-        return query.where(sql<boolean>`${sqlExpression} ILIKE ${normalized + '%'}`);
-      case 'endsWith':
-        return query.where(sql<boolean>`${sqlExpression} ILIKE ${'%' + normalized}`);
-      case 'notContains':
-        return query.where(sql<boolean>`${sqlExpression} NOT ILIKE ${'%' + normalized + '%'}`);
-      case 'notEquals':
-        return query.where(sql<boolean>`${sqlExpression} NOT ILIKE ${normalized}`);
-      case 'isEmpty':
-        return query.where(sql<boolean>`${sqlExpression} IS NULL OR ${sqlExpression} = ''`);
-      case 'isNotEmpty':
-        return query.where(sql<boolean>`${sqlExpression} IS NOT NULL AND ${sqlExpression} != ''`);
-      case 'contains':
-      default:
-        return query.where(sql<boolean>`${sqlExpression} ILIKE ${'%' + normalized + '%'}`);
-    }
-  }
-
-  protected normalizeSearch(raw: string | null | undefined): string | undefined {
-    if (!raw || !raw.trim()) return undefined;
-    const lower = raw.trim().toLowerCase().replace(/\*/g, '%');
-    return `%${lower}%`;
-  }
-
-  protected getDelete(trx?: Transaction<Models>): DeleteQueryBuilder<Models, T, DeleteResult> {
-    return (trx
-      ? trx.deleteFrom(this.table)
-      : BaseRepository._db.deleteFrom(this.table)) as unknown as DeleteQueryBuilder<Models, T, DeleteResult>;
-  }
-
-  protected getInsert(trx?: Transaction<Models>): InsertQueryBuilder<Models, T, InsertResult> {
-    return trx ? trx.insertInto(this.table) : BaseRepository._db.insertInto(this.table);
-  }
-
-  protected getSelect(trx?: Transaction<Models>): SelectQueryBuilder<Models, T, Selectable<Models[T]>> {
-    const ret = trx ? trx.selectFrom(this.table) : BaseRepository._db.selectFrom(this.table);
-
-    return ret as unknown as SelectQueryBuilder<Models, T, Selectable<Models[T]>>;
-  }
-
-  protected getSelectWithColumns(options?: QueryParams<T>, trx?: Transaction<Models>) {
-    const query = this.getSelect(trx);
-    return this.applyOptions(query, options);
-  }
-
-  public getUpdate(trx?: Transaction<Models>): UpdateQueryBuilder<Models, T, T, UpdateResult> {
-    const ret = trx ? trx.updateTable(this.table) : BaseRepository._db.updateTable(this.table);
-    return ret as unknown as UpdateQueryBuilder<Models, T, T, UpdateResult>;
-  }
-
-  protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: unknown) {
-    // Allow users to type * as a wildcard; normalize to SQL %.
-    // The operator's own wrapping is always applied — Postgres collapses %% naturally.
-    const normalized = String(val ?? '').replace(/\*/g, '%');
-
-    const pattern = op || 'contains';
-    switch (pattern) {
-      case 'equals':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized}` : eb(column, 'ilike', normalized);
-      case 'startsWith':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${normalized + '%'}` : eb(column, 'ilike', `${normalized}%`);
-      case 'endsWith':
-        return isCast ? sql`${sql.raw(column)} ILIKE ${'%' + normalized}` : eb(column, 'ilike', `%${normalized}`);
-      case 'notContains':
-        return isCast
-          ? sql`${sql.raw(column)} NOT ILIKE ${'%' + normalized + '%'}`
-          : eb(column, 'not ilike', `%${normalized}%`);
-      case 'notEquals':
-        return isCast ? sql`${sql.raw(column)} NOT ILIKE ${normalized}` : eb(column, 'not ilike', normalized);
-      case 'isEmpty':
-      case 'empty':
-        return isCast
-          ? sql`${sql.raw(column)} IS NULL OR ${sql.raw(column)} = ''`
-          : eb.or([eb(column, 'is', null), eb(column, '=', '')]);
-      case 'isNotEmpty':
-      case 'notempty':
-        return isCast
-          ? sql`${sql.raw(column)} IS NOT NULL AND ${sql.raw(column)} != ''`
-          : eb.and([eb(column, 'is not', null), eb(column, '!=', '')]);
-      case 'contains':
-      default:
-        return isCast
-          ? sql`${sql.raw(column)} ILIKE ${'%' + normalized + '%'}`
-          : eb(column, 'ilike', `%${normalized}%`);
-    }
-  }
-
-  protected applyAdvancedFilters(
-    query: any,
-    advancedFilterModel:
-      | QueryBuilderGroupNode
-      | { conjunction: 'AND' | 'OR'; rules: { field: string; op: string; value: unknown }[] }
-      | undefined,
-    columnMapping: Record<string, { col: string; isCast?: boolean }>,
-  ) {
-    if (!advancedFilterModel) {
-      return query;
-    }
-
-    const isLegacy = !('kind' in advancedFilterModel) || (advancedFilterModel as { kind: unknown }).kind !== 'group';
-    let rootGroup: QueryBuilderGroupNode;
-
-    if (isLegacy) {
-      const legacyModel = advancedFilterModel as {
-        conjunction: 'AND' | 'OR';
-        rules: { field: string; op: string; value: unknown }[];
-      };
-      if (!Array.isArray(legacyModel.rules) || legacyModel.rules.length === 0) {
-        return query;
-      }
-      rootGroup = {
-        kind: 'group',
-        id: 'legacy-root',
-        conjunction: legacyModel.conjunction,
-        rules: legacyModel.rules.map((r, i) => ({
-          kind: 'rule',
-          id: `legacy-rule-${i}`,
-          field: r.field,
-          op: r.op,
-          value: r.value,
-        })),
-      };
-    } else {
-      rootGroup = advancedFilterModel as QueryBuilderGroupNode;
-    }
-
-    return query.where((eb: any) => {
-      const expression = this.buildGroupExpression(eb, rootGroup, columnMapping);
-      return expression || sql`true`;
-    });
-  }
-
-  private buildGroupExpression(
-    eb: any,
-    group: QueryBuilderGroupNode,
-    columnMapping: Record<string, { col: string; isCast?: boolean }>,
-  ): any {
-    if (!group.rules || group.rules.length === 0) {
-      return null;
-    }
-
-    const expressions = group.rules
-      .map((node) => {
-        if (node.kind === 'rule') {
-          const mapping = columnMapping[node.field];
-          if (!mapping) return null;
-
-          if (node.op !== 'isEmpty' && node.op !== 'isNotEmpty' && node.op !== 'empty' && node.op !== 'notempty') {
-            if (node.value === undefined || node.value === null || String(node.value).trim() === '') {
-              return null;
-            }
-          }
-
-          const mappedOp = node.op === 'eq' ? 'equals' : node.op === 'neq' ? 'notEquals' : node.op;
-          return this.buildRuleExpression(eb, mapping.col, !!mapping.isCast, mappedOp, node.value);
-        } else {
-          return this.buildGroupExpression(eb, node, columnMapping);
-        }
-      })
-      .filter(Boolean);
-
-    if (expressions.length === 0) return null;
-    if (expressions.length === 1) return expressions[0];
-
-    return group.conjunction === 'OR' ? eb.or(expressions) : eb.and(expressions);
-  }
-}
-
-export type JoinedQueryParams = {
-  searchStr?: string;
-  startRow?: number;
-  endRow?: number;
-  sortModel?: {
-    colId: string;
-    sort: 'asc' | 'desc';
-  }[];
-  filterModel?: Record<string, unknown>;
-  columns?: (string | ReferenceExpression<Models, keyof Models> | TypeTableColumns<keyof Models>)[];
-  groupBy?: (string | SelectExpression<Models, keyof Models>)[];
-  limit?: number;
-  offset?: number;
-  orderBy?: OrderByExpression<Models, keyof Models, object>[];
-  advancedFilterModel?:
-    | QueryBuilderGroupNode
-    | {
-        conjunction: 'AND' | 'OR';
-        rules: { field: string; op: string; value: unknown }[];
-      };
-};
-
-export type QueryParams<T extends keyof Models> = {
-  searchStr?: string;
-  startRow?: number;
-  endRow?: number;
-  sortModel?: {
-    colId: string;
-    sort: 'asc' | 'desc';
-  }[];
-  filterModel?: Record<string, unknown>;
-  columns?: ReferenceExpression<Models, T>[];
-  groupBy?: (keyof Models[T])[];
-  limit?: number;
-  offset?: number;
-  orderBy?: OrderByExpression<Models, T, object>[];
-};
-
-export function ref<TTable extends keyof Models, TColumn extends keyof Models[TTable]>(
-  table: TTable,
-  column: TColumn,
-): ReferenceExpression<Models, TTable> {
-  return `${String(table)}.${String(column)}` as ReferenceExpression<Models, TTable>;
-}
-```
-
-## File: apps/backend/src/app/modules/events/controller.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { BaseController } from '../../lib/base.controller';
-import { logger } from '../../logger';
-import { WorkflowsController } from '../workflows/controller';
-import { EventsRepo } from './repositories/events.repo';
-
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-const ipRsvpTimestamps = new Map<string, number[]>();
-const RSVP_RATE_LIMIT_MAX = 5;
-const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-export class EventsController extends BaseController<'events', EventsRepo> {
-  constructor() {
-    super(new EventsRepo());
-  }
-
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    const row = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      slug: payload.slug,
-      is_published: payload.is_published ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
-      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
-      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
-      // Stringifying it first makes node-postgres send plain text, which Postgres casts
-      // to jsonb correctly.
-      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
-    } as OperationDataType<'events', 'insert'>;
-
-    try {
-      return await this.add(row);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-  }
-
-  public async getEventBySlug(slug: string) {
-    // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
-    // eslint-disable-next-line local/no-unscoped-db-query
-    return this.getRepo()
-      .db.selectFrom('events')
-      .selectAll()
-      .where('slug', '=', slug)
-      .where('is_published', '=', true)
-      .executeTakeFirst();
-  }
-
-  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
-    const row = await this.getRepo()
-      .db.selectFrom('event_registrations')
-      .select(({ fn }) => [fn.count('id').as('cnt')])
-      .where('tenant_id', '=', tenantId)
-      .where('event_id', '=', eventId)
-      .where('status', '!=', 'cancelled')
-      .executeTakeFirst();
-    return Number(row?.cnt ?? 0);
-  }
-
-  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('event_ticket_types')
-      .selectAll()
-      .where('event_id', '=', eventId)
-      .where('tenant_id', '=', tenantId)
-      .orderBy('sort_order', 'asc')
-      .execute();
-  }
-
-  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
-  }
-
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
-        });
-      }
-    }
-
-    const row = {
-      ...payload,
-      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
-      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
-      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'events', 'update'>;
-    let result;
-    try {
-      result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-
-    // Manage pending reminder jobs when the toggle changes
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
-
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            const registrations = await this.getRepo()
-              .db.selectFrom('event_registrations')
-              .select(['id', 'person_id'])
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('event_id', '=', id)
-              .where('status', '=', 'registered')
-              .execute();
-
-            for (const reg of registrations) {
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
-                .execute();
-
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(id),
-                    personId: String(reg.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule event reminders');
-      }
-    }
-
-    return result;
-  }
-
-  // Ticket types
-
-  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().addTicketType({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      price_cents: payload.price_cents ?? 0,
-      capacity: payload.capacity ?? null,
-      sort_order: payload.sort_order ?? 0,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
-  }
-
-  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
-  }
-
-  // Registrations
-
-  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
-    // Capacity check across the whole event
-    const event = await this.getRepo()
-      .db.selectFrom('events')
-      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', payload.event_id)
-      .executeTakeFirst();
-
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    if (event.capacity !== null) {
-      const countRow = await this.getRepo()
-        .db.selectFrom('event_registrations')
-        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('event_id', '=', payload.event_id)
-        .where('status', '!=', 'cancelled')
-        .executeTakeFirst();
-      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-      }
-    }
-
-    // Per-ticket-type capacity check
-    if (payload.ticket_type_id) {
-      const ticketType = await this.getRepo()
-        .db.selectFrom('event_ticket_types')
-        .select(['capacity'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', payload.ticket_type_id)
-        .executeTakeFirst();
-
-      if (ticketType && ticketType.capacity !== null) {
-        const ticketCountRow = await this.getRepo()
-          .db.selectFrom('event_registrations')
-          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('ticket_type_id', '=', payload.ticket_type_id)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
-        }
-      }
-    }
-
-    const result = await this.getRepo().addRegistration({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      ticket_type_id: payload.ticket_type_id ?? null,
-      status: payload.status ?? 'registered',
-      notes: payload.notes ?? null,
-      user_id: auth.user_id,
-    });
-
-    if (result) {
-      // Queue registration confirmation email
-      if (event.send_registration_confirmation !== false) {
-        try {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: auth.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'send-event-registration-confirmation',
-                registrationId: String(result.id),
-                eventId: String(payload.event_id),
-                personId: String(payload.person_id),
-              }),
-              run_at: new Date(),
-            })
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue registration confirmation');
-        }
-      }
-
-      // Queue 24h reminder
-      if (event.send_reminder !== false) {
-        try {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-reminder',
-                  registrationId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue event reminder');
-        }
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'assign',
-          entity: 'event_registrations',
-          entity_id: String(result.id),
-          quantity: 1,
-          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async checkIn(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'attended', checked_in_at: new Date() },
-      user_id: auth.user_id,
-    });
-
-    // Cancel pending reminder — they've already arrived
-    try {
-      await this.getRepo()
-        .db.deleteFrom('background_jobs')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('status', '=', 'pending')
-        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-        .where(sql`payload->>'registrationId'`, '=', String(id))
-        .execute();
-    } catch (err) {
-      logger.error({ err }, 'Failed to cancel event reminder on check-in');
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log check-in activity');
-    }
-
-    return result;
-  }
-
-  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
-    });
-
-    // Cancel reminder if status moves away from 'registered'
-    if (payload.status && payload.status !== 'registered') {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on status change');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log registration update activity');
-    }
-
-    return result;
-  }
-
-  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'event_registrations',
-          entity_id: id,
-          quantity: 1,
-          metadata: { id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration delete activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async rsvpPublic(slug: string, payload: Record<string, string>, clientIp: string) {
-    // Rate limiting
-    const now = Date.now();
-    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
-      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
-    }
-    timestamps.push(now);
-    ipRsvpTimestamps.set(clientIp, timestamps);
-
-    const event = await this.getEventBySlug(slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    // Honeypot
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      return { success: true };
-    }
-
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
-    }
-
-    if (new Date(event.end_time) < new Date()) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
-    }
-
-    const tenantId = String(event.tenant_id);
-    const firstName = payload['first_name']?.trim() || null;
-    const lastName = payload['last_name']?.trim() || null;
-    const mobile = payload['mobile']?.trim() || null;
-    const notes = payload['notes']?.trim() || null;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId || !creatorId) {
-          throw new Error('Tenant configuration is incomplete.');
-        }
-
-        // Check overall capacity
-        if (event.capacity !== null) {
-          const countRow = await trx
-            .selectFrom('event_registrations')
-            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-            .where('tenant_id', '=', tenantId)
-            .where('event_id', '=', String(event.id))
-            .where('status', '!=', 'cancelled')
-            .executeTakeFirst();
-          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-          }
-        }
-
-        // Find or create person
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (notes) {
-            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
-          }
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
-          // (there is no "campaign-less" person). `persons` also has no address columns
-          // (street1/city/state/zip/country live on `households`, not `persons`), so those
-          // RSVP fields are intentionally not persisted here.
-          const campaignRow = await trx
-            .selectFrom('campaigns')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .orderBy('created_at', 'asc')
-            .limit(1)
-            .executeTakeFirst();
-
-          if (!campaignRow) {
-            throw new Error('Tenant configuration is incomplete.');
-          }
-          const campaignId = String(campaignRow.id);
-
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email,
-            mobile,
-            notes,
-          };
-
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          try {
-            const workflowsCtrl = new WorkflowsController();
-            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
-          }
-        }
-
-        // Check duplicate registration
-        const existingReg = await trx
-          .selectFrom('event_registrations')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', String(event.id))
-          .where('person_id', '=', personId)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-
-        if (existingReg) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
-        }
-
-        // Insert registration
-        const reg = await trx
-          .insertInto('event_registrations')
-          .values({
-            tenant_id: tenantId,
-            event_id: String(event.id) as any,
-            person_id: personId,
-            ticket_type_id: null,
-            status: 'registered',
-            notes: notes ?? null,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        // Queue confirmation email
-        if ((event as any).send_registration_confirmation !== false) {
-          try {
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-registration-confirmation',
-                  registrationId: String(reg.id),
-                  eventId: String(event.id),
-                  personId,
-                }),
-                run_at: new Date(),
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue RSVP confirmation');
-          }
-        }
-
-        // Queue 24h reminder
-        if ((event as any).send_reminder !== false) {
-          try {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await trx
-                .insertInto('background_jobs')
-                .values({
-                  tenant_id: tenantId,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(event.id),
-                    personId,
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
-          }
-        }
-      });
-
-    return { success: true };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
-
-```typescript
-import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
-import { logger } from '../../../logger';
-
-export class HouseholdRepo extends BaseRepository<'households'> {
-  constructor() {
-    super('households');
-  }
-
-  public override async addMany(
-    input: { rows: OperationDataType<'households', 'insert'>[] },
-    trx?: Transaction<Models>,
-  ) {
-    const processedRows = await Promise.all(
-      input.rows.map(async (row) => {
-        const isBlank = isBlankAddress(row);
-        const isIncomplete = isIncompleteAddress(row);
-
-        let geocoding_status = isBlank || isIncomplete ? 'failed' : 'pending';
-        let district = row.district ?? null;
-        let precinct = row.precinct ?? null;
-        let ward = row.ward ?? null;
-
-        if (row.lat && row.lng && Number(row.lat) !== 0 && Number(row.lng) !== 0) {
-          try {
-            const matched = await matchCoordinatesToDistrict(Number(row.lat), Number(row.lng));
-            district = matched.district;
-            precinct = matched.precinct;
-            ward = matched.ward;
-            geocoding_status = 'success';
-          } catch (err) {
-            logger.error({ err }, 'Failed to map coordinates to district during insert');
-          }
-        }
-
-        return {
-          ...row,
-          district,
-          precinct,
-          ward,
-          geocoding_status,
-        };
-      }),
-    );
-
-    const createdRows = await super.addMany({ rows: processedRows }, trx);
-    const db = trx || this.db;
-
-    const jobs = createdRows
-      .filter((row) => row && row.id && row.geocoding_status === 'pending')
-      .map((row) => ({
-        tenant_id: row.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'geocode_household',
-          household_id: String(row.id),
-          tenant_id: row.tenant_id,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      }));
-
-    if (jobs.length > 0) {
-      await db.insertInto('background_jobs').values(jobs).execute();
-    }
-
-    return createdRows;
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string; onlyEmpty?: boolean },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    let query = this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id);
-
-    if (input.onlyEmpty) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            eb.selectFrom('persons').select('id').whereRef('persons.household_id', '=', 'households.id').limit(1),
-          ),
-        ),
-      );
-    }
-
-    const rows = await query.execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql<Date>`now()`,
-      } as unknown as OperationDataType<'households', 'update'>)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
-
-  public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id)
-      .where('home_phone', 'is', null)
-      .where('apt', 'is', null)
-      .where('street_num', 'is', null)
-      .where('street1', 'is', null)
-      .where('street2', 'is', null)
-      .where('city', 'is', null)
-      .where('state', 'is', null)
-      .where('zip', 'is', null)
-      .where('country', 'is', null)
-      .where('file_id', 'is', null)
-      .where('notes', 'is', null)
-      .where('json', 'is', null)
-      .selectAll()
-      .limit(1)
-      .executeTakeFirst();
-  }
-
-  public async findByFingerprint(
-    input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
-    trx?: Transaction<Models>,
-  ) {
-    const sel = this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id);
-
-    if (input.fp_full) {
-      const full = await sel.where('address_fp_full', '=', input.fp_full).selectAll().limit(1).executeTakeFirst();
-      if (full) return full;
-    }
-    if (input.fp_street) {
-      return await this.getSelect(trx)
-        .where('tenant_id', '=', input.tenant_id)
-        .where('campaign_id', '=', input.campaign_id)
-        .where('address_fp_street', '=', input.fp_street)
-        .selectAll()
-        .limit(1)
-        .executeTakeFirst();
-    }
-    return undefined;
-  }
-
-  public async getAllWithPeopleCount(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'> & { issues?: string[] };
-      tags?: string[];
-      issues?: string[];
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
-    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = ((options as JoinedQueryParams & { issues?: string[] })?.filterModel ?? {}) as Record<
-      string,
-      { value: unknown } | undefined
-    >;
-
-    // Shared where clause builder (for both queries)
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-        .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-        .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
-        .$if(!!options.listId, (qb) =>
-          qb.where('households.id', 'in', (eb: any) =>
-            eb
-              .selectFrom('map_lists_households')
-              .select('household_id')
-              .where('list_id', '=', options.listId ?? '')
-              .where('tenant_id', '=', tenantId),
-          ),
-        )
-        .where('households.tenant_id', '=', tenantId)
-        .where((eb) =>
-          eb.or([
-            eb('tenants.placeholder_household_id', 'is', null),
-            eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
-          ]),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-              LOWER(households.city) LIKE ${text} OR
-              LOWER(households.street1) LIKE ${text} OR
-              LOWER(households.street2) LIKE ${text} OR
-              LOWER(households.notes) LIKE ${text} OR
-              LOWER(tags.name) LIKE ${text}
-            )`,
-          );
-        });
-
-      // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2'] ?? {});
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
-      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone'] ?? {});
-      if (filterModel['tags']?.value && filterModel['issues']?.value) {
-        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
-        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
-        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
-        q = q.where((eb) =>
-          eb.or([
-            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
-          ]),
-        );
-      } else if (filterModel['tags']?.value) {
-        q = q.where('tags.type', '=', 'tag');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      } else if (filterModel['issues']?.value) {
-        q = q.where('tags.type', '=', 'issue');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
-      }
-
-      // Apply advanced query builder filters if present
-      const columnMapping = {
-        city: { col: 'households.city' },
-        state: { col: 'households.state' },
-        street1: { col: 'households.street1' },
-        street2: { col: 'households.street2' },
-        street_num: { col: 'households.street_num::text', isCast: true },
-        zip: { col: 'households.zip' },
-        home_phone: { col: 'households.home_phone' },
-        tag: { col: 'tags.name' },
-        tags: { col: 'tags.name' },
-        issues: { col: 'tags.name' },
-      };
-      const advModel =
-        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
-      q = this.applyAdvancedFilters(q, advModel, columnMapping);
-
-      return q;
-    };
-
-    // Count query
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query
-    const rows = await applyFilters(this.getSelect(trx))
-      .select([
-        'households.id',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.apt',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.notes',
-        'households.district',
-        'households.precinct',
-        'households.ward',
-        'households.geocoding_status',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('persons')
-          .whereRef('persons.household_id', '=', 'households.id')
-          .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
-          .as('persons_count'),
-        // is_placeholder: true only for the one household stored on the tenant row
-        eb
-          .case()
-          .when('tenants.placeholder_household_id', '=', eb.ref('households.id'))
-          .then(true)
-          .else(false)
-          .end()
-          .as('is_placeholder'),
-      ])
-      .select(() => [
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
-          'tags',
-        ),
-        sql<
-          string[]
-        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
-      ])
-      .groupBy([
-        'households.id',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.apt',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.notes',
-        'households.district',
-        'households.precinct',
-        'households.ward',
-        'households.geocoding_status',
-        'households.created_at',
-        'households.updated_at',
-        'households.campaign_id',
-        'households.createdby_id',
-        'households.updatedby_id',
-        'households.file_id',
-        'households.json',
-        'households.address_fp_street',
-        'households.address_fp_full',
-        'households.tenant_id',
-        'tenants.placeholder_household_id',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce((acc, sort) => {
-          let col = sort.colId;
-          if (typeof col === 'string' && !col.includes('.')) {
-            const hhCols = [
-              'id',
-              'campaign_id',
-              'createdby_id',
-              'file_id',
-              'home_phone',
-              'json',
-              'notes',
-              'address_fp_street',
-              'address_fp_full',
-              'is_placeholder',
-              'district',
-              'precinct',
-              'ward',
-              'geocoding_status',
-              'tenant_id',
-              'updatedby_id',
-              'created_at',
-              'updated_at',
-              'country',
-              'zip',
-              'state',
-              'city',
-              'street1',
-              'street2',
-              'street_num',
-              'apt',
-            ];
-            if (hhCols.includes(col)) {
-              col = `households.${col}`;
-            }
-          }
-          return acc.orderBy(col as ReferenceExpression<Models, 'households'>, sort.sort);
-        }, qb),
-      )
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
-      )
-      .execute();
-
-    return {
-      rows,
-      count,
-    };
-  }
-
-  public async getPlaceholderIds(tenant_id: string, candidates: string[]): Promise<Set<string>> {
-    if (!candidates.length) return new Set();
-    const result = await this.getSelect()
-      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .where('households.id', 'in', candidates)
-      .whereRef('tenants.placeholder_household_id', '=', 'households.id')
-      .select('households.id')
-      .execute();
-    return new Set(result.map((r) => String(r.id)));
-  }
-
-  /**
-   * Deletes households and reassigns their members to the tenant's placeholder
-   * household. persons.household_id is NOT NULL, so members are *moved* rather
-   * than cascade-deleted along with the household. Runs in a single transaction
-   * so persons are never orphaned. Callers must exclude the placeholder household
-   * itself from `ids` (see getPlaceholderIds).
-   */
-  public async deleteManyReassigningPersons(input: {
-    tenant_id: string;
-    ids: string[];
-    user_id: string;
-  }): Promise<boolean> {
-    if (!input.ids.length) return false;
-
-    return this.transaction().execute(async (trx) => {
-      const tenant = await trx
-        .selectFrom('tenants')
-        .select('placeholder_household_id')
-        .where('id', '=', input.tenant_id)
-        .executeTakeFirst();
-
-      const placeholderId = tenant?.placeholder_household_id;
-
-      if (placeholderId != null) {
-        await trx
-          .updateTable('persons')
-          .set({ household_id: placeholderId, updated_at: sql<Date>`now()`, updatedby_id: input.user_id })
-          .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', 'in', input.ids)
-          .execute();
-      }
-
-      return this.deleteMany({ tenant_id: input.tenant_id, ids: input.ids }, trx);
-    });
-  }
-
-  public async getPeopleCount(input: { tenant_id: string; id: string }) {
-    const result = await this.getSelect()
-      .leftJoin('persons', 'persons.household_id', 'households.id')
-      .where('households.id', '=', input.id)
-      .where('households.tenant_id', '=', input.tenant_id)
-      .select(({ fn }) => [fn.count<number>('persons.id').as('count')])
-      .executeTakeFirst();
-
-    return Number((result as { count?: number } | undefined)?.count ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
-  public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
-    let q = this.getSelect()
-      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-      .where('households.id', '=', id)
-      .where('households.tenant_id', '=', tenant_id);
-    if (type) {
-      q = q.where('tags.type', '=', type);
-    }
-    return q.select('tags.name').execute();
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: unknown[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'households.id',
-        'households.street_num',
-        'households.street1',
-        'households.street2',
-        'households.city',
-        'households.state',
-        'households.zip',
-        'households.country',
-        'households.apt',
-        'households.home_phone',
-        'households.notes',
-        'households.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const hhIds = rows.map((r) => String(r.id));
-    if (hhIds.length === 0) {
-      return { groups: [], total };
-    }
-
-    const persons = await this.db
-      .selectFrom('persons')
-      .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('household_id', 'in', hhIds)
-      .execute();
-
-    const hhToPersons = new Map<
-      string,
-      Array<{
-        id: unknown;
-        first_name: string | null;
-        last_name: string | null;
-        email: string | null;
-        household_id: unknown;
-      }>
-    >();
-    for (const p of persons) {
-      const hhId = String(p.household_id);
-      if (!hhToPersons.has(hhId)) {
-        hhToPersons.set(hhId, []);
-      }
-      hhToPersons.get(hhId)?.push(p);
-    }
-
-    const groupsMap = new Map<string, { reason: string; households: Record<string, unknown>[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
-          reason: row.reason,
-          households: [],
-        });
-      }
-      groupsMap.get(groupKey)?.households.push({
-        ...row,
-        id: String(row.id),
-        persons: hhToPersons.get(String(row.id)) || [],
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['households']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['households']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source household not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, unknown> = {};
-      const fields = [
-        'apt',
-        'street_num',
-        'street1',
-        'street2',
-        'city',
-        'state',
-        'zip',
-        'country',
-        'home_phone',
-        'notes',
-        'file_id',
-      ] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Transfer tags (map_households_tags)
-      const targetTags = await trx
-        .selectFrom('map_households_tags')
-        .select('tag_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.target_id)
-        .execute();
-      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
-
-      const sourceTags = await trx
-        .selectFrom('map_households_tags')
-        .select(['tag_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTags) {
-        const tagIdStr = String(st.tag_id);
-        if (!targetTagIds.has(tagIdStr)) {
-          await trx
-            .insertInto('map_households_tags')
-            .values({
-              tenant_id: input.tenant_id,
-              household_id: input.target_id,
-              tag_id: st.tag_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_households_tags')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 3. Transfer lists (map_lists_households)
-      const targetLists = await trx
-        .selectFrom('map_lists_households')
-        .select('list_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.target_id)
-        .execute();
-      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
-
-      const sourceLists = await trx
-        .selectFrom('map_lists_households')
-        .select(['list_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      for (const sl of sourceLists) {
-        if (!targetListIds.has(String(sl.list_id))) {
-          await trx
-            .insertInto('map_lists_households')
-            .values({
-              tenant_id: input.tenant_id,
-              household_id: input.target_id,
-              list_id: sl.list_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_lists_households')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 4. Reassign people (persons.household_id)
-      await trx
-        .updateTable('persons')
-        .set({ household_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 5. Delete source household
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      return { success: true };
-    });
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/zapier/zapier.service.ts
-
-```typescript
-import crypto from 'crypto';
-import { BaseRepository } from '../../lib/base.repo';
-import { logger } from '../../logger';
-
-export type ZapierEventType =
-  | 'person_created'
-  | 'person_updated'
-  | 'person_deleted'
-  | 'person_tag_added'
-  | 'person_tag_removed';
-
-function pickPersonFields(p: Record<string, unknown>): Record<string, unknown> {
-  if (!p) return {};
-  return {
-    id: p['id'] ? String(p['id']) : null,
-    first_name: p['first_name'] ?? null,
-    last_name: p['last_name'] ?? null,
-    email: p['email'] ?? null,
-    email2: p['email2'] ?? null,
-    mobile: p['mobile'] ?? null,
-    home_phone: p['home_phone'] ?? null,
-    linkedin: p['linkedin'] ?? null,
-    twitter: p['twitter'] ?? null,
-    facebook: p['facebook'] ?? null,
-    instagram: p['instagram'] ?? null,
-    notes: p['notes'] ?? null,
-    created_at: p['created_at'] ?? null,
-    updated_at: p['updated_at'] ?? null,
-  };
-}
-
-export { pickPersonFields };
-
-export async function queueZapierTrigger(
-  db: any,
-  tenant_id: string,
-  event_type: ZapierEventType,
-  data: Record<string, unknown>,
-): Promise<void> {
-  const sub = await db
-    .selectFrom('zapier_subscriptions')
-    .select('id')
-    .where('tenant_id', '=', tenant_id)
-    .where('event_type', '=', event_type)
-    .executeTakeFirst();
-
-  if (!sub) return;
-
-  await db
-    .insertInto('background_jobs')
-    .values({
-      tenant_id,
-      queue: 'default',
-      status: 'pending',
-      payload: JSON.stringify({ type: 'zapier_trigger', tenant_id, event_type, data }),
-      run_at: new Date(),
-      max_attempts: 5,
-    })
-    .execute();
-}
-
-export class ZapierService {
-  private get db() {
-    return BaseRepository.dbInstance;
-  }
-
-  async getOrCreateApiKey(tenant_id: string): Promise<string> {
-    const row = await this.db
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenant_id)
-      .where('key', '=', 'zapier.api_key')
-      .executeTakeFirst();
-
-    if (row?.value) {
-      const raw = row.value;
-      return typeof raw === 'string' ? raw.replace(/^"|"$/g, '') : String(raw);
-    }
-
-    return this.regenerateApiKey(tenant_id);
-  }
-
-  async regenerateApiKey(tenant_id: string): Promise<string> {
-    const key = 'zap_' + crypto.randomBytes(32).toString('hex');
-    await this.db
-      .insertInto('settings')
-      .values({ tenant_id, key: 'zapier.api_key', value: JSON.stringify(key) })
-      .onConflict((oc) =>
-        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(key), updated_at: new Date() }),
-      )
-      .execute();
-    return key;
-  }
-
-  async getSubscriptions(tenant_id: string) {
-    return this.db
-      .selectFrom('zapier_subscriptions')
-      .select(['id', 'event_type', 'webhook_url', 'created_at', 'updated_at'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-  }
-
-  async subscribe(tenant_id: string, event_type: ZapierEventType, webhook_url: string): Promise<void> {
-    await this.db
-      .insertInto('zapier_subscriptions')
-      .values({ tenant_id, event_type, webhook_url })
-      .onConflict((oc) => oc.columns(['tenant_id', 'event_type']).doUpdateSet({ webhook_url, updated_at: new Date() }))
-      .execute();
-  }
-
-  async unsubscribe(tenant_id: string, event_type: ZapierEventType): Promise<void> {
-    await this.db
-      .deleteFrom('zapier_subscriptions')
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', '=', event_type)
-      .execute();
-  }
-
-  async fireTrigger(tenant_id: string, event_type: ZapierEventType, data: Record<string, unknown>): Promise<void> {
-    const subs = await this.db
-      .selectFrom('zapier_subscriptions')
-      .select('webhook_url')
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', '=', event_type)
-      .execute();
-
-    for (const sub of subs) {
-      try {
-        const response = await fetch(sub.webhook_url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!response.ok) {
-          logger.error(`[ZapierTrigger] POST to ${sub.webhook_url} failed with status ${response.status}`);
-        }
-      } catch (err: unknown) {
-        logger.error(
-          `[ZapierTrigger] POST to ${sub.webhook_url} error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-  }
-
-  async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
-    // NOTE: unscoped by design — resolving which tenant owns this API key; cross-tenant by design
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const row = await this.db
-      .selectFrom('settings')
-      .select('tenant_id')
-      .where('key', '=', 'zapier.api_key')
-      .where('value', '=', JSON.stringify(apiKey))
-      .executeTakeFirst();
-
-    return row ? String(row.tenant_id) : null;
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
-
-```typescript
-import { Client } from '@microsoft/microsoft-graph-client';
-import crypto from 'crypto';
-import type { FastifyPluginCallback } from 'fastify';
-import { env } from '../../../../env';
-import { verifyAuthToken } from '../../../lib/auth-util';
-import { BaseRepository } from '../../../lib/base.repo';
-import { attachmentDisposition } from '../../../lib/download-headers';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-import { StorageService } from '../../../lib/storage.service';
-import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
-
-function buildRawMime(options: {
-  fromName: string;
-  fromEmail: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  html: string;
-  attachments: { filename: string; content: Buffer; contentType: string }[];
-}): Buffer {
-  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
-  const headers: string[] = [];
-
-  const safeFromName = options.fromName.replace(/"/g, '\\"');
-  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
-  headers.push(`To: ${options.to.join(', ')}`);
-  if (options.cc.length > 0) {
-    headers.push(`Cc: ${options.cc.join(', ')}`);
-  }
-  if (options.bcc.length > 0) {
-    headers.push(`Bcc: ${options.bcc.join(', ')}`);
-  }
-
-  const base64Subject = Buffer.from(options.subject).toString('base64');
-  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
-
-  headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-  headers.push('');
-
-  const bodyParts: string[] = [];
-
-  bodyParts.push(`--${boundary}`);
-  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
-  bodyParts.push(`Content-Transfer-Encoding: base64`);
-  bodyParts.push('');
-  bodyParts.push(Buffer.from(options.html).toString('base64'));
-  bodyParts.push('');
-
-  for (const att of options.attachments) {
-    bodyParts.push(`--${boundary}`);
-    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Transfer-Encoding: base64`);
-    bodyParts.push('');
-    bodyParts.push(att.content.toString('base64'));
-    bodyParts.push('');
-  }
-
-  bodyParts.push(`--${boundary}--`);
-
-  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
-  return Buffer.from(rawMimeString, 'utf-8');
-}
-
-const storageService = new StorageService();
-
-let _oauthSvc: MsOAuthService | null = null;
-
-function getOAuthService(db: any) {
-  if (!_oauthSvc) {
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-export async function saveLocalEmail(
-  db: any,
-  tenantId: string,
-  userId: string,
-  fromEmail: string,
-  fromName: string,
-  toList: string[],
-  ccList: string[],
-  bccList: string[],
-  subject: string,
-  html: string,
-  uploadedFiles: any[],
-  previewKey: string,
-) {
-  return db.transaction().execute(async (trx: any) => {
-    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
-    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
-    // email_folders(id) — not tenant_id — so the existence check must be by id
-    // alone. onConflict guards against a concurrent/global row already present.
-
-    // NOTE: unscoped by design — email_folders uses global hardcoded IDs; FK references id only, not tenant_id
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
-
-    if (!existingOutbox) {
-      await trx
-        .insertInto('email_folders')
-        .values({
-          id: '10',
-          tenant_id: tenantId,
-          name: 'Outbox',
-          createdby_id: userId,
-          updatedby_id: userId,
-          icon: 'clock',
-          sort_order: 10,
-          is_default: false,
-        })
-        .onConflict((oc: any) => oc.column('id').doNothing())
-        .execute();
-    }
-
-    // 1. Insert into emails table (using Outbox folder: '10')
-    const createdEmail = await trx
-      .insertInto('emails')
-      .values({
-        tenant_id: tenantId,
-        folder_id: '10', // Outbox folder is '10'
-        from_email: fromEmail,
-        to_email: toList.join(', '),
-        subject: subject,
-        preview: previewKey,
-        assigned_to: userId,
-        is_favourite: false,
-        deleted_at: null,
-        status: 'open',
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    const emailId = String(createdEmail.id);
-
-    // 2. Insert html into email_bodies
-    await trx
-      .insertInto('email_bodies')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        body_html: html,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 3. Insert files and email_attachments metadata
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const uFile = uploadedFiles[i];
-      let fileId: string;
-
-      // Persist (or reuse, via sha256 dedup) the file row, then link the
-      // attachment to it so downloads can resolve the stored blob.
-      const existingFile = await trx
-        .selectFrom('files')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('sha256_hex', '=', uFile.sha256_hex)
-        .executeTakeFirst();
-
-      if (existingFile) {
-        fileId = String(existingFile.id);
-      } else {
-        const fileResult = await trx
-          .insertInto('files')
-          .values({
-            tenant_id: tenantId,
-            filename: uFile.filename,
-            mime_type: uFile.content_type,
-            size_bytes: uFile.size_bytes,
-            storage_key: uFile.storage_key,
-            sha256_hex: uFile.sha256_hex,
-            uploaded_by: userId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        fileId = String(fileResult.id);
-      }
-
-      await trx
-        .insertInto('email_attachments')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          filename: uFile.filename,
-          content_type: uFile.content_type,
-          size_bytes: uFile.size_bytes,
-          cid: uFile.cid,
-          is_inline: uFile.is_inline,
-          pos: i + 1,
-          file_id: fileId,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-    }
-
-    // 4. Insert headers
-    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
-    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-
-    await trx
-      .insertInto('email_headers')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        headers_json: JSON.stringify({ internetMessageId }),
-        raw_headers: rawHeaders,
-        date_sent: new Date(),
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 5. Insert recipients
-    const recipientRows: any[] = [];
-    toList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'to',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    ccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'cc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    bccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'bcc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-
-    if (recipientRows.length > 0) {
-      await trx.insertInto('email_recipients').values(recipientRows).execute();
-    }
-
-    return createdEmail;
-  });
-}
-
-const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Send composed email
-  fastify.post('/send', async (req: any, reply) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
-    }
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-    }
-
-    if (!payload?.tenant_id || !payload?.user_id) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const userId = payload.user_id;
-    const db = (BaseRepository as any)['_db'];
-
-    // Retrieve sender user details
-    const user = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', userId)
-      .executeTakeFirst();
-
-    if (!user) {
-      return reply.status(401).send({ error: 'Unauthorized: User not found' });
-    }
-
-    const fromEmail = user.email;
-    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
-
-    // Parse multipart request parts
-    const parts = req.parts();
-    const fields: any = {};
-    const files: any[] = [];
-
-    for await (const part of parts) {
-      if (part.file) {
-        const buffer = await part.toBuffer();
-        files.push({
-          filename: part.filename,
-          fieldname: part.fieldname,
-          mimetype: part.mimetype,
-          buffer,
-        });
-      } else {
-        fields[part.fieldname] = part.value;
-      }
-    }
-
-    // Parse recipient lists and content fields
-    const toList = fields.to ? JSON.parse(fields.to) : [];
-    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
-    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
-    const subject = fields.subject || '';
-    const html = sanitizeHtml(fields.html || '');
-
-    // Upload attachment files to storage outside transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
-
-    for (const file of files) {
-      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
-      const fileUUID = crypto.randomUUID();
-      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
-
-      await storageService.upload(storage_key, file.buffer, file.mimetype);
-
-      uploadedFiles.push({
-        filename: file.filename,
-        content_type: file.mimetype,
-        size_bytes: file.buffer.length,
-        storage_key,
-        sha256_hex,
-        cid: null,
-        is_inline: false,
-      });
-    }
-
-    // Check if user has connected Microsoft and/or Google accounts
-    const msToken = await db
-      .selectFrom('ms_oauth_tokens')
-      .select(['user_id', 'ms_email'])
-      .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const googleToken = await db
-      .selectFrom('google_oauth_tokens')
-      .select(['user_id', 'google_email'])
-      .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const hasMsConnected = !!msToken;
-    const hasGoogleConnected = !!googleToken;
-
-    // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasGoogleConnected) {
-      return reply.status(400).send({
-        status: 'error',
-        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
-      });
-    }
-
-    // Save outbound email to database under Outbox folder '10' initially
-    const fallbackPreview =
-      html
-        .replace(/<[^>]*>/g, '')
-        .substring(0, 100)
-        .trim() || '';
-    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
-    try {
-      emailRow = await saveLocalEmail(
-        db,
-        tenantId,
-        userId,
-        fromEmail,
-        fromName,
-        toList,
-        ccList,
-        bccList,
-        subject,
-        html,
-        uploadedFiles,
-        fallbackPreview,
-      );
-    } catch (err) {
-      fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
-    }
-
-    // Determine send method prioritizing matching address
-    let sendMethod: 'ms' | 'google' = 'ms';
-    if (hasMsConnected && hasGoogleConnected) {
-      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
-        sendMethod = 'google';
-      } else {
-        sendMethod = 'ms';
-      }
-    } else if (hasMsConnected) {
-      sendMethod = 'ms';
-    } else if (hasGoogleConnected) {
-      sendMethod = 'google';
-    }
-
-    // Dispatch the email synchronously
-    try {
-      if (sendMethod === 'ms') {
-        const oauthSvc = getOAuthService(db);
-        let msDraftId: string | null = null;
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-          const client = Client.init({
-            authProvider: (done) => done(null, accessToken),
-          });
-
-          const msDraftMessage: any = {
-            subject: subject,
-            body: {
-              contentType: 'html',
-              content: html,
-            },
-            toRecipients: toList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            ccRecipients: ccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            bccRecipients: bccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-          };
-
-          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
-          msDraftId = createdDraft.id;
-          const graphInternetMessageId = createdDraft.internetMessageId;
-
-          // Update local email preview/dedupe key to `ms:${msDraftId}`
-          await db
-            .updateTable('emails')
-            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          if (graphInternetMessageId) {
-            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-            await db
-              .updateTable('email_headers')
-              .set({
-                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
-                raw_headers: rawHeaders,
-                updated_at: new Date(),
-              })
-              .where('tenant_id', '=', tenantId)
-              .where('email_id', '=', String(emailRow.id))
-              .execute();
-          }
-
-          // Upload attachments
-          for (const file of files) {
-            await client.api(`/me/messages/${msDraftId}/attachments`).post({
-              '@odata.type': '#microsoft.graph.fileAttachment',
-              name: file.filename,
-              contentType: file.mimetype,
-              contentBytes: file.buffer.toString('base64'),
-            });
-          }
-
-          // Send draft
-          await client.api(`/me/messages/${msDraftId}/send`).post({});
-
-          // Update local email folder to '3' (Sent) on success
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          // Trigger background sync to get folders/Sent items synchronized
-          const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
-          // Clean up local email
-          await db
-            .deleteFrom('emails')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
-            400,
-          );
-        }
-      } else if (sendMethod === 'google') {
-        const oauthSvc = new GoogleOAuthService(db, {
-          clientId: env.googleClientId ?? '',
-          clientSecret: env.googleClientSecret ?? '',
-          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-        });
-
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-
-          const rawMessageBuffer = buildRawMime({
-            fromName,
-            fromEmail,
-            to: toList,
-            cc: ccList,
-            bcc: bccList,
-            subject,
-            html,
-            attachments: files.map((file) => ({
-              filename: file.filename,
-              content: file.buffer,
-              contentType: file.mimetype,
-            })),
-          });
-
-          const rawBase64Url = rawMessageBuffer
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-
-          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              raw: rawBase64Url,
-            }),
-          });
-
-          if (!gmailRes.ok) {
-            const errText = await gmailRes.text();
-            throw new Error(`Gmail API send failed: ${errText}`);
-          }
-
-          const gmailData: any = await gmailRes.json();
-          const googleMsgId = gmailData.id;
-
-          await db
-            .updateTable('emails')
-            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
-          await db
-            .updateTable('emails')
-            .set({
-              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
-              folder_id: '4',
-              updated_at: new Date(),
-            })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
-            400,
-          );
-        }
-      }
-    } catch (err) {
-      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
-      // Clean up local email
-      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
-    }
-  });
-
-  // Download attachment by ID
-  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const { id, attachmentId } = req.params;
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachmentId)
-      .where('email_id', '=', id)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', attachmentDisposition(file.filename));
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to download attachment' });
-    }
-  });
-
-  // Serve inline attachment by CID
-  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
-    }
-
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const { id, cid } = req.params;
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', '=', id)
-      .where('cid', '=', cid)
-      .where('is_inline', '=', true)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Inline attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      // Private: inline attachments are tenant-scoped and token-gated.
-      reply.header('Cache-Control', 'private, max-age=31536000');
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to load inline image' });
-    }
-  });
-
-  done();
-};
-
-export default emailsApiRoute;
 ```
 
 ## File: apps/backend/src/app/modules/auth/controller.ts
@@ -42864,6 +40526,924 @@ const renewalVerifier = createVerifier({
 });
 ```
 
+## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
+
+```typescript
+import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
+import { logger } from '../../../logger';
+
+export class HouseholdRepo extends BaseRepository<'households'> {
+  constructor() {
+    super('households');
+  }
+
+  public override async addMany(
+    input: { rows: OperationDataType<'households', 'insert'>[] },
+    trx?: Transaction<Models>,
+  ) {
+    const processedRows = await Promise.all(
+      input.rows.map(async (row) => {
+        const isBlank = isBlankAddress(row);
+        const isIncomplete = isIncompleteAddress(row);
+
+        let geocoding_status = isBlank || isIncomplete ? 'failed' : 'pending';
+        let district = row.district ?? null;
+        let precinct = row.precinct ?? null;
+        let ward = row.ward ?? null;
+
+        if (row.lat && row.lng && Number(row.lat) !== 0 && Number(row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(row.lat), Number(row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            logger.error({ err }, 'Failed to map coordinates to district during insert');
+          }
+        }
+
+        return {
+          ...row,
+          district,
+          precinct,
+          ward,
+          geocoding_status,
+        };
+      }),
+    );
+
+    const createdRows = await super.addMany({ rows: processedRows }, trx);
+    const db = trx || this.db;
+
+    const jobs = createdRows
+      .filter((row) => row && row.id && row.geocoding_status === 'pending')
+      .map((row) => ({
+        tenant_id: row.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'geocode_household',
+          household_id: String(row.id),
+          tenant_id: row.tenant_id,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      }));
+
+    if (jobs.length > 0) {
+      await db.insertInto('background_jobs').values(jobs).execute();
+    }
+
+    return createdRows;
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string; onlyEmpty?: boolean },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    let query = this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id);
+
+    if (input.onlyEmpty) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            eb.selectFrom('persons').select('id').whereRef('persons.household_id', '=', 'households.id').limit(1),
+          ),
+        ),
+      );
+    }
+
+    const rows = await query.execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql<Date>`now()`,
+      } as unknown as OperationDataType<'households', 'update'>)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+
+  public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id)
+      .where('home_phone', 'is', null)
+      .where('apt', 'is', null)
+      .where('street_num', 'is', null)
+      .where('street1', 'is', null)
+      .where('street2', 'is', null)
+      .where('city', 'is', null)
+      .where('state', 'is', null)
+      .where('zip', 'is', null)
+      .where('country', 'is', null)
+      .where('file_id', 'is', null)
+      .where('notes', 'is', null)
+      .where('json', 'is', null)
+      .selectAll()
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  public async findByFingerprint(
+    input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
+    trx?: Transaction<Models>,
+  ) {
+    const sel = this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id);
+
+    if (input.fp_full) {
+      const full = await sel.where('address_fp_full', '=', input.fp_full).selectAll().limit(1).executeTakeFirst();
+      if (full) return full;
+    }
+    if (input.fp_street) {
+      return await this.getSelect(trx)
+        .where('tenant_id', '=', input.tenant_id)
+        .where('campaign_id', '=', input.campaign_id)
+        .where('address_fp_street', '=', input.fp_street)
+        .selectAll()
+        .limit(1)
+        .executeTakeFirst();
+    }
+    return undefined;
+  }
+
+  public async getAllWithPeopleCount(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'> & { issues?: string[] };
+      tags?: string[];
+      issues?: string[];
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
+    const filterModel = ((options as JoinedQueryParams & { issues?: string[] })?.filterModel ?? {}) as Record<
+      string,
+      { value: unknown } | undefined
+    >;
+
+    // Shared where clause builder (for both queries)
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
+        .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+        .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+        .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('households.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_households')
+              .select('household_id')
+              .where('list_id', '=', options.listId ?? '')
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
+        .where('households.tenant_id', '=', tenantId)
+        .where((eb) =>
+          eb.or([
+            eb('tenants.placeholder_household_id', 'is', null),
+            eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
+          ]),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+              LOWER(households.city) LIKE ${text} OR
+              LOWER(households.street1) LIKE ${text} OR
+              LOWER(households.street2) LIKE ${text} OR
+              LOWER(households.notes) LIKE ${text} OR
+              LOWER(tags.name) LIKE ${text}
+            )`,
+          );
+        });
+
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone'] ?? {});
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
+          ]),
+        );
+      } else if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      } else if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
+      }
+
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street2: { col: 'households.street2' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        home_phone: { col: 'households.home_phone' },
+        tag: { col: 'tags.name' },
+        tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
+      };
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
+
+      return q;
+    };
+
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'households.id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.apt',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.notes',
+        'households.district',
+        'households.precinct',
+        'households.ward',
+        'households.geocoding_status',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('persons')
+          .whereRef('persons.household_id', '=', 'households.id')
+          .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
+          .as('persons_count'),
+        // is_placeholder: true only for the one household stored on the tenant row
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('households.id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('is_placeholder'),
+      ])
+      .select(() => [
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+      ])
+      .groupBy([
+        'households.id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.apt',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.notes',
+        'households.district',
+        'households.precinct',
+        'households.ward',
+        'households.geocoding_status',
+        'households.created_at',
+        'households.updated_at',
+        'households.campaign_id',
+        'households.createdby_id',
+        'households.updatedby_id',
+        'households.file_id',
+        'households.json',
+        'households.address_fp_street',
+        'households.address_fp_full',
+        'households.tenant_id',
+        'tenants.placeholder_household_id',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const hhCols = [
+              'id',
+              'campaign_id',
+              'createdby_id',
+              'file_id',
+              'home_phone',
+              'json',
+              'notes',
+              'address_fp_street',
+              'address_fp_full',
+              'is_placeholder',
+              'district',
+              'precinct',
+              'ward',
+              'geocoding_status',
+              'tenant_id',
+              'updatedby_id',
+              'created_at',
+              'updated_at',
+              'country',
+              'zip',
+              'state',
+              'city',
+              'street1',
+              'street2',
+              'street_num',
+              'apt',
+            ];
+            if (hhCols.includes(col)) {
+              col = `households.${col}`;
+            }
+          }
+          return acc.orderBy(col as ReferenceExpression<Models, 'households'>, sort.sort);
+        }, qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
+      )
+      .execute();
+
+    return {
+      rows,
+      count,
+    };
+  }
+
+  public async getPlaceholderIds(tenant_id: string, candidates: string[]): Promise<Set<string>> {
+    if (!candidates.length) return new Set();
+    const result = await this.getSelect()
+      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where('households.id', 'in', candidates)
+      .whereRef('tenants.placeholder_household_id', '=', 'households.id')
+      .select('households.id')
+      .execute();
+    return new Set(result.map((r) => String(r.id)));
+  }
+
+  /**
+   * Deletes households and reassigns their members to the tenant's placeholder
+   * household. persons.household_id is NOT NULL, so members are *moved* rather
+   * than cascade-deleted along with the household. Runs in a single transaction
+   * so persons are never orphaned. Callers must exclude the placeholder household
+   * itself from `ids` (see getPlaceholderIds).
+   */
+  public async deleteManyReassigningPersons(input: {
+    tenant_id: string;
+    ids: string[];
+    user_id: string;
+  }): Promise<boolean> {
+    if (!input.ids.length) return false;
+
+    return this.transaction().execute(async (trx) => {
+      const tenant = await trx
+        .selectFrom('tenants')
+        .select('placeholder_household_id')
+        .where('id', '=', input.tenant_id)
+        .executeTakeFirst();
+
+      const placeholderId = tenant?.placeholder_household_id;
+
+      if (placeholderId != null) {
+        await trx
+          .updateTable('persons')
+          .set({ household_id: placeholderId, updated_at: sql<Date>`now()`, updatedby_id: input.user_id })
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', 'in', input.ids)
+          .execute();
+      }
+
+      return this.deleteMany({ tenant_id: input.tenant_id, ids: input.ids }, trx);
+    });
+  }
+
+  public async getPeopleCount(input: { tenant_id: string; id: string }) {
+    const result = await this.getSelect()
+      .leftJoin('persons', 'persons.household_id', 'households.id')
+      .where('households.id', '=', input.id)
+      .where('households.tenant_id', '=', input.tenant_id)
+      .select(({ fn }) => [fn.count<number>('persons.id').as('count')])
+      .executeTakeFirst();
+
+    return Number((result as { count?: number } | undefined)?.count ?? 0);
+  }
+
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
+    return this.getSelect()
+      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
+    let q = this.getSelect()
+      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+      .where('households.id', '=', id)
+      .where('households.tenant_id', '=', tenant_id);
+    if (type) {
+      q = q.where('tags.type', '=', type);
+    }
+    return q.select('tags.name').execute();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: unknown[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'households.id',
+        'households.street_num',
+        'households.street1',
+        'households.street2',
+        'households.city',
+        'households.state',
+        'households.zip',
+        'households.country',
+        'households.apt',
+        'households.home_phone',
+        'households.notes',
+        'households.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const hhIds = rows.map((r) => String(r.id));
+    if (hhIds.length === 0) {
+      return { groups: [], total };
+    }
+
+    const persons = await this.db
+      .selectFrom('persons')
+      .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', hhIds)
+      .execute();
+
+    const hhToPersons = new Map<
+      string,
+      Array<{
+        id: unknown;
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+        household_id: unknown;
+      }>
+    >();
+    for (const p of persons) {
+      const hhId = String(p.household_id);
+      if (!hhToPersons.has(hhId)) {
+        hhToPersons.set(hhId, []);
+      }
+      hhToPersons.get(hhId)?.push(p);
+    }
+
+    const groupsMap = new Map<string, { reason: string; households: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          households: [],
+        });
+      }
+      groupsMap.get(groupKey)?.households.push({
+        ...row,
+        id: String(row.id),
+        persons: hhToPersons.get(String(row.id)) || [],
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['households']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['households']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source household not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, unknown> = {};
+      const fields = [
+        'apt',
+        'street_num',
+        'street1',
+        'street2',
+        'city',
+        'state',
+        'zip',
+        'country',
+        'home_phone',
+        'notes',
+        'file_id',
+      ] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_households_tags)
+      const targetTags = await trx
+        .selectFrom('map_households_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx
+        .selectFrom('map_households_tags')
+        .select(['tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx
+            .insertInto('map_households_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_households_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_households)
+      const targetLists = await trx
+        .selectFrom('map_lists_households')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx
+        .selectFrom('map_lists_households')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx
+            .insertInto('map_lists_households')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: input.target_id,
+              list_id: sl.list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_lists_households')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 4. Reassign people (persons.household_id)
+      await trx
+        .updateTable('persons')
+        .set({ household_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 5. Delete source household
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      return { success: true };
+    });
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/zapier/zapier.service.ts
+
+```typescript
+import crypto from 'crypto';
+import { BaseRepository } from '../../lib/base.repo';
+import { logger } from '../../logger';
+
+export type ZapierEventType =
+  | 'person_created'
+  | 'person_updated'
+  | 'person_deleted'
+  | 'person_tag_added'
+  | 'person_tag_removed';
+
+function pickPersonFields(p: Record<string, unknown>): Record<string, unknown> {
+  if (!p) return {};
+  return {
+    id: p['id'] ? String(p['id']) : null,
+    first_name: p['first_name'] ?? null,
+    last_name: p['last_name'] ?? null,
+    email: p['email'] ?? null,
+    email2: p['email2'] ?? null,
+    mobile: p['mobile'] ?? null,
+    home_phone: p['home_phone'] ?? null,
+    linkedin: p['linkedin'] ?? null,
+    twitter: p['twitter'] ?? null,
+    facebook: p['facebook'] ?? null,
+    instagram: p['instagram'] ?? null,
+    notes: p['notes'] ?? null,
+    created_at: p['created_at'] ?? null,
+    updated_at: p['updated_at'] ?? null,
+  };
+}
+
+export { pickPersonFields };
+
+export async function queueZapierTrigger(
+  db: any,
+  tenant_id: string,
+  event_type: ZapierEventType,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const sub = await db
+    .selectFrom('zapier_subscriptions')
+    .select('id')
+    .where('tenant_id', '=', tenant_id)
+    .where('event_type', '=', event_type)
+    .executeTakeFirst();
+
+  if (!sub) return;
+
+  await db
+    .insertInto('background_jobs')
+    .values({
+      tenant_id,
+      queue: 'default',
+      status: 'pending',
+      payload: JSON.stringify({ type: 'zapier_trigger', tenant_id, event_type, data }),
+      run_at: new Date(),
+      max_attempts: 5,
+    })
+    .execute();
+}
+
+export class ZapierService {
+  private get db() {
+    return BaseRepository.dbInstance;
+  }
+
+  async getOrCreateApiKey(tenant_id: string): Promise<string> {
+    const row = await this.db
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenant_id)
+      .where('key', '=', 'zapier.api_key')
+      .executeTakeFirst();
+
+    if (row?.value) {
+      const raw = row.value;
+      return typeof raw === 'string' ? raw.replace(/^"|"$/g, '') : String(raw);
+    }
+
+    return this.regenerateApiKey(tenant_id);
+  }
+
+  async regenerateApiKey(tenant_id: string): Promise<string> {
+    const key = 'zap_' + crypto.randomBytes(32).toString('hex');
+    await this.db
+      .insertInto('settings')
+      .values({ tenant_id, key: 'zapier.api_key', value: JSON.stringify(key) })
+      .onConflict((oc) =>
+        oc.columns(['tenant_id', 'key']).doUpdateSet({ value: JSON.stringify(key), updated_at: new Date() }),
+      )
+      .execute();
+    return key;
+  }
+
+  async getSubscriptions(tenant_id: string) {
+    return this.db
+      .selectFrom('zapier_subscriptions')
+      .select(['id', 'event_type', 'webhook_url', 'created_at', 'updated_at'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+  }
+
+  async subscribe(tenant_id: string, event_type: ZapierEventType, webhook_url: string): Promise<void> {
+    await this.db
+      .insertInto('zapier_subscriptions')
+      .values({ tenant_id, event_type, webhook_url })
+      .onConflict((oc) => oc.columns(['tenant_id', 'event_type']).doUpdateSet({ webhook_url, updated_at: new Date() }))
+      .execute();
+  }
+
+  async unsubscribe(tenant_id: string, event_type: ZapierEventType): Promise<void> {
+    await this.db
+      .deleteFrom('zapier_subscriptions')
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', event_type)
+      .execute();
+  }
+
+  async fireTrigger(tenant_id: string, event_type: ZapierEventType, data: Record<string, unknown>): Promise<void> {
+    const subs = await this.db
+      .selectFrom('zapier_subscriptions')
+      .select('webhook_url')
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', event_type)
+      .execute();
+
+    for (const sub of subs) {
+      try {
+        const response = await fetch(sub.webhook_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) {
+          logger.error(`[ZapierTrigger] POST to ${sub.webhook_url} failed with status ${response.status}`);
+        }
+      } catch (err: unknown) {
+        logger.error(
+          `[ZapierTrigger] POST to ${sub.webhook_url} error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
+    // NOTE: unscoped by design — resolving which tenant owns this API key; cross-tenant by design
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const row = await this.db
+      .selectFrom('settings')
+      .select('tenant_id')
+      .where('key', '=', 'zapier.api_key')
+      .where('value', '=', JSON.stringify(apiKey))
+      .executeTakeFirst();
+
+    return row ? String(row.tenant_id) : null;
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/auth/passkey.controller.ts
 
 ```typescript
@@ -43128,4 +41708,1508 @@ function getExpectedOrigins(): string[] {
 
 const rpID = env.webAuthnRpId;
 const rpName = env.webAuthnRpName;
+```
+
+## File: apps/backend/src/app/modules/events/controller.ts
+
+```typescript
+import { TRPCError } from '@trpc/server';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { BaseController } from '../../lib/base.controller';
+import { logger } from '../../logger';
+import { WorkflowsController } from '../workflows/controller';
+import { EventsRepo } from './repositories/events.repo';
+
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+const ipRsvpTimestamps = new Map<string, number[]>();
+const RSVP_RATE_LIMIT_MAX = 5;
+const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export class EventsController extends BaseController<'events', EventsRepo> {
+  constructor() {
+    super(new EventsRepo());
+  }
+
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
+  }
+
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
+
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
+    const row = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      slug: payload.slug,
+      is_published: payload.is_published ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_registration_confirmation: payload.send_registration_confirmation ?? true,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
+    } as OperationDataType<'events', 'insert'>;
+
+    try {
+      return await this.add(row);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+  }
+
+  public async getEventBySlug(slug: string) {
+    // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
+    // eslint-disable-next-line local/no-unscoped-db-query
+    return this.getRepo()
+      .db.selectFrom('events')
+      .selectAll()
+      .where('slug', '=', slug)
+      .where('is_published', '=', true)
+      .executeTakeFirst();
+  }
+
+  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
+    const row = await this.getRepo()
+      .db.selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count('id').as('cnt')])
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .where('status', '!=', 'cancelled')
+      .executeTakeFirst();
+    return Number(row?.cnt ?? 0);
+  }
+
+  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('event_ticket_types')
+      .selectAll()
+      .where('event_id', '=', eventId)
+      .where('tenant_id', '=', tenantId)
+      .orderBy('sort_order', 'asc')
+      .execute();
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
+
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('events')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
+        .executeTakeFirst();
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
+    const row = {
+      ...payload,
+      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
+      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
+      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'events', 'update'>;
+    let result;
+    try {
+      result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+
+    // Manage pending reminder jobs when the toggle changes
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        const event = await this.getRepo()
+          .db.selectFrom('events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            const registrations = await this.getRepo()
+              .db.selectFrom('event_registrations')
+              .select(['id', 'person_id'])
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('event_id', '=', id)
+              .where('status', '=', 'registered')
+              .execute();
+
+            for (const reg of registrations) {
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
+                .execute();
+
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(id),
+                    personId: String(reg.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule event reminders');
+      }
+    }
+
+    return result;
+  }
+
+  // Ticket types
+
+  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().addTicketType({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      price_cents: payload.price_cents ?? 0,
+      capacity: payload.capacity ?? null,
+      sort_order: payload.sort_order ?? 0,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
+  }
+
+  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
+  }
+
+  // Registrations
+
+  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
+    // Capacity check across the whole event
+    const event = await this.getRepo()
+      .db.selectFrom('events')
+      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', payload.event_id)
+      .executeTakeFirst();
+
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    if (event.capacity !== null) {
+      const countRow = await this.getRepo()
+        .db.selectFrom('event_registrations')
+        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('event_id', '=', payload.event_id)
+        .where('status', '!=', 'cancelled')
+        .executeTakeFirst();
+      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+      }
+    }
+
+    // Per-ticket-type capacity check
+    if (payload.ticket_type_id) {
+      const ticketType = await this.getRepo()
+        .db.selectFrom('event_ticket_types')
+        .select(['capacity'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', payload.ticket_type_id)
+        .executeTakeFirst();
+
+      if (ticketType && ticketType.capacity !== null) {
+        const ticketCountRow = await this.getRepo()
+          .db.selectFrom('event_registrations')
+          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('ticket_type_id', '=', payload.ticket_type_id)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
+        }
+      }
+    }
+
+    const result = await this.getRepo().addRegistration({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      ticket_type_id: payload.ticket_type_id ?? null,
+      status: payload.status ?? 'registered',
+      notes: payload.notes ?? null,
+      user_id: auth.user_id,
+    });
+
+    if (result) {
+      // Queue registration confirmation email
+      if (event.send_registration_confirmation !== false) {
+        try {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: auth.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-event-registration-confirmation',
+                registrationId: String(result.id),
+                eventId: String(payload.event_id),
+                personId: String(payload.person_id),
+              }),
+              run_at: new Date(),
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue registration confirmation');
+        }
+      }
+
+      // Queue 24h reminder
+      if (event.send_reminder !== false) {
+        try {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-reminder',
+                  registrationId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue event reminder');
+        }
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'assign',
+          entity: 'event_registrations',
+          entity_id: String(result.id),
+          quantity: 1,
+          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async checkIn(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status: 'attended', checked_in_at: new Date() },
+      user_id: auth.user_id,
+    });
+
+    // Cancel pending reminder — they've already arrived
+    try {
+      await this.getRepo()
+        .db.deleteFrom('background_jobs')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('status', '=', 'pending')
+        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+        .where(sql`payload->>'registrationId'`, '=', String(id))
+        .execute();
+    } catch (err) {
+      logger.error({ err }, 'Failed to cancel event reminder on check-in');
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log check-in activity');
+    }
+
+    return result;
+  }
+
+  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: payload,
+      user_id: auth.user_id,
+    });
+
+    // Cancel reminder if status moves away from 'registered'
+    if (payload.status && payload.status !== 'registered') {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on status change');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log registration update activity');
+    }
+
+    return result;
+  }
+
+  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'event_registrations',
+          entity_id: id,
+          quantity: 1,
+          metadata: { id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration delete activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async rsvpPublic(slug: string, payload: Record<string, string>, clientIp: string) {
+    // Rate limiting
+    const now = Date.now();
+    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
+    }
+    timestamps.push(now);
+    ipRsvpTimestamps.set(clientIp, timestamps);
+
+    const event = await this.getEventBySlug(slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    // Honeypot
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      return { success: true };
+    }
+
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
+    }
+
+    if (new Date(event.end_time) < new Date()) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
+    }
+
+    const tenantId = String(event.tenant_id);
+    const firstName = payload['first_name']?.trim() || null;
+    const lastName = payload['last_name']?.trim() || null;
+    const mobile = payload['mobile']?.trim() || null;
+    const notes = payload['notes']?.trim() || null;
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId || !creatorId) {
+          throw new Error('Tenant configuration is incomplete.');
+        }
+
+        // Check overall capacity
+        if (event.capacity !== null) {
+          const countRow = await trx
+            .selectFrom('event_registrations')
+            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+            .where('tenant_id', '=', tenantId)
+            .where('event_id', '=', String(event.id))
+            .where('status', '!=', 'cancelled')
+            .executeTakeFirst();
+          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+          }
+        }
+
+        // Find or create person
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (notes) {
+            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
+          }
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
+          // (there is no "campaign-less" person). `persons` also has no address columns
+          // (street1/city/state/zip/country live on `households`, not `persons`), so those
+          // RSVP fields are intentionally not persisted here.
+          const campaignRow = await trx
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .orderBy('created_at', 'asc')
+            .limit(1)
+            .executeTakeFirst();
+
+          if (!campaignRow) {
+            throw new Error('Tenant configuration is incomplete.');
+          }
+          const campaignId = String(campaignRow.id);
+
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            mobile,
+            notes,
+          };
+
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          try {
+            const workflowsCtrl = new WorkflowsController();
+            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
+          }
+        }
+
+        // Check duplicate registration
+        const existingReg = await trx
+          .selectFrom('event_registrations')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', String(event.id))
+          .where('person_id', '=', personId)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+
+        if (existingReg) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
+        }
+
+        // Insert registration
+        const reg = await trx
+          .insertInto('event_registrations')
+          .values({
+            tenant_id: tenantId,
+            event_id: String(event.id) as any,
+            person_id: personId,
+            ticket_type_id: null,
+            status: 'registered',
+            notes: notes ?? null,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        // Queue confirmation email
+        if ((event as any).send_registration_confirmation !== false) {
+          try {
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-registration-confirmation',
+                  registrationId: String(reg.id),
+                  eventId: String(event.id),
+                  personId,
+                }),
+                run_at: new Date(),
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue RSVP confirmation');
+          }
+        }
+
+        // Queue 24h reminder
+        if ((event as any).send_reminder !== false) {
+          try {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await trx
+                .insertInto('background_jobs')
+                .values({
+                  tenant_id: tenantId,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(event.id),
+                    personId,
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
+          }
+        }
+      });
+
+    return { success: true };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+
+```typescript
+import { Client } from '@microsoft/microsoft-graph-client';
+import crypto from 'crypto';
+import type { FastifyPluginCallback } from 'fastify';
+import { env } from '../../../../env';
+import { verifyAuthToken } from '../../../lib/auth-util';
+import { BaseRepository } from '../../../lib/base.repo';
+import { attachmentDisposition } from '../../../lib/download-headers';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { StorageService } from '../../../lib/storage.service';
+import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../google-sync/google-sync.service';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
+
+function buildRawMime(options: {
+  fromName: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments: { filename: string; content: Buffer; contentType: string }[];
+}): Buffer {
+  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+  const headers: string[] = [];
+
+  const safeFromName = options.fromName.replace(/"/g, '\\"');
+  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
+  headers.push(`To: ${options.to.join(', ')}`);
+  if (options.cc.length > 0) {
+    headers.push(`Cc: ${options.cc.join(', ')}`);
+  }
+  if (options.bcc.length > 0) {
+    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+  }
+
+  const base64Subject = Buffer.from(options.subject).toString('base64');
+  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
+
+  headers.push(`MIME-Version: 1.0`);
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(`--${boundary}`);
+  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
+  bodyParts.push(`Content-Transfer-Encoding: base64`);
+  bodyParts.push('');
+  bodyParts.push(Buffer.from(options.html).toString('base64'));
+  bodyParts.push('');
+
+  for (const att of options.attachments) {
+    bodyParts.push(`--${boundary}`);
+    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Transfer-Encoding: base64`);
+    bodyParts.push('');
+    bodyParts.push(att.content.toString('base64'));
+    bodyParts.push('');
+  }
+
+  bodyParts.push(`--${boundary}--`);
+
+  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
+  return Buffer.from(rawMimeString, 'utf-8');
+}
+
+const storageService = new StorageService();
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService(db: any) {
+  if (!_oauthSvc) {
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+export async function saveLocalEmail(
+  db: any,
+  tenantId: string,
+  userId: string,
+  fromEmail: string,
+  fromName: string,
+  toList: string[],
+  ccList: string[],
+  bccList: string[],
+  subject: string,
+  html: string,
+  uploadedFiles: any[],
+  previewKey: string,
+) {
+  return db.transaction().execute(async (trx: any) => {
+    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
+    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
+    // email_folders(id) — not tenant_id — so the existence check must be by id
+    // alone. onConflict guards against a concurrent/global row already present.
+
+    // NOTE: unscoped by design — email_folders uses global hardcoded IDs; FK references id only, not tenant_id
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
+
+    if (!existingOutbox) {
+      await trx
+        .insertInto('email_folders')
+        .values({
+          id: '10',
+          tenant_id: tenantId,
+          name: 'Outbox',
+          createdby_id: userId,
+          updatedby_id: userId,
+          icon: 'clock',
+          sort_order: 10,
+          is_default: false,
+        })
+        .onConflict((oc: any) => oc.column('id').doNothing())
+        .execute();
+    }
+
+    // 1. Insert into emails table (using Outbox folder: '10')
+    const createdEmail = await trx
+      .insertInto('emails')
+      .values({
+        tenant_id: tenantId,
+        folder_id: '10', // Outbox folder is '10'
+        from_email: fromEmail,
+        to_email: toList.join(', '),
+        subject: subject,
+        preview: previewKey,
+        assigned_to: userId,
+        is_favourite: false,
+        deleted_at: null,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const emailId = String(createdEmail.id);
+
+    // 2. Insert html into email_bodies
+    await trx
+      .insertInto('email_bodies')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        body_html: html,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 3. Insert files and email_attachments metadata
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const uFile = uploadedFiles[i];
+      let fileId: string;
+
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
+      const existingFile = await trx
+        .selectFrom('files')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('sha256_hex', '=', uFile.sha256_hex)
+        .executeTakeFirst();
+
+      if (existingFile) {
+        fileId = String(existingFile.id);
+      } else {
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: tenantId,
+            filename: uFile.filename,
+            mime_type: uFile.content_type,
+            size_bytes: uFile.size_bytes,
+            storage_key: uFile.storage_key,
+            sha256_hex: uFile.sha256_hex,
+            uploaded_by: userId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        fileId = String(fileResult.id);
+      }
+
+      await trx
+        .insertInto('email_attachments')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          filename: uFile.filename,
+          content_type: uFile.content_type,
+          size_bytes: uFile.size_bytes,
+          cid: uFile.cid,
+          is_inline: uFile.is_inline,
+          pos: i + 1,
+          file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+
+    // 4. Insert headers
+    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
+    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+
+    await trx
+      .insertInto('email_headers')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        headers_json: JSON.stringify({ internetMessageId }),
+        raw_headers: rawHeaders,
+        date_sent: new Date(),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 5. Insert recipients
+    const recipientRows: any[] = [];
+    toList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'to',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    ccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'cc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    bccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'bcc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+
+    if (recipientRows.length > 0) {
+      await trx.insertInto('email_recipients').values(recipientRows).execute();
+    }
+
+    return createdEmail;
+  });
+}
+
+const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Send composed email
+  fastify.post('/send', async (req: any, reply) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
+    }
+    const token = authHeader.split(' ')[1];
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (_err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
+    }
+
+    if (!payload?.tenant_id || !payload?.user_id) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const userId = payload.user_id;
+    const db = (BaseRepository as any)['_db'];
+
+    // Retrieve sender user details
+    const user = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Unauthorized: User not found' });
+    }
+
+    const fromEmail = user.email;
+    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
+
+    // Parse multipart request parts
+    const parts = req.parts();
+    const fields: any = {};
+    const files: any[] = [];
+
+    for await (const part of parts) {
+      if (part.file) {
+        const buffer = await part.toBuffer();
+        files.push({
+          filename: part.filename,
+          fieldname: part.fieldname,
+          mimetype: part.mimetype,
+          buffer,
+        });
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    // Parse recipient lists and content fields
+    const toList = fields.to ? JSON.parse(fields.to) : [];
+    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
+    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
+    const subject = fields.subject || '';
+    const html = sanitizeHtml(fields.html || '');
+
+    // Upload attachment files to storage outside transaction
+    const uploadedFiles: Array<{
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      storage_key: string;
+      sha256_hex: string;
+      cid: string | null;
+      is_inline: boolean;
+    }> = [];
+
+    for (const file of files) {
+      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
+      const fileUUID = crypto.randomUUID();
+      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
+
+      await storageService.upload(storage_key, file.buffer, file.mimetype);
+
+      uploadedFiles.push({
+        filename: file.filename,
+        content_type: file.mimetype,
+        size_bytes: file.buffer.length,
+        storage_key,
+        sha256_hex,
+        cid: null,
+        is_inline: false,
+      });
+    }
+
+    // Check if user has connected Microsoft and/or Google accounts
+    const msToken = await db
+      .selectFrom('ms_oauth_tokens')
+      .select(['user_id', 'ms_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const googleToken = await db
+      .selectFrom('google_oauth_tokens')
+      .select(['user_id', 'google_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const hasMsConnected = !!msToken;
+    const hasGoogleConnected = !!googleToken;
+
+    // Fail immediately if no send method is configured
+    if (!hasMsConnected && !hasGoogleConnected) {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
+      });
+    }
+
+    // Save outbound email to database under Outbox folder '10' initially
+    const fallbackPreview =
+      html
+        .replace(/<[^>]*>/g, '')
+        .substring(0, 100)
+        .trim() || '';
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
+    }
+
+    // Determine send method prioritizing matching address
+    let sendMethod: 'ms' | 'google' = 'ms';
+    if (hasMsConnected && hasGoogleConnected) {
+      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
+        sendMethod = 'google';
+      } else {
+        sendMethod = 'ms';
+      }
+    } else if (hasMsConnected) {
+      sendMethod = 'ms';
+    } else if (hasGoogleConnected) {
+      sendMethod = 'google';
+    }
+
+    // Dispatch the email synchronously
+    try {
+      if (sendMethod === 'ms') {
+        const oauthSvc = getOAuthService(db);
+        let msDraftId: string | null = null;
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+          const client = Client.init({
+            authProvider: (done) => done(null, accessToken),
+          });
+
+          const msDraftMessage: any = {
+            subject: subject,
+            body: {
+              contentType: 'html',
+              content: html,
+            },
+            toRecipients: toList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            ccRecipients: ccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            bccRecipients: bccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+          };
+
+          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
+          msDraftId = createdDraft.id;
+          const graphInternetMessageId = createdDraft.internetMessageId;
+
+          // Update local email preview/dedupe key to `ms:${msDraftId}`
+          await db
+            .updateTable('emails')
+            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          if (graphInternetMessageId) {
+            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+            await db
+              .updateTable('email_headers')
+              .set({
+                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
+                raw_headers: rawHeaders,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('email_id', '=', String(emailRow.id))
+              .execute();
+          }
+
+          // Upload attachments
+          for (const file of files) {
+            await client.api(`/me/messages/${msDraftId}/attachments`).post({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.filename,
+              contentType: file.mimetype,
+              contentBytes: file.buffer.toString('base64'),
+            });
+          }
+
+          // Send draft
+          await client.api(`/me/messages/${msDraftId}/send`).post({});
+
+          // Update local email folder to '3' (Sent) on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          // Trigger background sync to get folders/Sent items synchronized
+          const syncSvc = new MsSyncService(db, oauthSvc);
+          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
+            400,
+          );
+        }
+      } else if (sendMethod === 'google') {
+        const oauthSvc = new GoogleOAuthService(db, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+
+          const rawMessageBuffer = buildRawMime({
+            fromName,
+            fromEmail,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject,
+            html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          const rawBase64Url = rawMessageBuffer
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: rawBase64Url,
+            }),
+          });
+
+          if (!gmailRes.ok) {
+            const errText = await gmailRes.text();
+            throw new Error(`Gmail API send failed: ${errText}`);
+          }
+
+          const gmailData: any = await gmailRes.json();
+          const googleMsgId = gmailData.id;
+
+          await db
+            .updateTable('emails')
+            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: '3', updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
+          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
+          await db
+            .updateTable('emails')
+            .set({
+              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
+              folder_id: '4',
+              updated_at: new Date(),
+            })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
+            400,
+          );
+        }
+      }
+    } catch (err) {
+      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
+      // Clean up local email
+      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
+    }
+  });
+
+  // Download attachment by ID
+  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (_err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const { id, attachmentId } = req.params;
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachmentId)
+      .where('email_id', '=', id)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to download attachment' });
+    }
+  });
+
+  // Serve inline attachment by CID
+  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
+    // Authenticate token via header or query string (for direct link downloading)
+    let token = req.query.token;
+    if (!token && req.headers.authorization) {
+      token = req.headers.authorization.split(' ')[1];
+    }
+
+    if (!token) {
+      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
+    }
+
+    let payload: any = null;
+    try {
+      payload = await verifyAuthToken(token);
+    } catch (_err) {
+      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+    }
+
+    const tenantId = payload.tenant_id;
+    const { id, cid } = req.params;
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', '=', id)
+      .where('cid', '=', cid)
+      .where('is_inline', '=', true)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Inline attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      // Private: inline attachments are tenant-scoped and token-gated.
+      reply.header('Cache-Control', 'private, max-age=31536000');
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to load inline image' });
+    }
+  });
+
+  done();
+};
+
+export default emailsApiRoute;
 ```

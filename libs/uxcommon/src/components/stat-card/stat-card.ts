@@ -15,9 +15,14 @@ import { PcIconNameType } from '@icons/icons.index';
             {{ title() }}
           </div>
         }
-        <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
-          {{ value() }}
-        </div>
+        @if (loading()) {
+          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
+          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
+        } @else {
+          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
+            {{ value() }}
+          </div>
+        }
         <div class="stat-desc text-[10px] text-base-content/40 mt-1">
           @if (description()) {
             <span>{{ description() }}</span>
@@ -40,6 +45,8 @@ import { PcIconNameType } from '@icons/icons.index';
 export class StatCard {
   public title = input<string>();
   public value = input<string | number>();
+  /** When true, the value renders as a skeleton block instead of a number/spinner. */
+  public loading = input<boolean>(false);
   public description = input<string>();
   public icon = input<PcIconNameType>();
   public valueColorClass = input<string>('text-base-content');

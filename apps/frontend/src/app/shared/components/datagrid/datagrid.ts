@@ -76,7 +76,7 @@ interface MergeableService {
 
 /** One removable chip in the active-filters row above the grid. */
 export interface GridFilterChip {
-  kind: 'narrow' | 'tag' | 'issue' | 'list' | 'column' | 'advanced';
+  kind: 'narrow' | 'tag' | 'issue' | 'list' | 'column' | 'advanced' | 'search';
   key: string;
   label: string;
 }
@@ -252,12 +252,23 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   /** True when anything — including the list filter — is narrowing the results. */
   public readonly anyFilterActive = computed(
-    () => this.hasActiveFilters() || this.selectedListId() !== null || this.selectedNarrowType() !== null,
+    () =>
+      this.hasActiveFilters() ||
+      this.selectedListId() !== null ||
+      this.selectedNarrowType() !== null ||
+      this.searchTerm().trim() !== '',
   );
 
   /** Every active filter as a named, individually removable chip. */
   protected readonly filterChips = computed<GridFilterChip[]>(() => {
     const chips: GridFilterChip[] = [];
+
+    // An active search is filter truth too — surface it as a removable chip (§2), so it lives
+    // in one place whether it arrived from the navbar search or the command palette hand-off.
+    const search = this.searchTerm().trim();
+    if (search) {
+      chips.push({ kind: 'search', key: 'search', label: `Search: "${search}"` });
+    }
 
     const narrow = this.selectedNarrowType();
     if (narrow !== null) {
@@ -320,6 +331,9 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       case 'advanced':
         this.clearAdvancedFilter();
         break;
+      case 'search':
+        this.searchSvc.clearSearch();
+        break;
       default: {
         const _exhaustive: never = chip.kind;
         void _exhaustive;
@@ -335,6 +349,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     this.selectedListId.set(null);
     this.filterValues.set({});
     this.panelFilters.set({});
+    this.searchSvc.clearSearch();
     this.store?.requestPersist();
     if (this.hasActiveAdvancedFilters()) {
       // clearAdvancedFilter triggers its own refresh.

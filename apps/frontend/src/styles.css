@@ -363,3 +363,27 @@ body {
 .menu details.dropdown {
   overflow: visible !important;
 }
+
+/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
+   Semantic primary token so it survives theme switch (design §5). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
+   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
