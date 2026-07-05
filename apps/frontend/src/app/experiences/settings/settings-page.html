@@ -1,10 +1,13 @@
 <div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
   <header class="mb-8 space-y-2">
+    <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">
+      @switch (currentMode) { @case ('settings') { Personal } @case ('configuration') { Workspace } }
+    </p>
     <h1 class="text-3xl font-bold tracking-tight">
-      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Configuration } }
+      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Workspace settings } }
     </h1>
     <p class="text-base-content/70">
-      @switch (currentMode) { @case ('settings') { Control user-specific preferences for PeopleCRM. } @case
+      @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
       ('configuration') { Control tenant-wide defaults and account management for PeopleCRM. } }
     </p>
   </header>
