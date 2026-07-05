@@ -58,11 +58,11 @@
           <div class="divider my-1"></div>
           <div class="text-xs font-semibold text-base-content/65 uppercase tracking-wider px-1">Organizer Contact</div>
           @if (event().contact_email) {
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+          <pc-detail-row icon="envelope" iconClass="text-base-content/40">
             <span class="text-xs">{{ event().contact_email }}</span>
           </pc-detail-row>
           } @if (event().contact_phone) {
-          <pc-detail-row icon="phone" iconClass="text-purple-500">
+          <pc-detail-row icon="phone" iconClass="text-base-content/40">
             <span class="text-xs">{{ event().contact_phone }}</span>
           </pc-detail-row>
           } } @if (ticketTypes().length > 0) {
@@ -133,8 +133,8 @@
           [value]="remainingCapacity()"
           [description]="'of ' + (event().capacity ?? 'unlimited') + ' total'"
           [icon]="'adjustments-horizontal'"
-          [valueColorClass]="'text-orange-500'"
-          [iconColorClass]="'text-orange-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
       </div>
 

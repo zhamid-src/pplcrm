@@ -42,17 +42,17 @@
           @if (formRecord().description) {
           <div class="p-3 bg-base-200/30 rounded-lg text-xs text-base-content/70">{{ formRecord().description }}</div>
           } @if (formRecord().redirect_url) {
-          <pc-detail-row icon="arrow-top-right-on-square" iconClass="text-indigo-500">
+          <pc-detail-row icon="arrow-top-right-on-square" iconClass="text-base-content/40">
             <span class="truncate">Redirect: <strong>{{ formRecord().redirect_url }}</strong></span>
           </pc-detail-row>
           }
 
-          <pc-detail-row icon="envelope" iconClass="text-teal-500">
+          <pc-detail-row icon="envelope" iconClass="text-base-content/40">
             <span>Send Confirmation:</span>
             <span pc-row-action class="font-bold">{{ formRecord().send_confirmation !== false ? 'Yes' : 'No' }}</span>
           </pc-detail-row>
 
-          <pc-detail-row icon="bell" iconClass="text-purple-500">
+          <pc-detail-row icon="bell" iconClass="text-base-content/40">
             <span>Send Admin Alert:</span>
             <span pc-row-action class="font-bold">{{ formRecord().send_alert !== false ? 'Yes' : 'No' }}</span>
           </pc-detail-row>
