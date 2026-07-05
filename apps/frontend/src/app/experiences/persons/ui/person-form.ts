@@ -494,7 +494,7 @@ export class PersonForm implements OnInit {
     this.personsSvc
       .add(data, { context: { skipErrorHandler: true } })
       .then(() => {
-        this.alertSvc.showSuccess('Person added');
+        this.alertSvc.showSuccess(`Added ${this.formName() || 'person'}.`);
         this.personsSvc.triggerRefresh();
         if (done) {
           done();
@@ -602,16 +602,58 @@ export class PersonForm implements OnInit {
     });
   }
 
+  // Friendly labels for the field-naming save toast (§4).
+  private readonly fieldLabels: Record<string, string> = {
+    first_name: 'first name',
+    middle_names: 'middle name',
+    last_name: 'last name',
+    email: 'email',
+    email2: 'secondary email',
+    mobile: 'mobile phone',
+    home_phone: 'home phone',
+    company_id: 'company',
+    assigned_to: 'owner',
+    notes: 'notes',
+    linkedin: 'LinkedIn',
+    twitter: 'X',
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+  };
+
+  private changedFieldLabels(): string[] {
+    const f = this.form as unknown as Record<string, () => { dirty?: () => boolean }>;
+    return Object.keys(this.fieldLabels)
+      .filter((k) => {
+        try {
+          return !!f[k]?.().dirty?.();
+        } catch {
+          return false;
+        }
+      })
+      .map((k) => this.fieldLabels[k]!);
+  }
+
+  private joinWithAnd(items: string[]): string {
+    if (items.length <= 1) return items[0] ?? '';
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+  }
+
   private update(data: Partial<UpdatePersonsType>, done?: () => void) {
     const id = this.id();
     if (!id) return;
+
+    const changed = this.changedFieldLabels();
+    const savedName = this.formName() || 'person';
 
     this.emailError.set(null);
     const end = this._loading.begin();
     this.personsSvc
       .update(id, data, { context: { skipErrorHandler: true } })
       .then(() => {
-        this.alertSvc.showSuccess('Person updated successfully.');
+        // Name the fields that changed (§4), e.g. "Saved Amira Hassan — email and mobile phone updated".
+        const detail = changed.length ? ` — ${this.joinWithAnd(changed)} updated` : '';
+        this.alertSvc.showSuccess(`Saved ${savedName}${detail}.`);
         this.form().reset();
         this.personsSvc.triggerRefresh();
         if (done) {
