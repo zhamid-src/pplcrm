@@ -98,6 +98,7 @@ export class PersonForm implements OnInit {
     mobile: '',
     notes: '',
     company_id: '',
+    preferred_contact: '',
     linkedin: '',
     twitter: '',
     facebook: '',
@@ -114,6 +115,31 @@ export class PersonForm implements OnInit {
   protected id = input<string>();
   protected tags = signal<string[]>([]);
   protected issues = signal<string[]>([]);
+
+  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
+  protected readonly allTagNames = signal<string[]>([]);
+  protected readonly allIssueNames = signal<string[]>([]);
+  private readonly SUGGESTION_LIMIT = 6;
+  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
+  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
+
+  private suggestFrom(all: string[], applied: string[]): string[] {
+    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
+    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
+  }
+
+  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
+  protected addTagSuggestion(name: string): void {
+    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.tags.update((list) => [...list, name]);
+    void this.tagAdded(name);
+  }
+
+  protected addIssueSuggestion(name: string): void {
+    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.issues.update((list) => [...list, name]);
+    void this.issueAdded(name);
+  }
 
   public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
 
@@ -164,6 +190,7 @@ export class PersonForm implements OnInit {
   private async loadOnInit(): Promise<void> {
     await this.loadPerson();
     await this.loadCompanies();
+    void this.loadSuggestionNames();
     if (this.isNewMode()) {
       const state = window.history.state;
       if (state && state.cloneData) {
@@ -178,6 +205,7 @@ export class PersonForm implements OnInit {
           mobile: data.mobile ?? '',
           notes: data.notes ?? '',
           company_id: data.company_id ?? '',
+          preferred_contact: data.preferred_contact ?? '',
           linkedin: data.linkedin ?? '',
           twitter: data.twitter ?? '',
           facebook: data.facebook ?? '',
@@ -188,6 +216,15 @@ export class PersonForm implements OnInit {
           this.pendingHouseholdId.set(data.household_id);
         }
       }
+    }
+  }
+
+  private async loadSuggestionNames() {
+    try {
+      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
+      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
+    } catch (err) {
+      console.error('Failed to load tag/issue suggestions', err);
     }
   }
 
@@ -252,6 +289,7 @@ export class PersonForm implements OnInit {
       ...raw,
       company_id: raw.company_id || null,
       assigned_to: raw.assigned_to || null,
+      preferred_contact: raw.preferred_contact || null,
     } as UpdatePersonsType;
     return this.id() ? this.update(data, done) : this.add(data, done);
   }
@@ -594,6 +632,7 @@ export class PersonForm implements OnInit {
       mobile: person.mobile ?? '',
       notes: person.notes ?? '',
       company_id: person.company_id ?? '',
+      preferred_contact: person.preferred_contact ?? '',
       linkedin: person.linkedin ?? '',
       twitter: person.twitter ?? '',
       facebook: person.facebook ?? '',
@@ -612,6 +651,7 @@ export class PersonForm implements OnInit {
     mobile: 'mobile phone',
     home_phone: 'home phone',
     company_id: 'company',
+    preferred_contact: 'preferred contact',
     assigned_to: 'owner',
     notes: 'notes',
     linkedin: 'LinkedIn',

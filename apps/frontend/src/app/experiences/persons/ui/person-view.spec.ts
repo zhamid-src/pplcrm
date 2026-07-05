@@ -50,6 +50,7 @@ describe('PersonView', () => {
     mockDonationsSvc = {
       getStats: vi.fn().mockResolvedValue({ cumulativeAmount: 100, limitAmount: 500, remainingAmount: 400 }),
       getHistory: vi.fn().mockResolvedValue([{ id: 'd1', amount: 50 }]),
+      getPersonPledges: vi.fn().mockResolvedValue([]),
     };
 
     mockTagsSvc = {
@@ -131,7 +132,7 @@ describe('PersonView', () => {
     expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1', 'tag');
     expect(mockPersonsSvc.getTags).toHaveBeenCalledWith('p1', 'issue');
     expect(mockPersonsSvc.getActivity).toHaveBeenCalledWith('p1');
-    expect(mockVolunteerSvc.getVolunteerStats).toHaveBeenCalledWith('p1');
+    expect(mockVolunteerSvc.getHistoryForPerson).toHaveBeenCalledWith('p1');
 
     expect(component['fullName']()).toBe('John A Doe');
     expect(component['initials']()).toBe('JD');
@@ -150,5 +151,33 @@ describe('PersonView', () => {
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('john@example.com');
     expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Email copied to clipboard');
+  });
+
+  it('derives donation method and receipt from existing columns', () => {
+    expect(component['donationMethod']({ stripe_session_id: 'cs_1', pledge_id: 'pl_1' })).toBe('Card · monthly');
+    expect(component['donationMethod']({ stripe_session_id: 'cs_1', pledge_id: null })).toBe('Card');
+    expect(component['donationMethod']({ stripe_session_id: null, pledge_id: null })).toBe('Manual');
+
+    expect(component['donationReceipt']({ status: 'succeeded' })).toEqual({ label: 'Receipted', type: 'success' });
+    expect(component['donationReceipt']({ status: 'pending' })).toEqual({ label: 'Pending', type: 'warning' });
+  });
+
+  it('shows a Monthly donor chip when the person has an active pledge', async () => {
+    mockDonationsSvc.getPersonPledges.mockResolvedValue([{ status: 'active' }]);
+    fixture = TestBed.createComponent(PersonView);
+    component = fixture.componentInstance;
+    fixture.componentRef.setInput('id', 'p1');
+    fixture.detectChanges();
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(component['hasActivePledge']()).toBe(true);
+    expect(component['statusChip']()).toBe('Monthly donor');
+  });
+
+  it('maps the preferred contact channel to a human label', () => {
+    component['person'].set({ preferred_contact: 'mobile' });
+    expect(component['preferredContactLabel']()).toBe('Mobile phone');
+    component['person'].set({ preferred_contact: null });
+    expect(component['preferredContactLabel']()).toBeNull();
   });
 });

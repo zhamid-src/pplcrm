@@ -20,7 +20,6 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
@@ -35,7 +34,6 @@ interface SocialLinkDef {
   name: string;
   url: string | null | undefined;
   icon: PcIconNameType;
-  color: string;
 }
 
 @Component({
@@ -52,7 +50,6 @@ interface SocialLinkDef {
     Tabs,
     TabPanel,
     StatusBadge,
-    StatCard,
     ProfileCard,
     DetailItem,
     SystemMetadata,
@@ -90,7 +87,6 @@ export class PersonView {
   private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 
   // Analytics & Lists
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
   protected readonly volunteerHistory = signal<any[]>([]);
   protected readonly donationStats = signal<{
     cumulativeAmount: number;
@@ -99,15 +95,20 @@ export class PersonView {
   } | null>(null);
   protected readonly donationHistory = signal<any[]>([]);
   protected readonly eventHistory = signal<any[]>([]);
-  protected readonly eventStats = signal<{ events_count: number } | null>(null);
   protected readonly connectionCount = signal(0);
   protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
-  protected readonly openedNewslettersCount = computed(() => {
-    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
-      .length;
-  });
   protected readonly tags = signal<string[]>([]);
   protected readonly issues = signal<string[]>([]);
+
+  // True when the person has at least one active monthly pledge — powers the "Monthly donor" status chip.
+  protected readonly hasActivePledge = signal(false);
+
+  // Donations are truncated to the first 6 rows until the user expands (§3 "Show all N").
+  protected readonly DONATION_PREVIEW_COUNT = 6;
+  protected readonly showAllDonations = signal(false);
+  protected readonly visibleDonations = computed(() =>
+    this.showAllDonations() ? this.donationHistory() : this.donationHistory().slice(0, this.DONATION_PREVIEW_COUNT),
+  );
 
   // Donation Dialog State
   protected readonly isCheckingEligibility = signal(false);
@@ -157,8 +158,9 @@ export class PersonView {
     { label: this.fullName() || 'Person' },
   ]);
 
-  // Status chip beside the name (§3), derived honestly from the person's tags.
+  // Status chip beside the name (§3), derived honestly: an active monthly pledge outranks tag-derived roles.
   protected readonly statusChip = computed<string | null>(() => {
+    if (this.hasActivePledge()) return 'Monthly donor';
     const tags = this.tags().map((t) => t.toLowerCase());
     if (tags.includes('donor')) return 'Donor';
     if (tags.includes('volunteer')) return 'Volunteer';
@@ -166,50 +168,63 @@ export class PersonView {
     return null;
   });
 
+  // Human label for the person's preferred contact channel (§3 contact card row).
+  protected readonly preferredContactLabel = computed<string | null>(() => {
+    switch (this.person()?.preferred_contact) {
+      case 'email':
+        return 'Email';
+      case 'mobile':
+        return 'Mobile phone';
+      case 'home_phone':
+        return 'Home phone';
+      default:
+        return null;
+    }
+  });
+
   // Social icons
   public socialLinks = computed<SocialLinkDef[]>(() => {
     const p = this.person();
     return [
-      {
-        name: 'LinkedIn',
-        url: p.linkedin,
-        icon: 'linkedin',
-        color: 'bg-[#0a66c2]', // LinkedIn Blue
-      },
-      {
-        name: 'X',
-        url: p.twitter,
-        icon: 'x',
-        color: 'bg-black', // X Black
-      },
-      {
-        name: 'Facebook',
-        url: p.facebook,
-        icon: 'facebook',
-        color: 'bg-[#1877f2]', // Facebook Blue
-      },
-      {
-        name: 'Instagram',
-        url: p.instagram,
-        icon: 'instagram',
-        color: 'bg-[#e1306c]', // Instagram Pink/Red
-      },
+      { name: 'LinkedIn', url: p.linkedin, icon: 'linkedin' },
+      { name: 'X', url: p.twitter, icon: 'x' },
+      { name: 'Facebook', url: p.facebook, icon: 'facebook' },
+      { name: 'Instagram', url: p.instagram, icon: 'instagram' },
     ];
   });
 
   // Active tab state
   protected activeTab = signal<string>('activity');
 
+  // Six tabs (§3): Newsletters fold into Emails, Connections fold into Household. Sentence-case labels + counts.
   protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
-    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
-    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
-    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
-    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
+    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
+    { id: 'emails', label: 'Emails', icon: 'envelope', badge: this.activityData()?.emails?.length || undefined },
+    {
+      id: 'donations',
+      label: 'Donations',
+      icon: 'currency-dollar',
+      badge: this.donationHistory()?.length || undefined,
+    },
+    { id: 'volunteer', label: 'Volunteer', icon: 'volunteer', badge: this.volunteerHistory()?.length || undefined },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length || undefined },
     { id: 'household', label: 'Household', icon: 'home' },
   ]);
+
+  /** Payment method label for a donation row (§3): Card / Manual, with a `· monthly` suffix for pledge-linked rows. */
+  protected donationMethod(donation: any): string {
+    const base = donation?.stripe_session_id ? 'Card' : 'Manual';
+    return donation?.pledge_id ? `${base} · monthly` : base;
+  }
+
+  /** Receipt status for a donation row (§3), derived from the donation status. */
+  protected donationReceipt(donation: any): { label: string; type: 'success' | 'warning' | 'error' | 'neutral' } {
+    const s = String(donation?.status || '').toLowerCase();
+    if (s === 'succeeded') return { label: 'Receipted', type: 'success' };
+    if (s === 'pending') return { label: 'Pending', type: 'warning' };
+    if (s === 'failed') return { label: 'Failed', type: 'error' };
+    return { label: donation?.status || '—', type: 'neutral' };
+  }
 
   protected getMailStatusType(status: string | null | undefined): any {
     const s = String(status || '').toLowerCase();
@@ -265,30 +280,29 @@ export class PersonView {
       const issueList = await this.personsSvc.getTags(id, 'issue');
       this.issues.set(issueList);
 
-      // 3. Load volunteer stats and history
+      // 3. Load volunteer history
       try {
-        const stats = await this.volunteerSvc.getVolunteerStats(id);
-        this.volunteerStats.set(stats);
         const history = await this.volunteerSvc.getHistoryForPerson(id);
         this.volunteerHistory.set(history || []);
       } catch (err) {
         console.error('Failed to load volunteer details', err);
       }
 
-      // 4. Load donations stats and history
+      // 4. Load donations stats, history and active-pledge status (for the "Monthly donor" chip)
       try {
+        this.showAllDonations.set(false);
         const stats = await this.donationsSvc.getStats(id);
         this.donationStats.set(stats);
         const history = await this.donationsSvc.getHistory(id);
         this.donationHistory.set(history || []);
+        const pledges = await this.donationsSvc.getPersonPledges(id);
+        this.hasActivePledge.set((pledges || []).some((p: any) => String(p.status).toLowerCase() === 'active'));
       } catch (err) {
         console.error('Failed to load donations history', err);
       }
 
       // 5. Load event history
       try {
-        const stats = await this.eventsSvc.getStatsForPerson(id);
-        this.eventStats.set(stats);
         const history = await this.eventsSvc.getHistoryForPerson(id);
         this.eventHistory.set(history || []);
       } catch (err) {

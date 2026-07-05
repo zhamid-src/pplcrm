@@ -36,6 +36,10 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       },
       {
         kind: 'p',
+        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use — click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
+      },
+      {
+        kind: 'p',
         text: 'If you try to leave a form with unsaved changes, PeopleCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
       },
       { kind: 'h2', id: 'deleting', text: 'Delete with care' },
@@ -58,16 +62,20 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials — who this is and their status — and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
       },
+      {
+        kind: 'p',
+        text: 'The contact card on the left carries the essentials — email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest — with the record’s notes just below it.',
+      },
       { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
       {
         kind: 'list',
         items: [
           '**Activity** — the audit trail of changes and touches on this record, newest first.',
-          '**Emails** — messages exchanged with this person through the [Inbox](/inbox).',
-          '**Newsletters** — which campaigns they received.',
+          '**Emails** — messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
+          '**Donations** — every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
           '**Volunteer** — their shift history and hours.',
-          '**Donations** — every gift on record.',
           '**Events** — event registrations and attendance.',
+          '**Household** — everyone at the same address, plus this person’s connections.',
         ],
       },
       { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },

@@ -3126,283 +3126,178 @@ function toNum(n: unknown): number | undefined {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/services/store/email-state.store.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.css
 
-```typescript
-import { computed, signal, Service, linkedSignal } from '@angular/core';
-
-import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Service()
-export class EmailStateStore {
-  public readonly activeFolderId = signal<string | null>(null);
-
-  public readonly currentSelectedEmailId = linkedSignal<string | null, string | null>({
-    source: () => this.activeFolderId(),
-    computation: () => null,
-  });
-
-  public readonly emailsById = signal<Record<string, EmailType>>({});
-
-  public readonly currentSelectedEmail = computed(() => {
-    const id = this.currentSelectedEmailId();
-    return id ? (this.emailsById()[id] ?? null) : null;
-  });
-
-  public readonly emailIdsByFolderId = signal<Record<string, string[]>>({});
-
-  public readonly hasAttachmentByEmailId = signal<Record<string, boolean | undefined>>({});
-
-  public readonly isBodyExpanded = signal<boolean>(false);
-
-  /** Person context rail (§5): collapsed = 48px identity strip, expanded = 236px card. */
-  public readonly personRailCollapsed = signal<boolean>(false);
-
-  public readonly mobilePanelView = signal<'folders' | 'list' | 'detail'>('folders');
-
-  public togglePersonRail(): void {
-    this.personRailCollapsed.update((v) => !v);
-  }
-
-  public clearHasAttachment(emailId: string) {
-    this.hasAttachmentByEmailId.update((m) => {
-      const next = { ...m };
-      delete next[emailId];
-      return next;
-    });
-  }
-
-  public emailsInFolderWithFlags(folderId: string) {
-    return computed(() => {
-      const ids = this.emailIdsByFolderId()[folderId] ?? [];
-      const emailsMap = this.emailsById();
-      const flags = this.hasAttachmentByEmailId();
-      return ids
-        .map((id) => emailsMap[id])
-        .filter(Boolean)
-        .map((e) => ({ ...e!, has_attachment: flags[e!.id] ?? false }));
-    });
-  }
-
-  public hasAttachment(emailId: string) {
-    return computed<boolean | undefined>(() => this.hasAttachmentByEmailId()[emailId]);
-  }
-
-  public mergeHasRows(rows: Array<{ email_id: string; has: boolean }>, fillFalseForIds?: string[]) {
-    const map: Record<string, boolean> = {};
-    for (const r of rows) map[String(r.email_id)] = !!r.has;
-
-    // Optional: mark any requested ids that didn't come back as false
-    if (fillFalseForIds?.length) {
-      for (const id of fillFalseForIds) if (!(id in map)) map[id] = false;
-    }
-
-    this.setManyHasAttachment(map);
-  }
-
-  public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
-    const prev = this.readEmail(emailKey);
-    if (!prev) return undefined;
-    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
-    return prev;
-  }
-
-  public readEmail(emailKey: string): EmailType | undefined {
-    return this.emailsById()[emailKey];
-  }
-
-  public removeEmail(emailId: string): void {
-    // Remove from normalized map
-    this.emailsById.update((m) => {
-      const next = { ...m };
-      delete next[emailId];
-      return next;
-    });
-
-    // Remove from folder lists
-    this.emailIdsByFolderId.update((map) => {
-      const next: Record<string, string[]> = {};
-      for (const [fid, ids] of Object.entries(map)) {
-        next[fid] = ids.filter((id) => id !== emailId);
-      }
-      return next;
-    });
-
-    // Clear attachment flag
-    this.clearHasAttachment(emailId);
-  }
-
-  public replaceEmail(emailKey: string, value: EmailType): void {
-    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
-  }
-
-  public selectEmail(email: EmailType | { id: EmailId } | null): void {
-    this.currentSelectedEmailId.set(email ? String(email.id) : null);
-  }
-
-  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[], append = false): void {
-    const ids: string[] = [];
-    const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
-
-    this.emailsById.update((map) => {
-      const next = { ...map };
-      for (const s of serverEmails) {
-        const id = String(s.id);
-        ids.push(id);
-
-        // reuse your existing helper; prefer hasMap[id] when provided
-        const { has, count } = deriveHasAndCount(s);
-        flagsMap[id] = has;
-
-        const e: EmailType = {
-          id,
-          folder_id: String(s.folder_id),
-          updated_at: new Date(s.updated_at),
-          date_sent: s.date_sent ? new Date(s.date_sent) : undefined,
-          is_favourite: !!s.is_favourite,
-          attachment_count: count,
-          status: (s as any).status || 'open',
-          from_email: s.from_email ?? undefined,
-          to_email: s.to_email ?? undefined,
-          subject: s.subject ?? undefined,
-          preview: s.preview ?? undefined,
-          assigned_to: s.assigned_to ?? undefined,
-          has_attachment: has, // keep in the normalized email too
-          is_read: !!(s as any).is_read,
-          sender_first_name: s.sender_first_name ?? undefined,
-          sender_last_name: s.sender_last_name ?? undefined,
-        };
-
-        next[id] = e;
-      }
-      return next;
-    });
-
-    this.emailIdsByFolderId.update((m) => {
-      const existing = append ? (m[folderId] ?? []) : [];
-      const combined = [...existing];
-      for (const id of ids) {
-        if (!combined.includes(id)) {
-          combined.push(id);
-        }
-      }
-      return { ...m, [folderId]: combined };
-    });
-
-    // seed/refresh the per-id flags cache
-    this.setManyHasAttachment(flagsMap);
-  }
-
-  public setHasAttachment(emailId: string, hasAttachment: boolean | undefined) {
-    this.hasAttachmentByEmailId.update((m) => ({ ...m, [emailId]: hasAttachment }));
-  }
-
-  public setManyHasAttachment(map: Record<string, boolean | undefined>) {
-    this.hasAttachmentByEmailId.update((prev) => ({ ...prev, ...map }));
-  }
-
-  public toggleBodyExpanded(): void {
-    this.isBodyExpanded.update((v) => !v);
-  }
+```css
+::ng-deep .ql-tooltip {
+  left: unset !important;
 }
 
-export type EmailId = string | number;
-
-function deriveHasAndCount(s: ServerEmail): { has: boolean; count: number } {
-  if (typeof s.has_attachment === 'boolean') {
-    const n = toNum(s.attachment_count);
-    // if backend didn’t send a count, synthesize a minimal one
-    return { has: s.has_attachment, count: n ?? (s.has_attachment ? 1 : 0) };
-  }
-  const count = toNum(s.attachment_count);
-  return { has: count > 0, count };
-}
-
-function toNum(n: unknown): number {
-  if (typeof n === 'bigint') return Number(n);
-  if (typeof n === 'string') return Number(n) || 0;
-  if (typeof n === 'number') return n;
-  return 0;
+::ng-deep .ql-toolbar.ql-snow {
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/services/email-sla.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.html
 
-```typescript
-import { calculateWorkingTimeMs } from '../../../../../../../libs/common/src/lib/sla';
+```html
+<form class="flex flex-col gap-3 h-full overflow-y-auto pr-3" (submit)="$event.preventDefault(); onSend()">
+  <!-- Header -->
+  <div class="flex justify-between">
+    <div class="text-base"></div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="delete()">
+        <pc-icon name="trash" class="mr-1"></pc-icon>
+      </button>
+      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="discard()">
+        <pc-icon name="x-circle" class="mr-1"></pc-icon>
+      </button>
+      <button type="button" class="btn btn-ghost btn-md hover:btn-primary" (click)="saveDraft()">
+        <pc-icon name="save" class="mr-1"></pc-icon>
+      </button>
+      <button type="submit" class="btn btn-primary btn-md" [disabled]="sending() || !validTo()">
+        <pc-icon name="paper-airplane" class="mr-1"></pc-icon>Send
+      </button>
+    </div>
+  </div>
 
-const MS_PER_HOUR = 3_600_000;
-/** Below this fraction of the target still remaining, the pill turns warning-tinted. */
-const WARNING_REMAINING_FRACTION = 0.25;
+  <!-- Collapsible Recipients/Subject -->
+  <div class="border border-neutral rounded-md">
+    <!-- Header row with toggle -->
+    <div class="flex items-center justify-between cursor-pointer px-3 py-2 bg-base-200" (click)="toggleHeader()">
+      <span class="font-medium">Recipients & Subject</span>
+      <pc-swap
+        swapOnIcon="expand-content"
+        swapOffIcon="collapse-content"
+        animation="flip"
+        [checked]="showHeader()"
+        [size]="4"
+        (click)="toggleHeader()"
+      ></pc-swap>
+    </div>
 
-export type SlaTone = 'neutral' | 'warning' | 'error';
+    <!-- Collapsible body -->
+    @if (showHeader()) {
+    <div class="p-3 space-y-2">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+        <input
+          class="input-pplcrm w-full"
+          placeholder="To (comma or semicolon separated)"
+          [formControl]="form.controls.to"
+        />
+        <input class="input-pplcrm w-full" placeholder="Cc" [formControl]="form.controls.cc" />
+        <input class="input-pplcrm w-full" placeholder="Bcc" [formControl]="form.controls.bcc" />
+      </div>
 
-export interface SlaPill {
-  text: string;
-  tone: SlaTone;
-}
+      <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formControl]="form.controls.subject" />
+    </div>
+    }
+  </div>
 
-export interface SlaInputs {
-  /** Workspace SLA target for an email reply, in working hours. */
-  emailsHours: number | null | undefined;
-  /** When the inbound email was received. */
-  receivedAt: Date | null | undefined;
-  status: string | null | undefined;
-  /** '09:00' */
-  workingHoursEnd: string | null | undefined;
-  /** '17:00' */
-  workingHoursStart: string | null | undefined;
-  /** '1,2,3,4,5' — day numbers, 0=Sun … 6=Sat. */
-  workingDays: string | null | undefined;
-}
+  <!-- Editor card: ONE ROW toolbar + scrollable editor -->
+  <div class="rounded-lg border border-base-300 flex flex-col h-full">
+    <!-- Custom Quill toolbar (single row, no wrap, horizontal scroll) -->
+    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b">
+      <!-- Undo / Redo -->
+      <span class="ql-formats">
+        <button class="ql-undo tooltip" data-tip="Undo" type="button" aria-label="Undo">
+          <pc-icon name="undo-fat" [size]="4"></pc-icon>
+        </button>
+        <button class="ql-redo tooltip" data-tip="Redo" type="button" aria-label="Redo">
+          <pc-icon name="redo-fat" [size]="4"></pc-icon>
+        </button>
+      </span>
 
-function parseWorkingDays(raw: string | null | undefined): number[] {
-  if (!raw) return [];
-  return raw
-    .split(',')
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
-}
+      <!-- Font / Size -->
+      @if (showHeader()) {
+      <span class="ql-formats">
+        <select class="ql-font" aria-label="Font">
+          <option selected></option>
+          <option value="serif"></option>
+          <option value="monospace"></option>
+        </select>
+        <select class="ql-size" aria-label="Size">
+          <option value="small"></option>
+          <option selected></option>
+          <option value="large"></option>
+          <option value="huge"></option>
+        </select>
+      </span>
+      }
 
-/**
- * Honest per-thread SLA pill (§5) computed only from data we already have:
- * the received timestamp + the workspace SLA config. We do NOT know the actual
- * first-response time, so a closed thread reports only "Closed" — never a
- * fabricated "sent in 1.2h". Returns null when there's nothing truthful to show.
- */
-export function computeEmailSla(inputs: SlaInputs, now: Date = new Date()): SlaPill | null {
-  const status = (inputs.status ?? 'open').toLowerCase();
+      <!-- Bold / Italic / Underline / Strike -->
+      <span class="ql-formats">
+        <button class="ql-bold tooltip" data-tip="Bold" aria-label="Bold"></button>
+        <button class="ql-italic tooltip" data-tip="Italic" aria-label="Italic"></button>
+        <button class="ql-underline tooltip" data-tip="Underline" aria-label="Underline"></button>
+        <button class="ql-strike tooltip" data-tip="Strikethrough" aria-label="Strikethrough"></button>
+        <button class="ql-blockquote tooltip" data-tip="quote" aria-label="Blockquote"></button>
+      </span>
 
-  if (status === 'closed') {
-    return { text: 'Closed', tone: 'neutral' };
+      <!-- Align (dropdown) -->
+      <span class="ql-formats">
+        <select class="ql-color tooltip" data-tip="text color" aria-label="Text color"></select>
+        <select class="ql-align" aria-label="Align">
+          <option selected></option>
+          <option value="center"></option>
+          <option value="right"></option>
+          <option value="justify"></option>
+        </select>
+        <button class="ql-list tooltip" data-tip="Numbered list" value="ordered" aria-label="Numbered list"></button>
+        <button class="ql-list tooltip" data-tip="Bulleted list" value="bullet" aria-label="Bulleted list"></button>
+      </span>
+
+      <!-- Link / Attach / Image -->
+      <span class="ql-formats">
+        <button class="ql-attach tooltip" data-tip="Attach files" type="button" aria-label="Attach files">
+          <pc-icon name="attach-fat" [size]="4"></pc-icon></button
+        ><button class="ql-link tooltip" data-tip="Insert link" aria-label="Insert link"></button>
+        <button class="ql-image tooltip" data-tip="Insert image" aria-label="Insert image"></button>
+      </span>
+
+      <!-- Remove formatting -->
+      <span class="ql-formats">
+        <button class="ql-clean tooltip" data-tip="Clear formatting" aria-label="Clear formatting"></button>
+      </span>
+    </div>
+
+    <!-- Quill editor (scrolls when content grows) -->
+    <quill-editor
+      class="compose-quill flex-1"
+      [modules]="modules"
+      [formControl]="form.controls.html"
+      [placeholder]="'Write your message…'"
+      (onEditorCreated)="onEditorCreated($event)"
+    ></quill-editor>
+  </div>
+  <input #fileInput type="file" class="hidden" multiple (change)="onFileChoose($event)" />
+
+  <!-- Attachment list -->
+  @if (attachments().length) {
+  <ul class="mt-2 space-y-1 max-h-40">
+    <li class="text-xs opacity-70">Attachments: {{ attachments().length }} file(s) • {{ totalSize()| fileSize }}</li>
+    @for (f of attachments(); track f.name + ':' + f.size + ':' + f.lastModified; let i = $index) {
+    <li class="flex items-center justify-between rounded-md border border-base-300 px-2 py-1">
+      <div class="flex items-center gap-2 min-w-0">
+        <pc-attachment-icon [filename]="f.name" class="shrink-0"></pc-attachment-icon>
+        <span class="truncate">{{ f.name }}</span>
+        <span class="text-xs opacity-60">({{ (f.size / 1024) | number:'1.0-0' }} KB)</span>
+      </div>
+
+      <pc-icon
+        class="cursor-pointer hover:text-error tooltip tooltip-left"
+        data-tip="Remove attachment"
+        name="attach-file-off"
+        [size]="4"
+        (click)="removeAttachment(i)"
+      ></pc-icon>
+    </li>
+    }
+  </ul>
   }
-
-  const target = inputs.emailsHours;
-  const received = inputs.receivedAt;
-  const workingDays = parseWorkingDays(inputs.workingDays);
-
-  // Nothing truthful to compute without a received time, a target and a schedule.
-  if (received == null || target == null || !Number.isFinite(target) || target <= 0 || workingDays.length === 0) {
-    return null;
-  }
-
-  const start = inputs.workingHoursStart || '09:00';
-  const end = inputs.workingHoursEnd || '17:00';
-
-  const elapsedHours = calculateWorkingTimeMs(received, now, workingDays, start, end) / MS_PER_HOUR;
-  const remaining = target - elapsedHours;
-  const targetLabel = Math.round(target);
-
-  if (remaining <= 0) {
-    const overdueBy = Math.max(1, Math.ceil(-remaining));
-    return { text: `First response overdue by ${overdueBy}h · ${targetLabel}h SLA`, tone: 'error' };
-  }
-
-  const dueIn = Math.max(1, Math.ceil(remaining));
-  const tone: SlaTone = remaining <= target * WARNING_REMAINING_FRACTION ? 'warning' : 'neutral';
-  return { text: `First response due in ${dueIn}h · ${targetLabel}h SLA`, tone };
-}
+</form>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.ts
@@ -3969,217 +3864,6 @@ export class EmailCreateTaskDialog {
       .split(' ')
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
       .join(' ');
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.html
-
-```html
-@if (collapsed()) {
-<!-- Collapsed: 48px strip keeps IDENTITY (avatar initials), never nothing (§2) -->
-<aside class="box-border flex w-12 shrink-0 flex-col items-center gap-3 border-l border-base-300 bg-base-200 py-3">
-  <button
-    type="button"
-    class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
-    [attr.data-tip]="'Expand person context — ' + displayName()"
-    aria-label="Expand person context"
-    (click)="toggle()"
-  >
-    <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-  </button>
-  <div
-    class="tooltip tooltip-left flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
-    [attr.data-tip]="displayName()"
-  >
-    {{ initial() }}
-  </div>
-</aside>
-} @else {
-<!-- Expanded: 236px context card -->
-<aside
-  class="box-border flex w-[236px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-base-300 bg-base-200 p-4"
->
-  <div class="flex items-center justify-between">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-base-content/45">Person context</span>
-    <button
-      type="button"
-      class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
-      data-tip="Collapse person context"
-      aria-label="Collapse person context"
-      (click)="toggle()"
-    >
-      <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-    </button>
-  </div>
-
-  <!-- Identity -->
-  <div class="flex flex-col items-start gap-2">
-    <div
-      class="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary select-none"
-    >
-      {{ initial() }}
-    </div>
-    @if (person(); as p) {
-    <a
-      [routerLink]="['/people', p.id]"
-      class="text-[15px] font-semibold text-base-content underline decoration-primary/20 decoration-1 underline-offset-[3px] transition-colors hover:text-primary"
-    >
-      {{ displayName() }}
-    </a>
-    } @else {
-    <span class="text-[15px] font-semibold text-base-content">{{ displayName() }}</span>
-    } @if (subline()) {
-    <span class="text-xs text-base-content/60">{{ subline() }}</span>
-    }
-  </div>
-
-  @if (person(); as p) {
-  <!-- Contact card -->
-  <div class="flex flex-col gap-1.5 rounded-lg border border-base-300 bg-base-100 p-3 text-xs">
-    @if (p.email) {
-    <div class="flex items-center gap-2 min-w-0">
-      <pc-icon name="envelope" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
-      <span class="truncate">{{ p.email }}</span>
-    </div>
-    } @if (email()?.date_sent) {
-    <div class="flex items-center gap-2 text-base-content/60">
-      <pc-icon name="clock" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
-      <span>Last inbound {{ email()!.date_sent | timeAgo:{ style: 'long' } }}</span>
-    </div>
-    }
-  </div>
-
-  <!-- Tags -->
-  <div class="flex flex-col gap-1.5">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Tags</span>
-    @if (tags().length) {
-    <div class="flex flex-wrap gap-1.5">
-      @for (t of tags(); track t.name) {
-      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-      }
-    </div>
-    } @else {
-    <span class="text-xs text-base-content/40">None yet</span>
-    }
-  </div>
-
-  <!-- Issues of interest -->
-  <div class="flex flex-col gap-1.5">
-    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Issues of interest</span>
-    @if (issues().length) {
-    <div class="flex flex-wrap gap-1.5">
-      @for (t of issues(); track t.name) {
-      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-      }
-    </div>
-    } @else {
-    <span class="text-xs text-base-content/40">None yet</span>
-    }
-  </div>
-
-  <a [routerLink]="['/people', p.id]" class="btn btn-primary btn-sm mt-1 w-full">
-    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-    Open record
-  </a>
-  } @else {
-  <!-- No matched person: guide to the exit, don't dead-end (§3) -->
-  <div
-    class="flex flex-col items-start gap-2 rounded-lg border border-base-300 bg-base-100 p-3 text-xs text-base-content/60"
-  >
-    <pc-icon name="user-circle" [size]="6" class="text-base-content/30"></pc-icon>
-    <span>This sender isn't matched to a person record yet.</span>
-  </div>
-  }
-</aside>
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailStateStore } from '../../services/store/email-state.store';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-interface RailTag {
-  color?: string | null;
-  name: string;
-}
-
-interface RailPerson {
-  company_name?: string | null;
-  email?: string | null;
-  first_name?: string | null;
-  id: string;
-  issues?: RailTag[];
-  last_name?: string | null;
-  tags?: RailTag[];
-}
-
-/**
- * Person context rail (§5) — a 236px card giving the inbox a "who am I talking to"
- * answer. Reuses the person already resolved for the email header; adds no backend.
- * Collapses to a 48px strip that keeps the avatar initials (identity, never hidden).
- */
-@Component({
-  selector: 'pc-email-person-rail',
-  imports: [RouterLink, Icon, TagItem, TimeAgoPipe],
-  templateUrl: 'email-person-rail.html',
-})
-export class EmailPersonRail {
-  protected readonly stateStore = inject(EmailStateStore);
-  private readonly store = inject(EmailsStore);
-
-  public readonly email = input<EmailType | null>(null);
-
-  protected readonly collapsed = this.stateStore.personRailCollapsed;
-
-  protected readonly person = computed<RailPerson | null>(() => {
-    const e = this.email();
-    if (!e) return null;
-    const header = this.store.getEmailHeaderById(e.id)();
-    const p = (header as { person?: RailPerson } | null | undefined)?.person;
-    return p ?? null;
-  });
-
-  /** Falls back to the raw sender when no person record is matched. */
-  protected readonly displayName = computed<string>(() => {
-    const p = this.person();
-    if (p) {
-      const full = `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim();
-      if (full) return full;
-      if (p.email) return p.email;
-    }
-    const e = this.email();
-    return e?.from_email ?? 'Unknown sender';
-  });
-
-  protected readonly initial = computed<string>(() => (this.displayName()[0] ?? '?').toUpperCase());
-
-  /** Honest role subline: only what the tags/fields actually say (§0 — no faked data). */
-  protected readonly subline = computed<string | null>(() => {
-    const p = this.person();
-    if (!p) return null;
-    const parts: string[] = [];
-    const tagNames = (p.tags ?? []).map((t) => t.name.toLowerCase());
-    if (tagNames.includes('donor')) parts.push('Donor');
-    else if (tagNames.includes('volunteer')) parts.push('Volunteer');
-    if (p.company_name) parts.push(p.company_name);
-    return parts.length ? parts.join(' · ') : null;
-  });
-
-  protected readonly tags = computed<RailTag[]>(() => this.person()?.tags ?? []);
-  protected readonly issues = computed<RailTag[]>(() => this.person()?.issues ?? []);
-
-  protected toggle(): void {
-    this.stateStore.togglePersonRail();
   }
 }
 ```
@@ -11068,305 +10752,6 @@ export class DomainSettingsComponent implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.html
-
-```html
-@if (open()) {
-<div class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
-  <!-- backdrop click closes -->
-  <button type="button" class="absolute inset-0 cursor-default" aria-label="Close settings" (click)="close()"></button>
-
-  <div
-    class="animate-drop relative z-[71] w-full max-w-[430px] rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Settings"
-  >
-    <!-- Header: scope stated up front (§5a) -->
-    <div class="flex items-start gap-3">
-      <div
-        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
-      >
-        {{ initial() }}
-      </div>
-      <div class="min-w-0 flex-1">
-        <h2 class="text-lg font-bold leading-tight">Settings</h2>
-        <p class="text-xs text-base-content/60">Personal to you — nothing here affects teammates</p>
-      </div>
-      <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="Close" (click)="close()">
-        <pc-icon name="x-mark" [size]="5"></pc-icon>
-      </button>
-    </div>
-
-    <!-- NOTIFICATIONS matrix -->
-    <div class="mt-5">
-      <div class="flex items-end gap-2">
-        <span class="flex-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45"
-          >Notifications</span
-        >
-        <span class="w-10 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-base-content/45"
-          >Email</span
-        >
-        <span class="w-10 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-base-content/45"
-          >In-app</span
-        >
-      </div>
-      <div class="mt-2 flex flex-col">
-        @for (row of rows; track row.emailKey) {
-        <div class="flex items-center gap-2 py-2">
-          <div class="min-w-0 flex-1">
-            <div class="text-sm font-medium text-base-content">{{ row.label }}</div>
-            <div class="text-xs text-base-content/55">{{ row.helper }}</div>
-          </div>
-          <label class="flex w-10 justify-center">
-            <input
-              type="checkbox"
-              class="checkbox checkbox-primary checkbox-sm"
-              [checked]="isOn(row.emailKey)"
-              (change)="toggle(row.emailKey)"
-              [attr.aria-label]="row.label + ' — email'"
-            />
-          </label>
-          <label class="flex w-10 justify-center">
-            <input
-              type="checkbox"
-              class="checkbox checkbox-primary checkbox-sm"
-              [checked]="isOn(row.inAppKey)"
-              (change)="toggle(row.inAppKey)"
-              [attr.aria-label]="row.label + ' — in-app'"
-            />
-          </label>
-        </div>
-        }
-      </div>
-    </div>
-
-    <div class="my-4 border-t border-base-200"></div>
-
-    <!-- APPEARANCE -->
-    <div>
-      <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Appearance</span>
-      <div class="mt-3 flex items-center justify-between">
-        <span class="text-sm font-medium">Theme</span>
-        <div class="join">
-          @for (opt of themeOptions; track opt.value) {
-          <button
-            type="button"
-            class="btn join-item btn-sm"
-            [class.btn-primary]="theme.getPreference() === opt.value"
-            (click)="setThemePreference(opt.value)"
-          >
-            {{ opt.label }}
-          </button>
-          }
-        </div>
-      </div>
-    </div>
-
-    <div class="my-4 border-t border-base-200"></div>
-
-    <!-- PASSKEYS -->
-    <div>
-      <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Passkeys</span>
-      <div class="mt-2">
-        <pc-passkey-settings></pc-passkey-settings>
-      </div>
-    </div>
-
-    <div class="my-4 border-t border-base-200"></div>
-
-    <!-- Footer contract (§5a) -->
-    <p class="text-xs" [class.text-base-content/45]="!savedJustNow()" [class.text-success]="savedJustNow()">
-      {{ savedJustNow() ? 'Saved just now' : 'Changes apply instantly — nothing to save' }}
-    </p>
-  </div>
-</div>
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.ts
-
-```typescript
-import { Component, computed, effect, inject, model, output, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
-import { AuthService } from '../../../auth/auth-service';
-import { UserService } from '../../../services/user.service';
-import { ThemePreference, ThemeService } from '../../../layout/theme/theme-service';
-import { PasskeySettingsComponent } from '../security/passkey-settings';
-
-interface NotifRow {
-  emailKey: string;
-  helper: string;
-  inAppKey: string;
-  label: string;
-}
-
-const NOTIF_ROWS: NotifRow[] = [
-  {
-    label: 'Mentioned in comment',
-    helper: 'When someone mentions you in a thread',
-    emailKey: 'mention_in_comment',
-    inAppKey: 'mention_in_comment_in_app',
-  },
-  {
-    label: 'Task assigned',
-    helper: 'When a task is assigned to you',
-    emailKey: 'task_assigned',
-    inAppKey: 'task_assigned_in_app',
-  },
-  {
-    label: 'Task due today / overdue',
-    helper: 'Daily reminder of active tasks due',
-    emailKey: 'task_due',
-    inAppKey: 'task_due_in_app',
-  },
-  {
-    label: 'Person assigned',
-    helper: 'When contact ownership is assigned to you',
-    emailKey: 'person_assigned',
-    inAppKey: 'person_assigned_in_app',
-  },
-  {
-    label: 'Export ready',
-    helper: 'Download link when a CSV export finishes',
-    emailKey: 'export_ready',
-    inAppKey: 'export_ready_in_app',
-  },
-  {
-    label: 'Import summary',
-    helper: 'Completion stats after a spreadsheet import',
-    emailKey: 'import_summary',
-    inAppKey: 'import_summary_in_app',
-  },
-];
-
-/**
- * Personal Settings popup (§5a) — instant apply, no Save/Reset. Everything here is
- * scoped to the signed-in user: notification matrix, appearance (theme + density),
- * and passkeys. Reuses the notification-preferences model and PasskeySettings.
- */
-@Component({
-  selector: 'pc-personal-settings-dialog',
-  imports: [Icon, PasskeySettingsComponent],
-  templateUrl: 'personal-settings-dialog.html',
-})
-export class PersonalSettingsDialog {
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly alerts = inject(AlertService);
-  protected readonly theme = inject(ThemeService);
-
-  protected readonly themeOptions: { label: string; value: ThemePreference }[] = [
-    { label: 'Light', value: 'light' },
-    { label: 'Dark', value: 'dark' },
-    { label: 'System', value: 'system' },
-  ];
-
-  /** Two-way open state, driven by the navbar avatar menu. */
-  public readonly open = model<boolean>(false);
-  public readonly closed = output<void>();
-
-  protected readonly rows = NOTIF_ROWS;
-
-  private readonly user = signal<IAuthUserDetail | null>(null);
-  private loadStarted = false;
-  protected readonly prefs = signal<Record<string, boolean>>({});
-  protected readonly savedJustNow = signal<boolean>(false);
-
-  protected readonly initial = computed<string>(() => {
-    const u = this.user();
-    const src = u?.first_name || u?.email || '?';
-    return src.charAt(0).toUpperCase();
-  });
-
-  constructor() {
-    // Load lazily on first open (the dialog is always mounted in the navbar) and
-    // reset the footer contract to its resting state each time it opens.
-    effect(() => {
-      if (!this.open()) return;
-      this.savedJustNow.set(false);
-      if (!this.loadStarted) {
-        this.loadStarted = true;
-        void this.load();
-      }
-    });
-  }
-
-  protected isOn(key: string): boolean {
-    return this.prefs()[key] ?? true;
-  }
-
-  protected toggle(key: string): void {
-    this.prefs.update((p) => ({ ...p, [key]: !(p[key] ?? true) }));
-    void this.persistNotifications();
-  }
-
-  protected setThemePreference(next: ThemePreference): void {
-    if (this.theme.getPreference() === next) return;
-    this.theme.setPreference(next);
-    this.flashSaved();
-  }
-
-  protected close(): void {
-    this.open.set(false);
-    this.closed.emit();
-  }
-
-  private async load(): Promise<void> {
-    try {
-      const current = await this.auth.getCurrentUser();
-      if (!current) return;
-      const detail = await this.userService.getProfileById(current.id);
-      this.user.set(detail);
-      const p = detail.notification_preferences ?? {};
-      const next: Record<string, boolean> = {};
-      for (const row of NOTIF_ROWS) {
-        next[row.emailKey] = (p as Record<string, boolean | undefined>)[row.emailKey] ?? true;
-        next[row.inAppKey] = (p as Record<string, boolean | undefined>)[row.inAppKey] ?? true;
-      }
-      this.prefs.set(next);
-    } catch (err) {
-      console.error('Failed to load personal settings', err);
-    }
-  }
-
-  private async persistNotifications(): Promise<void> {
-    const user = this.user();
-    if (!user) return;
-    const p = this.prefs();
-    const payload: UpdateAuthUserType = {
-      notification_preferences: {
-        mention_in_comment: p['mention_in_comment'] ?? true,
-        mention_in_comment_in_app: p['mention_in_comment_in_app'] ?? true,
-        task_assigned: p['task_assigned'] ?? true,
-        task_assigned_in_app: p['task_assigned_in_app'] ?? true,
-        task_due: p['task_due'] ?? true,
-        task_due_in_app: p['task_due_in_app'] ?? true,
-        person_assigned: p['person_assigned'] ?? true,
-        person_assigned_in_app: p['person_assigned_in_app'] ?? true,
-        export_ready: p['export_ready'] ?? true,
-        export_ready_in_app: p['export_ready_in_app'] ?? true,
-        import_summary: p['import_summary'] ?? true,
-        import_summary_in_app: p['import_summary_in_app'] ?? true,
-      },
-    };
-    try {
-      await this.userService.updateUserProfile(user.id, payload);
-      this.flashSaved();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not save your preference.');
-    }
-  }
-
-  private flashSaved(): void {
-    this.savedJustNow.set(true);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.html
 
 ```html
@@ -13924,102 +13309,6 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
 }
 ```
 
-## File: apps/frontend/src/app/layout/theme/theme-service.ts
-
-```typescript
-import { signal, Service, inject, effect } from '@angular/core';
-import { SettingsService } from '../../experiences/settings/services/settings-service';
-
-/** What the user asked for; 'system' follows the OS `prefers-color-scheme`. */
-export type ThemePreference = 'light' | 'dark' | 'system';
-
-@Service()
-export class ThemeService {
-  private readonly theme = signal<'light' | 'dark'>('light');
-  /** The user's stated preference (drives the settings segmented control). */
-  private readonly preference = signal<ThemePreference>('system');
-  private readonly settingsSvc = inject(SettingsService, { optional: true });
-  private lastDefaultTheme: string | null = null;
-
-  constructor() {
-    this.updateTheme();
-
-    window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', () => {
-      this.updateTheme();
-    });
-
-    const svc = this.settingsSvc;
-    if (svc) {
-      effect(() => {
-        // Access the snapshot signal to trigger reactive updates
-        svc.snapshotSignal();
-        this.updateTheme();
-      });
-    }
-  }
-
-  /** The resolved theme actually applied to the UI. */
-  public getTheme() {
-    return this.theme();
-  }
-
-  /** The user's stated preference: 'light', 'dark', or 'system'. */
-  public getPreference(): ThemePreference {
-    return this.preference();
-  }
-
-  public toggleTheme() {
-    this.setPreference(this.theme() === 'light' ? 'dark' : 'light');
-  }
-
-  public setPreference(pref: ThemePreference) {
-    // 'system' is stored explicitly so it wins over any workspace default and
-    // follows the OS live via the matchMedia listener.
-    localStorage.setItem('pc-theme', pref);
-    this.updateTheme();
-  }
-
-  private updateTheme() {
-    let defaultTheme: string | null = null;
-    if (this.settingsSvc) {
-      defaultTheme = this.settingsSvc.getValue<string>('appearance.theme') ?? null;
-      if (defaultTheme === 'light' || defaultTheme === 'dark') {
-        if (this.lastDefaultTheme !== null && this.lastDefaultTheme !== defaultTheme) {
-          localStorage.removeItem('pc-theme');
-        }
-        this.lastDefaultTheme = defaultTheme;
-      }
-    }
-
-    const stored = localStorage.getItem('pc-theme');
-    if (stored === 'light' || stored === 'dark') {
-      this.preference.set(stored);
-      this.theme.set(stored);
-      return;
-    }
-
-    if (stored === 'system') {
-      this.preference.set('system');
-      this.theme.set(this.systemTheme());
-      return;
-    }
-
-    // No personal override: follow the workspace default, else the OS. Reported
-    // to the UI as 'system' since the user hasn't pinned a specific theme.
-    this.preference.set('system');
-    if (defaultTheme === 'light' || defaultTheme === 'dark') {
-      this.theme.set(defaultTheme);
-      return;
-    }
-    this.theme.set(this.systemTheme());
-  }
-
-  private systemTheme(): 'light' | 'dark' {
-    return window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
-  }
-}
-```
-
 ## File: apps/frontend/src/app/services/api/api-error.ts
 
 ```typescript
@@ -16399,89 +15688,283 @@ export class MergeSummaryComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
+## File: apps/frontend/src/app/experiences/emails/services/store/email-state.store.ts
 
-```html
-<div class="flex text-sm bg-base-100 h-full overflow-hidden">
-  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
-  <div [class]="folderPanelClass()">
-    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
-  </div>
+```typescript
+import { computed, signal, Service, linkedSignal } from '@angular/core';
 
-  <!-- Email list panel -->
-  @if (!isBodyExpanded()) {
-  <div [class]="listPanelClass()">
-    <!-- Mobile back button -->
-    <div class="md:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
-      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Folders
-      </button>
-    </div>
-    <pc-email-list
-      class="flex-1 min-h-0 block"
-      (emailSelected)="onEmail($event!)"
-      (reply)="onReply($event)"
-      (replyAll)="onReplyAll($event)"
-      (forward)="onForward($event)"
-    ></pc-email-list>
-  </div>
+import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Service()
+export class EmailStateStore {
+  public readonly activeFolderId = signal<string | null>(null);
+
+  public readonly currentSelectedEmailId = linkedSignal<string | null, string | null>({
+    source: () => this.activeFolderId(),
+    computation: () => null,
+  });
+
+  public readonly emailsById = signal<Record<string, EmailType>>({});
+
+  public readonly currentSelectedEmail = computed(() => {
+    const id = this.currentSelectedEmailId();
+    return id ? (this.emailsById()[id] ?? null) : null;
+  });
+
+  public readonly emailIdsByFolderId = signal<Record<string, string[]>>({});
+
+  public readonly hasAttachmentByEmailId = signal<Record<string, boolean | undefined>>({});
+
+  public readonly isBodyExpanded = signal<boolean>(false);
+
+  /** Person context rail (§5): collapsed = 48px identity strip, expanded = 236px card. */
+  public readonly personRailCollapsed = signal<boolean>(false);
+
+  public readonly mobilePanelView = signal<'folders' | 'list' | 'detail'>('folders');
+
+  public togglePersonRail(): void {
+    this.personRailCollapsed.update((v) => !v);
   }
 
-  <!-- Right pane: compose OR details -->
-  <div [class]="detailPanelClass()">
-    <!-- Mobile back button -->
-    <div class="md:hidden flex items-center mb-2 shrink-0">
-      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Back
-      </button>
-    </div>
+  public clearHasAttachment(emailId: string) {
+    this.hasAttachmentByEmailId.update((m) => {
+      const next = { ...m };
+      delete next[emailId];
+      return next;
+    });
+  }
 
-    <div class="flex-1 min-h-0 overflow-hidden">
-      @if (isComposing()) {
-      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
-        <pc-compose-email
-          #composer
-          class="h-full"
-          [draftId]="draftIdToLoad()"
-          [initial]="composePrefill()"
-          (finished)="closeCompose()"
-        ></pc-compose-email>
-      </div>
-      } @else {
-      <pc-email-details
-        class="h-full"
-        [email]="selectedEmail()"
-        (reply)="onReply($event)"
-        (replyAll)="onReplyAll($event)"
-        (forward)="onForward($event)"
-      ></pc-email-details>
+  public emailsInFolderWithFlags(folderId: string) {
+    return computed(() => {
+      const ids = this.emailIdsByFolderId()[folderId] ?? [];
+      const emailsMap = this.emailsById();
+      const flags = this.hasAttachmentByEmailId();
+      return ids
+        .map((id) => emailsMap[id])
+        .filter(Boolean)
+        .map((e) => ({ ...e!, has_attachment: flags[e!.id] ?? false }));
+    });
+  }
+
+  public hasAttachment(emailId: string) {
+    return computed<boolean | undefined>(() => this.hasAttachmentByEmailId()[emailId]);
+  }
+
+  public mergeHasRows(rows: Array<{ email_id: string; has: boolean }>, fillFalseForIds?: string[]) {
+    const map: Record<string, boolean> = {};
+    for (const r of rows) map[String(r.email_id)] = !!r.has;
+
+    // Optional: mark any requested ids that didn't come back as false
+    if (fillFalseForIds?.length) {
+      for (const id of fillFalseForIds) if (!(id in map)) map[id] = false;
+    }
+
+    this.setManyHasAttachment(map);
+  }
+
+  public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
+    const prev = this.readEmail(emailKey);
+    if (!prev) return undefined;
+    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
+    return prev;
+  }
+
+  public readEmail(emailKey: string): EmailType | undefined {
+    return this.emailsById()[emailKey];
+  }
+
+  public removeEmail(emailId: string): void {
+    // Remove from normalized map
+    this.emailsById.update((m) => {
+      const next = { ...m };
+      delete next[emailId];
+      return next;
+    });
+
+    // Remove from folder lists
+    this.emailIdsByFolderId.update((map) => {
+      const next: Record<string, string[]> = {};
+      for (const [fid, ids] of Object.entries(map)) {
+        next[fid] = ids.filter((id) => id !== emailId);
       }
-    </div>
-  </div>
+      return next;
+    });
 
-  <!-- Person context rail (§5) — desktop only; mobile keeps stacked panes -->
-  @if (showPersonRail()) {
-  <pc-email-person-rail class="hidden shrink-0 md:block" [email]="selectedEmail()"></pc-email-person-rail>
-  } @if (isBodyExpanded() && selectedEmail()) {
-  <!-- Keep your existing BODY overlay when expanded -->
-  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
-    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
-      <div class="flex items-center justify-end">
-        <button class="btn btn-ghost btn-md" (click)="toggleExpanded()">
-          <pc-icon name="collapse-content" class="mr-1"></pc-icon>Collapse
-        </button>
-      </div>
-      <div class="flex-1 min-h-0">
-        <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3">
-          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
-        </div>
-      </div>
-    </div>
-  </div>
+    // Clear attachment flag
+    this.clearHasAttachment(emailId);
   }
-</div>
+
+  public replaceEmail(emailKey: string, value: EmailType): void {
+    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
+  }
+
+  public selectEmail(email: EmailType | { id: EmailId } | null): void {
+    this.currentSelectedEmailId.set(email ? String(email.id) : null);
+  }
+
+  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[], append = false): void {
+    const ids: string[] = [];
+    const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
+
+    this.emailsById.update((map) => {
+      const next = { ...map };
+      for (const s of serverEmails) {
+        const id = String(s.id);
+        ids.push(id);
+
+        // reuse your existing helper; prefer hasMap[id] when provided
+        const { has, count } = deriveHasAndCount(s);
+        flagsMap[id] = has;
+
+        const e: EmailType = {
+          id,
+          folder_id: String(s.folder_id),
+          updated_at: new Date(s.updated_at),
+          date_sent: s.date_sent ? new Date(s.date_sent) : undefined,
+          is_favourite: !!s.is_favourite,
+          attachment_count: count,
+          status: (s as any).status || 'open',
+          from_email: s.from_email ?? undefined,
+          to_email: s.to_email ?? undefined,
+          subject: s.subject ?? undefined,
+          preview: s.preview ?? undefined,
+          assigned_to: s.assigned_to ?? undefined,
+          has_attachment: has, // keep in the normalized email too
+          is_read: !!(s as any).is_read,
+          sender_first_name: s.sender_first_name ?? undefined,
+          sender_last_name: s.sender_last_name ?? undefined,
+        };
+
+        next[id] = e;
+      }
+      return next;
+    });
+
+    this.emailIdsByFolderId.update((m) => {
+      const existing = append ? (m[folderId] ?? []) : [];
+      const combined = [...existing];
+      for (const id of ids) {
+        if (!combined.includes(id)) {
+          combined.push(id);
+        }
+      }
+      return { ...m, [folderId]: combined };
+    });
+
+    // seed/refresh the per-id flags cache
+    this.setManyHasAttachment(flagsMap);
+  }
+
+  public setHasAttachment(emailId: string, hasAttachment: boolean | undefined) {
+    this.hasAttachmentByEmailId.update((m) => ({ ...m, [emailId]: hasAttachment }));
+  }
+
+  public setManyHasAttachment(map: Record<string, boolean | undefined>) {
+    this.hasAttachmentByEmailId.update((prev) => ({ ...prev, ...map }));
+  }
+
+  public toggleBodyExpanded(): void {
+    this.isBodyExpanded.update((v) => !v);
+  }
+}
+
+export type EmailId = string | number;
+
+function deriveHasAndCount(s: ServerEmail): { has: boolean; count: number } {
+  if (typeof s.has_attachment === 'boolean') {
+    const n = toNum(s.attachment_count);
+    // if backend didn’t send a count, synthesize a minimal one
+    return { has: s.has_attachment, count: n ?? (s.has_attachment ? 1 : 0) };
+  }
+  const count = toNum(s.attachment_count);
+  return { has: count > 0, count };
+}
+
+function toNum(n: unknown): number {
+  if (typeof n === 'bigint') return Number(n);
+  if (typeof n === 'string') return Number(n) || 0;
+  if (typeof n === 'number') return n;
+  return 0;
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/services/email-sla.ts
+
+```typescript
+import { calculateWorkingTimeMs } from '../../../../../../../libs/common/src/lib/sla';
+
+const MS_PER_HOUR = 3_600_000;
+/** Below this fraction of the target still remaining, the pill turns warning-tinted. */
+const WARNING_REMAINING_FRACTION = 0.25;
+
+export type SlaTone = 'neutral' | 'warning' | 'error';
+
+export interface SlaPill {
+  text: string;
+  tone: SlaTone;
+}
+
+export interface SlaInputs {
+  /** Workspace SLA target for an email reply, in working hours. */
+  emailsHours: number | null | undefined;
+  /** When the inbound email was received. */
+  receivedAt: Date | null | undefined;
+  status: string | null | undefined;
+  /** '09:00' */
+  workingHoursEnd: string | null | undefined;
+  /** '17:00' */
+  workingHoursStart: string | null | undefined;
+  /** '1,2,3,4,5' — day numbers, 0=Sun … 6=Sat. */
+  workingDays: string | null | undefined;
+}
+
+function parseWorkingDays(raw: string | null | undefined): number[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+}
+
+/**
+ * Honest per-thread SLA pill (§5) computed only from data we already have:
+ * the received timestamp + the workspace SLA config. We do NOT know the actual
+ * first-response time, so a closed thread reports only "Closed" — never a
+ * fabricated "sent in 1.2h". Returns null when there's nothing truthful to show.
+ */
+export function computeEmailSla(inputs: SlaInputs, now: Date = new Date()): SlaPill | null {
+  const status = (inputs.status ?? 'open').toLowerCase();
+
+  if (status === 'closed') {
+    return { text: 'Closed', tone: 'neutral' };
+  }
+
+  const target = inputs.emailsHours;
+  const received = inputs.receivedAt;
+  const workingDays = parseWorkingDays(inputs.workingDays);
+
+  // Nothing truthful to compute without a received time, a target and a schedule.
+  if (received == null || target == null || !Number.isFinite(target) || target <= 0 || workingDays.length === 0) {
+    return null;
+  }
+
+  const start = inputs.workingHoursStart || '09:00';
+  const end = inputs.workingHoursEnd || '17:00';
+
+  const elapsedHours = calculateWorkingTimeMs(received, now, workingDays, start, end) / MS_PER_HOUR;
+  const remaining = target - elapsedHours;
+  const targetLabel = Math.round(target);
+
+  if (remaining <= 0) {
+    const overdueBy = Math.max(1, Math.ceil(-remaining));
+    return { text: `First response overdue by ${overdueBy}h · ${targetLabel}h SLA`, tone: 'error' };
+  }
+
+  const dueIn = Math.max(1, Math.ceil(remaining));
+  const tone: SlaTone = remaining <= target * WARNING_REMAINING_FRACTION ? 'warning' : 'neutral';
+  return { text: `First response due in ${dueIn}h · ${targetLabel}h SLA`, tone };
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-comments/email-comments.html
@@ -16772,506 +16255,215 @@ export class EmailComments {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.css
-
-```css
-::ng-deep .ql-tooltip {
-  left: unset !important;
-}
-
-::ng-deep .ql-toolbar.ql-snow {
-  white-space: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.html
+## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.html
 
 ```html
-<form class="flex flex-col gap-3 h-full overflow-y-auto pr-3" (submit)="$event.preventDefault(); onSend()">
-  <!-- Header -->
-  <div class="flex justify-between">
-    <div class="text-base"></div>
-    <div class="flex items-center gap-2">
-      <button type="button" class="btn btn-ghost btn-md hover:btn-error" (click)="delete()">
-        <pc-icon name="trash" class="mr-1"></pc-icon>
-      </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-secondary" (click)="discard()">
-        <pc-icon name="x-circle" class="mr-1"></pc-icon>
-      </button>
-      <button type="button" class="btn btn-ghost btn-md hover:btn-primary" (click)="saveDraft()">
-        <pc-icon name="save" class="mr-1"></pc-icon>
-      </button>
-      <button type="submit" class="btn btn-primary btn-md" [disabled]="sending() || !validTo()">
-        <pc-icon name="paper-airplane" class="mr-1"></pc-icon>Send
-      </button>
-    </div>
-  </div>
-
-  <!-- Collapsible Recipients/Subject -->
-  <div class="border border-neutral rounded-md">
-    <!-- Header row with toggle -->
-    <div class="flex items-center justify-between cursor-pointer px-3 py-2 bg-base-200" (click)="toggleHeader()">
-      <span class="font-medium">Recipients & Subject</span>
-      <pc-swap
-        swapOnIcon="expand-content"
-        swapOffIcon="collapse-content"
-        animation="flip"
-        [checked]="showHeader()"
-        [size]="4"
-        (click)="toggleHeader()"
-      ></pc-swap>
-    </div>
-
-    <!-- Collapsible body -->
-    @if (showHeader()) {
-    <div class="p-3 space-y-2">
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
-        <input
-          class="input-pplcrm w-full"
-          placeholder="To (comma or semicolon separated)"
-          [formControl]="form.controls.to"
-        />
-        <input class="input-pplcrm w-full" placeholder="Cc" [formControl]="form.controls.cc" />
-        <input class="input-pplcrm w-full" placeholder="Bcc" [formControl]="form.controls.bcc" />
-      </div>
-
-      <input class="input-pplcrm p-3 w-full" placeholder="Subject" [formControl]="form.controls.subject" />
-    </div>
-    }
-  </div>
-
-  <!-- Editor card: ONE ROW toolbar + scrollable editor -->
-  <div class="rounded-lg border border-base-300 flex flex-col h-full">
-    <!-- Custom Quill toolbar (single row, no wrap, horizontal scroll) -->
-    <div [id]="toolbarId" class="ql-toolbar ql-snow border-b">
-      <!-- Undo / Redo -->
-      <span class="ql-formats">
-        <button class="ql-undo tooltip" data-tip="Undo" type="button" aria-label="Undo">
-          <pc-icon name="undo-fat" [size]="4"></pc-icon>
-        </button>
-        <button class="ql-redo tooltip" data-tip="Redo" type="button" aria-label="Redo">
-          <pc-icon name="redo-fat" [size]="4"></pc-icon>
-        </button>
-      </span>
-
-      <!-- Font / Size -->
-      @if (showHeader()) {
-      <span class="ql-formats">
-        <select class="ql-font" aria-label="Font">
-          <option selected></option>
-          <option value="serif"></option>
-          <option value="monospace"></option>
-        </select>
-        <select class="ql-size" aria-label="Size">
-          <option value="small"></option>
-          <option selected></option>
-          <option value="large"></option>
-          <option value="huge"></option>
-        </select>
-      </span>
-      }
-
-      <!-- Bold / Italic / Underline / Strike -->
-      <span class="ql-formats">
-        <button class="ql-bold tooltip" data-tip="Bold" aria-label="Bold"></button>
-        <button class="ql-italic tooltip" data-tip="Italic" aria-label="Italic"></button>
-        <button class="ql-underline tooltip" data-tip="Underline" aria-label="Underline"></button>
-        <button class="ql-strike tooltip" data-tip="Strikethrough" aria-label="Strikethrough"></button>
-        <button class="ql-blockquote tooltip" data-tip="quote" aria-label="Blockquote"></button>
-      </span>
-
-      <!-- Align (dropdown) -->
-      <span class="ql-formats">
-        <select class="ql-color tooltip" data-tip="text color" aria-label="Text color"></select>
-        <select class="ql-align" aria-label="Align">
-          <option selected></option>
-          <option value="center"></option>
-          <option value="right"></option>
-          <option value="justify"></option>
-        </select>
-        <button class="ql-list tooltip" data-tip="Numbered list" value="ordered" aria-label="Numbered list"></button>
-        <button class="ql-list tooltip" data-tip="Bulleted list" value="bullet" aria-label="Bulleted list"></button>
-      </span>
-
-      <!-- Link / Attach / Image -->
-      <span class="ql-formats">
-        <button class="ql-attach tooltip" data-tip="Attach files" type="button" aria-label="Attach files">
-          <pc-icon name="attach-fat" [size]="4"></pc-icon></button
-        ><button class="ql-link tooltip" data-tip="Insert link" aria-label="Insert link"></button>
-        <button class="ql-image tooltip" data-tip="Insert image" aria-label="Insert image"></button>
-      </span>
-
-      <!-- Remove formatting -->
-      <span class="ql-formats">
-        <button class="ql-clean tooltip" data-tip="Clear formatting" aria-label="Clear formatting"></button>
-      </span>
-    </div>
-
-    <!-- Quill editor (scrolls when content grows) -->
-    <quill-editor
-      class="compose-quill flex-1"
-      [modules]="modules"
-      [formControl]="form.controls.html"
-      [placeholder]="'Write your message…'"
-      (onEditorCreated)="onEditorCreated($event)"
-    ></quill-editor>
-  </div>
-  <input #fileInput type="file" class="hidden" multiple (change)="onFileChoose($event)" />
-
-  <!-- Attachment list -->
-  @if (attachments().length) {
-  <ul class="mt-2 space-y-1 max-h-40">
-    <li class="text-xs opacity-70">Attachments: {{ attachments().length }} file(s) • {{ totalSize()| fileSize }}</li>
-    @for (f of attachments(); track f.name + ':' + f.size + ':' + f.lastModified; let i = $index) {
-    <li class="flex items-center justify-between rounded-md border border-base-300 px-2 py-1">
-      <div class="flex items-center gap-2 min-w-0">
-        <pc-attachment-icon [filename]="f.name" class="shrink-0"></pc-attachment-icon>
-        <span class="truncate">{{ f.name }}</span>
-        <span class="text-xs opacity-60">({{ (f.size / 1024) | number:'1.0-0' }} KB)</span>
-      </div>
-
-      <pc-icon
-        class="cursor-pointer hover:text-error tooltip tooltip-left"
-        data-tip="Remove attachment"
-        name="attach-file-off"
-        [size]="4"
-        (click)="removeAttachment(i)"
-      ></pc-icon>
-    </li>
-    }
-  </ul>
-  }
-</form>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.ts
-
-```typescript
-import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { SettingsService } from '@experiences/settings/services/settings-service';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import { computeEmailSla } from '../../services/email-sla';
-import { EmailBody } from '../email-body/email-body';
-import { EmailComments } from '../email-comments/email-comments';
-import { EmailHeader } from '../email-header/email-header';
-import { EmailActivities } from '../email-activities/email-activities';
-import { Icon } from '@icons/icon';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-details',
-  imports: [EmailHeader, EmailBody, EmailComments, EmailActivities, Icon],
-  templateUrl: 'email-details.html',
-})
-export class EmailDetails {
-  private noEmailMsgDelay = createLoadingGate();
-
-  protected readonly store = inject(EmailsStore);
-  private readonly settingsSvc = inject(SettingsService);
-  protected readonly isLoading = this.store.emailsLoading;
-
-  protected showNoEmailMsg = this.noEmailMsgDelay.visible;
-
-  /** Honest SLA pill (§5): computed from the received time + workspace SLA config. */
-  protected readonly slaPill = computed(() => {
-    const e = this.email();
-    if (!e) return null;
-    this.settingsSvc.snapshotSignal(); // react to settings loading in
-    return computeEmailSla({
-      status: e.status,
-      receivedAt: e.date_sent ? new Date(e.date_sent) : null,
-      emailsHours: Number(this.settingsSvc.getValue('sla.emails_hours', 24)),
-      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
-      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
-      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
-    });
-  });
-
-  public readonly forward = output<EmailType>();
-  public readonly reply = output<EmailType>();
-  public readonly replyAll = output<EmailType>();
-
-  public email = input<EmailType | null>(null);
-  public commentCount = computed(() => {
-    const e = this.email();
-    if (!e) return 0;
-    const header = this.store.getEmailHeaderById(e.id)();
-    return (header as any)?.comments?.length ?? 0;
-  });
-  public activityCount = computed(() => {
-    const e = this.email();
-    if (!e) return 0;
-    return this.store.getEmailActivitiesById(e.id)()?.length ?? 0;
-  });
-
-  /** Which quiet-tab-row panel is open below the body (§5). */
-  public readonly openPanel = signal<'comments' | 'activity' | null>(null);
-
-  constructor() {
-    // Only fetch when header value is truly undefined (not when it's null/empty).
-    effect(() => {
-      const e = this.email();
-      if (!e) return;
-
-      const headerVal = untracked(() => this.store.getEmailHeaderById(e.id)());
-      if (typeof headerVal === 'undefined') {
-        this.store.loadEmailWithHeaders(e.id).catch((err) => console.error('Failed to load email header:', err));
-      }
-      // Eager-load activities so the tab row's count is honest before opening.
-      this.store.loadEmailActivities(e.id).catch(() => undefined);
-    });
-    // Ensure workspace SLA config is available for the pill (idempotent).
-    void this.settingsSvc.load();
-    this.noEmailMsgDelay.begin();
-  }
-
-  public toggleCommentsTab(): void {
-    this.openPanel.update((p) => (p === 'comments' ? null : 'comments'));
-  }
-  public toggleActivityTab(): void {
-    this.openPanel.update((p) => (p === 'activity' ? null : 'activity'));
-  }
-  public closePanel(): void {
-    this.openPanel.set(null);
-  }
-
-  protected emitForward() {
-    const e = this.email();
-    if (e) this.forward.emit(e);
-  }
-
-  protected emitReply() {
-    const e = this.email();
-    if (e) this.reply.emit(e);
-  }
-
-  protected emitReplyAll() {
-    const e = this.email();
-    if (e) this.replyAll.emit(e);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.html
-
-```html
-<aside [class]="asideClass()">
-  <!-- Header and expand / collapse icon -->
-  <div class="flex items-center justify-between border-t border-base-300 pl-4 border-double border-b-4">
-    <h2 class="text-xs font-semibold text-neutral-content">
-      <span [class]="labelClass()">Filters</span>
-    </h2>
-
-    <pc-swap
-      swapOffIcon="chevron-double-right"
-      swapOnIcon="chevron-double-left"
-      animation="rotate"
-      [checked]="!foldersCollapsed()"
-      (click)="toggleFolders()"
-      [size]="4"
-      class="hover:text-primary invisible lg:visible"
-    ></pc-swap>
-  </div>
-
-  <ul class="flex-1 font-light overflow-y-auto email-scrollbar">
-    <!-- Virtual Folders (Filters) -->
-    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
-    <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
-      (click)="selectFolder(folder)"
-      [class.bg-primary/10]="isSelected(folder)"
-      [class.text-primary]="isSelected(folder)"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span [class]="labelClass()">{{ folder.name }}</span>
-      </div>
-
-      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
-    </li>
-    } }
-
-    <!-- Separator & Collapsible Header -->
-    <li [class]="separatorClass()" role="separator"></li>
-    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()">
-      <span>Folders</span>
-      <pc-swap
-        swapOffIcon="chevron-right"
-        swapOnIcon="chevron-down"
-        animation="flip"
-        [checked]="!realFoldersCollapsed()"
-        [size]="3"
-        (click)="toggleRealFolders()"
-      ></pc-swap>
-    </li>
-
-    <!-- Real Folders -->
-    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
-    <li
-      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
-      (click)="selectFolder(folder)"
-      [class.bg-primary/10]="isSelected(folder)"
-      [class.text-primary]="isSelected(folder)"
-    >
-      <div class="flex items-center gap-2">
-        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
-        <span [class]="labelClass()">{{ folder.name }}</span>
-      </div>
-
-      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
-    </li>
-    } } }
-  </ul>
-
-  <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
-    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New email">
-      <pc-icon name="pencil-square"></pc-icon>
-      <span [class]="buttonLabelClass()">New email</span>
-    </button>
-    <button
-      class="btn btn-outline btn-primary w-full"
-      [disabled]="store.isSyncing()"
-      (click)="store.syncEmails()"
-      title="Sync now"
-    >
-      <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
-      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing…' : 'Sync now' }} </span>
-    </button>
-    <!-- Evidence line: background work narrates itself (§2) -->
-    @if (store.lastSyncedAt(); as syncedAt) {
-    <span [class]="buttonLabelClass()" class="text-center text-[10.5px] text-base-content/45">
-      Synced {{ syncedAt | timeAgo:{ style: 'long' } }}
-    </span>
-    }
+@if (collapsed()) {
+<!-- Collapsed: 48px strip keeps IDENTITY (avatar initials), never nothing (§2) -->
+<aside class="box-border flex w-12 shrink-0 flex-col items-center gap-3 border-l border-base-300 bg-base-200 py-3">
+  <button
+    type="button"
+    class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
+    [attr.data-tip]="'Expand person context — ' + displayName()"
+    aria-label="Expand person context"
+    (click)="toggle()"
+  >
+    <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+  </button>
+  <div
+    class="tooltip tooltip-left flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
+    [attr.data-tip]="displayName()"
+  >
+    {{ initial() }}
   </div>
 </aside>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
-
-```html
-<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full md:w-48 bg-base-200">
-  <!-- Toolbar -->
-  <div
-    class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
-  >
-    <span class="text-xs font-semibold text-neutral-content">Sort</span>
-    <div class="dropdown dropdown-end">
-      <label
-        tabindex="0"
-        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
-      >
-        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
-        <pc-icon name="chevron-down" [size]="3"></pc-icon>
-      </label>
-      <ul
-        tabindex="0"
-        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
-      >
-        <li>
-          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
-        </li>
-        <li>
-          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
-        </li>
-      </ul>
-    </div>
+} @else {
+<!-- Expanded: 236px context card -->
+<aside
+  class="box-border flex w-[236px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-base-300 bg-base-200 p-4"
+>
+  <div class="flex items-center justify-between">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-base-content/45">Person context</span>
+    <button
+      type="button"
+      class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
+      data-tip="Collapse person context"
+      aria-label="Collapse person context"
+      (click)="toggle()"
+    >
+      <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+    </button>
   </div>
 
-  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
-    @for (email of sortedEmails(); track email.id) {
-    <li
-      (click)="selectEmail(email)"
-      (contextmenu)="onContextMenu($event, email)"
-      [class.bg-primary/10]="isSelected(email.id)"
-      class="border-b border-base-200 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
+  <!-- Identity -->
+  <div class="flex flex-col items-start gap-2">
+    <div
+      class="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary select-none"
     >
-      <div
-        class="truncate text-xs flex gap-1 items-center"
-        [class.text-base-content/90]="!email.is_read"
-        [class.text-base-content/60]="email.is_read"
-      >
-        @if (!email.is_read) {
-        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
-        } @if (email.from_email || email.to_email) {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
-          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
-          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
-        </span>
-        } @else {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
-        }
-        <span class="flex-none"
-          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
-        >
-      </div>
-      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
-        @if (email?.subject) {
-        <span class="truncate flex-1">{{ email.subject }}</span>
-        } @else {
-        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
-        } @if (email.has_attachment) {
-        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
-        }
-      </div>
-      <div class="mt-1 flex items-center gap-2">
-        <span class="min-w-0 flex-1 truncate font-light text-xs text-base-content/60">{{ email.preview }}</span>
-        @if (rowStatus(email); as st) {
-        <span
-          class="shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
-          [class.bg-warning/15]="st.tone === 'warning'"
-          [class.text-warning]="st.tone === 'warning'"
-          [class.bg-info/15]="st.tone === 'info'"
-          [class.text-info]="st.tone === 'info'"
-          [class.bg-base-300]="st.tone === 'neutral'"
-          [class.text-base-content/70]="st.tone === 'neutral'"
-          >{{ st.label }}</span
-        >
-        }
-      </div>
-    </li>
-    } @empty {
-    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
-      <pc-icon name="inbox" [size]="8"></pc-icon>
-      <span>No emails</span>
-    </li>
-    } @if (isLoadingMore()) {
-    <li class="flex justify-center p-3 border-b border-base-200">
-      <span class="loading loading-spinner loading-sm text-primary"></span>
-    </li>
+      {{ initial() }}
+    </div>
+    @if (person(); as p) {
+    <a
+      [routerLink]="['/people', p.id]"
+      class="text-[15px] font-semibold text-base-content underline decoration-primary/20 decoration-1 underline-offset-[3px] transition-colors hover:text-primary"
+    >
+      {{ displayName() }}
+    </a>
+    } @else {
+    <span class="text-[15px] font-semibold text-base-content">{{ displayName() }}</span>
+    } @if (subline()) {
+    <span class="text-xs text-base-content/60">{{ subline() }}</span>
     }
-  </ul>
+  </div>
 
-  @if (showContextMenu() && contextMenuEmail()) {
-  <div
-    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
-    [style.left.px]="contextMenuPosition().x"
-    [style.top.px]="contextMenuPosition().y"
-  >
-    @for (section of menuSections; track $index; let last = $last) {
-    <div class="px-1.5 py-0.5">
-      @for (item of section.items; track item.label) {
-      <button
-        (click)="item.action()"
-        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
-      >
-        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
-        <span>{{ item.label }}</span>
-      </button>
+  @if (person(); as p) {
+  <!-- Contact card -->
+  <div class="flex flex-col gap-1.5 rounded-lg border border-base-300 bg-base-100 p-3 text-xs">
+    @if (p.email) {
+    <div class="flex items-center gap-2 min-w-0">
+      <pc-icon name="envelope" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
+      <span class="truncate">{{ p.email }}</span>
+    </div>
+    } @if (email()?.date_sent) {
+    <div class="flex items-center gap-2 text-base-content/60">
+      <pc-icon name="clock" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
+      <span>Last inbound {{ email()!.date_sent | timeAgo:{ style: 'long' } }}</span>
+    </div>
+    }
+  </div>
+
+  <!-- Tags -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Tags</span>
+    @if (tags().length) {
+    <div class="flex flex-wrap gap-1.5">
+      @for (t of tags(); track t.name) {
+      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
       }
     </div>
+    } @else {
+    <span class="text-xs text-base-content/40">None yet</span>
+    }
+  </div>
 
-    @if (!last) {
-    <div class="border-t border-base-300 my-1"></div>
-    } }
+  <!-- Issues of interest -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Issues of interest</span>
+    @if (issues().length) {
+    <div class="flex flex-wrap gap-1.5">
+      @for (t of issues(); track t.name) {
+      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+      }
+    </div>
+    } @else {
+    <span class="text-xs text-base-content/40">None yet</span>
+    }
+  </div>
+
+  <a [routerLink]="['/people', p.id]" class="btn btn-primary btn-sm mt-1 w-full">
+    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+    Open record
+  </a>
+  } @else {
+  <!-- No matched person: guide to the exit, don't dead-end (§3) -->
+  <div
+    class="flex flex-col items-start gap-2 rounded-lg border border-base-300 bg-base-100 p-3 text-xs text-base-content/60"
+  >
+    <pc-icon name="user-circle" [size]="6" class="text-base-content/30"></pc-icon>
+    <span>This sender isn't matched to a person record yet.</span>
   </div>
   }
-</section>
+</aside>
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.ts
+
+```typescript
+import { Component, computed, inject, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailStateStore } from '../../services/store/email-state.store';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+interface RailTag {
+  color?: string | null;
+  name: string;
+}
+
+interface RailPerson {
+  company_name?: string | null;
+  email?: string | null;
+  first_name?: string | null;
+  id: string;
+  issues?: RailTag[];
+  last_name?: string | null;
+  tags?: RailTag[];
+}
+
+/**
+ * Person context rail (§5) — a 236px card giving the inbox a "who am I talking to"
+ * answer. Reuses the person already resolved for the email header; adds no backend.
+ * Collapses to a 48px strip that keeps the avatar initials (identity, never hidden).
+ */
+@Component({
+  selector: 'pc-email-person-rail',
+  imports: [RouterLink, Icon, TagItem, TimeAgoPipe],
+  templateUrl: 'email-person-rail.html',
+})
+export class EmailPersonRail {
+  protected readonly stateStore = inject(EmailStateStore);
+  private readonly store = inject(EmailsStore);
+
+  public readonly email = input<EmailType | null>(null);
+
+  protected readonly collapsed = this.stateStore.personRailCollapsed;
+
+  protected readonly person = computed<RailPerson | null>(() => {
+    const e = this.email();
+    if (!e) return null;
+    const header = this.store.getEmailHeaderById(e.id)();
+    const p = (header as { person?: RailPerson } | null | undefined)?.person;
+    return p ?? null;
+  });
+
+  /** Falls back to the raw sender when no person record is matched. */
+  protected readonly displayName = computed<string>(() => {
+    const p = this.person();
+    if (p) {
+      const full = `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim();
+      if (full) return full;
+      if (p.email) return p.email;
+    }
+    const e = this.email();
+    return e?.from_email ?? 'Unknown sender';
+  });
+
+  protected readonly initial = computed<string>(() => (this.displayName()[0] ?? '?').toUpperCase());
+
+  /** Honest role subline: only what the tags/fields actually say (§0 — no faked data). */
+  protected readonly subline = computed<string | null>(() => {
+    const p = this.person();
+    if (!p) return null;
+    const parts: string[] = [];
+    const tagNames = (p.tags ?? []).map((t) => t.name.toLowerCase());
+    if (tagNames.includes('donor')) parts.push('Donor');
+    else if (tagNames.includes('volunteer')) parts.push('Volunteer');
+    if (p.company_name) parts.push(p.company_name);
+    return parts.length ? parts.join(' · ') : null;
+  });
+
+  protected readonly tags = computed<RailTag[]>(() => this.person()?.tags ?? []);
+  protected readonly issues = computed<RailTag[]>(() => this.person()?.issues ?? []);
+
+  protected toggle(): void {
+    this.stateStore.togglePersonRail();
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-grid.ts
@@ -17690,180 +16882,6 @@ export class FundraisingFormComponent implements OnInit {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const ADMIN_ARTICLES: HelpArticle[] = [
-  {
-    id: 'profile',
-    category: 'admin',
-    title: 'Your profile',
-    summary:
-      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
-    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
-    related: ['users-roles', 'settings', 'getting-around'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
-      },
-      { kind: 'h2', id: 'photo', text: 'Profile photo' },
-      {
-        kind: 'p',
-        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
-      },
-      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
-      {
-        kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Open them from **Settings** in the avatar menu; every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Verify your email',
-        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
-      },
-      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
-      {
-        kind: 'p',
-        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
-      },
-    ],
-  },
-  {
-    id: 'users-roles',
-    category: 'admin',
-    title: 'Users and roles',
-    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
-    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
-    related: ['settings', 'profile', 'activity-log'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'User management lives under [Users](/users) in the System section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
-      },
-      { kind: 'h2', id: 'roles', text: 'The three roles' },
-      {
-        kind: 'list',
-        items: [
-          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
-          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
-          '**Admin** — everything, plus the System area: users, tags, issues, configuration, and the activity log.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
-      },
-      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
-      {
-        kind: 'p',
-        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Departures checklist',
-        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
-      },
-    ],
-  },
-  {
-    id: 'settings',
-    category: 'admin',
-    title: 'Settings and configuration',
-    summary:
-      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
-    keywords: [
-      'settings',
-      'configuration',
-      'organization',
-      'communications',
-      'appearance',
-      'billing',
-      'integrations',
-      'sla settings',
-      'workspace',
-    ],
-    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone and uses a deliberate **Save** with a leave-guard.',
-      },
-      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
-      {
-        kind: 'list',
-        items: [
-          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
-          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
-          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
-        ],
-      },
-      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace configuration' },
-      {
-        kind: 'list',
-        items: [
-          '**Organization** — your name, contact details, and mailing address.',
-          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
-          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
-          '**Teams & Access** — default role for invitations and the MFA requirement.',
-          '**SLA Configuration** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
-          '**Appearance** — default theme and date format for the workspace.',
-          '**Integrations & API** — webhook keys and connected services.',
-          '**Billing** — your plan and payment details.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Cannot see the Workspace section?',
-        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Unsaved changes stay visible',
-        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Three settings to nail on day one',
-        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
-      },
-    ],
-  },
-  {
-    id: 'activity-log',
-    category: 'admin',
-    title: 'The activity log',
-    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
-    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
-    related: ['users-roles', 'person-profile'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
-      },
-      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
-      {
-        kind: 'p',
-        text: 'Administrators also get [Activity log](/activities) under System: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'The log is a teaching tool',
-        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
@@ -18485,159 +17503,6 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
         tone: 'tip',
         title: 'Merging more than a pair?',
         text: 'The [Duplicates](/duplicates) finder reviews likely duplicates side by side across your whole database — better than hunting pairs by hand. See [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-];
-```
-
-## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const OUTREACH_ARTICLES: HelpArticle[] = [
-  {
-    id: 'newsletters',
-    category: 'outreach',
-    title: 'Create and send a newsletter',
-    summary:
-      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
-    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
-    related: ['lists', 'tags-issues', 'settings', 'automations'],
-    blocks: [
-      { kind: 'h2', id: 'compose', text: 'From template to draft' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Newsletters](/newsletters) and click +', detail: 'Start from a template or a blank canvas.' },
-          {
-            title: 'Design in the visual editor',
-            detail: 'Write and arrange your content visually — what you see is what subscribers get.',
-          },
-          {
-            title: 'Name it clearly',
-            detail: 'The name is how you will find it in the grid and its performance later.',
-          },
-        ],
-      },
-      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
-      {
-        kind: 'p',
-        text: 'Audiences are built from your [lists](/help/lists) and refined with tags — include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Dynamic lists shine here',
-        text: 'An audience built on a dynamic list is evaluated fresh — whoever matches on send day gets the email. No stale rosters.',
-      },
-      { kind: 'h2', id: 'send', text: 'Send or schedule' },
-      {
-        kind: 'p',
-        text: 'Send now, or set a send date to schedule. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
-      },
-      {
-        kind: 'p',
-        text: 'After the send, the newsletter’s page tracks how it performed, and each recipient’s profile lists it under their **Newsletters** tab.',
-      },
-      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
-      {
-        kind: 'list',
-        items: [
-          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
-          'The default from-name and from-address also live there — only verified sender addresses can be used, which protects your deliverability.',
-          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'warning',
-        title: 'Respect unsubscribes',
-        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it — it damages trust and your sender reputation.',
-      },
-    ],
-  },
-  {
-    id: 'inbox',
-    category: 'outreach',
-    title: 'The shared inbox',
-    summary:
-      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
-    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
-    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
-      },
-      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
-      {
-        kind: 'list',
-        items: [
-          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/summary) rolls breaches up into a status.',
-          'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
-          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
-          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you — tune them under **Settings** in the avatar menu.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Work it like Gmail',
-        text: 'The inbox answers to Gmail-style keys — `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Where the response target comes from',
-        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration** — see [The dashboard and SLA health](/help/dashboard).',
-      },
-    ],
-  },
-  {
-    id: 'automations',
-    category: 'outreach',
-    title: 'Automations',
-    summary:
-      'Build multi-step workflows that run on their own — triggered manually or by things that happen, like an event signup.',
-    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
-    related: ['newsletters', 'events-shifts', 'tasks'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Automations (under [Automations](/workflows) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after an event, the reminder before a shift.',
-      },
-      { kind: 'h2', id: 'anatomy', text: 'Anatomy of a workflow' },
-      {
-        kind: 'list',
-        items: [
-          '**Trigger** — what starts a run: fire it manually, or attach it to an event so signups kick it off automatically.',
-          '**Steps** — what happens, in order. Select any step on the canvas to configure it.',
-          '**Settings** — the workflow’s name and behavior.',
-        ],
-      },
-      { kind: 'h2', id: 'first', text: 'A good first automation' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Automations](/workflows) and click +',
-            detail: 'Give it a name that says what it does — “Event signup thank-you”.',
-          },
-          { title: 'Pick the trigger', detail: 'Choose the event that should start it.' },
-          {
-            title: 'Add the steps',
-            detail: 'Keep the first version to one or two steps; add sophistication after it has run a few times.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Start manual, then automate',
-        text: 'Running a workflow manually a few times is the fastest way to trust it — once the steps behave, wire it to the trigger and let it run.',
       },
     ],
   },
@@ -22496,6 +21361,305 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.html
+
+```html
+@if (open()) {
+<div class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
+  <!-- backdrop click closes -->
+  <button type="button" class="absolute inset-0 cursor-default" aria-label="Close settings" (click)="close()"></button>
+
+  <div
+    class="animate-drop relative z-[71] w-full max-w-[430px] rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Settings"
+  >
+    <!-- Header: scope stated up front (§5a) -->
+    <div class="flex items-start gap-3">
+      <div
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
+      >
+        {{ initial() }}
+      </div>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-lg font-bold leading-tight">Settings</h2>
+        <p class="text-xs text-base-content/60">Personal to you — nothing here affects teammates</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="Close" (click)="close()">
+        <pc-icon name="x-mark" [size]="5"></pc-icon>
+      </button>
+    </div>
+
+    <!-- NOTIFICATIONS matrix -->
+    <div class="mt-5">
+      <div class="flex items-end gap-2">
+        <span class="flex-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45"
+          >Notifications</span
+        >
+        <span class="w-10 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-base-content/45"
+          >Email</span
+        >
+        <span class="w-10 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-base-content/45"
+          >In-app</span
+        >
+      </div>
+      <div class="mt-2 flex flex-col">
+        @for (row of rows; track row.emailKey) {
+        <div class="flex items-center gap-2 py-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-medium text-base-content">{{ row.label }}</div>
+            <div class="text-xs text-base-content/55">{{ row.helper }}</div>
+          </div>
+          <label class="flex w-10 justify-center">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary checkbox-sm"
+              [checked]="isOn(row.emailKey)"
+              (change)="toggle(row.emailKey)"
+              [attr.aria-label]="row.label + ' — email'"
+            />
+          </label>
+          <label class="flex w-10 justify-center">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary checkbox-sm"
+              [checked]="isOn(row.inAppKey)"
+              (change)="toggle(row.inAppKey)"
+              [attr.aria-label]="row.label + ' — in-app'"
+            />
+          </label>
+        </div>
+        }
+      </div>
+    </div>
+
+    <div class="my-4 border-t border-base-200"></div>
+
+    <!-- APPEARANCE -->
+    <div>
+      <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Appearance</span>
+      <div class="mt-3 flex items-center justify-between">
+        <span class="text-sm font-medium">Theme</span>
+        <div class="join">
+          @for (opt of themeOptions; track opt.value) {
+          <button
+            type="button"
+            class="btn join-item btn-sm"
+            [class.btn-primary]="theme.getPreference() === opt.value"
+            (click)="setThemePreference(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="my-4 border-t border-base-200"></div>
+
+    <!-- PASSKEYS -->
+    <div>
+      <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Passkeys</span>
+      <div class="mt-2">
+        <pc-passkey-settings></pc-passkey-settings>
+      </div>
+    </div>
+
+    <div class="my-4 border-t border-base-200"></div>
+
+    <!-- Footer contract (§5a) -->
+    <p class="text-xs" [class.text-base-content/45]="!savedJustNow()" [class.text-success]="savedJustNow()">
+      {{ savedJustNow() ? 'Saved just now' : 'Changes apply instantly — nothing to save' }}
+    </p>
+  </div>
+</div>
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.ts
+
+```typescript
+import { Component, computed, effect, inject, model, output, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
+import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { ThemePreference, ThemeService } from '../../../layout/theme/theme-service';
+import { PasskeySettingsComponent } from '../security/passkey-settings';
+
+interface NotifRow {
+  emailKey: string;
+  helper: string;
+  inAppKey: string;
+  label: string;
+}
+
+const NOTIF_ROWS: NotifRow[] = [
+  {
+    label: 'Mentioned in comment',
+    helper: 'When someone mentions you in a thread',
+    emailKey: 'mention_in_comment',
+    inAppKey: 'mention_in_comment_in_app',
+  },
+  {
+    label: 'Task assigned',
+    helper: 'When a task is assigned to you',
+    emailKey: 'task_assigned',
+    inAppKey: 'task_assigned_in_app',
+  },
+  {
+    label: 'Task due today / overdue',
+    helper: 'Daily reminder of active tasks due',
+    emailKey: 'task_due',
+    inAppKey: 'task_due_in_app',
+  },
+  {
+    label: 'Person assigned',
+    helper: 'When contact ownership is assigned to you',
+    emailKey: 'person_assigned',
+    inAppKey: 'person_assigned_in_app',
+  },
+  {
+    label: 'Export ready',
+    helper: 'Download link when a CSV export finishes',
+    emailKey: 'export_ready',
+    inAppKey: 'export_ready_in_app',
+  },
+  {
+    label: 'Import summary',
+    helper: 'Completion stats after a spreadsheet import',
+    emailKey: 'import_summary',
+    inAppKey: 'import_summary_in_app',
+  },
+];
+
+/**
+ * Personal Settings popup (§5a) — instant apply, no Save/Reset. Everything here is
+ * scoped to the signed-in user: notification matrix, appearance (theme + density),
+ * and passkeys. Reuses the notification-preferences model and PasskeySettings.
+ */
+@Component({
+  selector: 'pc-personal-settings-dialog',
+  imports: [Icon, PasskeySettingsComponent],
+  templateUrl: 'personal-settings-dialog.html',
+})
+export class PersonalSettingsDialog {
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly alerts = inject(AlertService);
+  protected readonly theme = inject(ThemeService);
+
+  protected readonly themeOptions: { label: string; value: ThemePreference }[] = [
+    { label: 'Light', value: 'light' },
+    { label: 'Dark', value: 'dark' },
+    { label: 'System', value: 'system' },
+  ];
+
+  /** Two-way open state, driven by the navbar avatar menu. */
+  public readonly open = model<boolean>(false);
+  public readonly closed = output<void>();
+
+  protected readonly rows = NOTIF_ROWS;
+
+  private readonly user = signal<IAuthUserDetail | null>(null);
+  private loadStarted = false;
+  protected readonly prefs = signal<Record<string, boolean>>({});
+  protected readonly savedJustNow = signal<boolean>(false);
+
+  protected readonly initial = computed<string>(() => {
+    const u = this.user();
+    const src = u?.first_name || u?.email || '?';
+    return src.charAt(0).toUpperCase();
+  });
+
+  constructor() {
+    // Load lazily on first open (the dialog is always mounted in the navbar) and
+    // reset the footer contract to its resting state each time it opens.
+    effect(() => {
+      if (!this.open()) return;
+      this.savedJustNow.set(false);
+      if (!this.loadStarted) {
+        this.loadStarted = true;
+        void this.load();
+      }
+    });
+  }
+
+  protected isOn(key: string): boolean {
+    return this.prefs()[key] ?? true;
+  }
+
+  protected toggle(key: string): void {
+    this.prefs.update((p) => ({ ...p, [key]: !(p[key] ?? true) }));
+    void this.persistNotifications();
+  }
+
+  protected setThemePreference(next: ThemePreference): void {
+    if (this.theme.getPreference() === next) return;
+    this.theme.setPreference(next);
+    this.flashSaved();
+  }
+
+  protected close(): void {
+    this.open.set(false);
+    this.closed.emit();
+  }
+
+  private async load(): Promise<void> {
+    try {
+      const current = await this.auth.getCurrentUser();
+      if (!current) return;
+      const detail = await this.userService.getProfileById(current.id);
+      this.user.set(detail);
+      const p = detail.notification_preferences ?? {};
+      const next: Record<string, boolean> = {};
+      for (const row of NOTIF_ROWS) {
+        next[row.emailKey] = (p as Record<string, boolean | undefined>)[row.emailKey] ?? true;
+        next[row.inAppKey] = (p as Record<string, boolean | undefined>)[row.inAppKey] ?? true;
+      }
+      this.prefs.set(next);
+    } catch (err) {
+      console.error('Failed to load personal settings', err);
+    }
+  }
+
+  private async persistNotifications(): Promise<void> {
+    const user = this.user();
+    if (!user) return;
+    const p = this.prefs();
+    const payload: UpdateAuthUserType = {
+      notification_preferences: {
+        mention_in_comment: p['mention_in_comment'] ?? true,
+        mention_in_comment_in_app: p['mention_in_comment_in_app'] ?? true,
+        task_assigned: p['task_assigned'] ?? true,
+        task_assigned_in_app: p['task_assigned_in_app'] ?? true,
+        task_due: p['task_due'] ?? true,
+        task_due_in_app: p['task_due_in_app'] ?? true,
+        person_assigned: p['person_assigned'] ?? true,
+        person_assigned_in_app: p['person_assigned_in_app'] ?? true,
+        export_ready: p['export_ready'] ?? true,
+        export_ready_in_app: p['export_ready_in_app'] ?? true,
+        import_summary: p['import_summary'] ?? true,
+        import_summary_in_app: p['import_summary_in_app'] ?? true,
+      },
+    };
+    try {
+      await this.userService.updateUserProfile(user.id, payload);
+      this.flashSaved();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not save your preference.');
+    }
+  }
+
+  private flashSaved(): void {
+    this.savedJustNow.set(true);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.ts
 
 ```typescript
@@ -22620,607 +21784,6 @@ export class PasskeySettingsComponent implements OnInit {
     }
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/settings/settings-page.html
-
-```html
-<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
-  <header class="mb-8 space-y-2">
-    <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">
-      @switch (currentMode) { @case ('settings') { Personal } @case ('configuration') { Workspace } }
-    </p>
-    <h1 class="text-3xl font-bold tracking-tight">
-      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Workspace settings } }
-    </h1>
-    <p class="text-base-content/70">
-      @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
-      ('configuration') { Control tenant-wide defaults and account management for PeopleCRM. } }
-    </p>
-  </header>
-
-  @if (hasLoaded()) {
-  <div class="flex flex-col gap-8 md:flex-row md:items-start lg:gap-12">
-    <!-- Sidebar Navigation -->
-    <aside class="w-48 md:sticky md:top-8 shrink-0">
-      <nav class="flex flex-row overflow-x-auto pb-4 md:flex-col md:pb-0 gap-1" aria-label="Settings sections">
-        @for (section of visibleSections; track trackSection($index, section)) {
-        <button
-          type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected(section.config.id)"
-          [class.text-base-content]="isSelected(section.config.id)"
-          [class.text-base-content]="!isSelected(section.config.id)"
-          [class.opacity-70]="!isSelected(section.config.id)"
-          (click)="selectSection(section.config.id)"
-        >
-          <pc-icon
-            [name]="section.config.icon"
-            class="mr-2 opacity-80"
-            [class.text-primary]="isSelected(section.config.id)"
-            [size]="5"
-          />
-          {{ section.config.title }}
-          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
-          @if (isSectionDirty(section)) {
-          <span
-            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
-            title="Unsaved changes in this section"
-            aria-label="Unsaved changes in this section"
-          ></span>
-          }
-        </button>
-        } @if (currentMode === 'settings') {
-        <!-- Passkeys custom section -->
-        <button
-          id="settings-nav-passkeys"
-          type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('passkeys')"
-          [class.opacity-70]="!isSelected('passkeys')"
-          (click)="selectSection('passkeys')"
-        >
-          <pc-icon
-            name="lock-closed"
-            class="mr-2 opacity-80"
-            [class.text-primary]="isSelected('passkeys')"
-            [size]="5"
-          />
-          Passkeys
-        </button>
-        } @if (currentMode === 'configuration') {
-        <!-- Email Sync custom section -->
-        <button
-          id="settings-nav-email-sync"
-          type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('email-sync')"
-          [class.opacity-70]="!isSelected('email-sync')"
-          (click)="selectSection('email-sync')"
-        >
-          <pc-icon name="envelope" class="mr-2 opacity-80" [class.text-primary]="isSelected('email-sync')" [size]="5" />
-          Email Sync
-        </button>
-
-        <!-- Domains custom section -->
-        <button
-          id="settings-nav-domains"
-          type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('domains')"
-          [class.opacity-70]="!isSelected('domains')"
-          (click)="selectSection('domains')"
-        >
-          <pc-icon
-            name="globe-americas"
-            class="mr-2 opacity-80"
-            [class.text-primary]="isSelected('domains')"
-            [size]="5"
-          />
-          Domain Verification
-        </button>
-
-        <!-- Donations custom section -->
-        <button
-          id="settings-nav-donations"
-          type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('donations')"
-          [class.opacity-70]="!isSelected('donations')"
-          (click)="selectSection('donations')"
-        >
-          <pc-icon
-            name="currency-dollar"
-            class="mr-2 opacity-80"
-            [class.text-primary]="isSelected('donations')"
-            [size]="5"
-          />
-          Donations
-        </button>
-
-        <!-- Billing custom section -->
-        <button
-          id="settings-nav-billing"
-          type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('billing')"
-          [class.opacity-70]="!isSelected('billing')"
-          (click)="selectSection('billing')"
-        >
-          <pc-icon name="credit-card" class="mr-2 opacity-80" [class.text-primary]="isSelected('billing')" [size]="5" />
-          Billing
-        </button>
-
-        <!-- Account custom section -->
-        <button
-          id="settings-nav-account"
-          type="button"
-          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
-          [class.bg-base-200]="isSelected('account')"
-          [class.opacity-70]="!isSelected('account')"
-          (click)="selectSection('account')"
-        >
-          <pc-icon name="user-circle" class="mr-2 opacity-80" [class.text-primary]="isSelected('account')" [size]="5" />
-          Account
-        </button>
-        }
-      </nav>
-    </aside>
-
-    <!-- Main Content Area -->
-    <main class="flex-1 w-full max-w-4xl">
-      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        @if (section.config.id !== 'notifications') {
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">{{ section.config.title }}</h2>
-          <p class="mt-1 text-sm text-base-content/60">{{ section.config.description }}</p>
-        </header>
-        }
-
-        <!-- (form content) -->
-        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-8" novalidate>
-          @if (section.config.id === 'integrations') {
-          <div class="border-b border-base-200 pb-6 mb-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Webhook API Credentials</h4>
-                <p class="text-xs text-base-content/50">
-                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
-                (click)="generateWebhookCredentials(section)"
-              >
-                Generate Credentials
-              </button>
-            </div>
-          </div>
-          }
-
-          <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
-            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
-            'notifications') {
-            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1.5">
-              <label [attr.for]="field.controlName" class="text-sm font-semibold text-base-content/90">
-                {{ field.config.label }}
-              </label>
-
-              @switch (field.config.type) { @case ('textarea') {
-              <textarea
-                [id]="field.controlName"
-                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-                rows="4"
-              ></textarea>
-              } @case ('toggle') {
-              <label class="flex items-center gap-3 cursor-pointer py-1">
-                <input
-                  [id]="field.controlName"
-                  type="checkbox"
-                  class="toggle toggle-primary toggle-md"
-                  [formField]="section.form[field.controlName]"
-                />
-                <span class="text-sm font-normal text-base-content/70">
-                  {{ field.config.placeholder ?? 'Enabled' }}
-                </span>
-              </label>
-              } @case ('select') {
-              <select
-                [id]="field.controlName"
-                class="select select-bordered focus:select-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              >
-                @for (option of field.config.options ?? []; track option.value ?? $index) {
-                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
-                }
-              </select>
-              } @case ('number') {
-              <input
-                [id]="field.controlName"
-                type="number"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } @case ('date') {
-              <input
-                [id]="field.controlName"
-                type="date"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [formField]="section.form[field.controlName]"
-              />
-              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
-              'integrations.webhook_api_secret') {
-              <div class="flex gap-2">
-                <input
-                  [id]="field.controlName"
-                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
-                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
-                  [attr.placeholder]="field.config.placeholder ?? ''"
-                  [value]="section.form[field.controlName]().value() || ''"
-                  readonly
-                />
-                <button
-                  type="button"
-                  class="btn btn-square btn-outline hover:btn-primary shrink-0"
-                  (click)="copyToClipboard(section.form[field.controlName]().value())"
-                  title="Copy to clipboard"
-                >
-                  <pc-icon name="document-duplicate"></pc-icon>
-                </button>
-              </div>
-              } @else {
-              <input
-                [id]="field.controlName"
-                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
-                class="input input-bordered focus:input-primary w-full bg-base-200/30"
-                [attr.placeholder]="field.config.placeholder ?? ''"
-                [formField]="section.form[field.controlName]"
-              />
-              } } } @if (field.config.helper) {
-              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
-              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
-              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
-                <pc-icon name="exclamation-circle"></pc-icon>
-                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
-              </p>
-              }
-            </div>
-            } }
-          </div>
-
-          <!-- Custom extensions for specific sections -->
-          @if (section.config.id === 'communications') {
-          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
-            <div class="space-y-1">
-              <h3 class="text-base font-semibold text-base-content/90">Verified Sender Email Addresses</h3>
-              <p class="text-xs text-base-content/50">
-                Add and verify email addresses to select them as campaign defaults.
-              </p>
-            </div>
-
-            <!-- Add new sender email form -->
-            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
-              <div class="flex-1">
-                <input
-                  type="email"
-                  placeholder="sender@example.com"
-                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
-                  [value]="senderEmailInput()"
-                  (input)="senderEmailInput.set($any($event.target).value)"
-                />
-              </div>
-              <button
-                type="button"
-                class="btn btn-primary"
-                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
-                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
-              >
-                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
-                <span class="loading loading-spinner loading-xs"></span>
-                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
-                <span class="countdown font-mono text-xs"
-                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
-                >s } @else { Request Verification }
-              </button>
-            </div>
-
-            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
-            <div
-              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
-            >
-              <span class="font-semibold text-base-content flex items-center gap-1.5">
-                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
-                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
-              </span>
-              <span>
-                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
-              </span>
-              <span class="text-base-content/50 flex items-center gap-1">
-                You can request verification again in
-                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
-                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
-                </span>
-                seconds.
-              </span>
-            </div>
-            }
-
-            <!-- List of verified emails -->
-            <div class="space-y-2">
-              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified Sender Emails</h4>
-              @if (verifiedEmailsList().length === 0) {
-              <p class="text-sm text-base-content/50 italic">
-                No verified sender emails yet. Add one above to request verification.
-              </p>
-              } @else {
-              <div class="flex flex-wrap gap-2">
-                @for (email of verifiedEmailsList(); track email) {
-                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
-                  <pc-icon name="check-circle" [size]="14"></pc-icon>
-                  {{ email }}
-                </span>
-                }
-              </div>
-              }
-            </div>
-          </div>
-          } @if (section.config.id === 'data') {
-          <div class="border-t border-base-200 pt-6 mt-6">
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-            >
-              <div class="space-y-1">
-                <h4 class="text-sm font-bold text-base-content/90">Address Fingerprints Maintenance</h4>
-                <p class="text-xs text-base-content/50">
-                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
-                  changed.
-                </p>
-                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
-                <p class="text-xs text-warning mt-1 font-medium">
-                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
-                </p>
-                }
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-outline btn-primary shrink-0"
-                (click)="recomputeAddressFingerprints()"
-                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
-              >
-                @if (recomputingFingerprints()) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Recompute Fingerprints
-              </button>
-            </div>
-          </div>
-          } @if (section.config.id === 'notifications') {
-          <div class="space-y-6">
-            <div class="border-b border-base-200 pb-5 space-y-1">
-              <h2 class="text-2xl font-semibold tracking-tight">My Notification Preferences</h2>
-              <p class="text-sm text-base-content/60">
-                Customize which email and in-app notifications you would like to receive for your own account.
-              </p>
-            </div>
-
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
-              <table class="table w-full">
-                <thead>
-                  <tr class="border-b border-base-200">
-                    <th class="text-sm font-semibold text-base-content/80">Notification Type</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">Email</th>
-                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
-                  <tr class="hover:bg-base-200/20">
-                    <td class="align-middle">
-                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
-                      @if (group.helper) {
-                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
-                      }
-                    </td>
-                    <td class="align-middle text-center">
-                      <input
-                        [id]="group.emailField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.emailField.controlName]"
-                      />
-                    </td>
-                    <td class="align-middle text-center">
-                      @if (group.inAppField) {
-                      <input
-                        [id]="group.inAppField.controlName"
-                        type="checkbox"
-                        class="toggle toggle-primary toggle-sm"
-                        [formField]="section.form[group.inAppField.controlName]"
-                      />
-                      }
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-          }
-
-          <!-- Sticky Action Footer inside the card -->
-          <div
-            class="sticky bottom-4 z-10 mt-8 -mx-6 -mb-6 md:-mx-8 md:-mb-8 border-t border-base-200 bg-base-100/95 backdrop-blur px-6 py-4 md:px-8 rounded-b-2xl flex items-center justify-between gap-4"
-          >
-            <div>
-              @if (isSaving(section)) {
-              <span class="text-sm font-medium text-base-content/60 flex items-center">
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                Saving changes…
-              </span>
-              }
-            </div>
-
-            <div class="flex items-center gap-3">
-              <button
-                type="button"
-                class="btn btn-ghost hover:bg-base-200"
-                (click)="resetSection(section)"
-                [disabled]="!isSectionDirty(section) || isSaving(section)"
-              >
-                Reset
-              </button>
-              <button
-                type="submit"
-                class="btn btn-primary min-w-[120px]"
-                [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
-              >
-                @if (isSaving(section)) {
-                <span class="loading loading-spinner loading-xs mr-2"></span>
-                } Save
-              </button>
-            </div>
-          </div>
-        </form>
-      </section>
-      } }
-
-      <!-- Email Sync custom section -->
-      @if (currentMode === 'configuration' && isSelected('email-sync')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Email Sync</h2>
-          <p class="mt-1 text-sm text-base-content/60">
-            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
-          </p>
-        </header>
-
-        <div class="grid gap-8 lg:grid-cols-2">
-          <!-- Microsoft Office 365 Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
-                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
-                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
-                <path fill="#81bc06" d="M12 1h10v10H12z" />
-                <path fill="#05a6f0" d="M1 12h10v10H1z" />
-                <path fill="#ffba08" d="M12 12h10v10H12z" />
-              </svg>
-              Microsoft Office 365
-            </h3>
-            <pc-ms-sync-settings></pc-ms-sync-settings>
-          </div>
-
-          <!-- Google Suite Card -->
-          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              Google Suite (Gmail)
-            </h3>
-            <pc-google-sync-settings></pc-google-sync-settings>
-          </div>
-        </div>
-      </section>
-      }
-
-      <!-- Domains custom section -->
-      @if (currentMode === 'configuration' && isSelected('domains')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Domain Verification</h2>
-          <p class="mt-1 text-sm text-base-content/60">
-            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
-          </p>
-        </header>
-        <pc-domains-settings></pc-domains-settings>
-      </section>
-      }
-
-      <!-- Donations custom section -->
-      @if (currentMode === 'configuration' && isSelected('donations')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Donations</h2>
-          <p class="mt-1 text-sm text-base-content/60">
-            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
-            account.
-          </p>
-        </header>
-        <pc-donations-settings></pc-donations-settings>
-      </section>
-      }
-
-      <!-- Billing custom section -->
-      @if (currentMode === 'configuration' && isSelected('billing')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Billing</h2>
-          <p class="mt-1 text-sm text-base-content/60">
-            Manage your subscription plans, view invoice details, and update payment methods.
-          </p>
-        </header>
-        <pc-billing-settings></pc-billing-settings>
-      </section>
-      }
-
-      <!-- Passkeys custom section -->
-      @if (currentMode === 'settings' && isSelected('passkeys')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Passkeys</h2>
-          <p class="mt-1 text-sm text-base-content/60">
-            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
-          </p>
-        </header>
-        <pc-passkey-settings></pc-passkey-settings>
-      </section>
-      }
-
-      <!-- Account custom section -->
-      @if (currentMode === 'configuration' && isSelected('account')) {
-      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
-        <header class="border-b border-base-200 pb-5">
-          <h2 class="text-2xl font-semibold tracking-tight">Account</h2>
-          <p class="mt-1 text-sm text-base-content/60">
-            Manage your organization account — pause billing or permanently delete all data.
-          </p>
-        </header>
-        <pc-account-settings></pc-account-settings>
-      </section>
-      }
-    </main>
-  </div>
-  } @else {
-  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
-    <div class="flex flex-col items-center gap-3 text-base-content/50">
-      <span class="loading loading-spinner loading-lg"></span>
-      <p class="font-medium">Loading your settings…</p>
-    </div>
-  </div>
-  }
-</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings.config.ts
@@ -24768,6 +23331,102 @@ export class KeyboardShortcutsHelp {
 
   protected close(): void {
     this.shortcuts.closeHelp();
+  }
+}
+```
+
+## File: apps/frontend/src/app/layout/theme/theme-service.ts
+
+```typescript
+import { signal, Service, inject, effect } from '@angular/core';
+import { SettingsService } from '../../experiences/settings/services/settings-service';
+
+/** What the user asked for; 'system' follows the OS `prefers-color-scheme`. */
+export type ThemePreference = 'light' | 'dark' | 'system';
+
+@Service()
+export class ThemeService {
+  private readonly theme = signal<'light' | 'dark'>('light');
+  /** The user's stated preference (drives the settings segmented control). */
+  private readonly preference = signal<ThemePreference>('system');
+  private readonly settingsSvc = inject(SettingsService, { optional: true });
+  private lastDefaultTheme: string | null = null;
+
+  constructor() {
+    this.updateTheme();
+
+    window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', () => {
+      this.updateTheme();
+    });
+
+    const svc = this.settingsSvc;
+    if (svc) {
+      effect(() => {
+        // Access the snapshot signal to trigger reactive updates
+        svc.snapshotSignal();
+        this.updateTheme();
+      });
+    }
+  }
+
+  /** The resolved theme actually applied to the UI. */
+  public getTheme() {
+    return this.theme();
+  }
+
+  /** The user's stated preference: 'light', 'dark', or 'system'. */
+  public getPreference(): ThemePreference {
+    return this.preference();
+  }
+
+  public toggleTheme() {
+    this.setPreference(this.theme() === 'light' ? 'dark' : 'light');
+  }
+
+  public setPreference(pref: ThemePreference) {
+    // 'system' is stored explicitly so it wins over any workspace default and
+    // follows the OS live via the matchMedia listener.
+    localStorage.setItem('pc-theme', pref);
+    this.updateTheme();
+  }
+
+  private updateTheme() {
+    let defaultTheme: string | null = null;
+    if (this.settingsSvc) {
+      defaultTheme = this.settingsSvc.getValue<string>('appearance.theme') ?? null;
+      if (defaultTheme === 'light' || defaultTheme === 'dark') {
+        if (this.lastDefaultTheme !== null && this.lastDefaultTheme !== defaultTheme) {
+          localStorage.removeItem('pc-theme');
+        }
+        this.lastDefaultTheme = defaultTheme;
+      }
+    }
+
+    const stored = localStorage.getItem('pc-theme');
+    if (stored === 'light' || stored === 'dark') {
+      this.preference.set(stored);
+      this.theme.set(stored);
+      return;
+    }
+
+    if (stored === 'system') {
+      this.preference.set('system');
+      this.theme.set(this.systemTheme());
+      return;
+    }
+
+    // No personal override: follow the workspace default, else the OS. Reported
+    // to the UI as 'system' since the user hasn't pinned a specific theme.
+    this.preference.set('system');
+    if (defaultTheme === 'light' || defaultTheme === 'dark') {
+      this.theme.set(defaultTheme);
+      return;
+    }
+    this.theme.set(this.systemTheme());
+  }
+
+  private systemTheme(): 'light' | 'dark' {
+    return window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
   }
 }
 ```
@@ -29713,282 +28372,6 @@ export class EmailActionsStore {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
-
-```typescript
-import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
-import { Router } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-import { EmailStatus } from '../../../../../../../../libs/common/src';
-
-import { EmailsService } from '../emails-service';
-import { EmailActionsStore } from './email-actions.store';
-import { EmailCacheStore } from './email-cache.store';
-import { EmailFoldersStore } from './email-folders.store';
-import { type EmailId, EmailStateStore } from './email-state.store';
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Service()
-export class EmailsStore {
-  // ----------------- Lazy per-email fallback -----------------
-  //  private readonly _checked = new Set<string>();
-  private readonly router = inject(Router);
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly actions = inject(EmailActionsStore);
-  private readonly cache = inject(EmailCacheStore);
-  private readonly emailSvc = inject(EmailsService);
-
-  private readonly _isSyncing = signal(false);
-  public readonly isSyncing = this._isSyncing.asReadonly();
-
-  /** When the last successful sync completed — powers the "Synced …" evidence line (§2). */
-  private readonly _lastSyncedAt = signal<Date | null>(null);
-  public readonly lastSyncedAt = this._lastSyncedAt.asReadonly();
-
-  /*
-  private readonly ensureHasAttachmentOnOpen = effect(() => {
-    const id = this.currentSelectedEmailId();
-    if (!id) return;
-
-    // Skip if already known or in-flight
-    if (this.state.hasAttachment(id)() !== undefined) return;
-    if (this._checked.has(id)) return;
-    this._checked.add(id);
-
-    // Ask backend for this one email
-    this.emailSvc
-      .hasAttachment(id)
-      .then((has) => {
-        this.state.setHasAttachment(id, !!has);
-      })
-      .catch(() => {
-        // leave as undefined on error; next open can retry
-        this._checked.delete(id);
-      });
-  });
-  */
-  private readonly folders = inject(EmailFoldersStore);
-  private readonly state = inject(EmailStateStore);
-
-  public readonly allFolders = this.folders.allFolders;
-
-  public readonly currentSelectedEmail = this.state.currentSelectedEmail;
-
-  public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
-
-  public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
-
-  public readonly hasMore = this.folders.hasMore;
-  public readonly isLoadingMore = this.folders.isLoadingMore;
-
-  public readonly emailsInSelectedFolder = computed(() => {
-    const fid = this.folders.currentSelectedFolderId();
-    if (!fid) return [] as EmailType[];
-    return this.state.emailsInFolderWithFlags(fid)();
-  });
-  public readonly emailsLoading = this.folders.isLoading;
-
-  // ----------------- Cache computed factories -----------------
-  public readonly getEmailBodyById = this.cache.getEmailBodyById;
-  public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
-  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
-
-  public readonly isBodyExpanded = this.state.isBodyExpanded;
-
-  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
-
-  constructor() {
-    effect(() => {
-      // The effect tracks this because it's OUTSIDE untracked()
-      const targetId = this.debouncedSelectedEmailId.value();
-
-      if (targetId) {
-        // Run the email lookup and update INSIDE untracked()
-        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
-        untracked(() => {
-          const emailObj = this.state.readEmail(targetId);
-
-          if (emailObj && !emailObj.is_read) {
-            void this.actions.toggleEmailReadStatus(targetId, true);
-          }
-        });
-      }
-    });
-  }
-
-  // ----------------- Mutations (actions) -----------------
-  public addComment(emailId: EmailId, authorId: string, commentText: string) {
-    return this.actions.addComment(emailId, authorId, commentText);
-  }
-
-  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
-    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
-  }
-
-  public deleteComment(emailId: EmailId, commentId: string | number) {
-    return this.actions.deleteComment(emailId, commentId);
-  }
-
-  public deleteEmail(emailId: EmailId) {
-    return this.actions.deleteEmail(emailId);
-  }
-
-  // ----------------- Loads -----------------
-  public loadAllFolders() {
-    return this.folders.loadAllFolders();
-  }
-
-  public loadAllFoldersWithCounts() {
-    return this.folders.loadAllFoldersWithCounts();
-  }
-
-  public loadEmailBody(emailId: EmailId) {
-    return this.cache.loadEmailBody(emailId);
-  }
-
-  public loadEmailWithHeaders(emailId: EmailId) {
-    return this.cache.loadEmailWithHeaders(emailId);
-  }
-
-  public refreshEmailHeader(emailId: EmailId) {
-    return this.cache.refreshEmailHeader(emailId);
-  }
-
-  public loadEmailActivities(emailId: EmailId) {
-    return this.cache.loadEmailActivities(emailId);
-  }
-
-  public async loadEmailsForFolder(folderId: EmailId) {
-    const rows = await this.folders.loadEmailsForFolder(String(folderId));
-
-    // Prefer IDs from the response; fallback to state if needed
-    const ids =
-      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
-      this.state.emailIdsByFolderId()[String(folderId)] ||
-      [];
-
-    if (!ids.length) return rows;
-
-    try {
-      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
-
-      const merged: Record<string, boolean> = {};
-      for (const id of ids) {
-        const key = String(id); // <- normalize the key
-        merged[key] = !!partial[key];
-      }
-      this.state.setManyHasAttachment(merged);
-    } catch {
-      // ignore failures; UI can lazily resolve per-email elsewhere
-    }
-
-    return rows;
-  }
-
-  public refreshFolderCounts() {
-    return this.folders.refreshFolderCounts();
-  }
-
-  public restoreFromTrash(emailId: EmailId) {
-    return this.actions.restoreFromTrash(emailId);
-  }
-
-  public selectEmail(email: EmailType | { id: EmailId } | null): void {
-    this.state.selectEmail(email);
-  }
-
-  public selectFolder(folder: EmailFolderType | null): void {
-    this.folders.selectFolder(folder);
-  }
-
-  public toggleBodyExpanded(): void {
-    this.state.toggleBodyExpanded();
-  }
-
-  public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
-    return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
-  }
-
-  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
-    return this.actions.toggleEmailReadStatus(emailId, isRead);
-  }
-
-  public moveToFolder(emailId: EmailId, folderId: string) {
-    return this.actions.moveToFolder(emailId, folderId);
-  }
-
-  public loadNextPage() {
-    return this.folders.loadNextPage();
-  }
-
-  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
-    return this.actions.updateEmailStatus(emailId, status);
-  }
-
-  // ----------------- Syncing -----------------
-  public async syncEmails() {
-    this._isSyncing.set(true);
-    try {
-      const result = await this.emailSvc.syncEmails();
-
-      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
-      let attempts = 0;
-      while (attempts < 100) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const active = await this.emailSvc.isAnySyncing();
-        if (!active) {
-          break;
-        }
-        attempts++;
-      }
-
-      // Reload current folder emails and counts
-      const currentFolderId = this.currentSelectedFolderId();
-      if (currentFolderId) {
-        await this.loadEmailsForFolder(currentFolderId);
-      }
-      await this.refreshFolderCounts();
-      this._lastSyncedAt.set(new Date());
-      const inserted = result?.inserted ?? 0;
-      this.alerts.showSuccess(
-        inserted > 0
-          ? `Inbox synced — ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
-          : 'Inbox synced — no new emails',
-      );
-      return result;
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (
-        msg.includes('No email accounts connected') ||
-        msg.includes('No Microsoft account connected') ||
-        msg.includes('No Google account connected') ||
-        msg.includes('Token refresh failed')
-      ) {
-        const confirmed = await this.dialogs.confirm({
-          title: 'Email Account Connection Required',
-          message:
-            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
-          variant: 'warning',
-          confirmText: 'Go to Settings',
-          cancelText: 'Cancel',
-        });
-        if (confirmed) {
-          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
-        }
-      } else {
-        this.alerts.showError(getUserErrorMessage(e, 'Sync failed. Please try again.'));
-      }
-      throw e;
-    } finally {
-      this._isSyncing.set(false);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
 
 ```typescript
@@ -30373,1005 +28756,417 @@ export class EmailBody {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.html
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
 
 ```html
-<section class="flex-1 flex flex-col bg-base-100 h-full overflow-hidden">
-  @if (email()) {
-  <pc-email-header
-    [email]="email()!"
-    (reply)="emitReply()"
-    (replyAll)="emitReplyAll()"
-    (forward)="emitForward()"
-  ></pc-email-header>
-  <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-3">
-    <!-- SLA pill (§5): honest, computed from received time + workspace SLA config -->
-    @if (slaPill(); as sla) {
-    <div>
-      <span
-        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums"
-        [class.bg-base-200]="sla.tone === 'neutral'"
-        [class.text-base-content]="sla.tone === 'neutral'"
-        [class.bg-warning/15]="sla.tone === 'warning'"
-        [class.text-warning]="sla.tone === 'warning'"
-        [class.bg-error/15]="sla.tone === 'error'"
-        [class.text-error]="sla.tone === 'error'"
-      >
-        <pc-icon name="clock" [size]="4"></pc-icon>
-        {{ sla.text }}
-      </span>
+<div class="flex text-sm bg-base-100 h-full overflow-hidden">
+  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
+  <div [class]="folderPanelClass()">
+    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
+  </div>
+
+  <!-- Email list panel -->
+  @if (!isBodyExpanded()) {
+  <div [class]="listPanelClass()">
+    <!-- Mobile back button -->
+    <div class="md:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
+      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Folders
+      </button>
     </div>
-    }
+    <pc-email-list
+      class="flex-1 min-h-0 block"
+      (emailSelected)="onEmail($event!)"
+      (reply)="onReply($event)"
+      (replyAll)="onReplyAll($event)"
+      (forward)="onForward($event)"
+    ></pc-email-list>
+  </div>
+  }
 
-    <!-- Body owns the space (§5) -->
-    <pc-email-body
-      class="flex-1 min-h-0 border-double border-b-2 border-base-300 rounded-lg bg-base-100"
-      [email]="email()!"
+  <!-- Right pane: compose OR details -->
+  <div [class]="detailPanelClass()">
+    <!-- Mobile back button -->
+    <div class="md:hidden flex items-center mb-2 shrink-0">
+      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+    </div>
+
+    <div class="flex-1 min-h-0 overflow-hidden">
+      @if (isComposing()) {
+      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
+        <pc-compose-email
+          #composer
+          class="h-full"
+          [draftId]="draftIdToLoad()"
+          [initial]="composePrefill()"
+          (finished)="closeCompose()"
+        ></pc-compose-email>
+      </div>
+      } @else {
+      <pc-email-details
+        class="h-full"
+        [email]="selectedEmail()"
+        (reply)="onReply($event)"
+        (replyAll)="onReplyAll($event)"
+        (forward)="onForward($event)"
+      ></pc-email-details>
+      }
+    </div>
+  </div>
+
+  <!-- Person context rail (§5) — desktop only; mobile keeps stacked panes -->
+  @if (showPersonRail()) {
+  <pc-email-person-rail class="hidden shrink-0 md:block" [email]="selectedEmail()"></pc-email-person-rail>
+  } @if (isBodyExpanded() && selectedEmail()) {
+  <!-- Keep your existing BODY overlay when expanded -->
+  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
+    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
+      <div class="flex items-center justify-end">
+        <button class="btn btn-ghost btn-md" (click)="toggleExpanded()">
+          <pc-icon name="collapse-content" class="mr-1"></pc-icon>Collapse
+        </button>
+      </div>
+      <div class="flex-1 min-h-0">
+        <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3">
+          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
+        </div>
+      </div>
+    </div>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.ts
+
+```typescript
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { SettingsService } from '@experiences/settings/services/settings-service';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { computeEmailSla } from '../../services/email-sla';
+import { EmailBody } from '../email-body/email-body';
+import { EmailComments } from '../email-comments/email-comments';
+import { EmailHeader } from '../email-header/email-header';
+import { EmailActivities } from '../email-activities/email-activities';
+import { Icon } from '@icons/icon';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Component({
+  selector: 'pc-email-details',
+  imports: [EmailHeader, EmailBody, EmailComments, EmailActivities, Icon],
+  templateUrl: 'email-details.html',
+})
+export class EmailDetails {
+  private noEmailMsgDelay = createLoadingGate();
+
+  protected readonly store = inject(EmailsStore);
+  private readonly settingsSvc = inject(SettingsService);
+  protected readonly isLoading = this.store.emailsLoading;
+
+  protected showNoEmailMsg = this.noEmailMsgDelay.visible;
+
+  /** Honest SLA pill (§5): computed from the received time + workspace SLA config. */
+  protected readonly slaPill = computed(() => {
+    const e = this.email();
+    if (!e) return null;
+    this.settingsSvc.snapshotSignal(); // react to settings loading in
+    return computeEmailSla({
+      status: e.status,
+      receivedAt: e.date_sent ? new Date(e.date_sent) : null,
+      emailsHours: Number(this.settingsSvc.getValue('sla.emails_hours', 24)),
+      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
+      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
+      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
+    });
+  });
+
+  public readonly forward = output<EmailType>();
+  public readonly reply = output<EmailType>();
+  public readonly replyAll = output<EmailType>();
+
+  public email = input<EmailType | null>(null);
+  public commentCount = computed(() => {
+    const e = this.email();
+    if (!e) return 0;
+    const header = this.store.getEmailHeaderById(e.id)();
+    return (header as any)?.comments?.length ?? 0;
+  });
+  public activityCount = computed(() => {
+    const e = this.email();
+    if (!e) return 0;
+    return this.store.getEmailActivitiesById(e.id)()?.length ?? 0;
+  });
+
+  /** Which quiet-tab-row panel is open below the body (§5). */
+  public readonly openPanel = signal<'comments' | 'activity' | null>(null);
+
+  constructor() {
+    // Only fetch when header value is truly undefined (not when it's null/empty).
+    effect(() => {
+      const e = this.email();
+      if (!e) return;
+
+      const headerVal = untracked(() => this.store.getEmailHeaderById(e.id)());
+      if (typeof headerVal === 'undefined') {
+        this.store.loadEmailWithHeaders(e.id).catch((err) => console.error('Failed to load email header:', err));
+      }
+      // Eager-load activities so the tab row's count is honest before opening.
+      this.store.loadEmailActivities(e.id).catch(() => undefined);
+    });
+    // Ensure workspace SLA config is available for the pill (idempotent).
+    void this.settingsSvc.load();
+    this.noEmailMsgDelay.begin();
+  }
+
+  public toggleCommentsTab(): void {
+    this.openPanel.update((p) => (p === 'comments' ? null : 'comments'));
+  }
+  public toggleActivityTab(): void {
+    this.openPanel.update((p) => (p === 'activity' ? null : 'activity'));
+  }
+  public closePanel(): void {
+    this.openPanel.set(null);
+  }
+
+  protected emitForward() {
+    const e = this.email();
+    if (e) this.forward.emit(e);
+  }
+
+  protected emitReply() {
+    const e = this.email();
+    if (e) this.reply.emit(e);
+  }
+
+  protected emitReplyAll() {
+    const e = this.email();
+    if (e) this.replyAll.emit(e);
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.html
+
+```html
+<aside [class]="asideClass()">
+  <!-- Header and expand / collapse icon -->
+  <div class="flex items-center justify-between border-t border-base-300 pl-4 border-double border-b-4">
+    <h2 class="text-xs font-semibold text-neutral-content">
+      <span [class]="labelClass()">Filters</span>
+    </h2>
+
+    <pc-swap
+      swapOffIcon="chevron-double-right"
+      swapOnIcon="chevron-double-left"
+      animation="rotate"
+      [checked]="!foldersCollapsed()"
+      (click)="toggleFolders()"
+      [size]="4"
+      class="hover:text-primary invisible lg:visible"
+    ></pc-swap>
+  </div>
+
+  <ul class="flex-1 font-light overflow-y-auto email-scrollbar">
+    <!-- Virtual Folders (Filters) -->
+    @for (folder of folders(); track folder.id) { @if (folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
+      (click)="selectFolder(folder)"
+      [class.bg-primary/10]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
     >
-    </pc-email-body>
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span [class]="labelClass()">{{ folder.name }}</span>
+      </div>
 
-    @if (!store.isBodyExpanded()) {
-    <!-- Quiet tab row: Comments · Activity (not stacked bars) -->
-    <div class="flex items-center gap-4 border-b border-base-200 text-[12.5px]">
-      <button
-        type="button"
-        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
-        [class.!border-primary]="openPanel() === 'comments'"
-        [class.!text-primary]="openPanel() === 'comments'"
-        [class.font-semibold]="openPanel() === 'comments'"
-        (click)="toggleCommentsTab()"
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+    </li>
+    } }
+
+    <!-- Separator & Collapsible Header -->
+    <li [class]="separatorClass()" role="separator"></li>
+    <li [class]="sectionHeaderClass()" (click)="toggleRealFolders()">
+      <span>Folders</span>
+      <pc-swap
+        swapOffIcon="chevron-right"
+        swapOnIcon="chevron-down"
+        animation="flip"
+        [checked]="!realFoldersCollapsed()"
+        [size]="3"
+        (click)="toggleRealFolders()"
+      ></pc-swap>
+    </li>
+
+    <!-- Real Folders -->
+    @if (!realFoldersCollapsed()) { @for (folder of folders(); track folder.id) { @if (!folder.is_virtual) {
+    <li
+      class="cursor-pointer flex items-center justify-between px-3 py-2 hover:bg-primary/5"
+      (click)="selectFolder(folder)"
+      [class.bg-primary/10]="isSelected(folder)"
+      [class.text-primary]="isSelected(folder)"
+    >
+      <div class="flex items-center gap-2">
+        <pc-icon class="shrink-0" [size]="4" [name]="getIcon(folder)" />
+        <span [class]="labelClass()">{{ folder.name }}</span>
+      </div>
+
+      <span [class]="countClass()"> {{ getEmailCount(folder) }} </span>
+    </li>
+    } } }
+  </ul>
+
+  <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
+    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New email">
+      <pc-icon name="pencil-square"></pc-icon>
+      <span [class]="buttonLabelClass()">New email</span>
+    </button>
+    <button
+      class="btn btn-outline btn-primary w-full"
+      [disabled]="store.isSyncing()"
+      (click)="store.syncEmails()"
+      title="Sync now"
+    >
+      <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
+      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing…' : 'Sync now' }} </span>
+    </button>
+    <!-- Evidence line: background work narrates itself (§2) -->
+    @if (store.lastSyncedAt(); as syncedAt) {
+    <span [class]="buttonLabelClass()" class="text-center text-[10.5px] text-base-content/45">
+      Synced {{ syncedAt | timeAgo:{ style: 'long' } }}
+    </span>
+    }
+  </div>
+</aside>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
+
+```html
+<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full md:w-48 bg-base-200">
+  <!-- Toolbar -->
+  <div
+    class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
+  >
+    <span class="text-xs font-semibold text-neutral-content">Sort</span>
+    <div class="dropdown dropdown-end">
+      <label
+        tabindex="0"
+        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
       >
-        <pc-icon name="chat-bubble-bottom-center-text" [size]="4"></pc-icon>
-        <ng-container i18n="EmailDetails|Comments tab@@emailDetails.tab.comments">Comments</ng-container>
-        @if (commentCount() > 0) {
-        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
-          >{{ commentCount() }}</span
+        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
+        <pc-icon name="chevron-down" [size]="3"></pc-icon>
+      </label>
+      <ul
+        tabindex="0"
+        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
+      >
+        <li>
+          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
+        </li>
+        <li>
+          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
+    @for (email of sortedEmails(); track email.id) {
+    <li
+      (click)="selectEmail(email)"
+      (contextmenu)="onContextMenu($event, email)"
+      [class.bg-primary/10]="isSelected(email.id)"
+      class="border-b border-base-200 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
+    >
+      <div
+        class="truncate text-xs flex gap-1 items-center"
+        [class.text-base-content/90]="!email.is_read"
+        [class.text-base-content/60]="email.is_read"
+      >
+        @if (!email.is_read) {
+        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
+        } @if (email.from_email || email.to_email) {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
+          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
+          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
+        </span>
+        } @else {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
+        }
+        <span class="flex-none"
+          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
+        >
+      </div>
+      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
+        @if (email?.subject) {
+        <span class="truncate flex-1">{{ email.subject }}</span>
+        } @else {
+        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
+        } @if (email.has_attachment) {
+        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
+        }
+      </div>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="min-w-0 flex-1 truncate font-light text-xs text-base-content/60">{{ email.preview }}</span>
+        @if (rowStatus(email); as st) {
+        <span
+          class="shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
+          [class.bg-warning/15]="st.tone === 'warning'"
+          [class.text-warning]="st.tone === 'warning'"
+          [class.bg-info/15]="st.tone === 'info'"
+          [class.text-info]="st.tone === 'info'"
+          [class.bg-base-300]="st.tone === 'neutral'"
+          [class.text-base-content/70]="st.tone === 'neutral'"
+          >{{ st.label }}</span
         >
         }
-      </button>
+      </div>
+    </li>
+    } @empty {
+    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
+      <pc-icon name="inbox" [size]="8"></pc-icon>
+      <span>No emails</span>
+    </li>
+    } @if (isLoadingMore()) {
+    <li class="flex justify-center p-3 border-b border-base-200">
+      <span class="loading loading-spinner loading-sm text-primary"></span>
+    </li>
+    }
+  </ul>
+
+  @if (showContextMenu() && contextMenuEmail()) {
+  <div
+    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
+    [style.left.px]="contextMenuPosition().x"
+    [style.top.px]="contextMenuPosition().y"
+  >
+    @for (section of menuSections; track $index; let last = $last) {
+    <div class="px-1.5 py-0.5">
+      @for (item of section.items; track item.label) {
       <button
-        type="button"
-        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
-        [class.!border-primary]="openPanel() === 'activity'"
-        [class.!text-primary]="openPanel() === 'activity'"
-        [class.font-semibold]="openPanel() === 'activity'"
-        (click)="toggleActivityTab()"
+        (click)="item.action()"
+        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
       >
-        <pc-icon name="clock" [size]="4"></pc-icon>
-        <ng-container i18n="EmailDetails|Activity tab@@emailDetails.tab.activity">Activity</ng-container>
-        @if (activityCount() > 0) {
-        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
-          >{{ activityCount() }}</span
-        >
-        }
-      </button>
-      <span class="flex-1"></span>
-      @if (openPanel()) {
-      <button
-        type="button"
-        class="text-xs text-base-content/50 underline underline-offset-2 hover:text-base-content"
-        (click)="closePanel()"
-        i18n="EmailDetails|Hide open panel@@emailDetails.tab.hide"
-      >
-        Hide
+        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
+        <span>{{ item.label }}</span>
       </button>
       }
     </div>
 
-    @if (openPanel() === 'comments') {
-    <div
-      class="animate-drop max-h-60 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
-    >
-      <pc-email-comments [email]="email()"></pc-email-comments>
-    </div>
-    } @else if (openPanel() === 'activity') {
-    <div
-      class="animate-drop max-h-52 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
-    >
-      <pc-email-activities [email]="email()" [headerless]="true"></pc-email-activities>
-    </div>
+    @if (!last) {
+    <div class="border-t border-base-300 my-1"></div>
     } }
-  </main>
-
-  } @else if (isLoading()) {
-  <div class="min-h-screen flex items-center justify-center">
-    <span class="loading loading-bars"></span>
-  </div>
-  } @else if (showNoEmailMsg()){
-  <div class="flex flex-1 flex-col items-center justify-center gap-3 text-base-content/40 uppercase tracking-widest">
-    <img class="max-w-64" src="assets/waiting.svg" />
-    <span>No emails here!</span>
   </div>
   }
 </section>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
-
-```typescript
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-folder-list',
-  imports: [Swap, Icon, TimeAgoPipe],
-  templateUrl: 'email-folder-list.html',
-})
-export class EmailFolderList implements OnInit {
-  protected readonly store = inject(EmailsStore);
-
-  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
-
-  public readonly folderSelected = output<EmailFolderType>();
-
-  public readonly folders = this.store.allFolders;
-
-  public readonly foldersCollapsed = signal(false);
-
-  public readonly realFoldersCollapsed = signal(true);
-
-  public readonly newEmail = output<void>();
-
-  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
-  protected readonly asideClass = computed(
-    () =>
-      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
-      'w-full md:w-12 ' +
-      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
-  );
-
-  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
-  protected readonly labelClass = computed(
-    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
-  );
-
-  protected readonly countClass = computed(
-    () =>
-      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
-      (this.foldersCollapsed() ? '' : ' lg:block'),
-  );
-
-  protected readonly sectionHeaderClass = computed(
-    () =>
-      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
-      (this.foldersCollapsed() ? '' : ' lg:flex'),
-  );
-
-  protected readonly buttonLabelClass = computed(
-    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
-  );
-
-  protected readonly separatorClass = computed(
-    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
-  );
-
-  public emitNewEmail() {
-    this.newEmail.emit();
-  }
-
-  public getEmailCount(folder: EmailFolderType): number {
-    return (folder as any).email_count ?? 0;
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    try {
-      await this.store.loadAllFoldersWithCounts();
-    } catch (e) {
-      console.error('Failed to load folders with counts', e);
-    }
-  }
-
-  public selectFolder(folder: EmailFolderType): void {
-    this.folderSelected.emit(folder);
-  }
-
-  public toggleFolders(): void {
-    this.foldersCollapsed.update((v) => !v);
-  }
-
-  public toggleRealFolders(): void {
-    this.realFoldersCollapsed.update((v) => !v);
-  }
-
-  protected getIcon(folder: EmailFolderType): PcIconNameType {
-    return folder.icon as PcIconNameType;
-  }
-
-  protected isSelected(folder: EmailFolderType): boolean {
-    return String(folder.id) === String(this.store.currentSelectedFolderId());
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
-
-```html
-<header class="border-b border-base-300 px-4 pb-4">
-  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
-    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
-  </div>
-  <div class="flex items-start gap-3 mt-2">
-    <pc-email-assign [email]="email()"></pc-email-assign>
-    <div class="min-w-0 flex-1"></div>
-
-    <div class="flex items-center gap-1 text-sm text-base-content/70">
-      <span class="whitespace-nowrap pr-2">
-        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
-      </span>
-
-      <div class="border-t border-base-300 my-1 h-0"></div>
-      <div class="hidden md:block">
-        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
-        <div class="dropdown dropdown-end inline-block align-middle">
-          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
-            <pc-icon name="reply" [size]="4"></pc-icon>
-            <pc-icon name="chevron-down" [size]="3"></pc-icon>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
-          >
-            <li>
-              <a
-                (click)="handleReply()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleReplyAll()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleForward()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-              </a>
-            </li>
-          </ul>
-        </div>
-
-        @if (!isFolderTrash()) {
-
-        <!-- Close/Mark as Done -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="markAsDoneText()"
-          aria-label="Mark as done"
-          (click)="toggleClosed()"
-        >
-          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
-        </button>
-        } @else {
-        <!-- Restore from Trash -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Restore"
-          aria-label="Restore"
-          (click)="restoreFromTrash()"
-        >
-          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
-        </button>
-        }
-
-        <!-- Delete -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="getTrashText()"
-          [attr.aria-label]="getTrashText()"
-          (click)="deleteEmail()"
-        >
-          @if (isFolderTrash()) {
-          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
-          } @else {
-          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
-          }
-        </button>
-      </div>
-      <!-- More Actions Dropdown -->
-      <div class="dropdown dropdown-end">
-        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
-          <svg viewBox="0 0 24 24" class="h-5 w-5">
-            <path
-              fill="currentColor"
-              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
-            />
-          </svg>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
-        >
-          <li>
-            <a
-              (click)="handleCreateTask()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create task
-            </a>
-          </li>
-          <div class="border-t border-base-300 my-1 h-0"></div>
-          <li>
-            <a
-              (click)="handleReply()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleReplyAll()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply all
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleForward()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
-          <li>
-            <a
-              (click)="markAsSpam()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
-            </a>
-          </li>
-          } @else {
-          <li>
-            <a
-              (click)="moveToInbox()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
-            </a>
-          </li>
-          } }
-          <li>
-            <a
-              (click)="handleMarkAsUnread()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              (click)="toggleFavourite()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                [name]="getFavouriteIcon()"
-                [size]="4"
-                [class.text-amber-500]="isFavourite()"
-                [class.text-base-content/60]="!isFavourite()"
-              ></pc-icon>
-              {{ isFavourite() ? 'Unstar' : 'Star' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="toggleClosed()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                name="check-circle"
-                [size]="4"
-                [class.text-success]="isClosed()"
-                [class.text-base-content/60]="!isClosed()"
-              ></pc-icon>
-              {{ isClosed() ? 'Reopen' : 'Mark as done' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="deleteEmail()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
-            </a>
-          </li>
-
-          <div class="border-t border-base-300 my-1 h-0"></div>
-
-          <li>
-            <a
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="mt-3 flex items-center gap-3">
-    <div class="avatar">
-      @if (headerData()?.person; as person) {
-      <a
-        [routerLink]="['/people', person.id]"
-        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
-      >
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </a>
-      } @else {
-      <div class="w-10 rounded-full bg-base-200">
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </div>
-      }
-    </div>
-
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-1.5 min-w-0">
-        @if (headerData()?.person; as person) {
-        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
-          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
-          (email()!.from_name || email()!.from_email) }}
-        </a>
-        <div class="dropdown dropdown-bottom inline-block">
-          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
-            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
-          </button>
-          <div
-            tabindex="0"
-            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="avatar placeholder">
-                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
-                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
-                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
-                  @if (person.company_name) {
-                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
-                  }
-                </div>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-2 text-xs">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span class="truncate">{{ person.email }}</span>
-                </div>
-                @if (person.mobile) {
-                <div class="flex items-center gap-2">
-                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span>{{ person.mobile }}</span>
-                </div>
-                } @if (person.notes) {
-                <div class="flex flex-col gap-1 mt-1">
-                  <span class="font-semibold text-base-content/60">Notes:</span>
-                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
-                    {{ person.notes }}
-                  </p>
-                </div>
-                }
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-3">
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Tags:</span
-                  >
-                  <pc-tags
-                    [tags]="personTags()"
-                    [type]="'tag'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add tag...'"
-                    (tagAdded)="onTagAdded($event)"
-                    (tagRemoved)="onTagRemoved($event)"
-                  ></pc-tags>
-                  @if (!personTags().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
-                  }
-                </div>
-
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Issues:</span
-                  >
-                  <pc-tags
-                    [tags]="personIssues()"
-                    [type]="'issue'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add issue...'"
-                    (tagAdded)="onIssueAdded($event)"
-                    (tagRemoved)="onIssueRemoved($event)"
-                  ></pc-tags>
-                  @if (!personIssues().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @else {
-        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
-        }
-        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
-      </div>
-
-      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
-      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
-        @for (tag of person.tags; track tag.name) {
-        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        } @for (issue of person.issues; track issue.name) {
-        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        }
-      </div>
-      } }
-
-      <div class="text-xs text-base-content/60 mt-1">
-        to
-        <div class="dropdown inline-block">
-          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
-            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
-            (getToRecipients().length > 1) {
-            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
-            } } @else { {{ email()!.to_email }} }
-            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
-              />
-            </svg>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
-          >
-            <!-- Recipients Section -->
-            <li class="menu-title text-xs">Recipients</li>
-
-            @if (getToRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">To:</li>
-            @for (recipient of getToRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getCcRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">CC:</li>
-            @for (recipient of getCcRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getBccRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">BCC:</li>
-            @for (recipient of getBccRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
-            0) {
-            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
-            }
-
-            <!-- Email Details Section -->
-            <li class="divider mt-3"></li>
-            <li class="menu-title text-xs">Email Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Subject:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Date:</span>
-                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">From:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Reply-To:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
-                </div>
-              </div>
-            </li>
-
-            <!-- Technical Details Section -->
-            <li class="divider mt-2"></li>
-            <li class="menu-title text-xs">Technical Details</li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Message-ID:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Mailed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Security:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Signed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
-                </div>
-              </div>
-            </li>
-
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Return-Path:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="flex items-center gap-1">
-      <pc-icon
-        class="hover:text-primary tooltip tooltip-left cursor-pointer"
-        [attr.data-tip]="'Expand email body'"
-        name="expand-content"
-        [size]="4"
-        (click)="toggleExpand()"
-      ></pc-icon>
-    </div>
-  </div>
-</header>
-
-<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
-
-```typescript
-import { DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TagItem } from '@uxcommon/components/tags/tagitem';
-import { Tags } from '@experiences/tags/ui/tags';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailAssign } from '../email-assign/email-assign';
-import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Component({
-  selector: 'pc-email-header',
-  // include swap for expand/collapse control
-  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
-  host: {
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-header.html',
-})
-export class EmailHeader {
-  private alertSvc = inject(AlertService);
-  private store = inject(EmailsStore);
-  private personsSvc = inject(PersonsService);
-
-  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
-
-  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
-  protected isClosed = signal(false);
-  protected isFavourite = signal(false);
-
-  protected personTags = computed(() => {
-    const person = this.headerData()?.person;
-    return person?.tags?.map((t: any) => t.name) ?? [];
-  });
-
-  protected personIssues = computed(() => {
-    const person = this.headerData()?.person;
-    return person?.issues?.map((t: any) => t.name) ?? [];
-  });
-
-  protected async onTagAdded(tagName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.attachTag(person.id, tagName, 'tag');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
-    } catch (e) {
-      console.error('Failed to attach tag:', e);
-      this.alertSvc.showError('Failed to add tag');
-    }
-  }
-
-  protected async onTagRemoved(tagName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.detachTag(person.id, tagName, 'tag');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
-    } catch (e) {
-      console.error('Failed to detach tag:', e);
-      this.alertSvc.showError('Failed to remove tag');
-    }
-  }
-
-  protected async onIssueAdded(issueName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.attachTag(person.id, issueName, 'issue');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
-    } catch (e) {
-      console.error('Failed to attach issue:', e);
-      this.alertSvc.showError('Failed to add issue');
-    }
-  }
-
-  protected async onIssueRemoved(issueName: string) {
-    const person = this.headerData()?.person;
-    if (!person) return;
-    try {
-      await this.personsSvc.detachTag(person.id, issueName, 'issue');
-      this.store.refreshEmailHeader(this.email().id);
-      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
-    } catch (e) {
-      console.error('Failed to detach issue:', e);
-      this.alertSvc.showError('Failed to remove issue');
-    }
-  }
-
-  public readonly forward = output<void>();
-  public readonly reply = output<void>();
-  public readonly replyAll = output<void>();
-
-  public email = input.required<EmailType>();
-
-  public isExpanded = this.store.isBodyExpanded;
-
-  constructor() {
-    // isFavourite and isClosed are settable, so can't use computed
-    effect(() => {
-      const email = this.email();
-
-      this.isFavourite.set(email.is_favourite);
-      this.isClosed.set(email.status === 'closed');
-    });
-  }
-
-  public getFavouriteIcon() {
-    return this.isFavourite() ? 'star-filled' : 'star';
-  }
-
-  protected async deleteEmail() {
-    try {
-      await this.store.deleteEmail(this.email().id);
-    } catch (e) {
-      console.error('Failed to delete email', e);
-      this.alertSvc.showError('Failed to delete email');
-    }
-  }
-
-  protected getAllRecipients(): any[] {
-    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
-  }
-
-  protected getBccRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.bcc_list || [];
-  }
-
-  protected getCcRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.cc_list || [];
-  }
-
-  protected getDateSent(): Date | null {
-    const header = this.headerData();
-    return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
-  }
-
-  protected getHeaderInfo() {
-    const header = this.headerData();
-    const email = this.email();
-
-    return {
-      subject: email.subject,
-      date: this.getDateSent() || email.updated_at,
-      from: email.from_email,
-      to: email.to_email,
-      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
-      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
-      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
-      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
-      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
-      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
-    };
-  }
-
-  protected getToRecipients(): any[] {
-    const header = this.headerData();
-    return header?.email?.to_list || [];
-  }
-
-  protected getTrashText() {
-    return this.isFolderTrash() ? 'Delete forever' : 'Move to Trash';
-  }
-
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    if (ev.key === 'Escape' && this.isExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.stopPropagation();
-      ev.preventDefault();
-    }
-  }
-
-  protected handleForward() {
-    this.forward.emit();
-  }
-
-  protected handleMarkAsUnread() {
-    void this.store.toggleEmailReadStatus(this.email().id, false);
-    this.store.selectEmail(null);
-  }
-
-  protected handleReply() {
-    this.reply.emit();
-  }
-
-  protected handleReplyAll() {
-    this.replyAll.emit();
-  }
-
-  protected isFolderTrash(): boolean {
-    const fid = this.store.currentSelectedFolderId();
-    return fid === ALL_FOLDERS.TRASH;
-  }
-
-  protected isFolderSpam(): boolean {
-    const fid = this.store.currentSelectedFolderId();
-    return fid === ALL_FOLDERS.SPAM;
-  }
-
-  protected async markAsSpam() {
-    try {
-      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-      this.store.selectEmail(null);
-    } catch (e) {
-      console.error('Failed to mark email as spam', e);
-      this.alertSvc.showError('Failed to mark email as spam');
-    }
-  }
-
-  protected async moveToInbox() {
-    try {
-      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
-      this.alertSvc.showSuccess('Email moved to Inbox');
-      this.store.selectEmail(null);
-    } catch (e) {
-      console.error('Failed to move email to Inbox', e);
-      this.alertSvc.showError('Failed to move email to Inbox');
-    }
-  }
-
-  protected markAsDoneText() {
-    return this.isClosed() ? 'Reopen' : 'Mark as done';
-  }
-
-  protected restoreFromTrash() {
-    void this.store.restoreFromTrash(this.email().id);
-  }
-
-  protected async toggleClosed() {
-    const email = this.email();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-
-    // Optimistically update UI
-    this.isClosed.set(newStatus === 'closed');
-
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (_error) {
-      // Revert UI state on error
-      this.isClosed.set(currentStatus === 'closed');
-      this.alertSvc.showError('Failed to update email status');
-    }
-  }
-
-  protected handleCreateTask(): void {
-    void this.createTaskDialog()?.open();
-  }
-
-  protected toggleExpand(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  protected async toggleFavourite() {
-    const e = this.email();
-    this.isFavourite.update((value) => !value);
-    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
@@ -32187,6 +29982,180 @@ export class FundraisingGridComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const ADMIN_ARTICLES: HelpArticle[] = [
+  {
+    id: 'profile',
+    category: 'admin',
+    title: 'Your profile',
+    summary:
+      'Your photo, your details, and your personal notification preferences — plus a snapshot of your own impact.',
+    keywords: ['profile', 'avatar', 'photo', 'account', 'notification preferences', 'personal settings', 'my account'],
+    related: ['users-roles', 'settings', 'getting-around'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open your [Profile](/profile) from the avatar menu in the top-right corner. This page is about you: how you appear to teammates, which notifications reach you, and what you have contributed.',
+      },
+      { kind: 'h2', id: 'photo', text: 'Profile photo' },
+      {
+        kind: 'p',
+        text: 'Upload a photo and crop it right in the app — or remove it to fall back to the default. A real photo makes assignment menus and activity feeds much easier to scan for everyone.',
+      },
+      { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
+      {
+        kind: 'p',
+        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Open them from **Settings** in the avatar menu; every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Verify your email',
+        text: 'If a “verification pending” notice sits at the top of your profile, click the link in the verification email — some features stay limited until your address is confirmed.',
+      },
+      { kind: 'h2', id: 'impact', text: 'Your activity and impact' },
+      {
+        kind: 'p',
+        text: 'The bottom of the profile tallies your recent contributions in the workspace — a quick answer to “what did I actually get done this month?”',
+      },
+    ],
+  },
+  {
+    id: 'users-roles',
+    category: 'admin',
+    title: 'Users and roles',
+    summary: 'Invite teammates, understand viewer / editor / admin, and enforce sign-in security like MFA.',
+    keywords: ['users', 'roles', 'invite', 'admin', 'editor', 'viewer', 'permissions', 'access', 'mfa', 'security'],
+    related: ['settings', 'profile', 'activity-log'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'User management lives under [Users](/users) in the System section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+      },
+      { kind: 'h2', id: 'roles', text: 'The three roles' },
+      {
+        kind: 'list',
+        items: [
+          '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
+          '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
+          '**Admin** — everything, plus the System area: users, tags, issues, configuration, and the activity log.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'New invitations default to the role set under **Workspace → Teams & Access**. Grant the least role that lets someone do their job — you can always raise it later.',
+      },
+      { kind: 'h2', id: 'mfa', text: 'Multi-factor authentication' },
+      {
+        kind: 'p',
+        text: 'Turn on **Require MFA for all users** (Workspace → Teams & Access) and every sign-in from a new device or location must be confirmed with an email verification code. Strongly recommended once more than a couple of people share the workspace.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Departures checklist',
+        text: 'When someone leaves, deactivate their account promptly. Their history stays attributed to them in the activity log; only their access ends.',
+      },
+    ],
+  },
+  {
+    id: 'settings',
+    category: 'admin',
+    title: 'Settings and configuration',
+    summary:
+      'Two front doors: Settings for personal preferences, Workspace for policy that affects everyone (administrators).',
+    keywords: [
+      'settings',
+      'configuration',
+      'organization',
+      'communications',
+      'appearance',
+      'billing',
+      'integrations',
+      'sla settings',
+      'workspace',
+    ],
+    related: ['users-roles', 'newsletters', 'dashboard', 'profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone and uses a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
+      },
+      { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace configuration' },
+      {
+        kind: 'list',
+        items: [
+          '**Organization** — your name, contact details, and mailing address.',
+          '**Communications** — default from-name and from-address (verified senders only), reply-to, the newsletter footer disclaimer, and double opt-in for web-form subscribers.',
+          '**Notifications** — workspace-wide notification defaults (individuals refine their own on their profile).',
+          '**Teams & Access** — default role for invitations and the MFA requirement.',
+          '**SLA Configuration** — response-time targets for email and tasks, working days and hours, and the warning/critical thresholds behind the dashboard status.',
+          '**Appearance** — default theme and date format for the workspace.',
+          '**Integrations & API** — webhook keys and connected services.',
+          '**Billing** — your plan and payment details.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Cannot see the Workspace section?',
+        text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Three settings to nail on day one',
+        text: 'Organization details, the Communications sender identity, and SLA working hours — everything else can wait, but these three shape every email you send and every number on the dashboard.',
+      },
+    ],
+  },
+  {
+    id: 'activity-log',
+    category: 'admin',
+    title: 'The activity log',
+    summary: 'Who changed what, when — on every record page, and workspace-wide for administrators.',
+    keywords: ['activity', 'audit', 'history', 'log', 'changes', 'who changed', 'accountability'],
+    related: ['users-roles', 'person-profile'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Every record that can change keeps a running history — open its **Activity** tab to see edits and touches in order, each attributed to a person and a time. It answers “who changed this phone number?” without a meeting.',
+      },
+      { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
+      {
+        kind: 'p',
+        text: 'Administrators also get [Activity log](/activities) under System: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'The log is a teaching tool',
+        text: 'When data looks wrong, check the activity first. Most “mystery changes” turn out to be a teammate with good intentions and a different assumption — now you know who to sync with.',
+      },
+    ],
+  },
+];
+```
+
 ## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
 
 ```typescript
@@ -32511,6 +30480,159 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
       {
         kind: 'p',
         text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const OUTREACH_ARTICLES: HelpArticle[] = [
+  {
+    id: 'newsletters',
+    category: 'outreach',
+    title: 'Create and send a newsletter',
+    summary:
+      'Template to audience to send: the full path, plus scheduling, the compliance footer, and how sending progress is shown.',
+    keywords: ['newsletter', 'campaign', 'email blast', 'send', 'schedule', 'template', 'audience', 'unsubscribe'],
+    related: ['lists', 'tags-issues', 'settings', 'automations'],
+    blocks: [
+      { kind: 'h2', id: 'compose', text: 'From template to draft' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Newsletters](/newsletters) and click +', detail: 'Start from a template or a blank canvas.' },
+          {
+            title: 'Design in the visual editor',
+            detail: 'Write and arrange your content visually — what you see is what subscribers get.',
+          },
+          {
+            title: 'Name it clearly',
+            detail: 'The name is how you will find it in the grid and its performance later.',
+          },
+        ],
+      },
+      { kind: 'h2', id: 'audience', text: 'Choose the audience' },
+      {
+        kind: 'p',
+        text: 'Audiences are built from your [lists](/help/lists) and refined with tags — include the tags you want, exclude the ones you do not (exclude always wins). The estimated recipient count updates as you adjust, so you know the reach **before** you send, not after.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Dynamic lists shine here',
+        text: 'An audience built on a dynamic list is evaluated fresh — whoever matches on send day gets the email. No stale rosters.',
+      },
+      { kind: 'h2', id: 'send', text: 'Send or schedule' },
+      {
+        kind: 'p',
+        text: 'Send now, or set a send date to schedule. While a send is running, a progress indicator appears in the top bar — you can keep working anywhere in the app; sending happens in the background.',
+      },
+      {
+        kind: 'p',
+        text: 'After the send, the newsletter’s page tracks how it performed, and each recipient’s profile lists it under their **Newsletters** tab.',
+      },
+      { kind: 'h2', id: 'compliance', text: 'The footer and opt-in rules' },
+      {
+        kind: 'list',
+        items: [
+          'Every newsletter carries your footer disclaimer and an unsubscribe link. Administrators set the disclaimer text under **Workspace → Communications**.',
+          'The default from-name and from-address also live there — only verified sender addresses can be used, which protects your deliverability.',
+          'With **double opt-in** enabled, people who subscribe through a web form must confirm by email before they receive newsletters.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Respect unsubscribes',
+        text: 'Unsubscribed people are excluded automatically. Do not re-import or re-tag your way around it — it damages trust and your sender reputation.',
+      },
+    ],
+  },
+  {
+    id: 'inbox',
+    category: 'outreach',
+    title: 'The shared inbox',
+    summary:
+      'Read and answer your organization’s email inside PeopleCRM, with every conversation attached to the right person.',
+    keywords: ['inbox', 'email', 'reply', 'conversation', 'response time', 'sla email', 'correspondence', 'gmail keys'],
+    related: ['dashboard', 'person-profile', 'shortcuts', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
+      },
+      { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
+      {
+        kind: 'list',
+        items: [
+          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/summary) rolls breaches up into a status.',
+          'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
+          'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
+          'Notifications alert you to activity that needs you — tune them under **Settings** in the avatar menu.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Work it like Gmail',
+        text: 'The inbox answers to Gmail-style keys — `c` compose, `r` reply, `e` mark done, `s` star, `j`/`k` next and previous, `#` delete, and more. The full table is in [Keyboard shortcuts](/help/shortcuts), or press `?` right in the inbox.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Where the response target comes from',
+        text: 'Administrators set the email SLA in working hours (plus the working days and business hours that count) under **Workspace → SLA Configuration** — see [The dashboard and SLA health](/help/dashboard).',
+      },
+    ],
+  },
+  {
+    id: 'automations',
+    category: 'outreach',
+    title: 'Automations',
+    summary:
+      'Build multi-step workflows that run on their own — triggered manually or by things that happen, like an event signup.',
+    keywords: ['automation', 'workflow', 'trigger', 'steps', 'follow up', 'drip', 'automatic'],
+    related: ['newsletters', 'events-shifts', 'tasks'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Automations (under [Automations](/workflows) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after an event, the reminder before a shift.',
+      },
+      { kind: 'h2', id: 'anatomy', text: 'Anatomy of a workflow' },
+      {
+        kind: 'list',
+        items: [
+          '**Trigger** — what starts a run: fire it manually, or attach it to an event so signups kick it off automatically.',
+          '**Steps** — what happens, in order. Select any step on the canvas to configure it.',
+          '**Settings** — the workflow’s name and behavior.',
+        ],
+      },
+      { kind: 'h2', id: 'first', text: 'A good first automation' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Automations](/workflows) and click +',
+            detail: 'Give it a name that says what it does — “Event signup thank-you”.',
+          },
+          { title: 'Pick the trigger', detail: 'Choose the event that should start it.' },
+          {
+            title: 'Add the steps',
+            detail: 'Keep the first version to one or two steps; add sophistication after it has run a few times.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Start manual, then automate',
+        text: 'Running a workflow manually a few times is the fastest way to trust it — once the steps behave, wire it to the trigger and let it run.',
       },
     ],
   },
@@ -34480,6 +32602,607 @@ export class DonationsSettingsComponent implements OnInit {
       .catch(() => this.alerts.showError('Failed to copy webhook URL'));
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/settings/settings-page.html
+
+```html
+<div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
+  <header class="mb-8 space-y-2">
+    <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">
+      @switch (currentMode) { @case ('settings') { Personal } @case ('configuration') { Workspace } }
+    </p>
+    <h1 class="text-3xl font-bold tracking-tight">
+      @switch (currentMode) { @case ('settings') { Settings } @case ('configuration') { Workspace settings } }
+    </h1>
+    <p class="text-base-content/70">
+      @switch (currentMode) { @case ('settings') { Personal to you — nothing here affects teammates. } @case
+      ('configuration') { Control tenant-wide defaults and account management for PeopleCRM. } }
+    </p>
+  </header>
+
+  @if (hasLoaded()) {
+  <div class="flex flex-col gap-8 md:flex-row md:items-start lg:gap-12">
+    <!-- Sidebar Navigation -->
+    <aside class="w-48 md:sticky md:top-8 shrink-0">
+      <nav class="flex flex-row overflow-x-auto pb-4 md:flex-col md:pb-0 gap-1" aria-label="Settings sections">
+        @for (section of visibleSections; track trackSection($index, section)) {
+        <button
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected(section.config.id)"
+          [class.text-base-content]="isSelected(section.config.id)"
+          [class.text-base-content]="!isSelected(section.config.id)"
+          [class.opacity-70]="!isSelected(section.config.id)"
+          (click)="selectSection(section.config.id)"
+        >
+          <pc-icon
+            [name]="section.config.icon"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected(section.config.id)"
+            [size]="5"
+          />
+          {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
+        </button>
+        } @if (currentMode === 'settings') {
+        <!-- Passkeys custom section -->
+        <button
+          id="settings-nav-passkeys"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('passkeys')"
+          [class.opacity-70]="!isSelected('passkeys')"
+          (click)="selectSection('passkeys')"
+        >
+          <pc-icon
+            name="lock-closed"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected('passkeys')"
+            [size]="5"
+          />
+          Passkeys
+        </button>
+        } @if (currentMode === 'configuration') {
+        <!-- Email Sync custom section -->
+        <button
+          id="settings-nav-email-sync"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('email-sync')"
+          [class.opacity-70]="!isSelected('email-sync')"
+          (click)="selectSection('email-sync')"
+        >
+          <pc-icon name="envelope" class="mr-2 opacity-80" [class.text-primary]="isSelected('email-sync')" [size]="5" />
+          Email Sync
+        </button>
+
+        <!-- Domains custom section -->
+        <button
+          id="settings-nav-domains"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('domains')"
+          [class.opacity-70]="!isSelected('domains')"
+          (click)="selectSection('domains')"
+        >
+          <pc-icon
+            name="globe-americas"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected('domains')"
+            [size]="5"
+          />
+          Domain Verification
+        </button>
+
+        <!-- Donations custom section -->
+        <button
+          id="settings-nav-donations"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('donations')"
+          [class.opacity-70]="!isSelected('donations')"
+          (click)="selectSection('donations')"
+        >
+          <pc-icon
+            name="currency-dollar"
+            class="mr-2 opacity-80"
+            [class.text-primary]="isSelected('donations')"
+            [size]="5"
+          />
+          Donations
+        </button>
+
+        <!-- Billing custom section -->
+        <button
+          id="settings-nav-billing"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('billing')"
+          [class.opacity-70]="!isSelected('billing')"
+          (click)="selectSection('billing')"
+        >
+          <pc-icon name="credit-card" class="mr-2 opacity-80" [class.text-primary]="isSelected('billing')" [size]="5" />
+          Billing
+        </button>
+
+        <!-- Account custom section -->
+        <button
+          id="settings-nav-account"
+          type="button"
+          class="btn btn-ghost justify-start px-4 text-left transition-all font-medium whitespace-nowrap"
+          [class.bg-base-200]="isSelected('account')"
+          [class.opacity-70]="!isSelected('account')"
+          (click)="selectSection('account')"
+        >
+          <pc-icon name="user-circle" class="mr-2 opacity-80" [class.text-primary]="isSelected('account')" [size]="5" />
+          Account
+        </button>
+        }
+      </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 w-full max-w-4xl">
+      @for (section of visibleSections; track trackSection($index, section)) { @if (isSelected(section.config.id)) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        @if (section.config.id !== 'notifications') {
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">{{ section.config.title }}</h2>
+          <p class="mt-1 text-sm text-base-content/60">{{ section.config.description }}</p>
+        </header>
+        }
+
+        <!-- (form content) -->
+        <form (submit)="saveSection(section); $event.preventDefault();" class="space-y-8" novalidate>
+          @if (section.config.id === 'integrations') {
+          <div class="border-b border-base-200 pb-6 mb-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-base-content/90">Webhook API Credentials</h4>
+                <p class="text-xs text-base-content/50">
+                  Generate a secure API key and signing secret to verify webhooks from pplcrm.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-primary shrink-0"
+                (click)="generateWebhookCredentials(section)"
+              >
+                Generate Credentials
+              </button>
+            </div>
+          </div>
+          }
+
+          <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
+            @for (field of section.fields; track trackField($index, field)) { @if (section.config.id !==
+            'notifications') {
+            <div [class.md:col-span-2]="field.config.type === 'textarea'" class="flex flex-col gap-1.5">
+              <label [attr.for]="field.controlName" class="text-sm font-semibold text-base-content/90">
+                {{ field.config.label }}
+              </label>
+
+              @switch (field.config.type) { @case ('textarea') {
+              <textarea
+                [id]="field.controlName"
+                class="textarea textarea-bordered focus:textarea-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+                rows="4"
+              ></textarea>
+              } @case ('toggle') {
+              <label class="flex items-center gap-3 cursor-pointer py-1">
+                <input
+                  [id]="field.controlName"
+                  type="checkbox"
+                  class="toggle toggle-primary toggle-md"
+                  [formField]="section.form[field.controlName]"
+                />
+                <span class="text-sm font-normal text-base-content/70">
+                  {{ field.config.placeholder ?? 'Enabled' }}
+                </span>
+              </label>
+              } @case ('select') {
+              <select
+                [id]="field.controlName"
+                class="select select-bordered focus:select-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              >
+                @for (option of field.config.options ?? []; track option.value ?? $index) {
+                <option class="bg-base-100 text-base-content" [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
+              } @case ('number') {
+              <input
+                [id]="field.controlName"
+                type="number"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } @case ('date') {
+              <input
+                [id]="field.controlName"
+                type="date"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [formField]="section.form[field.controlName]"
+              />
+              } @default { @if (field.config.key === 'integrations.webhook_api_key' || field.config.key ===
+              'integrations.webhook_api_secret') {
+              <div class="flex gap-2">
+                <input
+                  [id]="field.controlName"
+                  [attr.type]="field.config.type === 'password' ? 'password' : 'text'"
+                  class="input input-bordered focus:input-primary grow bg-base-200/30 font-mono text-sm"
+                  [attr.placeholder]="field.config.placeholder ?? ''"
+                  [value]="section.form[field.controlName]().value() || ''"
+                  readonly
+                />
+                <button
+                  type="button"
+                  class="btn btn-square btn-outline hover:btn-primary shrink-0"
+                  (click)="copyToClipboard(section.form[field.controlName]().value())"
+                  title="Copy to clipboard"
+                >
+                  <pc-icon name="document-duplicate"></pc-icon>
+                </button>
+              </div>
+              } @else {
+              <input
+                [id]="field.controlName"
+                [attr.type]="field.config.type === 'password' ? 'password' : field.config.type === 'url' ? 'url' : field.config.type === 'email' ? 'email' : field.config.type === 'tel' ? 'tel' : 'text'"
+                class="input input-bordered focus:input-primary w-full bg-base-200/30"
+                [attr.placeholder]="field.config.placeholder ?? ''"
+                [formField]="section.form[field.controlName]"
+              />
+              } } } @if (field.config.helper) {
+              <p class="text-[13px] text-base-content/50 mt-0.5">{{ field.config.helper }}</p>
+              } @if (section.form[field.controlName]().invalid() && section.form[field.controlName]().touched()) {
+              <p class="text-[13px] text-error font-medium flex items-center gap-1 mt-0.5">
+                <pc-icon name="exclamation-circle"></pc-icon>
+                {{ section.form[field.controlName]().errors()?.[0]?.message || 'Please provide a valid value.' }}
+              </p>
+              }
+            </div>
+            } }
+          </div>
+
+          <!-- Custom extensions for specific sections -->
+          @if (section.config.id === 'communications') {
+          <div class="border-t border-base-200 pt-6 mt-6 space-y-6">
+            <div class="space-y-1">
+              <h3 class="text-base font-semibold text-base-content/90">Verified Sender Email Addresses</h3>
+              <p class="text-xs text-base-content/50">
+                Add and verify email addresses to select them as campaign defaults.
+              </p>
+            </div>
+
+            <!-- Add new sender email form -->
+            <div class="flex flex-col sm:flex-row gap-3 max-w-lg">
+              <div class="flex-1">
+                <input
+                  type="email"
+                  placeholder="sender@example.com"
+                  class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm"
+                  [value]="senderEmailInput()"
+                  (input)="senderEmailInput.set($any($event.target).value)"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary"
+                (click)="verifySenderEmail(senderEmailInput()); senderEmailInput.set('')"
+                [disabled]="verifyingEmail() !== null || !senderEmailInput().trim() || isVerifyCooldown(senderEmailInput())"
+              >
+                @if (verifyingEmail() === senderEmailInput().toLowerCase().trim()) {
+                <span class="loading loading-spinner loading-xs"></span>
+                } @else if (emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]) { Wait
+                <span class="countdown font-mono text-xs"
+                  ><span [style.--value]="emailCooldownSeconds()[senderEmailInput().toLowerCase().trim()]"></span></span
+                >s } @else { Request Verification }
+              </button>
+            </div>
+
+            @if (lastRequestedEmail() && emailCooldownSeconds()[lastRequestedEmail()!]) {
+            <div
+              class="text-xs text-base-content/70 flex flex-col gap-1 border-l-2 border-primary pl-3 py-1 bg-primary/5 rounded-r-lg max-w-lg"
+            >
+              <span class="font-semibold text-base-content flex items-center gap-1.5">
+                <pc-icon name="envelope" [size]="14" class="text-primary"></pc-icon>
+                Verification email requested for <strong class="text-primary">{{ lastRequestedEmail() }}</strong>
+              </span>
+              <span>
+                Please check your inbox (including your <strong>spam/junk folder</strong>) to complete verification.
+              </span>
+              <span class="text-base-content/50 flex items-center gap-1">
+                You can request verification again in
+                <span class="countdown font-mono text-xs text-base-content/80 font-semibold">
+                  <span [style.--value]="emailCooldownSeconds()[lastRequestedEmail()!]"></span>
+                </span>
+                seconds.
+              </span>
+            </div>
+            }
+
+            <!-- List of verified emails -->
+            <div class="space-y-2">
+              <h4 class="text-xs font-bold uppercase tracking-wider text-base-content/55">Verified Sender Emails</h4>
+              @if (verifiedEmailsList().length === 0) {
+              <p class="text-sm text-base-content/50 italic">
+                No verified sender emails yet. Add one above to request verification.
+              </p>
+              } @else {
+              <div class="flex flex-wrap gap-2">
+                @for (email of verifiedEmailsList(); track email) {
+                <span class="badge badge-success gap-1.5 py-3.5 px-3 font-medium text-sm">
+                  <pc-icon name="check-circle" [size]="14"></pc-icon>
+                  {{ email }}
+                </span>
+                }
+              </div>
+              }
+            </div>
+          </div>
+          } @if (section.config.id === 'data') {
+          <div class="border-t border-base-200 pt-6 mt-6">
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div class="space-y-1">
+                <h4 class="text-sm font-bold text-base-content/90">Address Fingerprints Maintenance</h4>
+                <p class="text-xs text-base-content/50">
+                  Recompute address fingerprints for duplicate matching. Use this if address normalization rules have
+                  changed.
+                </p>
+                @if (isFingerprintRecomputeCooldown() && fingerprintRecomputeNextAvailable()) {
+                <p class="text-xs text-warning mt-1 font-medium">
+                  Next available on {{ fingerprintRecomputeNextAvailable() | date:'mediumDate' }}
+                </p>
+                }
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline btn-primary shrink-0"
+                (click)="recomputeAddressFingerprints()"
+                [disabled]="recomputingFingerprints() || isFingerprintRecomputeCooldown()"
+              >
+                @if (recomputingFingerprints()) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Recompute Fingerprints
+              </button>
+            </div>
+          </div>
+          } @if (section.config.id === 'notifications') {
+          <div class="space-y-6">
+            <div class="border-b border-base-200 pb-5 space-y-1">
+              <h2 class="text-2xl font-semibold tracking-tight">My Notification Preferences</h2>
+              <p class="text-sm text-base-content/60">
+                Customize which email and in-app notifications you would like to receive for your own account.
+              </p>
+            </div>
+
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl">
+              <table class="table w-full">
+                <thead>
+                  <tr class="border-b border-base-200">
+                    <th class="text-sm font-semibold text-base-content/80">Notification Type</th>
+                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">Email</th>
+                    <th class="text-sm font-semibold text-base-content/80 text-center w-36">In-App Alerts</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (group of getNotificationGroups(section); track group.emailField.controlName) {
+                  <tr class="hover:bg-base-200/20">
+                    <td class="align-middle">
+                      <div class="font-semibold text-sm text-base-content">{{ group.label }}</div>
+                      @if (group.helper) {
+                      <div class="text-[11px] text-base-content/60 mt-0.5">{{ group.helper }}</div>
+                      }
+                    </td>
+                    <td class="align-middle text-center">
+                      <input
+                        [id]="group.emailField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.emailField.controlName]"
+                      />
+                    </td>
+                    <td class="align-middle text-center">
+                      @if (group.inAppField) {
+                      <input
+                        [id]="group.inAppField.controlName"
+                        type="checkbox"
+                        class="toggle toggle-primary toggle-sm"
+                        [formField]="section.form[group.inAppField.controlName]"
+                      />
+                      }
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+          }
+
+          <!-- Sticky Action Footer inside the card -->
+          <div
+            class="sticky bottom-4 z-10 mt-8 -mx-6 -mb-6 md:-mx-8 md:-mb-8 border-t border-base-200 bg-base-100/95 backdrop-blur px-6 py-4 md:px-8 rounded-b-2xl flex items-center justify-between gap-4"
+          >
+            <div>
+              @if (isSaving(section)) {
+              <span class="text-sm font-medium text-base-content/60 flex items-center">
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                Saving changes…
+              </span>
+              }
+            </div>
+
+            <div class="flex items-center gap-3">
+              <button
+                type="button"
+                class="btn btn-ghost hover:bg-base-200"
+                (click)="resetSection(section)"
+                [disabled]="!isSectionDirty(section) || isSaving(section)"
+              >
+                Reset
+              </button>
+              <button
+                type="submit"
+                class="btn btn-primary min-w-[120px]"
+                [disabled]="!isSectionDirty(section) || isSectionInvalid(section) || isSaving(section)"
+              >
+                @if (isSaving(section)) {
+                <span class="loading loading-spinner loading-xs mr-2"></span>
+                } Save
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+      } }
+
+      <!-- Email Sync custom section -->
+      @if (currentMode === 'configuration' && isSelected('email-sync')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Email Sync</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Connect your email provider to automatically sync incoming and outgoing emails into your pplcrm inbox.
+          </p>
+        </header>
+
+        <div class="grid gap-8 lg:grid-cols-2">
+          <!-- Microsoft Office 365 Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 23 23" fill="none">
+                <path fill="#f3f3f3" d="M1 1h10v10H1z" />
+                <path fill="#f35325" d="M1 1h10v10H1z" opacity=".9" />
+                <path fill="#81bc06" d="M12 1h10v10H12z" />
+                <path fill="#05a6f0" d="M1 12h10v10H1z" />
+                <path fill="#ffba08" d="M12 12h10v10H12z" />
+              </svg>
+              Microsoft Office 365
+            </h3>
+            <pc-ms-sync-settings></pc-ms-sync-settings>
+          </div>
+
+          <!-- Google Suite Card -->
+          <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+            <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  fill="#4285F4"
+                />
+                <path
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  fill="#34A853"
+                />
+                <path
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  fill="#FBBC05"
+                />
+                <path
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                  fill="#EA4335"
+                />
+              </svg>
+              Google Suite (Gmail)
+            </h3>
+            <pc-google-sync-settings></pc-google-sync-settings>
+          </div>
+        </div>
+      </section>
+      }
+
+      <!-- Domains custom section -->
+      @if (currentMode === 'configuration' && isSelected('domains')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Domain Verification</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Configure DNS verification records (SPF, DKIM, DMARC) so you can send emails from your own domain.
+          </p>
+        </header>
+        <pc-domains-settings></pc-domains-settings>
+      </section>
+      }
+
+      <!-- Donations custom section -->
+      @if (currentMode === 'configuration' && isSelected('donations')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Donations</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Configure donation limit, residency restrictions, progressive tax credit tiers, and connect your Stripe
+            account.
+          </p>
+        </header>
+        <pc-donations-settings></pc-donations-settings>
+      </section>
+      }
+
+      <!-- Billing custom section -->
+      @if (currentMode === 'configuration' && isSelected('billing')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Billing</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Manage your subscription plans, view invoice details, and update payment methods.
+          </p>
+        </header>
+        <pc-billing-settings></pc-billing-settings>
+      </section>
+      }
+
+      <!-- Passkeys custom section -->
+      @if (currentMode === 'settings' && isSelected('passkeys')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Passkeys</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Manage your passkeys for fast, phishing-resistant sign-in using your device biometrics or PIN.
+          </p>
+        </header>
+        <pc-passkey-settings></pc-passkey-settings>
+      </section>
+      }
+
+      <!-- Account custom section -->
+      @if (currentMode === 'configuration' && isSelected('account')) {
+      <section class="space-y-8 rounded-2xl bg-base-100 shadow-sm border border-base-200/60 p-6 md:p-8">
+        <header class="border-b border-base-200 pb-5">
+          <h2 class="text-2xl font-semibold tracking-tight">Account</h2>
+          <p class="mt-1 text-sm text-base-content/60">
+            Manage your organization account — pause billing or permanently delete all data.
+          </p>
+        </header>
+        <pc-account-settings></pc-account-settings>
+      </section>
+      }
+    </main>
+  </div>
+  } @else {
+  <div class="flex h-64 items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-50">
+    <div class="flex flex-col items-center gap-3 text-base-content/50">
+      <span class="loading loading-spinner loading-lg"></span>
+      <p class="font-medium">Loading your settings…</p>
+    </div>
+  </div>
+  }
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
@@ -38470,6 +37193,282 @@ export class AuthService extends TRPCService<'authusers'> {
 </pc-detail-layout>
 ```
 
+## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
+
+```typescript
+import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
+import { Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { EmailStatus } from '../../../../../../../../libs/common/src';
+
+import { EmailsService } from '../emails-service';
+import { EmailActionsStore } from './email-actions.store';
+import { EmailCacheStore } from './email-cache.store';
+import { EmailFoldersStore } from './email-folders.store';
+import { type EmailId, EmailStateStore } from './email-state.store';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Service()
+export class EmailsStore {
+  // ----------------- Lazy per-email fallback -----------------
+  //  private readonly _checked = new Set<string>();
+  private readonly router = inject(Router);
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly actions = inject(EmailActionsStore);
+  private readonly cache = inject(EmailCacheStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  private readonly _isSyncing = signal(false);
+  public readonly isSyncing = this._isSyncing.asReadonly();
+
+  /** When the last successful sync completed — powers the "Synced …" evidence line (§2). */
+  private readonly _lastSyncedAt = signal<Date | null>(null);
+  public readonly lastSyncedAt = this._lastSyncedAt.asReadonly();
+
+  /*
+  private readonly ensureHasAttachmentOnOpen = effect(() => {
+    const id = this.currentSelectedEmailId();
+    if (!id) return;
+
+    // Skip if already known or in-flight
+    if (this.state.hasAttachment(id)() !== undefined) return;
+    if (this._checked.has(id)) return;
+    this._checked.add(id);
+
+    // Ask backend for this one email
+    this.emailSvc
+      .hasAttachment(id)
+      .then((has) => {
+        this.state.setHasAttachment(id, !!has);
+      })
+      .catch(() => {
+        // leave as undefined on error; next open can retry
+        this._checked.delete(id);
+      });
+  });
+  */
+  private readonly folders = inject(EmailFoldersStore);
+  private readonly state = inject(EmailStateStore);
+
+  public readonly allFolders = this.folders.allFolders;
+
+  public readonly currentSelectedEmail = this.state.currentSelectedEmail;
+
+  public readonly currentSelectedEmailId = this.state.currentSelectedEmailId;
+
+  public readonly currentSelectedFolderId = this.folders.currentSelectedFolderId;
+
+  public readonly hasMore = this.folders.hasMore;
+  public readonly isLoadingMore = this.folders.isLoadingMore;
+
+  public readonly emailsInSelectedFolder = computed(() => {
+    const fid = this.folders.currentSelectedFolderId();
+    if (!fid) return [] as EmailType[];
+    return this.state.emailsInFolderWithFlags(fid)();
+  });
+  public readonly emailsLoading = this.folders.isLoading;
+
+  // ----------------- Cache computed factories -----------------
+  public readonly getEmailBodyById = this.cache.getEmailBodyById;
+  public readonly getEmailHeaderById = this.cache.getEmailHeaderById;
+  public readonly getEmailActivitiesById = this.cache.getEmailActivitiesById;
+
+  public readonly isBodyExpanded = this.state.isBodyExpanded;
+
+  private debouncedSelectedEmailId = debounced(this.state.currentSelectedEmailId, 1000);
+
+  constructor() {
+    effect(() => {
+      // The effect tracks this because it's OUTSIDE untracked()
+      const targetId = this.debouncedSelectedEmailId.value();
+
+      if (targetId) {
+        // Run the email lookup and update INSIDE untracked()
+        // Now, if the user manually changes 'is_read' to false, this effect will NOT re-run.
+        untracked(() => {
+          const emailObj = this.state.readEmail(targetId);
+
+          if (emailObj && !emailObj.is_read) {
+            void this.actions.toggleEmailReadStatus(targetId, true);
+          }
+        });
+      }
+    });
+  }
+
+  // ----------------- Mutations (actions) -----------------
+  public addComment(emailId: EmailId, authorId: string, commentText: string) {
+    return this.actions.addComment(emailId, authorId, commentText);
+  }
+
+  public assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null) {
+    return this.actions.assignEmailToUser(emailId, userId, assigneeName);
+  }
+
+  public deleteComment(emailId: EmailId, commentId: string | number) {
+    return this.actions.deleteComment(emailId, commentId);
+  }
+
+  public deleteEmail(emailId: EmailId) {
+    return this.actions.deleteEmail(emailId);
+  }
+
+  // ----------------- Loads -----------------
+  public loadAllFolders() {
+    return this.folders.loadAllFolders();
+  }
+
+  public loadAllFoldersWithCounts() {
+    return this.folders.loadAllFoldersWithCounts();
+  }
+
+  public loadEmailBody(emailId: EmailId) {
+    return this.cache.loadEmailBody(emailId);
+  }
+
+  public loadEmailWithHeaders(emailId: EmailId) {
+    return this.cache.loadEmailWithHeaders(emailId);
+  }
+
+  public refreshEmailHeader(emailId: EmailId) {
+    return this.cache.refreshEmailHeader(emailId);
+  }
+
+  public loadEmailActivities(emailId: EmailId) {
+    return this.cache.loadEmailActivities(emailId);
+  }
+
+  public async loadEmailsForFolder(folderId: EmailId) {
+    const rows = await this.folders.loadEmailsForFolder(String(folderId));
+
+    // Prefer IDs from the response; fallback to state if needed
+    const ids =
+      (Array.isArray(rows) ? rows.map((e: any) => String(e.id)) : []) ||
+      this.state.emailIdsByFolderId()[String(folderId)] ||
+      [];
+
+    if (!ids.length) return rows;
+
+    try {
+      const partial: Partial<Record<string, boolean>> = await this.emailSvc.hasAttachmentByEmailIds(ids as string[]);
+
+      const merged: Record<string, boolean> = {};
+      for (const id of ids) {
+        const key = String(id); // <- normalize the key
+        merged[key] = !!partial[key];
+      }
+      this.state.setManyHasAttachment(merged);
+    } catch {
+      // ignore failures; UI can lazily resolve per-email elsewhere
+    }
+
+    return rows;
+  }
+
+  public refreshFolderCounts() {
+    return this.folders.refreshFolderCounts();
+  }
+
+  public restoreFromTrash(emailId: EmailId) {
+    return this.actions.restoreFromTrash(emailId);
+  }
+
+  public selectEmail(email: EmailType | { id: EmailId } | null): void {
+    this.state.selectEmail(email);
+  }
+
+  public selectFolder(folder: EmailFolderType | null): void {
+    this.folders.selectFolder(folder);
+  }
+
+  public toggleBodyExpanded(): void {
+    this.state.toggleBodyExpanded();
+  }
+
+  public toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean) {
+    return this.actions.toggleEmailFavoriteStatus(emailId, isFavorite);
+  }
+
+  public toggleEmailReadStatus(emailId: EmailId, isRead: boolean) {
+    return this.actions.toggleEmailReadStatus(emailId, isRead);
+  }
+
+  public moveToFolder(emailId: EmailId, folderId: string) {
+    return this.actions.moveToFolder(emailId, folderId);
+  }
+
+  public loadNextPage() {
+    return this.folders.loadNextPage();
+  }
+
+  public updateEmailStatus(emailId: EmailId, status: EmailStatus) {
+    return this.actions.updateEmailStatus(emailId, status);
+  }
+
+  // ----------------- Syncing -----------------
+  public async syncEmails() {
+    this._isSyncing.set(true);
+    try {
+      const result = await this.emailSvc.syncEmails();
+
+      // Poll status every 3 seconds for up to 5 minutes (100 attempts)
+      let attempts = 0;
+      while (attempts < 100) {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const active = await this.emailSvc.isAnySyncing();
+        if (!active) {
+          break;
+        }
+        attempts++;
+      }
+
+      // Reload current folder emails and counts
+      const currentFolderId = this.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.loadEmailsForFolder(currentFolderId);
+      }
+      await this.refreshFolderCounts();
+      this._lastSyncedAt.set(new Date());
+      const inserted = result?.inserted ?? 0;
+      this.alerts.showSuccess(
+        inserted > 0
+          ? `Inbox synced — ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
+          : 'Inbox synced — no new emails',
+      );
+      return result;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (
+        msg.includes('No email accounts connected') ||
+        msg.includes('No Microsoft account connected') ||
+        msg.includes('No Google account connected') ||
+        msg.includes('Token refresh failed')
+      ) {
+        const confirmed = await this.dialogs.confirm({
+          title: 'Email Account Connection Required',
+          message:
+            'No email account is connected. Would you like to connect a Microsoft or Google account now in Settings?',
+          variant: 'warning',
+          confirmText: 'Go to Settings',
+          cancelText: 'Cancel',
+        });
+        if (confirmed) {
+          void this.router.navigate(['/configuration'], { queryParams: { tab: 'email-sync' } });
+        }
+      } else {
+        this.alerts.showError(getUserErrorMessage(e, 'Sync failed. Please try again.'));
+      }
+      throw e;
+    } finally {
+      this._isSyncing.set(false);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/emails/ui/email-activities/email-activities.ts
 
 ```typescript
@@ -38587,691 +37586,1087 @@ export class EmailActivities {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { Component, effect, inject, input, signal } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@uxcommon/components/icons/icon';
 
-import { EmailsService } from '../../services/emails-service';
+import { IAuthUser } from '../../../../../../../../libs/common/src';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { UserService } from '../../../../services/user.service';
 import { EmailsStore } from '../../services/store/emailstore';
-import { EmailStateStore } from '../../services/store/email-state.store';
-import { EmailBody } from '../email-body/email-body';
-import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
-import { EmailDetails } from '../email-details/email-details';
-import { EmailFolderList } from '../email-folder-list/email-folder-list';
-import { EmailList } from '../email-list/email-list';
-import { EmailPersonRail } from '../email-person-rail/email-person-rail';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { AuthService } from '@frontend/auth/auth-service';
 
 @Component({
-  selector: 'pc-email-client',
-  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, EmailPersonRail, Icon],
-  host: {
-    class: 'block h-full',
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-client.html',
+  selector: 'pc-email-assign',
+  imports: [Icon],
+  template: `<div class="flex items-center gap-2 mt-1">
+    <span i18n class="text-xs text-base-content/70">Owner:</span>
+    <div class="dropdown">
+      <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
+        <span>{{ getUserName(assignedTo()) }}</span>
+        <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
+      </div>
+
+      <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
+        @for (user of users(); track user.id) {
+          <li>
+            <button type="button" (click)="assign(user.id); closeDropdown()">{{ user.first_name }}</button>
+          </li>
+        }
+        @if (assignedTo()) {
+          <li><button i18n type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
+        }
+      </ul>
+    </div>
+  </div>`,
 })
-export class EmailClient {
-  private readonly composer = viewChild<ComposeEmailComponent>('composer');
+export class EmailAssign {
+  private alertSvc = inject(AlertService);
+  private store = inject(EmailsStore);
+  private userService = inject(UserService);
 
-  private authService = inject(AuthService);
+  protected assignedTo = signal<string | null>(null);
 
-  protected readonly store = inject(EmailsStore);
-  private readonly stateStore = inject(EmailStateStore);
-  private readonly emailSvc = inject(EmailsService);
-
-  protected composePrefill = signal<ComposeInitial | null>(null);
-  protected draftIdToLoad = signal<string | null>(null);
-  protected isComposing = signal(false);
-
-  protected mobileView = this.stateStore.mobilePanelView;
-
-  protected folderPanelClass = computed(() =>
-    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
-  );
-
-  protected listPanelClass = computed(() =>
-    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
-  );
-
-  protected detailPanelClass = computed(() =>
-    this.mobileView() === 'detail'
-      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10',
-  );
-
-  /** The person context rail (§5) shows only for a real selection on desktop. */
-  protected showPersonRail = computed(() => !!this.selectedEmail() && !this.isComposing() && !this.isBodyExpanded());
+  public email = input.required<EmailType | null>();
+  public users = signal<IAuthUser[]>([]);
 
   constructor() {
+    void this.userService.getUsers().then((u) => this.users.set(u));
+    // Can't use computed because assignedTo is settable
     effect(() => {
-      const id = this.emailId();
-      if (id) {
-        void untracked(() => this.loadEmailData(id));
-      }
+      this.assignedTo.set(this.email()?.assigned_to || null);
     });
   }
 
-  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
-
-  private async loadEmailData(emailId: string): Promise<void> {
-    try {
-      // 1. Fetch the email header/details from backend to know its folder_id
-      const res = await this.emailSvc.getEmailHeader(emailId);
-      if (res && res.email) {
-        const folderId = res.email.folder_id;
-
-        // 2. Ensure folders list is loaded
-        let folders = this.store.allFolders();
-        if (!folders || folders.length === 0) {
-          folders = await this.store.loadAllFoldersWithCounts();
-        }
-
-        // 3. Find the folder
-        const folder = folders.find((f) => String(f.id) === String(folderId));
-        if (folder) {
-          const emailObj: EmailType = {
-            id: String(res.email.id),
-            folder_id: String(res.email.folder_id),
-            updated_at: new Date(res.email.updated_at),
-            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
-            is_favourite: !!res.email.is_favourite,
-            attachment_count: res.email.attachment_count ?? 0,
-            status: res.email.status || 'open',
-            from_email: res.email.from_email ?? undefined,
-            to_email: res.email.to_email ?? undefined,
-            subject: res.email.subject ?? undefined,
-            preview: res.email.preview ?? undefined,
-            assigned_to: res.email.assigned_to ?? undefined,
-            has_attachment: !!res.email.has_attachment,
-            is_read: !!(res.email as any).is_read,
-          };
-
-          // Add to store's normalized map so it is available immediately
-          this.stateStore.replaceEmail(emailObj.id, emailObj);
-
-          // Select the folder and email
-          this.store.selectFolder(folder);
-          this.store.selectEmail(emailObj);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to pre-select email from notification link', err);
-    }
-  }
-
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly isBodyExpanded = this.store.isBodyExpanded;
-
-  public readonly selectedEmail = this.store.currentSelectedEmail;
-
-  public readonly selectedFolderId = this.store.currentSelectedFolderId;
-
-  public closeCompose() {
-    this.isComposing.set(false);
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(null);
-  }
-
-  public newEmail() {
-    this.openCompose();
-  }
-
-  // handle send from composer
-  public async onComposeSend(_payload: any) {
-    // TODO: integrate with your EmailActionsStore/EmailsService
-    // Example:
-    // await this.emailActions.sendEmail(payload);
-    this.isComposing.set(false);
-    // Optionally refresh current folder, show toast, etc.
-  }
-
-  public async onEmail(email: EmailType | null): Promise<void> {
-    const folderId = this.store.currentSelectedFolderId();
-    if (this.isComposing()) {
-      try {
-        const c = this.composer();
-        if (c?.form.dirty) {
-          await c.saveDraft();
-        }
-      } catch (e) {
-        console.error('Failed to save draft', e);
-        alert('Failed to save your draft. Please check your connection or copy your work.');
-        // Abort the function here.
-        // Do not close the composer or navigate to the new email.
-        return;
-      }
-      this.closeCompose();
-    }
-
-    // Always update the store selection so the list can reflect it
-    this.store.selectEmail(email);
-    this.mobileView.set('detail');
-
-    // In the drafts folder, also open the composer for the selected draft
-    if (folderId === ALL_FOLDERS.DRAFTS && email) {
-      this.draftIdToLoad.set(String(email.id));
-      this.isComposing.set(true);
-    }
-  }
-
-  public onFolder(folder: EmailFolderType): void {
-    this.store.selectFolder(folder);
-    this.mobileView.set('list');
-  }
-
-  public mobileGoBack(): void {
-    if (this.isComposing()) {
-      this.closeCompose();
-    }
-    if (this.mobileView() === 'detail') {
-      this.mobileView.set('list');
-    } else if (this.mobileView() === 'list') {
-      this.mobileView.set('folders');
-    }
-  }
-
-  public onForward(email: EmailType) {
-    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
-    this.openCompose({ subject });
-  }
-
-  public onReply(email: EmailType) {
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to: email.from_email || '', subject });
-  }
-
-  public async onReplyAll(email: EmailType) {
-    const header = this.store.getEmailHeaderById(email.id)();
-    const recipients = new Set<string>();
-
-    const currentUser = await this.authService.getCurrentUser();
-    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
-
-    if (email.from_email) recipients.add(email.from_email);
-
-    header?.email?.to_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-    header?.email?.cc_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-
-    const to = Array.from(recipients)
-      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
-      .join(', ');
-
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to, subject });
-  }
-
-  public openCompose(prefill?: ComposeInitial | null) {
-    this.isBodyExpanded.set(false); // ensure body overlay is closed
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(prefill ?? null);
-    this.isComposing.set(true);
-    this.mobileView.set('detail');
-  }
-
-  public toggleExpanded(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    // Existing behaviour: Escape collapses an expanded body first.
-    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.preventDefault();
-      ev.stopPropagation();
-      return;
-    }
-
-    // Stay out of the way while composing, typing into a field, or when a
-    // command/ctrl/alt modifier is held (Cmd+K search, the global `g` chord…).
-    if (this.isComposing() || this.isTypingTarget(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) {
-      return;
-    }
-
-    // Shortcuts that work without a selection.
-    switch (ev.key) {
-      case 'c':
-        ev.preventDefault();
-        this.openCompose();
-        return;
-      case 'j':
-        ev.preventDefault();
-        this.selectRelative(1);
-        return;
-      case 'k':
-        ev.preventDefault();
-        this.selectRelative(-1);
-        return;
-    }
-
-    // Everything below acts on the currently selected email.
-    const email = this.selectedEmail();
+  public async assign(userId: string | number | null) {
+    const email = this.email();
     if (!email) return;
 
-    switch (ev.key) {
-      case 'r':
-        ev.preventDefault();
-        this.onReply(email);
-        return;
-      case 'a':
-        ev.preventDefault();
-        void this.onReplyAll(email);
-        return;
-      case 'f':
-        ev.preventDefault();
-        this.onForward(email);
-        return;
-      case 'e':
-        ev.preventDefault();
-        void this.store.updateEmailStatus(email.id, 'closed');
-        return;
-      case 's':
-        ev.preventDefault();
-        void this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-        return;
-      case 'I': // Shift+I — mark as read
-        ev.preventDefault();
-        void this.store.toggleEmailReadStatus(email.id, true);
-        return;
-      case 'U': // Shift+U — mark as unread
-        ev.preventDefault();
-        void this.store.toggleEmailReadStatus(email.id, false);
-        return;
-      case '#':
-        ev.preventDefault();
-        void this.store.deleteEmail(email.id);
-        return;
-      case 'Enter':
-      case 'o':
-        ev.preventDefault();
-        this.toggleExpanded();
-        return;
-      case 'u':
-        ev.preventDefault();
-        this.store.selectEmail(null);
-        this.mobileView.set('list');
-        return;
+    const normalizedUserId = userId != null ? String(userId) : null;
+    const assigneeName = normalizedUserId
+      ? (this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null)
+      : null;
+
+    try {
+      await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
+      this.assignedTo.set(normalizedUserId);
+    } catch (_e) {
+      this.alertSvc.showError('Something went wrong, please try again');
+      this.assignedTo.set(null);
     }
   }
 
-  /** Move the selection to the next (`delta > 0`) or previous email in the folder. */
-  private selectRelative(delta: number): void {
-    const list = this.emails();
-    if (!list.length) return;
-    const current = this.selectedEmail();
-    const currentIdx = current ? list.findIndex((e) => String(e.id) === String(current.id)) : -1;
-    const nextIdx = currentIdx === -1 ? (delta > 0 ? 0 : list.length - 1) : currentIdx + delta;
-    const next = list[nextIdx];
-    if (!next) return;
-    void this.onEmail(next);
+  public closeDropdown() {
+    const el = document.activeElement as HTMLElement | null;
+    el?.blur?.(); // remove focus -> :focus-within becomes false -> closes
   }
 
-  /** True when the event originates from a field the user is typing into. */
-  private isTypingTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return false;
-    const tag = target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-    if (target.isContentEditable) return true;
-    return target.getAttribute('role') === 'textbox';
+  public getUserName(id: string | null = null) {
+    if (!id) return 'Noone';
+    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Noone';
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.html
+
+```html
+<section class="flex-1 flex flex-col bg-base-100 h-full overflow-hidden">
+  @if (email()) {
+  <pc-email-header
+    [email]="email()!"
+    (reply)="emitReply()"
+    (replyAll)="emitReplyAll()"
+    (forward)="emitForward()"
+  ></pc-email-header>
+  <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-3">
+    <!-- SLA pill (§5): honest, computed from received time + workspace SLA config -->
+    @if (slaPill(); as sla) {
+    <div>
+      <span
+        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums"
+        [class.bg-base-200]="sla.tone === 'neutral'"
+        [class.text-base-content]="sla.tone === 'neutral'"
+        [class.bg-warning/15]="sla.tone === 'warning'"
+        [class.text-warning]="sla.tone === 'warning'"
+        [class.bg-error/15]="sla.tone === 'error'"
+        [class.text-error]="sla.tone === 'error'"
+      >
+        <pc-icon name="clock" [size]="4"></pc-icon>
+        {{ sla.text }}
+      </span>
+    </div>
+    }
+
+    <!-- Body owns the space (§5) -->
+    <pc-email-body
+      class="flex-1 min-h-0 border-double border-b-2 border-base-300 rounded-lg bg-base-100"
+      [email]="email()!"
+    >
+    </pc-email-body>
+
+    @if (!store.isBodyExpanded()) {
+    <!-- Quiet tab row: Comments · Activity (not stacked bars) -->
+    <div class="flex items-center gap-4 border-b border-base-200 text-[12.5px]">
+      <button
+        type="button"
+        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
+        [class.!border-primary]="openPanel() === 'comments'"
+        [class.!text-primary]="openPanel() === 'comments'"
+        [class.font-semibold]="openPanel() === 'comments'"
+        (click)="toggleCommentsTab()"
+      >
+        <pc-icon name="chat-bubble-bottom-center-text" [size]="4"></pc-icon>
+        <ng-container i18n="EmailDetails|Comments tab@@emailDetails.tab.comments">Comments</ng-container>
+        @if (commentCount() > 0) {
+        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
+          >{{ commentCount() }}</span
+        >
+        }
+      </button>
+      <button
+        type="button"
+        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-1 pb-1.5 text-base-content/60 transition-colors hover:text-base-content"
+        [class.!border-primary]="openPanel() === 'activity'"
+        [class.!text-primary]="openPanel() === 'activity'"
+        [class.font-semibold]="openPanel() === 'activity'"
+        (click)="toggleActivityTab()"
+      >
+        <pc-icon name="clock" [size]="4"></pc-icon>
+        <ng-container i18n="EmailDetails|Activity tab@@emailDetails.tab.activity">Activity</ng-container>
+        @if (activityCount() > 0) {
+        <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10.5px] font-semibold text-primary tabular-nums"
+          >{{ activityCount() }}</span
+        >
+        }
+      </button>
+      <span class="flex-1"></span>
+      @if (openPanel()) {
+      <button
+        type="button"
+        class="text-xs text-base-content/50 underline underline-offset-2 hover:text-base-content"
+        (click)="closePanel()"
+        i18n="EmailDetails|Hide open panel@@emailDetails.tab.hide"
+      >
+        Hide
+      </button>
+      }
+    </div>
+
+    @if (openPanel() === 'comments') {
+    <div
+      class="animate-drop max-h-60 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
+    >
+      <pc-email-comments [email]="email()"></pc-email-comments>
+    </div>
+    } @else if (openPanel() === 'activity') {
+    <div
+      class="animate-drop max-h-52 min-h-0 overflow-auto email-scrollbar rounded-lg border border-base-300 bg-base-100"
+    >
+      <pc-email-activities [email]="email()" [headerless]="true"></pc-email-activities>
+    </div>
+    } }
+  </main>
+
+  } @else if (isLoading()) {
+  <div class="min-h-screen flex items-center justify-center">
+    <span class="loading loading-bars"></span>
+  </div>
+  } @else if (showNoEmailMsg()){
+  <div class="flex flex-1 flex-col items-center justify-center gap-3 text-base-content/40 uppercase tracking-widest">
+    <img class="max-w-64" src="assets/waiting.svg" />
+    <span>No emails here!</span>
+  </div>
+  }
+</section>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
 
 ```typescript
-import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
+import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
+import { Swap } from '@uxcommon/components/swap/swap';
 import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
 import { EmailsStore } from '../../services/store/emailstore';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { PcIconNameType } from '@icons/icons.index';
-
-interface ContextMenuItem {
-  label: string;
-  icon: PcIconNameType;
-  action: () => void;
-  iconClass?: string; // The '?' makes it optional
-  extraClass?: string; // The '?' makes it optional
-}
-
-interface ContextMenuSection {
-  show: boolean;
-  items: ContextMenuItem[];
-}
+import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
-  selector: 'pc-email-list',
-  imports: [Icon, TimeAgoPipe],
-  templateUrl: 'email-list.html',
-  host: {
-    '(document:click)': 'closeContextMenu()',
-    '(document:keydown.escape)': 'closeContextMenu()',
-  },
+  selector: 'pc-email-folder-list',
+  imports: [Swap, Icon, TimeAgoPipe],
+  templateUrl: 'email-folder-list.html',
 })
-export class EmailList {
-  private readonly store = inject(EmailsStore);
-  private readonly alertSvc = inject(AlertService);
+export class EmailFolderList implements OnInit {
+  protected readonly store = inject(EmailsStore);
 
-  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
+  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
 
-  public readonly emailSelected = output<EmailType>();
+  public readonly folderSelected = output<EmailFolderType>();
 
-  public readonly reply = output<EmailType>();
-  public readonly replyAll = output<EmailType>();
-  public readonly forward = output<EmailType>();
+  public readonly folders = this.store.allFolders;
 
-  public readonly showContextMenu = signal<boolean>(false);
-  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
-  public readonly contextMenuEmail = signal<EmailType | null>(null);
+  public readonly foldersCollapsed = signal(false);
 
-  public readonly emails = this.store.emailsInSelectedFolder;
+  public readonly realFoldersCollapsed = signal(true);
 
-  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
+  public readonly newEmail = output<void>();
 
-  protected readonly isLoadingMore = this.store.isLoadingMore;
-  protected readonly ALL_FOLDERS = ALL_FOLDERS;
+  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
+  protected readonly asideClass = computed(
+    () =>
+      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
+      'w-full md:w-12 ' +
+      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
+  );
 
-  protected onScroll(event: Event): void {
-    this.closeContextMenu();
-    const el = event.target as HTMLElement;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-      void this.store.loadNextPage();
+  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
+  protected readonly labelClass = computed(
+    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
+  );
+
+  protected readonly countClass = computed(
+    () =>
+      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
+      (this.foldersCollapsed() ? '' : ' lg:block'),
+  );
+
+  protected readonly sectionHeaderClass = computed(
+    () =>
+      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
+      (this.foldersCollapsed() ? '' : ' lg:flex'),
+  );
+
+  protected readonly buttonLabelClass = computed(
+    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
+  );
+
+  protected readonly separatorClass = computed(
+    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
+  );
+
+  public emitNewEmail() {
+    this.newEmail.emit();
+  }
+
+  public getEmailCount(folder: EmailFolderType): number {
+    return (folder as any).email_count ?? 0;
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    try {
+      await this.store.loadAllFoldersWithCounts();
+    } catch (e) {
+      console.error('Failed to load folders with counts', e);
     }
   }
 
-  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
+  public selectFolder(folder: EmailFolderType): void {
+    this.folderSelected.emit(folder);
+  }
 
-  public readonly sortedEmails = computed(() => {
-    const list = [...this.emails()];
-    const order = this.sortOrder();
-    return list.sort((a, b) => {
-      const timeA = new Date(a.date_sent || a.updated_at).getTime();
-      const timeB = new Date(b.date_sent || b.updated_at).getTime();
-      return order === 'newest' ? timeB - timeA : timeA - timeB;
-    });
+  public toggleFolders(): void {
+    this.foldersCollapsed.update((v) => !v);
+  }
+
+  public toggleRealFolders(): void {
+    this.realFoldersCollapsed.update((v) => !v);
+  }
+
+  protected getIcon(folder: EmailFolderType): PcIconNameType {
+    return folder.icon as PcIconNameType;
+  }
+
+  protected isSelected(folder: EmailFolderType): boolean {
+    return String(folder.id) === String(this.store.currentSelectedFolderId());
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
+
+```html
+<header class="border-b border-base-300 px-4 pb-4">
+  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
+    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
+  </div>
+  <div class="flex items-start gap-3 mt-2">
+    <pc-email-assign [email]="email()"></pc-email-assign>
+    <div class="min-w-0 flex-1"></div>
+
+    <div class="flex items-center gap-1 text-sm text-base-content/70">
+      <span class="whitespace-nowrap pr-2">
+        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+      </span>
+
+      <div class="border-t border-base-300 my-1 h-0"></div>
+      <div class="hidden md:block">
+        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
+        <div class="dropdown dropdown-end inline-block align-middle">
+          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
+            <pc-icon name="reply" [size]="4"></pc-icon>
+            <pc-icon name="chevron-down" [size]="3"></pc-icon>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+          >
+            <li>
+              <a
+                (click)="handleReply()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleReplyAll()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleForward()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        @if (!isFolderTrash()) {
+
+        <!-- Close/Mark as Done -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="markAsDoneText()"
+          aria-label="Mark as done"
+          (click)="toggleClosed()"
+        >
+          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+        </button>
+        } @else {
+        <!-- Restore from Trash -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Restore"
+          aria-label="Restore"
+          (click)="restoreFromTrash()"
+        >
+          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+        </button>
+        }
+
+        <!-- Delete -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="getTrashText()"
+          [attr.aria-label]="getTrashText()"
+          (click)="deleteEmail()"
+        >
+          @if (isFolderTrash()) {
+          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+          } @else {
+          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+          }
+        </button>
+      </div>
+      <!-- More Actions Dropdown -->
+      <div class="dropdown dropdown-end">
+        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+          <svg viewBox="0 0 24 24" class="h-5 w-5">
+            <path
+              fill="currentColor"
+              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
+            />
+          </svg>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+        >
+          <li>
+            <a
+              (click)="handleCreateTask()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create task
+            </a>
+          </li>
+          <div class="border-t border-base-300 my-1 h-0"></div>
+          <li>
+            <a
+              (click)="handleReply()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleReplyAll()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply all
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleForward()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
+          <li>
+            <a
+              (click)="markAsSpam()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
+            </a>
+          </li>
+          } @else {
+          <li>
+            <a
+              (click)="moveToInbox()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
+            </a>
+          </li>
+          } }
+          <li>
+            <a
+              (click)="handleMarkAsUnread()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              (click)="toggleFavourite()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                [name]="getFavouriteIcon()"
+                [size]="4"
+                [class.text-amber-500]="isFavourite()"
+                [class.text-base-content/60]="!isFavourite()"
+              ></pc-icon>
+              {{ isFavourite() ? 'Unstar' : 'Star' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="toggleClosed()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                name="check-circle"
+                [size]="4"
+                [class.text-success]="isClosed()"
+                [class.text-base-content/60]="!isClosed()"
+              ></pc-icon>
+              {{ isClosed() ? 'Reopen' : 'Mark as done' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="deleteEmail()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3 flex items-center gap-3">
+    <div class="avatar">
+      @if (headerData()?.person; as person) {
+      <a
+        [routerLink]="['/people', person.id]"
+        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
+      >
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </a>
+      } @else {
+      <div class="w-10 rounded-full bg-base-200">
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </div>
+      }
+    </div>
+
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        @if (headerData()?.person; as person) {
+        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
+          (email()!.from_name || email()!.from_email) }}
+        </a>
+        <div class="dropdown dropdown-bottom inline-block">
+          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
+            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+          </button>
+          <div
+            tabindex="0"
+            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
+                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
+                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
+                  @if (person.company_name) {
+                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
+                  }
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span class="truncate">{{ person.email }}</span>
+                </div>
+                @if (person.mobile) {
+                <div class="flex items-center gap-2">
+                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span>{{ person.mobile }}</span>
+                </div>
+                } @if (person.notes) {
+                <div class="flex flex-col gap-1 mt-1">
+                  <span class="font-semibold text-base-content/60">Notes:</span>
+                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
+                    {{ person.notes }}
+                  </p>
+                </div>
+                }
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-3">
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Tags:</span
+                  >
+                  <pc-tags
+                    [tags]="personTags()"
+                    [type]="'tag'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add tag...'"
+                    (tagAdded)="onTagAdded($event)"
+                    (tagRemoved)="onTagRemoved($event)"
+                  ></pc-tags>
+                  @if (!personTags().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
+                  }
+                </div>
+
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Issues:</span
+                  >
+                  <pc-tags
+                    [tags]="personIssues()"
+                    [type]="'issue'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add issue...'"
+                    (tagAdded)="onIssueAdded($event)"
+                    (tagRemoved)="onIssueRemoved($event)"
+                  ></pc-tags>
+                  @if (!personIssues().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @else {
+        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
+        }
+        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
+      </div>
+
+      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
+      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
+        @for (tag of person.tags; track tag.name) {
+        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        } @for (issue of person.issues; track issue.name) {
+        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        }
+      </div>
+      } }
+
+      <div class="text-xs text-base-content/60 mt-1">
+        to
+        <div class="dropdown inline-block">
+          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
+            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
+            (getToRecipients().length > 1) {
+            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
+            } } @else { {{ email()!.to_email }} }
+            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
+              />
+            </svg>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+          >
+            <!-- Recipients Section -->
+            <li class="menu-title text-xs">Recipients</li>
+
+            @if (getToRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">To:</li>
+            @for (recipient of getToRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getCcRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">CC:</li>
+            @for (recipient of getCcRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getBccRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">BCC:</li>
+            @for (recipient of getBccRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
+            0) {
+            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
+            }
+
+            <!-- Email Details Section -->
+            <li class="divider mt-3"></li>
+            <li class="menu-title text-xs">Email Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Subject:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Date:</span>
+                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">From:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Reply-To:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
+                </div>
+              </div>
+            </li>
+
+            <!-- Technical Details Section -->
+            <li class="divider mt-2"></li>
+            <li class="menu-title text-xs">Technical Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Message-ID:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Mailed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Security:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Signed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Return-Path:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1">
+      <pc-icon
+        class="hover:text-primary tooltip tooltip-left cursor-pointer"
+        [attr.data-tip]="'Expand email body'"
+        name="expand-content"
+        [size]="4"
+        (click)="toggleExpand()"
+      ></pc-icon>
+    </div>
+  </div>
+</header>
+
+<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
+
+```typescript
+import { DatePipe, UpperCasePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { Tags } from '@experiences/tags/ui/tags';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailAssign } from '../email-assign/email-assign';
+import { EmailCreateTaskDialog } from '../email-create-task-dialog/email-create-task-dialog';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Component({
+  selector: 'pc-email-header',
+  // include swap for expand/collapse control
+  imports: [DatePipe, UpperCasePipe, EmailAssign, Icon, RouterLink, TagItem, Tags, EmailCreateTaskDialog],
+  host: {
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-header.html',
+})
+export class EmailHeader {
+  private alertSvc = inject(AlertService);
+  private store = inject(EmailsStore);
+  private personsSvc = inject(PersonsService);
+
+  private readonly createTaskDialog = viewChild<EmailCreateTaskDialog>('createTaskDialog');
+
+  protected headerData = computed(() => this.store.getEmailHeaderById(this.email()?.id)());
+  protected isClosed = signal(false);
+  protected isFavourite = signal(false);
+
+  protected personTags = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.tags?.map((t: any) => t.name) ?? [];
   });
 
+  protected personIssues = computed(() => {
+    const person = this.headerData()?.person;
+    return person?.issues?.map((t: any) => t.name) ?? [];
+  });
+
+  protected async onTagAdded(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" added`);
+    } catch (e) {
+      console.error('Failed to attach tag:', e);
+      this.alertSvc.showError('Failed to add tag');
+    }
+  }
+
+  protected async onTagRemoved(tagName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, tagName, 'tag');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Tag "${tagName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach tag:', e);
+      this.alertSvc.showError('Failed to remove tag');
+    }
+  }
+
+  protected async onIssueAdded(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.attachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" added`);
+    } catch (e) {
+      console.error('Failed to attach issue:', e);
+      this.alertSvc.showError('Failed to add issue');
+    }
+  }
+
+  protected async onIssueRemoved(issueName: string) {
+    const person = this.headerData()?.person;
+    if (!person) return;
+    try {
+      await this.personsSvc.detachTag(person.id, issueName, 'issue');
+      this.store.refreshEmailHeader(this.email().id);
+      this.alertSvc.showSuccess(`Issue "${issueName}" removed`);
+    } catch (e) {
+      console.error('Failed to detach issue:', e);
+      this.alertSvc.showError('Failed to remove issue');
+    }
+  }
+
+  public readonly forward = output<void>();
+  public readonly reply = output<void>();
+  public readonly replyAll = output<void>();
+
+  public email = input.required<EmailType>();
+
+  public isExpanded = this.store.isBodyExpanded;
+
   constructor() {
-    let lastFolderId: string | null = null;
-
-    // Auto-select the first email when the folder changes or the current selection is removed.
+    // isFavourite and isClosed are settable, so can't use computed
     effect(() => {
-      const folderId = this.store.currentSelectedFolderId();
-      const emails = this.sortedEmails();
-      const selectedId = this.store.currentSelectedEmailId();
+      const email = this.email();
 
-      const folderChanged = folderId !== lastFolderId;
-      lastFolderId = folderId;
-
-      const container = this.scrollContainer();
-      if (folderChanged && container) {
-        container.nativeElement.scrollTop = 0;
-      }
-
-      // If the list is empty, clear any existing selection and bail out.
-      if (emails.length === 0) {
-        if (selectedId) {
-          // The selected email was removed; clear selection so parent can react.
-          this.store.selectEmail(null);
-        }
-        return;
-      }
-
-      if (folderId) {
-        // Auto-select the first email only if:
-        // 1. The folder has changed, OR
-        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
-        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
-
-        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
-          // Update the store directly — do NOT emit through emailSelected output, which would
-          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
-          this.store.selectEmail(emails[0]!);
-        }
-      }
+      this.isFavourite.set(email.is_favourite);
+      this.isClosed.set(email.status === 'closed');
     });
   }
 
-  public isSelected(id: string): boolean {
-    return this.store.currentSelectedEmailId() === id;
-  }
-
-  /** Triage status chip per row (§5): one pill shape, semantic tint. */
-  protected rowStatus(email: EmailType): { label: string; tone: 'info' | 'neutral' | 'warning' } {
-    if (this.isFolderTrash()) return { label: 'In Trash', tone: 'neutral' };
-    if ((email.status || 'open') === 'closed') return { label: 'Closed', tone: 'neutral' };
-    if (email.assigned_to) return { label: 'Assigned', tone: 'info' };
-    return { label: 'Unassigned', tone: 'warning' };
-  }
-
-  public selectEmail(email: EmailType): void {
-    this.emailSelected.emit(email);
-  }
-
-  public onContextMenu(event: MouseEvent, email: EmailType): void {
-    event.preventDefault();
-    this.selectEmail(email);
-    this.contextMenuEmail.set(email);
-
-    // Dynamic viewport boundary collision checking
-    const menuWidth = 192; // equivalent to w-48
-    const menuHeight = 280; // approximate maximum height
-
-    let x = event.clientX;
-    let y = event.clientY;
-
-    if (x + menuWidth > window.innerWidth) {
-      x = window.innerWidth - menuWidth - 8;
-    }
-    if (y + menuHeight > window.innerHeight) {
-      y = window.innerHeight - menuHeight - 8;
-    }
-
-    this.contextMenuPosition.set({ x, y });
-    this.showContextMenu.set(true);
-  }
-
-  get menuSections(): ContextMenuSection[] {
-    const email = this.contextMenuEmail();
-    if (!email) return [];
-
-    return [
-      // Section 1: Actions
-      {
-        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
-        items: [
-          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
-          { label: 'Reply all', icon: 'reply-all', action: () => this.handleReplyAll() },
-          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
-        ] as ContextMenuItem[],
-      },
-      // Section 2: Spam & Read
-      {
-        show: true,
-        items: [
-          ...(!this.isFolderTrash()
-            ? [
-                {
-                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
-                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
-                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
-                },
-              ]
-            : []),
-          {
-            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
-            icon: 'envelope',
-            action: () => void this.toggleReadStatus(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 3: Status & Delete
-      {
-        show: true,
-        items: [
-          {
-            label: email.is_favourite ? 'Unstar' : 'Star',
-            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
-            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
-            action: () => void this.toggleFavourite(),
-          },
-          {
-            label: email.status === 'closed' ? 'Reopen' : 'Mark as done',
-            icon: 'check-circle',
-            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
-            action: () => void this.toggleClosed(),
-          },
-          ...(this.isFolderTrash()
-            ? [
-                {
-                  label: 'Restore',
-                  icon: 'restore-from-trash',
-                  action: () => void this.restoreFromTrash(),
-                },
-              ]
-            : []),
-          {
-            label: this.isFolderTrash() ? 'Delete forever' : 'Delete',
-            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
-            iconClass: 'text-error',
-            action: () => void this.deleteEmail(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 4: Print
-      {
-        show: true,
-        items: [
-          {
-            label: 'Print',
-            icon: 'print',
-            extraClass: '!py-1',
-            action: () => {
-              window.print();
-            },
-          },
-        ] as ContextMenuItem[],
-      },
-    ].filter((section) => section.show && section.items.length > 0);
-  }
-  public closeContextMenu(): void {
-    this.showContextMenu.set(false);
-  }
-
-  protected handleReply(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.reply.emit(email);
-  }
-
-  protected handleReplyAll(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.replyAll.emit(email);
-  }
-
-  protected handleForward(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.forward.emit(email);
-  }
-
-  protected isFolderTrash(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.TRASH;
-  }
-
-  protected isFolderSpam(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.SPAM;
-  }
-
-  protected async toggleReadStatus() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update read status');
-    }
-  }
-
-  protected async toggleFavourite() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update favorite status');
-    }
-  }
-
-  protected async toggleClosed() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update email status');
-    }
+  public getFavouriteIcon() {
+    return this.isFavourite() ? 'star-filled' : 'star';
   }
 
   protected async deleteEmail() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
     try {
-      await this.store.deleteEmail(email.id);
-    } catch (_e) {
+      await this.store.deleteEmail(this.email().id);
+    } catch (e) {
+      console.error('Failed to delete email', e);
       this.alertSvc.showError('Failed to delete email');
     }
   }
 
-  protected restoreFromTrash() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    void this.store.restoreFromTrash(email.id);
+  protected getAllRecipients(): any[] {
+    return [...this.getToRecipients(), ...this.getCcRecipients(), ...this.getBccRecipients()];
+  }
+
+  protected getBccRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.bcc_list || [];
+  }
+
+  protected getCcRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.cc_list || [];
+  }
+
+  protected getDateSent(): Date | null {
+    const header = this.headerData();
+    return header?.email?.date_sent ? new Date(header.email.date_sent) : null;
+  }
+
+  protected getHeaderInfo() {
+    const header = this.headerData();
+    const email = this.email();
+
+    return {
+      subject: email.subject,
+      date: this.getDateSent() || email.updated_at,
+      from: email.from_email,
+      to: email.to_email,
+      messageId: header?.email?.headers_json?.['message-id'] || 'N/A',
+      mailedBy: header?.email?.headers_json?.['x-mailer'] || header?.email?.headers_json?.['user-agent'] || 'N/A',
+      signedBy: header?.email?.headers_json?.['dkim-signature'] ? 'DKIM Verified' : 'Not signed',
+      security: header?.email?.headers_json?.['received-spf'] || 'N/A',
+      returnPath: header?.email?.headers_json?.['return-path'] || 'N/A',
+      replyTo: header?.email?.headers_json?.['reply-to'] || email.from_email,
+    };
+  }
+
+  protected getToRecipients(): any[] {
+    const header = this.headerData();
+    return header?.email?.to_list || [];
+  }
+
+  protected getTrashText() {
+    return this.isFolderTrash() ? 'Delete forever' : 'Move to Trash';
+  }
+
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    if (ev.key === 'Escape' && this.isExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.stopPropagation();
+      ev.preventDefault();
+    }
+  }
+
+  protected handleForward() {
+    this.forward.emit();
+  }
+
+  protected handleMarkAsUnread() {
+    void this.store.toggleEmailReadStatus(this.email().id, false);
+    this.store.selectEmail(null);
+  }
+
+  protected handleReply() {
+    this.reply.emit();
+  }
+
+  protected handleReplyAll() {
+    this.replyAll.emit();
+  }
+
+  protected isFolderTrash(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.TRASH;
+  }
+
+  protected isFolderSpam(): boolean {
+    const fid = this.store.currentSelectedFolderId();
+    return fid === ALL_FOLDERS.SPAM;
+  }
+
+  protected async markAsSpam() {
+    try {
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to mark email as spam', e);
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
   }
 
   protected async moveToInbox() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
     try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
+      await this.store.moveToFolder(this.email().id, ALL_FOLDERS.INBOX);
       this.alertSvc.showSuccess('Email moved to Inbox');
-    } catch (_e) {
+      this.store.selectEmail(null);
+    } catch (e) {
+      console.error('Failed to move email to Inbox', e);
       this.alertSvc.showError('Failed to move email to Inbox');
     }
   }
 
-  protected async markAsSpam() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
+  protected markAsDoneText() {
+    return this.isClosed() ? 'Reopen' : 'Mark as done';
+  }
+
+  protected restoreFromTrash() {
+    void this.store.restoreFromTrash(this.email().id);
+  }
+
+  protected async toggleClosed() {
+    const email = this.email();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+
+    // Optimistically update UI
+    this.isClosed.set(newStatus === 'closed');
+
     try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-    } catch (_e) {
-      this.alertSvc.showError('Failed to mark email as spam');
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (_error) {
+      // Revert UI state on error
+      this.isClosed.set(currentStatus === 'closed');
+      this.alertSvc.showError('Failed to update email status');
     }
+  }
+
+  protected handleCreateTask(): void {
+    void this.createTaskDialog()?.open();
+  }
+
+  protected toggleExpand(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected async toggleFavourite() {
+    const e = this.email();
+    this.isFavourite.update((value) => !value);
+    return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
   }
 }
 ```
@@ -45524,86 +44919,692 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
 
 ```typescript
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
 
-import { IAuthUser } from '../../../../../../../../libs/common/src';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { UserService } from '../../../../services/user.service';
+import { EmailsService } from '../../services/emails-service';
 import { EmailsStore } from '../../services/store/emailstore';
+import { EmailStateStore } from '../../services/store/email-state.store';
+import { EmailBody } from '../email-body/email-body';
+import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
+import { EmailDetails } from '../email-details/email-details';
+import { EmailFolderList } from '../email-folder-list/email-folder-list';
+import { EmailList } from '../email-list/email-list';
+import { EmailPersonRail } from '../email-person-rail/email-person-rail';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { AuthService } from '@frontend/auth/auth-service';
 
 @Component({
-  selector: 'pc-email-assign',
-  imports: [Icon],
-  template: `<div class="flex items-center gap-2 mt-1">
-    <span i18n class="text-xs text-base-content/70">Owner:</span>
-    <div class="dropdown">
-      <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
-        <span>{{ getUserName(assignedTo()) }}</span>
-        <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
-      </div>
-
-      <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
-        @for (user of users(); track user.id) {
-          <li>
-            <button type="button" (click)="assign(user.id); closeDropdown()">{{ user.first_name }}</button>
-          </li>
-        }
-        @if (assignedTo()) {
-          <li><button i18n type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
-        }
-      </ul>
-    </div>
-  </div>`,
+  selector: 'pc-email-client',
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, EmailPersonRail, Icon],
+  host: {
+    class: 'block h-full',
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-client.html',
 })
-export class EmailAssign {
-  private alertSvc = inject(AlertService);
-  private store = inject(EmailsStore);
-  private userService = inject(UserService);
+export class EmailClient {
+  private readonly composer = viewChild<ComposeEmailComponent>('composer');
 
-  protected assignedTo = signal<string | null>(null);
+  private authService = inject(AuthService);
 
-  public email = input.required<EmailType | null>();
-  public users = signal<IAuthUser[]>([]);
+  protected readonly store = inject(EmailsStore);
+  private readonly stateStore = inject(EmailStateStore);
+  private readonly emailSvc = inject(EmailsService);
+
+  protected composePrefill = signal<ComposeInitial | null>(null);
+  protected draftIdToLoad = signal<string | null>(null);
+  protected isComposing = signal(false);
+
+  protected mobileView = this.stateStore.mobilePanelView;
+
+  protected folderPanelClass = computed(() =>
+    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
+  );
+
+  protected listPanelClass = computed(() =>
+    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
+  );
+
+  protected detailPanelClass = computed(() =>
+    this.mobileView() === 'detail'
+      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
+      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10',
+  );
+
+  /** The person context rail (§5) shows only for a real selection on desktop. */
+  protected showPersonRail = computed(() => !!this.selectedEmail() && !this.isComposing() && !this.isBodyExpanded());
 
   constructor() {
-    void this.userService.getUsers().then((u) => this.users.set(u));
-    // Can't use computed because assignedTo is settable
     effect(() => {
-      this.assignedTo.set(this.email()?.assigned_to || null);
+      const id = this.email();
+      if (id) {
+        void untracked(() => this.loadEmailData(id));
+      }
     });
   }
 
-  public async assign(userId: string | number | null) {
-    const email = this.email();
-    if (!email) return;
+  /** Router query-param input (`?email=<id>`); name matches the binding, no alias. */
+  readonly email = input<string | undefined>(undefined);
 
-    const normalizedUserId = userId != null ? String(userId) : null;
-    const assigneeName = normalizedUserId
-      ? (this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null)
-      : null;
-
+  private async loadEmailData(emailId: string): Promise<void> {
     try {
-      await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
-      this.assignedTo.set(normalizedUserId);
-    } catch (_e) {
-      this.alertSvc.showError('Something went wrong, please try again');
-      this.assignedTo.set(null);
+      // 1. Fetch the email header/details from backend to know its folder_id
+      const res = await this.emailSvc.getEmailHeader(emailId);
+      if (res && res.email) {
+        const folderId = res.email.folder_id;
+
+        // 2. Ensure folders list is loaded
+        let folders = this.store.allFolders();
+        if (!folders || folders.length === 0) {
+          folders = await this.store.loadAllFoldersWithCounts();
+        }
+
+        // 3. Find the folder
+        const folder = folders.find((f) => String(f.id) === String(folderId));
+        if (folder) {
+          const emailObj: EmailType = {
+            id: String(res.email.id),
+            folder_id: String(res.email.folder_id),
+            updated_at: new Date(res.email.updated_at),
+            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
+            is_favourite: !!res.email.is_favourite,
+            attachment_count: res.email.attachment_count ?? 0,
+            status: res.email.status || 'open',
+            from_email: res.email.from_email ?? undefined,
+            to_email: res.email.to_email ?? undefined,
+            subject: res.email.subject ?? undefined,
+            preview: res.email.preview ?? undefined,
+            assigned_to: res.email.assigned_to ?? undefined,
+            has_attachment: !!res.email.has_attachment,
+            is_read: !!(res.email as any).is_read,
+          };
+
+          // Add to store's normalized map so it is available immediately
+          this.stateStore.replaceEmail(emailObj.id, emailObj);
+
+          // Select the folder and email
+          this.store.selectFolder(folder);
+          this.store.selectEmail(emailObj);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to pre-select email from notification link', err);
     }
   }
 
-  public closeDropdown() {
-    const el = document.activeElement as HTMLElement | null;
-    el?.blur?.(); // remove focus -> :focus-within becomes false -> closes
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly isBodyExpanded = this.store.isBodyExpanded;
+
+  public readonly selectedEmail = this.store.currentSelectedEmail;
+
+  public readonly selectedFolderId = this.store.currentSelectedFolderId;
+
+  public closeCompose() {
+    this.isComposing.set(false);
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(null);
   }
 
-  public getUserName(id: string | null = null) {
-    if (!id) return 'Noone';
-    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Noone';
+  public newEmail() {
+    this.openCompose();
+  }
+
+  // handle send from composer
+  public async onComposeSend(_payload: any) {
+    // TODO: integrate with your EmailActionsStore/EmailsService
+    // Example:
+    // await this.emailActions.sendEmail(payload);
+    this.isComposing.set(false);
+    // Optionally refresh current folder, show toast, etc.
+  }
+
+  public async onEmail(email: EmailType | null): Promise<void> {
+    const folderId = this.store.currentSelectedFolderId();
+    if (this.isComposing()) {
+      try {
+        const c = this.composer();
+        if (c?.form.dirty) {
+          await c.saveDraft();
+        }
+      } catch (e) {
+        console.error('Failed to save draft', e);
+        alert('Failed to save your draft. Please check your connection or copy your work.');
+        // Abort the function here.
+        // Do not close the composer or navigate to the new email.
+        return;
+      }
+      this.closeCompose();
+    }
+
+    // Always update the store selection so the list can reflect it
+    this.store.selectEmail(email);
+    this.mobileView.set('detail');
+
+    // In the drafts folder, also open the composer for the selected draft
+    if (folderId === ALL_FOLDERS.DRAFTS && email) {
+      this.draftIdToLoad.set(String(email.id));
+      this.isComposing.set(true);
+    }
+  }
+
+  public onFolder(folder: EmailFolderType): void {
+    this.store.selectFolder(folder);
+    this.mobileView.set('list');
+  }
+
+  public mobileGoBack(): void {
+    if (this.isComposing()) {
+      this.closeCompose();
+    }
+    if (this.mobileView() === 'detail') {
+      this.mobileView.set('list');
+    } else if (this.mobileView() === 'list') {
+      this.mobileView.set('folders');
+    }
+  }
+
+  public onForward(email: EmailType) {
+    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
+    this.openCompose({ subject });
+  }
+
+  public onReply(email: EmailType) {
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to: email.from_email || '', subject });
+  }
+
+  public async onReplyAll(email: EmailType) {
+    const header = this.store.getEmailHeaderById(email.id)();
+    const recipients = new Set<string>();
+
+    const currentUser = await this.authService.getCurrentUser();
+    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
+
+    if (email.from_email) recipients.add(email.from_email);
+
+    header?.email?.to_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+    header?.email?.cc_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+
+    const to = Array.from(recipients)
+      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
+      .join(', ');
+
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to, subject });
+  }
+
+  public openCompose(prefill?: ComposeInitial | null) {
+    this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(prefill ?? null);
+    this.isComposing.set(true);
+    this.mobileView.set('detail');
+  }
+
+  public toggleExpanded(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    // Existing behaviour: Escape collapses an expanded body first.
+    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+
+    // Stay out of the way while composing, typing into a field, or when a
+    // command/ctrl/alt modifier is held (Cmd+K search, the global `g` chord…).
+    if (this.isComposing() || this.isTypingTarget(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) {
+      return;
+    }
+
+    // Shortcuts that work without a selection.
+    switch (ev.key) {
+      case 'c':
+        ev.preventDefault();
+        this.openCompose();
+        return;
+      case 'j':
+        ev.preventDefault();
+        this.selectRelative(1);
+        return;
+      case 'k':
+        ev.preventDefault();
+        this.selectRelative(-1);
+        return;
+    }
+
+    // Everything below acts on the currently selected email.
+    const email = this.selectedEmail();
+    if (!email) return;
+
+    switch (ev.key) {
+      case 'r':
+        ev.preventDefault();
+        this.onReply(email);
+        return;
+      case 'a':
+        ev.preventDefault();
+        void this.onReplyAll(email);
+        return;
+      case 'f':
+        ev.preventDefault();
+        this.onForward(email);
+        return;
+      case 'e':
+        ev.preventDefault();
+        void this.store.updateEmailStatus(email.id, 'closed');
+        return;
+      case 's':
+        ev.preventDefault();
+        void this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+        return;
+      case 'I': // Shift+I — mark as read
+        ev.preventDefault();
+        void this.store.toggleEmailReadStatus(email.id, true);
+        return;
+      case 'U': // Shift+U — mark as unread
+        ev.preventDefault();
+        void this.store.toggleEmailReadStatus(email.id, false);
+        return;
+      case '#':
+        ev.preventDefault();
+        void this.store.deleteEmail(email.id);
+        return;
+      case 'Enter':
+      case 'o':
+        ev.preventDefault();
+        this.toggleExpanded();
+        return;
+      case 'u':
+        ev.preventDefault();
+        this.store.selectEmail(null);
+        this.mobileView.set('list');
+        return;
+    }
+  }
+
+  /** Move the selection to the next (`delta > 0`) or previous email in the folder. */
+  private selectRelative(delta: number): void {
+    const list = this.emails();
+    if (!list.length) return;
+    const current = this.selectedEmail();
+    const currentIdx = current ? list.findIndex((e) => String(e.id) === String(current.id)) : -1;
+    const nextIdx = currentIdx === -1 ? (delta > 0 ? 0 : list.length - 1) : currentIdx + delta;
+    const next = list[nextIdx];
+    if (!next) return;
+    void this.onEmail(next);
+  }
+
+  /** True when the event originates from a field the user is typing into. */
+  private isTypingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (target.isContentEditable) return true;
+    return target.getAttribute('role') === 'textbox';
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
+
+```typescript
+import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { PcIconNameType } from '@icons/icons.index';
+
+interface ContextMenuItem {
+  label: string;
+  icon: PcIconNameType;
+  action: () => void;
+  iconClass?: string; // The '?' makes it optional
+  extraClass?: string; // The '?' makes it optional
+}
+
+interface ContextMenuSection {
+  show: boolean;
+  items: ContextMenuItem[];
+}
+
+@Component({
+  selector: 'pc-email-list',
+  imports: [Icon, TimeAgoPipe],
+  templateUrl: 'email-list.html',
+  host: {
+    '(document:click)': 'closeContextMenu()',
+    '(document:keydown.escape)': 'closeContextMenu()',
+  },
+})
+export class EmailList {
+  private readonly store = inject(EmailsStore);
+  private readonly alertSvc = inject(AlertService);
+
+  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
+
+  public readonly emailSelected = output<EmailType>();
+
+  public readonly reply = output<EmailType>();
+  public readonly replyAll = output<EmailType>();
+  public readonly forward = output<EmailType>();
+
+  public readonly showContextMenu = signal<boolean>(false);
+  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
+  public readonly contextMenuEmail = signal<EmailType | null>(null);
+
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
+
+  protected readonly isLoadingMore = this.store.isLoadingMore;
+  protected readonly ALL_FOLDERS = ALL_FOLDERS;
+
+  protected onScroll(event: Event): void {
+    this.closeContextMenu();
+    const el = event.target as HTMLElement;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      void this.store.loadNextPage();
+    }
+  }
+
+  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
+
+  public readonly sortedEmails = computed(() => {
+    const list = [...this.emails()];
+    const order = this.sortOrder();
+    return list.sort((a, b) => {
+      const timeA = new Date(a.date_sent || a.updated_at).getTime();
+      const timeB = new Date(b.date_sent || b.updated_at).getTime();
+      return order === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+  });
+
+  constructor() {
+    let lastFolderId: string | null = null;
+
+    // Auto-select the first email when the folder changes or the current selection is removed.
+    effect(() => {
+      const folderId = this.store.currentSelectedFolderId();
+      const emails = this.sortedEmails();
+      const selectedId = this.store.currentSelectedEmailId();
+
+      const folderChanged = folderId !== lastFolderId;
+      lastFolderId = folderId;
+
+      const container = this.scrollContainer();
+      if (folderChanged && container) {
+        container.nativeElement.scrollTop = 0;
+      }
+
+      // If the list is empty, clear any existing selection and bail out.
+      if (emails.length === 0) {
+        if (selectedId) {
+          // The selected email was removed; clear selection so parent can react.
+          this.store.selectEmail(null);
+        }
+        return;
+      }
+
+      if (folderId) {
+        // Auto-select the first email only if:
+        // 1. The folder has changed, OR
+        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
+        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
+
+        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
+          // Update the store directly — do NOT emit through emailSelected output, which would
+          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
+          this.store.selectEmail(emails[0]!);
+        }
+      }
+    });
+  }
+
+  public isSelected(id: string): boolean {
+    return this.store.currentSelectedEmailId() === id;
+  }
+
+  /** Triage status chip per row (§5): one pill shape, semantic tint. */
+  protected rowStatus(email: EmailType): { label: string; tone: 'info' | 'neutral' | 'warning' } {
+    if (this.isFolderTrash()) return { label: 'In Trash', tone: 'neutral' };
+    if ((email.status || 'open') === 'closed') return { label: 'Closed', tone: 'neutral' };
+    if (email.assigned_to) return { label: 'Assigned', tone: 'info' };
+    return { label: 'Unassigned', tone: 'warning' };
+  }
+
+  public selectEmail(email: EmailType): void {
+    this.emailSelected.emit(email);
+  }
+
+  public onContextMenu(event: MouseEvent, email: EmailType): void {
+    event.preventDefault();
+    this.selectEmail(email);
+    this.contextMenuEmail.set(email);
+
+    // Dynamic viewport boundary collision checking
+    const menuWidth = 192; // equivalent to w-48
+    const menuHeight = 280; // approximate maximum height
+
+    let x = event.clientX;
+    let y = event.clientY;
+
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 8;
+    }
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 8;
+    }
+
+    this.contextMenuPosition.set({ x, y });
+    this.showContextMenu.set(true);
+  }
+
+  get menuSections(): ContextMenuSection[] {
+    const email = this.contextMenuEmail();
+    if (!email) return [];
+
+    return [
+      // Section 1: Actions
+      {
+        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
+        items: [
+          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
+          { label: 'Reply all', icon: 'reply-all', action: () => this.handleReplyAll() },
+          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
+        ] as ContextMenuItem[],
+      },
+      // Section 2: Spam & Read
+      {
+        show: true,
+        items: [
+          ...(!this.isFolderTrash()
+            ? [
+                {
+                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
+                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
+                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
+                },
+              ]
+            : []),
+          {
+            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
+            icon: 'envelope',
+            action: () => void this.toggleReadStatus(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 3: Status & Delete
+      {
+        show: true,
+        items: [
+          {
+            label: email.is_favourite ? 'Unstar' : 'Star',
+            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
+            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
+            action: () => void this.toggleFavourite(),
+          },
+          {
+            label: email.status === 'closed' ? 'Reopen' : 'Mark as done',
+            icon: 'check-circle',
+            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
+            action: () => void this.toggleClosed(),
+          },
+          ...(this.isFolderTrash()
+            ? [
+                {
+                  label: 'Restore',
+                  icon: 'restore-from-trash',
+                  action: () => void this.restoreFromTrash(),
+                },
+              ]
+            : []),
+          {
+            label: this.isFolderTrash() ? 'Delete forever' : 'Delete',
+            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
+            iconClass: 'text-error',
+            action: () => void this.deleteEmail(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 4: Print
+      {
+        show: true,
+        items: [
+          {
+            label: 'Print',
+            icon: 'print',
+            extraClass: '!py-1',
+            action: () => {
+              window.print();
+            },
+          },
+        ] as ContextMenuItem[],
+      },
+    ].filter((section) => section.show && section.items.length > 0);
+  }
+  public closeContextMenu(): void {
+    this.showContextMenu.set(false);
+  }
+
+  protected handleReply(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.reply.emit(email);
+  }
+
+  protected handleReplyAll(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.replyAll.emit(email);
+  }
+
+  protected handleForward(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.forward.emit(email);
+  }
+
+  protected isFolderTrash(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.TRASH;
+  }
+
+  protected isFolderSpam(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.SPAM;
+  }
+
+  protected async toggleReadStatus() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update read status');
+    }
+  }
+
+  protected async toggleFavourite() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update favorite status');
+    }
+  }
+
+  protected async toggleClosed() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update email status');
+    }
+  }
+
+  protected async deleteEmail() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.deleteEmail(email.id);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to delete email');
+    }
+  }
+
+  protected restoreFromTrash() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    void this.store.restoreFromTrash(email.id);
+  }
+
+  protected async moveToInbox() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+    } catch (_e) {
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
+
+  protected async markAsSpam() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+    } catch (_e) {
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
   }
 }
 ```
@@ -46878,24 +46879,23 @@ export class EventFormComponent implements OnInit {
             <!-- Name Inputs -->
             <div class="flex flex-col md:flex-row gap-2">
               <pc-input
-                class="basis-1/3"
-                placeholder="First Name"
-                aria-label="First Name"
+                class="basis-1/2"
+                placeholder="First name"
+                aria-label="First name"
                 [formField]="form.first_name"
               ></pc-input>
               <pc-input
-                class="basis-1/3"
-                placeholder="Middle Name(s)"
-                aria-label="Middle Name(s)"
-                [formField]="form.middle_names"
-              ></pc-input>
-              <pc-input
-                class="basis-1/3"
-                placeholder="Last Name"
-                aria-label="Last Name"
+                class="basis-1/2"
+                placeholder="Last name"
+                aria-label="Last name"
                 [formField]="form.last_name"
               ></pc-input>
             </div>
+            <pc-input
+              placeholder="Middle name(s)"
+              aria-label="Middle name(s)"
+              [formField]="form.middle_names"
+            ></pc-input>
 
             <!-- Emails -->
             <div class="flex flex-col md:flex-row gap-2">
@@ -46940,15 +46940,27 @@ export class EventFormComponent implements OnInit {
               ></pc-input>
             </div>
 
-            <!-- Company Select -->
-            <pc-select placeholder="-- Select Company --" aria-label="Company" [formField]="form.company_id">
-              @for (c of companies(); track c.id) {
-              <option [value]="c.id">{{ c.name }}</option>
-              }
-            </pc-select>
+            <!-- Company & Preferred contact -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <pc-select placeholder="-- Select company --" aria-label="Company" [formField]="form.company_id">
+                @for (c of companies(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+                }
+              </pc-select>
+
+              <pc-select
+                placeholder="No preference"
+                aria-label="Preferred contact"
+                [formField]="form.preferred_contact"
+              >
+                <option value="email">Email</option>
+                <option value="mobile">Mobile phone</option>
+                <option value="home_phone">Home phone</option>
+              </pc-select>
+            </div>
 
             <!-- Assigned To / Owner Select -->
-            <pc-select placeholder="-- Select Contact Owner --" aria-label="Assigned To" [formField]="form.assigned_to">
+            <pc-select placeholder="-- Select contact owner --" aria-label="Assigned To" [formField]="form.assigned_to">
               @for (u of users(); track u.id) {
               <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
               }
@@ -46956,29 +46968,24 @@ export class EventFormComponent implements OnInit {
 
             <!-- Address & Household Assignment -->
             @if (householdId() && !isPlaceholderHousehold()) {
-            <div class="text-sm pl-1 flex items-center gap-2 bg-base-200/50 p-2.5 rounded-lg border border-base-300/50">
-              <span class="text-base-content/60">Address:</span>
+            <div class="flex items-center gap-3 text-sm bg-base-200 p-3 rounded-lg border border-base-300">
+              <pc-icon name="map-pin" [size]="4" class="text-base-content/40 shrink-0"></pc-icon>
               <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
+              <button type="button" class="link link-primary text-xs shrink-0" (click)="navigateToHousehold()">
+                Edit on household
+              </button>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
-                data-tip="Change Household"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip shrink-0"
+                data-tip="Change household"
                 (click)="openAssignDrawer()"
               >
                 <pc-icon name="chevron-down" [size]="4"></pc-icon>
               </button>
               <button
                 type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip"
-                data-tip="Go to Household"
-                (click)="navigateToHousehold()"
-              >
-                <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip"
-                data-tip="Remove Address"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip shrink-0"
+                data-tip="Remove address"
                 (click)="removeAddress()"
               >
                 <pc-icon name="trash" [size]="4"></pc-icon>
@@ -47044,22 +47051,59 @@ export class EventFormComponent implements OnInit {
               Tags & Issues
             </div>
 
-            <pc-tags
-              [tags]="tags()"
-              type="tag"
-              [enableAutoComplete]="true"
-              (tagAdded)="tagAdded($event)"
-              (tagRemoved)="tagRemoved($event)"
-            ></pc-tags>
+            <!-- Tags -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-base-content/60">Tags</label>
+              <pc-tags
+                [tags]="tags()"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Type and press Enter to add"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+              @if (tagSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of tagSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addTagSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
 
-            <pc-tags
-              [tags]="issues()"
-              type="issue"
-              [enableAutoComplete]="true"
-              placeholder="Enter issues, separated by comma"
-              (tagAdded)="issueAdded($event)"
-              (tagRemoved)="issueRemoved($event)"
-            ></pc-tags>
+            <!-- Issues of interest -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-base-content/60">Issues of interest</label>
+              <pc-tags
+                [tags]="issues()"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="What does this person care about? Enter to add"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+              @if (issueSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of issueSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addIssueSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
 
             <!-- Internal Notes -->
             <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
@@ -47081,6 +47125,17 @@ export class EventFormComponent implements OnInit {
         }
       </div>
     </div>
+
+    <!-- Back to the person record -->
+    @if (person()?.id) {
+    <a
+      [routerLink]="['/people', person()!.id]"
+      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
+    >
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Back to {{ formName() || 'person' }}
+    </a>
+    }
   </div>
 
   <!-- Right-side drawer: Assign to a different household -->
@@ -49976,30 +50031,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Left Column: Contact Card & Bio -->
     <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Contact Card -->
+      <!-- Contact Card -->
       <pc-profile-card [avatarText]="initials()">
         <!-- Name & Company -->
         <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
         @if (person().company_name) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
+        <div class="badge badge-lg badge-neutral gap-2 mb-2 font-medium">
           <pc-icon name="briefcase" [size]="4"></pc-icon>
           {{ person().company_name }}
         </div>
-        } @else {
-        <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
         }
 
-        <!-- Social Media Buttons -->
-        <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
+        <!-- Social Media Buttons (quiet, semantic tokens; muted when a URL isn't set) -->
+        <div class="flex justify-center gap-2 w-full border-y border-base-200 py-3 my-4">
           @for (link of socialLinks(); track link.name) {
           <a
             [attr.href]="link.url || null"
             [attr.target]="link.url ? '_blank' : null"
-            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' URL not set'"
-            class="btn btn-circle btn-sm tooltip"
-            [class]="link.url 
-        ? 'shadow-md hover:scale-110 transition-transform text-white border-none ' + link.color 
-        : 'bg-base-200 text-base-content/30 border-base-300 cursor-not-allowed'"
+            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' not set'"
+            class="btn btn-ghost btn-sm btn-circle tooltip"
+            [class]="link.url ? 'text-base-content/60 hover:text-primary' : 'text-base-content/25 pointer-events-none'"
           >
             <pc-icon [name]="link.icon" [size]="4"></pc-icon>
           </a>
@@ -50007,7 +50058,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
         </div>
 
         <!-- Contact & Address Details List -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+        <div class="w-full flex flex-col text-sm">
           <pc-detail-item
             label="Primary Email"
             [value]="person().email"
@@ -50039,43 +50090,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
             [link]="!!householdId() && !isPlaceholderHousehold()"
             (linkClicked)="navigateToHousehold()"
           ></pc-detail-item>
+          @if (preferredContactLabel()) {
+          <pc-detail-item
+            label="Preferred Contact"
+            [value]="preferredContactLabel()"
+            icon="chat-bubble-bottom-center-text"
+          ></pc-detail-item>
+          }
         </div>
 
-        <!-- Notes Section -->
-        @if (person().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
-            >Internal Notes</span
-          >
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ person().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="person().created_at"
-          [createdBy]="getUserName(person().createdby_id)"
-          [updatedAt]="person().updated_at"
-          [updatedBy]="getUserName(person().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-
-      <!-- Segmentation Card -->
-      <pc-card title="Segmentation">
-        <div class="flex flex-col gap-3">
+        <!-- Tags & Issues of Interest -->
+        <div class="w-full flex flex-col gap-3 border-t border-base-200 pt-4 mt-2">
           <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5">Tags</span>
             @if (tags().length > 0) {
             <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
             <span class="text-xs text-base-content/40 italic">No tags assigned</span>
             }
           </div>
-
           <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5"
+              >Issues of Interest</span
+            >
             @if (issues().length > 0) {
             <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
@@ -50090,117 +50127,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
             }
           </div>
         </div>
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="person().created_at"
+          [createdBy]="getUserName(person().createdby_id)"
+          [updatedAt]="person().updated_at"
+          [updatedBy]="getUserName(person().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Internal Notes (own card) -->
+      @if (person().notes) {
+      <pc-card title="Internal notes">
+        <p class="text-sm text-base-content/80 whitespace-pre-line leading-relaxed">{{ person().notes }}</p>
       </pc-card>
-
-      <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
-      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
-        <div class="p-6 flex flex-col items-center gap-3">
-          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
-
-          <!-- Placeholder Graphic -->
-          <div
-            class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2"
-          >
-            <span class="text-4xl text-base-content/20">😐</span>
-            <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
-          </div>
-          <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
-            Aggregates communication email history and tags to automatically gauge contact affinity.
-          </div>
-        </div>
-
-        <!-- Premium Overlay for "Coming Soon" -->
-        <div
-          class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none"
-        >
-          <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
-            <pc-icon name="chart-pie" [size]="8"></pc-icon>
-          </div>
-          <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
-          <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
-          <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
-            AI-driven sentiment analysis of email conversations is currently in beta.
-          </p>
-        </div>
-      </div>
+      }
     </div>
 
-    <!-- Right Column: Stats & Multi-Tab Activity Feed -->
+    <!-- Right Column: Multi-Tab Activity Feed -->
     <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Dashboard Stats Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <!-- Stats: Emails Sent -->
-        <pc-stat-card
-          [title]="'Emails Sent'"
-          [value]="activityData().emails.length"
-          [description]="'Total emails sent'"
-          [icon]="'paper-airplane'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Emails Opened -->
-        <pc-stat-card
-          [title]="'Opened'"
-          [value]="openedNewslettersCount()"
-          [description]="'Opens & clicks'"
-          [icon]="'eye'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Active Lists -->
-        <pc-stat-card
-          [title]="'Active Lists'"
-          [value]="0"
-          [description]="'List subscriptions'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Shifts -->
-        <pc-stat-card
-          [title]="'Volunteered'"
-          [value]="volunteerStats()?.shifts_count || 0"
-          [description]="'Shifts completed'"
-          [icon]="'volunteer'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Hours -->
-        <pc-stat-card
-          [title]="'Total Hours'"
-          [value]="volunteerStats()?.total_hours || 0.0"
-          [description]="'Hours logged'"
-          [icon]="'clock'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Donations -->
-        <pc-stat-card
-          [title]="'Donations'"
-          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
-          [description]="'Financial support'"
-          [icon]="'currency-dollar'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Connections -->
-        <pc-stat-card
-          [title]="'Connections'"
-          [value]="connectionCount()"
-          [description]="'Network connections'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Activities, Interactions & History Tabs -->
       <!-- Activities, Interactions & History Tabs -->
       <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
         <pc-tab-panel id="activity" [activeTab]="activeTab()">
@@ -50254,15 +50200,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
               }
             </div>
             }
-          </div>
-        </pc-tab-panel>
 
-        <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().newsletters.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No newsletter logs found</div>
-            } @else {
-            <div class="flex flex-col gap-2">
+            <!-- Newsletter engagement (folded into Emails) -->
+            @if (activityData().newsletters.length > 0) {
+            <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60"
+                >Newsletter activity</span
+              >
               @for (ev of activityData().newsletters; track ev.id) {
               <div
                 class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
@@ -50398,41 +50342,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                   <tr class="bg-base-50 border-b border-base-200">
                     <th class="font-bold text-base-content/70">Date</th>
                     <th class="font-bold text-base-content/70">Amount</th>
-                    <th class="font-bold text-base-content/70">Tax Credit</th>
-                    <th class="font-bold text-base-content/70">Residency Info</th>
-                    <th class="font-bold text-base-content/70">Status</th>
-                    <th class="font-bold text-base-content/70">Transaction ID</th>
+                    <th class="font-bold text-base-content/70">Method</th>
+                    <th class="font-bold text-base-content/70">Receipt</th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (donation of donationHistory(); track donation.id) {
+                  @for (donation of visibleDonations(); track donation.id) {
                   <tr class="hover:bg-base-200/20 border-b border-base-200">
-                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
-                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
-                    <td>
-                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
-                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
-                      </span>
+                    <td class="font-medium text-base-content/75 tabular-nums">
+                      {{ donation.created_at | date:'mediumDate' }}
                     </td>
-                    <td class="text-base-content/65">
-                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
-                    </td>
+                    <td class="font-bold text-base-content tabular-nums">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td class="text-base-content/65">{{ donationMethod(donation) }}</td>
                     <td>
-                      <pc-status-badge
-                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
-                      >
-                        {{ donation.status }}
+                      <pc-status-badge [type]="donationReceipt(donation).type">
+                        {{ donationReceipt(donation).label }}
                       </pc-status-badge>
-                    </td>
-                    <td class="font-mono text-[10px] text-base-content/50">
-                      {{ donation.stripe_session_id || 'Manual' }}
                     </td>
                   </tr>
                   }
                 </tbody>
               </table>
             </div>
-            }
+            @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
+            <div class="text-xs text-base-content/60 px-1">
+              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }} —
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
+                Show all {{ donationHistory().length }}
+              </button>
+              } @else { Showing all {{ donationHistory().length }} —
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
+                Show fewer
+              </button>
+              }
+            </div>
+            } }
           </div>
         </pc-tab-panel>
 
@@ -50477,39 +50421,47 @@ function isRecord(value: unknown): value is Record<string, unknown> {
           </div>
         </pc-tab-panel>
 
-        <pc-tab-panel id="connections" [activeTab]="activeTab()">
-          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
-        </pc-tab-panel>
-
         <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (householdId() && !isPlaceholderHousehold()) { @defer {
-            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            } } @else {
-            <div class="flex flex-col items-center gap-3 py-10 text-center">
-              <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
-              <div class="flex flex-col gap-1">
-                <span
-                  class="font-medium text-base-content"
-                  i18n="PersonView|Household empty heading@@person.household.emptyHeading"
-                  >Not part of a household yet</span
-                >
-                <span
-                  class="max-w-sm text-sm text-base-content/50"
-                  i18n="PersonView|Household empty cause@@person.household.emptyCause"
-                  >Households group people who share an address, so everyone at the same address stays in sync.</span
-                >
+          <div class="flex flex-col gap-6">
+            <!-- Household members -->
+            <div class="flex flex-col gap-4">
+              @if (householdId() && !isPlaceholderHousehold()) { @defer {
+              <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+              } @placeholder {
+              <div class="skeleton w-full h-32"></div>
+              } } @else {
+              <div class="flex flex-col items-center gap-3 py-10 text-center">
+                <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
+                <div class="flex flex-col gap-1">
+                  <span
+                    class="font-medium text-base-content"
+                    i18n="PersonView|Household empty heading@@person.household.emptyHeading"
+                    >Not part of a household yet</span
+                  >
+                  <span
+                    class="max-w-sm text-sm text-base-content/50"
+                    i18n="PersonView|Household empty cause@@person.household.emptyCause"
+                    >Households group people who share an address, so everyone at the same address stays in sync.</span
+                  >
+                </div>
+                <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
+                  <pc-icon name="home" [size]="4"></pc-icon>
+                  <ng-container i18n="PersonView|Assign household action@@person.household.assign"
+                    >Assign household</ng-container
+                  >
+                </button>
               </div>
-              <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
-                <pc-icon name="home" [size]="4"></pc-icon>
-                <ng-container i18n="PersonView|Assign household action@@person.household.assign"
-                  >Assign household</ng-container
-                >
-              </button>
+              }
             </div>
-            }
+
+            <!-- Connections (folded into Household) -->
+            <div class="flex flex-col gap-2 border-t border-base-200 pt-4">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Connections</span>
+              <pc-person-connections
+                [personId]="id()"
+                (countChange)="connectionCount.set($event)"
+              ></pc-person-connections>
+            </div>
           </div>
         </pc-tab-panel>
       </pc-tabs>
@@ -51998,330 +51950,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.ts
-
-```typescript
-import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Router, RouterLink } from '@angular/router';
-
-import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
-import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
-import { SearchService } from '../../services/api/search-service';
-import { FullScreenService } from '../../services/fullscreen.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
-import { UserService } from '@frontend/services/user.service';
-import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
-import { NotificationsService } from '../../services/api/notifications-service';
-
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: string | Date;
-};
-
-@Component({
-  selector: 'pc-navbar',
-  imports: [
-    Icon,
-    Swap,
-    ReactiveFormsModule,
-    AnimateIfDirective,
-    RouterLink,
-    FavouriteToggle,
-    Breadcrumbs,
-    PersonalSettingsDialog,
-  ],
-  templateUrl: './navbar.html',
-  host: {
-    '(window:keydown)': 'handleKeyDown($event)',
-  },
-})
-export class Navbar implements OnDestroy {
-  protected readonly emailActions = inject(EmailActionsStore);
-  protected readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly fullscreen = inject(FullScreenService);
-  private readonly searchSvc = inject(SearchService);
-  private readonly sideBarSvc = inject(SidebarService);
-  private readonly notificationsSvc = inject(NotificationsService);
-  private readonly router = inject(Router);
-
-  protected readonly currentUser = this.auth.getUserSignal();
-  protected readonly currentUserAvatar = computed(() => {
-    const user = this.currentUser();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  /** Initials shown in the avatar circle when the user has no picture. */
-  protected readonly userInitials = computed(() => {
-    const user = this.currentUser();
-    if (!user) return '';
-    const first = (user.first_name ?? '').trim();
-    const last = (user.last_name ?? '').trim();
-    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
-    return (initials || user.email?.charAt(0) || '?').toUpperCase();
-  });
-
-  private pollInterval?: ReturnType<typeof setInterval>;
-
-  public readonly notifications = signal<NotificationItem[]>([]);
-  public readonly unreadCount = signal<number>(0);
-  public readonly isLoadingMore = signal<boolean>(false);
-  public readonly hasMore = signal<boolean>(true);
-
-  protected isMobileOpen() {
-    return this.sideBarSvc.isMobileOpen();
-  }
-  protected readonly searchBarVisible = signal(false);
-
-  /** Personal Settings popup (§5a) — opened from the avatar menu. */
-  protected readonly settingsOpen = signal(false);
-
-  protected openSettings(): void {
-    this.closeDropdown();
-    this.settingsOpen.set(true);
-  }
-
-  protected readonly searchStr = signal('');
-  protected readonly themeSvc = inject(ThemeService);
-
-  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
-
-  constructor() {
-    // Move focus to the search bar whenever it becomes visible
-    effect(() => {
-      if (this.searchBarVisible())
-        queueMicrotask(() => {
-          this.searchInputRef()?.nativeElement?.focus();
-        });
-    });
-
-    void this.initNotifications();
-    this.pollInterval = setInterval(() => {
-      void this.refreshCount();
-    }, 60000);
-  }
-
-  public ngOnDestroy() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-    }
-  }
-
-  private async initNotifications() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      this.unreadCount.set(count || 0);
-      await this.fetchInitial();
-    } catch (err) {
-      console.error('Failed to initialize notifications', err);
-    }
-  }
-
-  protected async fetchInitial() {
-    this.isLoadingMore.set(true);
-    try {
-      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
-      this.notifications.set(list || []);
-      this.hasMore.set((list || []).length === 5);
-    } catch (err) {
-      console.error('Failed to fetch initial notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async refreshCount() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      const oldCount = this.unreadCount();
-      this.unreadCount.set(count || 0);
-      if (count > oldCount) {
-        // Notification count increased, fetch first 5 notifications in background
-        await this.fetchInitial();
-      }
-    } catch (err) {
-      console.error('Failed to poll notification count', err);
-    }
-  }
-
-  protected onNotificationOpen() {
-    if (this.notifications().length === 0) {
-      void this.fetchInitial();
-    }
-  }
-
-  protected onScroll(event: Event) {
-    const target = event.target as HTMLElement;
-    const threshold = 20; // px from bottom
-    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
-    if (isNearBottom) {
-      void this.loadMore();
-    }
-  }
-
-  protected async loadMore() {
-    if (this.isLoadingMore() || !this.hasMore()) return;
-    this.isLoadingMore.set(true);
-    try {
-      const nextBatch = await this.notificationsSvc.getLatest({
-        limit: 5,
-        offset: this.notifications().length,
-      });
-      if (!nextBatch || nextBatch.length < 5) {
-        this.hasMore.set(false);
-      }
-      if (nextBatch && nextBatch.length > 0) {
-        const existingIds = new Set(this.notifications().map((n) => n.id));
-        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
-        if (uniqueNext.length > 0) {
-          this.notifications.set([...this.notifications(), ...uniqueNext]);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load more notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async clickNotification(notif: NotificationItem) {
-    if (!notif.read) {
-      try {
-        await this.notificationsSvc.markRead(notif.id);
-        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
-        this.unreadCount.update((c) => Math.max(0, c - 1));
-      } catch (err) {
-        console.error('Failed to mark notification read', err);
-      }
-    }
-    if (notif.link) {
-      void this.router.navigateByUrl(notif.link);
-    }
-    this.closeDropdown();
-  }
-
-  protected async markAllAsRead(event: Event) {
-    event.stopPropagation();
-    try {
-      await this.notificationsSvc.markAllRead();
-      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
-      this.unreadCount.set(0);
-    } catch (err) {
-      console.error('Failed to mark all read', err);
-    }
-  }
-
-  protected formatTime(dateStr: string | Date | null | undefined): string {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  public clearSearch(): void {
-    this.searchStr.set('');
-    this.searchSvc.clearSearch();
-  }
-
-  public handleKeyDown(event: KeyboardEvent): void {
-    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-    const isK = event?.key?.toLowerCase() === 'k';
-
-    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
-    if (isCtrlOrCmd && isK && !event.shiftKey) {
-      event.preventDefault();
-
-      this.showSearchBar();
-    } else if (event.key === 'Escape' && this.searchBarVisible()) {
-      this.clearSearch();
-      this.hideSearchBar();
-    }
-  }
-
-  protected hideSearchBar(): void {
-    this.searchBarVisible.set(false);
-  }
-
-  protected isFullScreenMode(): boolean {
-    return this.fullscreen.isFullScreenMode();
-  }
-
-  protected onBlurSearchBar() {
-    if (!this.searchStr().length) {
-      this.hideSearchBar();
-    }
-  }
-
-  protected onSearchEnter(): void {
-    this.searchSvc.doSearchImmediate(this.searchStr());
-  }
-
-  protected onSearchInput(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.searchStr.set(input.value);
-    this.search();
-  }
-
-  protected search(): void {
-    this.searchSvc.doSearch(this.searchStr());
-  }
-
-  protected showSearchBar(): void {
-    this.searchBarVisible.set(true);
-  }
-
-  protected signOut(): void {
-    void this.auth.signOut();
-  }
-
-  protected closeDropdown(): void {
-    const activeEl = document.activeElement as HTMLElement | null;
-    if (activeEl) {
-      activeEl.blur();
-    }
-  }
-
-  protected toggleFullScreen(): void {
-    void this.fullscreen.toggleFullScreen();
-  }
-
-  protected toggleMobile(): void {
-    this.sideBarSvc.toggleMobile();
-  }
-
-  protected toggleSearch(): void {
-    this.searchBarVisible.set(!this.searchBarVisible());
-  }
-
-  protected toggleTheme(): void {
-    this.themeSvc.toggleTheme();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
 
 ```typescript
@@ -53600,272 +53228,328 @@ export class ListsGridComponent implements OnDestroy {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.html
+## File: apps/frontend/src/app/layout/navbar/navbar.ts
 
-```html
-<!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg relative">
-  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
-    <pc-icon name="bars-4"></pc-icon>
-  </div>
+```typescript
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@icons/icon';
+import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { Router, RouterLink } from '@angular/router';
 
-  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
-    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
-    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
-    <pc-breadcrumbs
-      class="hidden min-w-0 flex-1"
-      [class.sm:block]="!searchBarVisible()"
-      [crumbs]="trail.crumbs"
-      [positionLabel]="trail.positionLabel"
-      [hasPrev]="trail.hasPrev"
-      [hasNext]="trail.hasNext"
-      [prevLabel]="trail.prevLabel"
-      [nextLabel]="trail.nextLabel"
-      (prev)="trail.onPrev()"
-      (next)="trail.onNext()"
-    ></pc-breadcrumbs>
-    } }
+import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
+import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
+import { SearchService } from '../../services/api/search-service';
+import { FullScreenService } from '../../services/fullscreen.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { UserService } from '@frontend/services/user.service';
+import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
+import { NotificationsService } from '../../services/api/notifications-service';
 
-    <!-- Search bar — the flex-shrinking element so the icon cluster never overflows -->
-    <div
-      *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'"
-      class="min-w-0 max-w-[360px] shrink grow basis-[120px]"
-    >
-      <label class="input input-primary w-full flex items-center gap-2">
-        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
-        <input
-          #searchInput
-          type="text"
-          placeholder="Search people, emails, campaigns"
-          i18n-placeholder="@@navbar.search.placeholder"
-          class="grow w-full"
-          (blur)="onBlurSearchBar()"
-          [value]="searchStr()"
-          (input)="onSearchInput($event)"
-          (keydown.enter)="onSearchEnter()"
-        />
-        <kbd class="kbd kbd-sm hidden sm:inline-flex border-line">⌘K</kbd>
-      </label>
-    </div>
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  created_at: string | Date;
+};
 
-    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
-    <span
-      class="tooltip tooltip-bottom"
-      [class.hidden]="searchBarVisible()"
-      data-tip="Search ⌘K · Command palette ⌘⇧K"
-      i18n-data-tip="@@navbar.search.tooltip"
-    >
-      <pc-icon
-        class="hover:text-primary text-base-400 cursor-pointer"
-        (click)="showSearchBar()"
-        name="magnifying-glass"
-      ></pc-icon>
-    </span>
+@Component({
+  selector: 'pc-navbar',
+  imports: [
+    Icon,
+    Swap,
+    ReactiveFormsModule,
+    AnimateIfDirective,
+    RouterLink,
+    FavouriteToggle,
+    Breadcrumbs,
+    PersonalSettingsDialog,
+  ],
+  templateUrl: './navbar.html',
+  host: {
+    '(window:keydown)': 'handleKeyDown($event)',
+  },
+})
+export class Navbar implements OnDestroy {
+  protected readonly emailActions = inject(EmailActionsStore);
+  protected readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly fullscreen = inject(FullScreenService);
+  private readonly searchSvc = inject(SearchService);
+  private readonly sideBarSvc = inject(SidebarService);
+  private readonly notificationsSvc = inject(NotificationsService);
+  private readonly router = inject(Router);
 
-    <pc-swap
-      class="hover:text-primary text-base-400 cursor-pointer"
-      swapOnIcon="arrows-pointing-out"
-      swapOffIcon="arrows-pointing-in"
-      [checked]="!isFullScreenMode()"
-      (click)="toggleFullScreen()"
-      aria-label="Toggle full screen"
-      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
-    ></pc-swap>
+  protected readonly currentUser = this.auth.getUserSignal();
+  protected readonly currentUserAvatar = computed(() => {
+    const user = this.currentUser();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
 
-    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
-    <pc-favourite-toggle></pc-favourite-toggle>
+  /** Initials shown in the avatar circle when the user has no picture. */
+  protected readonly userInitials = computed(() => {
+    const user = this.currentUser();
+    if (!user) return '';
+    const first = (user.first_name ?? '').trim();
+    const last = (user.last_name ?? '').trim();
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
+    return (initials || user.email?.charAt(0) || '?').toUpperCase();
+  });
 
-    <!-- light / dark theme switcher -->
-    <pc-swap
-      swapOnIcon="sun"
-      swapOffIcon="moon"
-      [checked]="themeSvc.getTheme() === 'light'"
-      (click)="toggleTheme()"
-      aria-label="Toggle theme"
-      i18n-aria-label="@@navbar.theme.ariaLabel"
-    ></pc-swap>
+  private pollInterval?: ReturnType<typeof setInterval>;
 
-    <!-- email sending status indicator -->
-    @if (emailActions.sendingCount() > 0) {
-    <div
-      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
-    >
-      <span class="loading loading-spinner loading-xs text-primary"></span>
-      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
-        >Sending ({{ emailActions.sendingCount() }})...</span
-      >
-    </div>
-    }
+  public readonly notifications = signal<NotificationItem[]>([]);
+  public readonly unreadCount = signal<number>(0);
+  public readonly isLoadingMore = signal<boolean>(false);
+  public readonly hasMore = signal<boolean>(true);
 
-    <!-- notifications drop down -->
-    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-ghost btn-circle relative"
-        aria-label="Notifications"
-        i18n-aria-label="@@navbar.notifications.ariaLabel"
-      >
-        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
-        @if (unreadCount() > 0) {
-        <span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-base-100"></span>
-        }
-      </div>
-
-      <!-- Notifications list -->
-      <div
-        tabindex="0"
-        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
-      >
-        <div class="card-body p-0">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
-            <h3
-              class="font-semibold text-sm"
-              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
-            >
-              Notifications
-            </h3>
-            @if (unreadCount() > 0) {
-            <button
-              class="text-xs text-primary hover:underline font-medium"
-              (click)="markAllAsRead($event)"
-              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
-            >
-              Mark all read
-            </button>
-            }
-          </div>
-
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
-            @if (notifications().length === 0) {
-            <div class="flex flex-col items-center justify-center py-8 text-base-400">
-              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
-              <p
-                class="text-xs font-light"
-                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
-              >
-                All caught up!
-              </p>
-            </div>
-            } @else { @for (notif of notifications(); track notif.id) {
-            <div
-              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
-              [class.bg-primary/5]="!notif.read"
-              (click)="clickNotification(notif)"
-            >
-              <!-- Icon Based on Type -->
-              <div class="flex-shrink-0">
-                <div
-                  class="w-8 h-8 rounded-lg flex items-center justify-center"
-                  [class.bg-info/10]="notif.type === 'info'"
-                  [class.text-info]="notif.type === 'info'"
-                  [class.bg-primary/10]="notif.type === 'email'"
-                  [class.text-primary]="notif.type === 'email'"
-                  [class.bg-warning/10]="notif.type === 'task'"
-                  [class.text-warning]="notif.type === 'task'"
-                >
-                  @if (notif.type === 'email') {
-                  <pc-icon name="envelope"></pc-icon>
-                  } @else if (notif.type === 'task') {
-                  <pc-icon name="clipboard-document-list"></pc-icon>
-                  } @else {
-                  <pc-icon name="information-circle"></pc-icon>
-                  }
-                </div>
-              </div>
-
-              <!-- Message Details -->
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-start gap-1">
-                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
-                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
-                </div>
-                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
-              </div>
-
-              <!-- Unread dot indicator (static — nothing loops but a working spinner, §7) -->
-              @if (!notif.read) {
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
-              }
-            </div>
-            } } @if (isLoadingMore()) {
-            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
-              <span class="loading loading-spinner loading-xs text-primary"></span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- profile drop down -->
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
-        <div
-          class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
-        >
-          @if (currentUserAvatar()) {
-          <img
-            [src]="currentUserAvatar()!"
-            alt="User Profile Picture"
-            i18n-alt="@@navbar.profile.avatarAlt"
-            class="w-full h-full object-cover"
-          />
-          } @else {
-          <span
-            class="flex h-full w-full items-center justify-center bg-primary/10 text-primary text-sm font-semibold select-none"
-            aria-hidden="true"
-            >{{ userInitials() }}</span
-          >
-          }
-        </div>
-      </div>
-
-      <!-- Menu -->
-      <ul
-        tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
-        (click)="closeDropdown()"
-      >
-        <li class="hover:text-primary">
-          <a routerLink="/profile">
-            <pc-icon name="user-circle"></pc-icon>
-            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a (click)="openSettings()">
-            <pc-icon name="cog-6-tooth"></pc-icon>
-            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/help">
-            <pc-icon name="information-circle"></pc-icon>
-            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
-          </a>
-        </li>
-        <li class="base-neutral px-0 mx-0"></li>
-        <li class="hover:text-primary" (click)="signOut()">
-          <a>
-            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
-            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
-          </a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Background email sending progress bar -->
-  @if (emailActions.sendingCount() > 0) {
-  <progress
-    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
-  ></progress>
+  protected isMobileOpen() {
+    return this.sideBarSvc.isMobileOpen();
   }
-</div>
+  protected readonly searchBarVisible = signal(false);
 
-<!-- Personal Settings popup (§5a) — instant apply -->
-<pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>
+  /** Personal Settings popup (§5a) — opened from the avatar menu. */
+  protected readonly settingsOpen = signal(false);
+
+  protected openSettings(): void {
+    this.closeDropdown();
+    this.settingsOpen.set(true);
+  }
+
+  protected readonly searchStr = signal('');
+  protected readonly themeSvc = inject(ThemeService);
+
+  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+
+  constructor() {
+    // Move focus to the search bar whenever it becomes visible
+    effect(() => {
+      if (this.searchBarVisible())
+        queueMicrotask(() => {
+          this.searchInputRef()?.nativeElement?.focus();
+        });
+    });
+
+    void this.initNotifications();
+    this.pollInterval = setInterval(() => {
+      void this.refreshCount();
+    }, 60000);
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+  }
+
+  private async initNotifications() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      this.unreadCount.set(count || 0);
+      await this.fetchInitial();
+    } catch (err) {
+      console.error('Failed to initialize notifications', err);
+    }
+  }
+
+  protected async fetchInitial() {
+    this.isLoadingMore.set(true);
+    try {
+      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
+      this.notifications.set(list || []);
+      this.hasMore.set((list || []).length === 5);
+    } catch (err) {
+      console.error('Failed to fetch initial notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async refreshCount() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      const oldCount = this.unreadCount();
+      this.unreadCount.set(count || 0);
+      if (count > oldCount) {
+        // Notification count increased, fetch first 5 notifications in background
+        await this.fetchInitial();
+      }
+    } catch (err) {
+      console.error('Failed to poll notification count', err);
+    }
+  }
+
+  protected onNotificationOpen() {
+    if (this.notifications().length === 0) {
+      void this.fetchInitial();
+    }
+  }
+
+  protected onScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    const threshold = 20; // px from bottom
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
+    if (isNearBottom) {
+      void this.loadMore();
+    }
+  }
+
+  protected async loadMore() {
+    if (this.isLoadingMore() || !this.hasMore()) return;
+    this.isLoadingMore.set(true);
+    try {
+      const nextBatch = await this.notificationsSvc.getLatest({
+        limit: 5,
+        offset: this.notifications().length,
+      });
+      if (!nextBatch || nextBatch.length < 5) {
+        this.hasMore.set(false);
+      }
+      if (nextBatch && nextBatch.length > 0) {
+        const existingIds = new Set(this.notifications().map((n) => n.id));
+        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
+        if (uniqueNext.length > 0) {
+          this.notifications.set([...this.notifications(), ...uniqueNext]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load more notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async clickNotification(notif: NotificationItem) {
+    if (!notif.read) {
+      try {
+        await this.notificationsSvc.markRead(notif.id);
+        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
+        this.unreadCount.update((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error('Failed to mark notification read', err);
+      }
+    }
+    if (notif.link) {
+      void this.router.navigateByUrl(notif.link);
+    }
+    this.closeDropdown();
+  }
+
+  protected async markAllAsRead(event: Event) {
+    event.stopPropagation();
+    try {
+      await this.notificationsSvc.markAllRead();
+      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
+      this.unreadCount.set(0);
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  }
+
+  protected formatTime(dateStr: string | Date | null | undefined): string {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  public clearSearch(): void {
+    this.searchStr.set('');
+    this.searchSvc.clearSearch();
+  }
+
+  public handleKeyDown(event: KeyboardEvent): void {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+    const isK = event?.key?.toLowerCase() === 'k';
+
+    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
+    if (isCtrlOrCmd && isK && !event.shiftKey) {
+      event.preventDefault();
+
+      this.showSearchBar();
+    } else if (event.key === 'Escape' && this.searchBarVisible()) {
+      this.clearSearch();
+      this.hideSearchBar();
+    }
+  }
+
+  protected hideSearchBar(): void {
+    this.searchBarVisible.set(false);
+  }
+
+  protected isFullScreenMode(): boolean {
+    return this.fullscreen.isFullScreenMode();
+  }
+
+  protected onBlurSearchBar() {
+    if (!this.searchStr().length) {
+      this.hideSearchBar();
+    }
+  }
+
+  protected onSearchEnter(): void {
+    this.searchSvc.doSearchImmediate(this.searchStr());
+  }
+
+  protected onSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.searchStr.set(input.value);
+    this.search();
+  }
+
+  protected search(): void {
+    this.searchSvc.doSearch(this.searchStr());
+  }
+
+  protected showSearchBar(): void {
+    this.searchBarVisible.set(true);
+  }
+
+  protected signOut(): void {
+    void this.auth.signOut();
+  }
+
+  protected closeDropdown(): void {
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl) {
+      activeEl.blur();
+    }
+  }
+
+  protected toggleFullScreen(): void {
+    void this.fullscreen.toggleFullScreen();
+  }
+
+  protected toggleMobile(): void {
+    this.sideBarSvc.toggleMobile();
+  }
+
+  protected toggleSearch(): void {
+    this.searchBarVisible.set(!this.searchBarVisible());
+  }
+
+  protected toggleTheme(): void {
+    this.themeSvc.toggleTheme();
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
@@ -54517,6 +54201,274 @@ export class DataGridToolbarComponent {
 }
 ```
 
+## File: apps/frontend/src/app/layout/navbar/navbar.html
+
+```html
+<!-- Navigation bar template with search, theme toggle, and user actions -->
+<div class="navbar bg-base-100 shadow-lg relative">
+  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
+    <pc-icon name="bars-4"></pc-icon>
+  </div>
+
+  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
+    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
+    <pc-breadcrumbs
+      class="hidden min-w-0 flex-1"
+      [class.sm:block]="!searchBarVisible()"
+      [crumbs]="trail.crumbs"
+      [positionLabel]="trail.positionLabel"
+      [hasPrev]="trail.hasPrev"
+      [hasNext]="trail.hasNext"
+      [prevLabel]="trail.prevLabel"
+      [nextLabel]="trail.nextLabel"
+      (prev)="trail.onPrev()"
+      (next)="trail.onNext()"
+    ></pc-breadcrumbs>
+    } }
+
+    <!-- Search bar — the flex-shrinking element so the icon cluster never overflows -->
+    <div
+      *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'"
+      class="min-w-0 max-w-[360px] shrink grow basis-[120px]"
+    >
+      <label class="input input-primary w-full flex items-center gap-2">
+        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
+        <input
+          #searchInput
+          type="text"
+          placeholder="Search people, emails, campaigns"
+          i18n-placeholder="@@navbar.search.placeholder"
+          class="grow w-full"
+          (blur)="onBlurSearchBar()"
+          [value]="searchStr()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="onSearchEnter()"
+        />
+        <kbd class="kbd kbd-sm hidden sm:inline-flex border-line">⌘K</kbd>
+      </label>
+    </div>
+
+    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
+    <span
+      class="tooltip tooltip-bottom"
+      [class.hidden]="searchBarVisible()"
+      data-tip="Search ⌘K · Command palette ⌘⇧K"
+      i18n-data-tip="@@navbar.search.tooltip"
+    >
+      <pc-icon
+        class="hover:text-primary text-base-400 cursor-pointer"
+        (click)="showSearchBar()"
+        name="magnifying-glass"
+      ></pc-icon>
+    </span>
+
+    <pc-swap
+      class="hover:text-primary text-base-400 cursor-pointer"
+      swapOnIcon="arrows-pointing-out"
+      swapOffIcon="arrows-pointing-in"
+      [checked]="!isFullScreenMode()"
+      (click)="toggleFullScreen()"
+      aria-label="Toggle full screen"
+      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
+    ></pc-swap>
+
+    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
+    <pc-favourite-toggle></pc-favourite-toggle>
+
+    <!-- light / dark theme switcher -->
+    <pc-swap
+      swapOnIcon="sun"
+      swapOffIcon="moon"
+      [checked]="themeSvc.getTheme() === 'light'"
+      (click)="toggleTheme()"
+      aria-label="Toggle theme"
+      i18n-aria-label="@@navbar.theme.ariaLabel"
+    ></pc-swap>
+
+    <!-- email sending status indicator -->
+    @if (emailActions.sendingCount() > 0) {
+    <div
+      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
+    >
+      <span class="loading loading-spinner loading-xs text-primary"></span>
+      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
+        >Sending ({{ emailActions.sendingCount() }})...</span
+      >
+    </div>
+    }
+
+    <!-- notifications drop down -->
+    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-ghost btn-circle relative"
+        aria-label="Notifications"
+        i18n-aria-label="@@navbar.notifications.ariaLabel"
+      >
+        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+        @if (unreadCount() > 0) {
+        <span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-base-100"></span>
+        }
+      </div>
+
+      <!-- Notifications list -->
+      <div
+        tabindex="0"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+      >
+        <div class="card-body p-0">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
+            <h3
+              class="font-semibold text-sm"
+              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
+            >
+              Notifications
+            </h3>
+            @if (unreadCount() > 0) {
+            <button
+              class="text-xs text-primary hover:underline font-medium"
+              (click)="markAllAsRead($event)"
+              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
+            >
+              Mark all read
+            </button>
+            }
+          </div>
+
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
+            @if (notifications().length === 0) {
+            <div class="flex flex-col items-center justify-center py-8 text-base-400">
+              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
+              <p
+                class="text-xs font-light"
+                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
+              >
+                All caught up!
+              </p>
+            </div>
+            } @else { @for (notif of notifications(); track notif.id) {
+            <div
+              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
+              [class.bg-primary/5]="!notif.read"
+              (click)="clickNotification(notif)"
+            >
+              <!-- Icon Based on Type -->
+              <div class="flex-shrink-0">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center"
+                  [class.bg-info/10]="notif.type === 'info'"
+                  [class.text-info]="notif.type === 'info'"
+                  [class.bg-primary/10]="notif.type === 'email'"
+                  [class.text-primary]="notif.type === 'email'"
+                  [class.bg-warning/10]="notif.type === 'task'"
+                  [class.text-warning]="notif.type === 'task'"
+                >
+                  @if (notif.type === 'email') {
+                  <pc-icon name="envelope"></pc-icon>
+                  } @else if (notif.type === 'task') {
+                  <pc-icon name="clipboard-document-list"></pc-icon>
+                  } @else {
+                  <pc-icon name="information-circle"></pc-icon>
+                  }
+                </div>
+              </div>
+
+              <!-- Message Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start gap-1">
+                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
+                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
+                </div>
+                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
+              </div>
+
+              <!-- Unread dot indicator (static — nothing loops but a working spinner, §7) -->
+              @if (!notif.read) {
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
+              }
+            </div>
+            } } @if (isLoadingMore()) {
+            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- profile drop down -->
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
+        <div
+          class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
+        >
+          @if (currentUserAvatar()) {
+          <img
+            [src]="currentUserAvatar()!"
+            alt="User Profile Picture"
+            i18n-alt="@@navbar.profile.avatarAlt"
+            class="w-full h-full object-cover"
+          />
+          } @else {
+          <span
+            class="flex h-full w-full items-center justify-center bg-primary/10 text-primary text-sm font-semibold select-none"
+            aria-hidden="true"
+            >{{ userInitials() }}</span
+          >
+          }
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <ul
+        tabindex="0"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
+        (click)="closeDropdown()"
+      >
+        <li class="hover:text-primary">
+          <a routerLink="/profile">
+            <pc-icon name="user-circle"></pc-icon>
+            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a (click)="openSettings()">
+            <pc-icon name="cog-6-tooth"></pc-icon>
+            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/help">
+            <pc-icon name="information-circle"></pc-icon>
+            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
+          </a>
+        </li>
+        <li class="base-neutral px-0 mx-0"></li>
+        <li class="hover:text-primary" (click)="signOut()">
+          <a>
+            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
+            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Background email sending progress bar -->
+  @if (emailActions.sendingCount() > 0) {
+  <progress
+    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
+  ></progress>
+  }
+</div>
+
+<!-- Personal Settings popup (§5a) — instant apply -->
+<pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>
+```
+
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.html
 
 ```html
@@ -54660,7 +54612,6 @@ import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
 import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
 import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
@@ -54675,7 +54626,6 @@ interface SocialLinkDef {
   name: string;
   url: string | null | undefined;
   icon: PcIconNameType;
-  color: string;
 }
 
 @Component({
@@ -54692,7 +54642,6 @@ interface SocialLinkDef {
     Tabs,
     TabPanel,
     StatusBadge,
-    StatCard,
     ProfileCard,
     DetailItem,
     SystemMetadata,
@@ -54730,7 +54679,6 @@ export class PersonView {
   private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
 
   // Analytics & Lists
-  protected readonly volunteerStats = signal<{ shifts_count: number; total_hours: number } | null>(null);
   protected readonly volunteerHistory = signal<any[]>([]);
   protected readonly donationStats = signal<{
     cumulativeAmount: number;
@@ -54739,15 +54687,20 @@ export class PersonView {
   } | null>(null);
   protected readonly donationHistory = signal<any[]>([]);
   protected readonly eventHistory = signal<any[]>([]);
-  protected readonly eventStats = signal<{ events_count: number } | null>(null);
   protected readonly connectionCount = signal(0);
   protected readonly activityData = signal<{ emails: any[]; newsletters: any[] }>({ emails: [], newsletters: [] });
-  protected readonly openedNewslettersCount = computed(() => {
-    return this.activityData().newsletters.filter((n: any) => n.event_type === 'open' || n.event_type === 'click')
-      .length;
-  });
   protected readonly tags = signal<string[]>([]);
   protected readonly issues = signal<string[]>([]);
+
+  // True when the person has at least one active monthly pledge — powers the "Monthly donor" status chip.
+  protected readonly hasActivePledge = signal(false);
+
+  // Donations are truncated to the first 6 rows until the user expands (§3 "Show all N").
+  protected readonly DONATION_PREVIEW_COUNT = 6;
+  protected readonly showAllDonations = signal(false);
+  protected readonly visibleDonations = computed(() =>
+    this.showAllDonations() ? this.donationHistory() : this.donationHistory().slice(0, this.DONATION_PREVIEW_COUNT),
+  );
 
   // Donation Dialog State
   protected readonly isCheckingEligibility = signal(false);
@@ -54797,8 +54750,9 @@ export class PersonView {
     { label: this.fullName() || 'Person' },
   ]);
 
-  // Status chip beside the name (§3), derived honestly from the person's tags.
+  // Status chip beside the name (§3), derived honestly: an active monthly pledge outranks tag-derived roles.
   protected readonly statusChip = computed<string | null>(() => {
+    if (this.hasActivePledge()) return 'Monthly donor';
     const tags = this.tags().map((t) => t.toLowerCase());
     if (tags.includes('donor')) return 'Donor';
     if (tags.includes('volunteer')) return 'Volunteer';
@@ -54806,50 +54760,63 @@ export class PersonView {
     return null;
   });
 
+  // Human label for the person's preferred contact channel (§3 contact card row).
+  protected readonly preferredContactLabel = computed<string | null>(() => {
+    switch (this.person()?.preferred_contact) {
+      case 'email':
+        return 'Email';
+      case 'mobile':
+        return 'Mobile phone';
+      case 'home_phone':
+        return 'Home phone';
+      default:
+        return null;
+    }
+  });
+
   // Social icons
   public socialLinks = computed<SocialLinkDef[]>(() => {
     const p = this.person();
     return [
-      {
-        name: 'LinkedIn',
-        url: p.linkedin,
-        icon: 'linkedin',
-        color: 'bg-[#0a66c2]', // LinkedIn Blue
-      },
-      {
-        name: 'X',
-        url: p.twitter,
-        icon: 'x',
-        color: 'bg-black', // X Black
-      },
-      {
-        name: 'Facebook',
-        url: p.facebook,
-        icon: 'facebook',
-        color: 'bg-[#1877f2]', // Facebook Blue
-      },
-      {
-        name: 'Instagram',
-        url: p.instagram,
-        icon: 'instagram',
-        color: 'bg-[#e1306c]', // Instagram Pink/Red
-      },
+      { name: 'LinkedIn', url: p.linkedin, icon: 'linkedin' },
+      { name: 'X', url: p.twitter, icon: 'x' },
+      { name: 'Facebook', url: p.facebook, icon: 'facebook' },
+      { name: 'Instagram', url: p.instagram, icon: 'instagram' },
     ];
   });
 
   // Active tab state
   protected activeTab = signal<string>('activity');
 
+  // Six tabs (§3): Newsletters fold into Emails, Connections fold into Household. Sentence-case labels + counts.
   protected readonly personTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'emails', label: 'Conversations', icon: 'envelope', badge: this.activityData()?.emails?.length },
-    { id: 'newsletters', label: 'Newsletters', icon: 'megaphone', badge: this.activityData()?.newsletters?.length },
-    { id: 'volunteer', label: 'Shift Logs', icon: 'volunteer', badge: this.volunteerHistory()?.length },
-    { id: 'donations', label: 'Donations', icon: 'currency-dollar', badge: this.donationHistory()?.length },
-    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length },
-    { id: 'connections', label: 'Connections', icon: 'user-group', badge: this.connectionCount() || undefined },
+    { id: 'activity', label: 'Activity', icon: 'adjustments-horizontal' },
+    { id: 'emails', label: 'Emails', icon: 'envelope', badge: this.activityData()?.emails?.length || undefined },
+    {
+      id: 'donations',
+      label: 'Donations',
+      icon: 'currency-dollar',
+      badge: this.donationHistory()?.length || undefined,
+    },
+    { id: 'volunteer', label: 'Volunteer', icon: 'volunteer', badge: this.volunteerHistory()?.length || undefined },
+    { id: 'events', label: 'Events', icon: 'file-calendar', badge: this.eventHistory()?.length || undefined },
     { id: 'household', label: 'Household', icon: 'home' },
   ]);
+
+  /** Payment method label for a donation row (§3): Card / Manual, with a `· monthly` suffix for pledge-linked rows. */
+  protected donationMethod(donation: any): string {
+    const base = donation?.stripe_session_id ? 'Card' : 'Manual';
+    return donation?.pledge_id ? `${base} · monthly` : base;
+  }
+
+  /** Receipt status for a donation row (§3), derived from the donation status. */
+  protected donationReceipt(donation: any): { label: string; type: 'success' | 'warning' | 'error' | 'neutral' } {
+    const s = String(donation?.status || '').toLowerCase();
+    if (s === 'succeeded') return { label: 'Receipted', type: 'success' };
+    if (s === 'pending') return { label: 'Pending', type: 'warning' };
+    if (s === 'failed') return { label: 'Failed', type: 'error' };
+    return { label: donation?.status || '—', type: 'neutral' };
+  }
 
   protected getMailStatusType(status: string | null | undefined): any {
     const s = String(status || '').toLowerCase();
@@ -54905,30 +54872,29 @@ export class PersonView {
       const issueList = await this.personsSvc.getTags(id, 'issue');
       this.issues.set(issueList);
 
-      // 3. Load volunteer stats and history
+      // 3. Load volunteer history
       try {
-        const stats = await this.volunteerSvc.getVolunteerStats(id);
-        this.volunteerStats.set(stats);
         const history = await this.volunteerSvc.getHistoryForPerson(id);
         this.volunteerHistory.set(history || []);
       } catch (err) {
         console.error('Failed to load volunteer details', err);
       }
 
-      // 4. Load donations stats and history
+      // 4. Load donations stats, history and active-pledge status (for the "Monthly donor" chip)
       try {
+        this.showAllDonations.set(false);
         const stats = await this.donationsSvc.getStats(id);
         this.donationStats.set(stats);
         const history = await this.donationsSvc.getHistory(id);
         this.donationHistory.set(history || []);
+        const pledges = await this.donationsSvc.getPersonPledges(id);
+        this.hasActivePledge.set((pledges || []).some((p: any) => String(p.status).toLowerCase() === 'active'));
       } catch (err) {
         console.error('Failed to load donations history', err);
       }
 
       // 5. Load event history
       try {
-        const stats = await this.eventsSvc.getStatsForPerson(id);
-        this.eventStats.set(stats);
         const history = await this.eventsSvc.getHistoryForPerson(id);
         this.eventHistory.set(history || []);
       } catch (err) {
@@ -56035,6 +56001,7 @@ export class PersonForm implements OnInit {
     mobile: '',
     notes: '',
     company_id: '',
+    preferred_contact: '',
     linkedin: '',
     twitter: '',
     facebook: '',
@@ -56051,6 +56018,31 @@ export class PersonForm implements OnInit {
   protected id = input<string>();
   protected tags = signal<string[]>([]);
   protected issues = signal<string[]>([]);
+
+  // All known tag/issue names for the dashed "Suggestions:" chips under each editor (§4).
+  protected readonly allTagNames = signal<string[]>([]);
+  protected readonly allIssueNames = signal<string[]>([]);
+  private readonly SUGGESTION_LIMIT = 6;
+  protected readonly tagSuggestions = computed(() => this.suggestFrom(this.allTagNames(), this.tags()));
+  protected readonly issueSuggestions = computed(() => this.suggestFrom(this.allIssueNames(), this.issues()));
+
+  private suggestFrom(all: string[], applied: string[]): string[] {
+    const used = new Set(applied.map((t) => t.toLowerCase().trim()));
+    return all.filter((name) => !used.has(name.toLowerCase().trim())).slice(0, this.SUGGESTION_LIMIT);
+  }
+
+  /** Add a tag from a suggestion chip — mirrors the typed-add path (updates the list + persists). */
+  protected addTagSuggestion(name: string): void {
+    if (this.tags().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.tags.update((list) => [...list, name]);
+    void this.tagAdded(name);
+  }
+
+  protected addIssueSuggestion(name: string): void {
+    if (this.issues().some((t) => t.toLowerCase().trim() === name.toLowerCase().trim())) return;
+    this.issues.update((list) => [...list, name]);
+    void this.issueAdded(name);
+  }
 
   public readonly householdId = computed(() => (this.person()?.household_id ?? null) || this.pendingHouseholdId());
 
@@ -56101,6 +56093,7 @@ export class PersonForm implements OnInit {
   private async loadOnInit(): Promise<void> {
     await this.loadPerson();
     await this.loadCompanies();
+    void this.loadSuggestionNames();
     if (this.isNewMode()) {
       const state = window.history.state;
       if (state && state.cloneData) {
@@ -56115,6 +56108,7 @@ export class PersonForm implements OnInit {
           mobile: data.mobile ?? '',
           notes: data.notes ?? '',
           company_id: data.company_id ?? '',
+          preferred_contact: data.preferred_contact ?? '',
           linkedin: data.linkedin ?? '',
           twitter: data.twitter ?? '',
           facebook: data.facebook ?? '',
@@ -56125,6 +56119,15 @@ export class PersonForm implements OnInit {
           this.pendingHouseholdId.set(data.household_id);
         }
       }
+    }
+  }
+
+  private async loadSuggestionNames() {
+    try {
+      this.allTagNames.set(await this.tagOptionsSvc.getTagNames('tag'));
+      this.allIssueNames.set(await this.tagOptionsSvc.getTagNames('issue'));
+    } catch (err) {
+      console.error('Failed to load tag/issue suggestions', err);
     }
   }
 
@@ -56189,6 +56192,7 @@ export class PersonForm implements OnInit {
       ...raw,
       company_id: raw.company_id || null,
       assigned_to: raw.assigned_to || null,
+      preferred_contact: raw.preferred_contact || null,
     } as UpdatePersonsType;
     return this.id() ? this.update(data, done) : this.add(data, done);
   }
@@ -56531,6 +56535,7 @@ export class PersonForm implements OnInit {
       mobile: person.mobile ?? '',
       notes: person.notes ?? '',
       company_id: person.company_id ?? '',
+      preferred_contact: person.preferred_contact ?? '',
       linkedin: person.linkedin ?? '',
       twitter: person.twitter ?? '',
       facebook: person.facebook ?? '',
@@ -56549,6 +56554,7 @@ export class PersonForm implements OnInit {
     mobile: 'mobile phone',
     home_phone: 'home phone',
     company_id: 'company',
+    preferred_contact: 'preferred contact',
     assigned_to: 'owner',
     notes: 'notes',
     linkedin: 'LinkedIn',

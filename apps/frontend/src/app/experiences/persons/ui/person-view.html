@@ -31,30 +31,26 @@
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Left Column: Contact Card & Bio -->
     <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Contact Card -->
+      <!-- Contact Card -->
       <pc-profile-card [avatarText]="initials()">
         <!-- Name & Company -->
         <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
         @if (person().company_name) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">
+        <div class="badge badge-lg badge-neutral gap-2 mb-2 font-medium">
           <pc-icon name="briefcase" [size]="4"></pc-icon>
           {{ person().company_name }}
         </div>
-        } @else {
-        <span class="text-sm text-base-content/50 italic mb-4">No company assigned</span>
         }
 
-        <!-- Social Media Buttons -->
-        <div class="flex justify-center gap-3 w-full border-y border-base-200 py-4 mb-6">
+        <!-- Social Media Buttons (quiet, semantic tokens; muted when a URL isn't set) -->
+        <div class="flex justify-center gap-2 w-full border-y border-base-200 py-3 my-4">
           @for (link of socialLinks(); track link.name) {
           <a
             [attr.href]="link.url || null"
             [attr.target]="link.url ? '_blank' : null"
-            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' URL not set'"
-            class="btn btn-circle btn-sm tooltip"
-            [class]="link.url 
-        ? 'shadow-md hover:scale-110 transition-transform text-white border-none ' + link.color 
-        : 'bg-base-200 text-base-content/30 border-base-300 cursor-not-allowed'"
+            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' not set'"
+            class="btn btn-ghost btn-sm btn-circle tooltip"
+            [class]="link.url ? 'text-base-content/60 hover:text-primary' : 'text-base-content/25 pointer-events-none'"
           >
             <pc-icon [name]="link.icon" [size]="4"></pc-icon>
           </a>
@@ -62,7 +58,7 @@
         </div>
 
         <!-- Contact & Address Details List -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+        <div class="w-full flex flex-col text-sm">
           <pc-detail-item
             label="Primary Email"
             [value]="person().email"
@@ -94,43 +90,29 @@
             [link]="!!householdId() && !isPlaceholderHousehold()"
             (linkClicked)="navigateToHousehold()"
           ></pc-detail-item>
+          @if (preferredContactLabel()) {
+          <pc-detail-item
+            label="Preferred Contact"
+            [value]="preferredContactLabel()"
+            icon="chat-bubble-bottom-center-text"
+          ></pc-detail-item>
+          }
         </div>
 
-        <!-- Notes Section -->
-        @if (person().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
-            >Internal Notes</span
-          >
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ person().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="person().created_at"
-          [createdBy]="getUserName(person().createdby_id)"
-          [updatedAt]="person().updated_at"
-          [updatedBy]="getUserName(person().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-
-      <!-- Segmentation Card -->
-      <pc-card title="Segmentation">
-        <div class="flex flex-col gap-3">
+        <!-- Tags & Issues of Interest -->
+        <div class="w-full flex flex-col gap-3 border-t border-base-200 pt-4 mt-2">
           <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5">Tags</span>
             @if (tags().length > 0) {
             <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
             <span class="text-xs text-base-content/40 italic">No tags assigned</span>
             }
           </div>
-
           <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5"
+              >Issues of Interest</span
+            >
             @if (issues().length > 0) {
             <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
@@ -145,117 +127,26 @@
             }
           </div>
         </div>
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="person().created_at"
+          [createdBy]="getUserName(person().createdby_id)"
+          [updatedAt]="person().updated_at"
+          [updatedBy]="getUserName(person().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Internal Notes (own card) -->
+      @if (person().notes) {
+      <pc-card title="Internal notes">
+        <p class="text-sm text-base-content/80 whitespace-pre-line leading-relaxed">{{ person().notes }}</p>
       </pc-card>
-
-      <!-- Sentiment Score Card (frosted glass coming soon overlay) -->
-      <div class="card bg-base-100 shadow-xl border border-base-300 overflow-hidden relative">
-        <div class="p-6 flex flex-col items-center gap-3">
-          <h3 class="text-sm font-bold uppercase tracking-wider text-base-content/70 self-start">Sentiment Score</h3>
-
-          <!-- Placeholder Graphic -->
-          <div
-            class="flex items-center justify-center w-28 h-28 rounded-full border-4 border-dashed border-base-300 relative my-2"
-          >
-            <span class="text-4xl text-base-content/20">😐</span>
-            <span class="text-xs text-base-content/30 mt-1 absolute bottom-4 font-mono">Neutral</span>
-          </div>
-          <div class="text-xs text-base-content/40 text-center font-light leading-relaxed">
-            Aggregates communication email history and tags to automatically gauge contact affinity.
-          </div>
-        </div>
-
-        <!-- Premium Overlay for "Coming Soon" -->
-        <div
-          class="absolute inset-0 bg-base-100/80 backdrop-blur-md flex flex-col justify-center items-center p-4 text-center select-none"
-        >
-          <div class="p-3 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl shadow-lg mb-2">
-            <pc-icon name="chart-pie" [size]="8"></pc-icon>
-          </div>
-          <h4 class="font-bold text-lg text-base-content">Affinity Analytics</h4>
-          <span class="badge badge-primary badge-sm font-semibold tracking-wider my-1">COMING SOON</span>
-          <p class="text-xs text-base-content/60 max-w-[200px] mt-1 font-light leading-snug">
-            AI-driven sentiment analysis of email conversations is currently in beta.
-          </p>
-        </div>
-      </div>
+      }
     </div>
 
-    <!-- Right Column: Stats & Multi-Tab Activity Feed -->
+    <!-- Right Column: Multi-Tab Activity Feed -->
     <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Dashboard Stats Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <!-- Stats: Emails Sent -->
-        <pc-stat-card
-          [title]="'Emails Sent'"
-          [value]="activityData().emails.length"
-          [description]="'Total emails sent'"
-          [icon]="'paper-airplane'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Emails Opened -->
-        <pc-stat-card
-          [title]="'Opened'"
-          [value]="openedNewslettersCount()"
-          [description]="'Opens & clicks'"
-          [icon]="'eye'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Active Lists -->
-        <pc-stat-card
-          [title]="'Active Lists'"
-          [value]="0"
-          [description]="'List subscriptions'"
-          [icon]="'queue-list'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Shifts -->
-        <pc-stat-card
-          [title]="'Volunteered'"
-          [value]="volunteerStats()?.shifts_count || 0"
-          [description]="'Shifts completed'"
-          [icon]="'volunteer'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Volunteer Hours -->
-        <pc-stat-card
-          [title]="'Total Hours'"
-          [value]="volunteerStats()?.total_hours || 0.0"
-          [description]="'Hours logged'"
-          [icon]="'clock'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Donations -->
-        <pc-stat-card
-          [title]="'Donations'"
-          [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
-          [description]="'Financial support'"
-          [icon]="'currency-dollar'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <!-- Stats: Connections -->
-        <pc-stat-card
-          [title]="'Connections'"
-          [value]="connectionCount()"
-          [description]="'Network connections'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- Activities, Interactions & History Tabs -->
       <!-- Activities, Interactions & History Tabs -->
       <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
         <pc-tab-panel id="activity" [activeTab]="activeTab()">
@@ -309,15 +200,13 @@
               }
             </div>
             }
-          </div>
-        </pc-tab-panel>
 
-        <pc-tab-panel id="newsletters" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().newsletters.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No newsletter logs found</div>
-            } @else {
-            <div class="flex flex-col gap-2">
+            <!-- Newsletter engagement (folded into Emails) -->
+            @if (activityData().newsletters.length > 0) {
+            <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60"
+                >Newsletter activity</span
+              >
               @for (ev of activityData().newsletters; track ev.id) {
               <div
                 class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
@@ -453,41 +342,41 @@
                   <tr class="bg-base-50 border-b border-base-200">
                     <th class="font-bold text-base-content/70">Date</th>
                     <th class="font-bold text-base-content/70">Amount</th>
-                    <th class="font-bold text-base-content/70">Tax Credit</th>
-                    <th class="font-bold text-base-content/70">Residency Info</th>
-                    <th class="font-bold text-base-content/70">Status</th>
-                    <th class="font-bold text-base-content/70">Transaction ID</th>
+                    <th class="font-bold text-base-content/70">Method</th>
+                    <th class="font-bold text-base-content/70">Receipt</th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (donation of donationHistory(); track donation.id) {
+                  @for (donation of visibleDonations(); track donation.id) {
                   <tr class="hover:bg-base-200/20 border-b border-base-200">
-                    <td class="font-medium text-base-content/75">{{ donation.created_at | date:'mediumDate' }}</td>
-                    <td class="font-bold text-base-content">${{ (donation.amount / 100).toFixed(2) }}</td>
-                    <td>
-                      <span class="badge badge-success gap-1 font-semibold py-2 px-2.5">
-                        ${{ ((donation.tax_credit_amount || 0) / 100).toFixed(2) }}
-                      </span>
+                    <td class="font-medium text-base-content/75 tabular-nums">
+                      {{ donation.created_at | date:'mediumDate' }}
                     </td>
-                    <td class="text-base-content/65">
-                      {{ donation.residency_province || '--' }} {{ donation.residency_country || '' }}
-                    </td>
+                    <td class="font-bold text-base-content tabular-nums">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td class="text-base-content/65">{{ donationMethod(donation) }}</td>
                     <td>
-                      <pc-status-badge
-                        [type]="donation.status === 'succeeded' ? 'success' : donation.status === 'pending' ? 'warning' : 'error'"
-                      >
-                        {{ donation.status }}
+                      <pc-status-badge [type]="donationReceipt(donation).type">
+                        {{ donationReceipt(donation).label }}
                       </pc-status-badge>
-                    </td>
-                    <td class="font-mono text-[10px] text-base-content/50">
-                      {{ donation.stripe_session_id || 'Manual' }}
                     </td>
                   </tr>
                   }
                 </tbody>
               </table>
             </div>
-            }
+            @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
+            <div class="text-xs text-base-content/60 px-1">
+              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }} —
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
+                Show all {{ donationHistory().length }}
+              </button>
+              } @else { Showing all {{ donationHistory().length }} —
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
+                Show fewer
+              </button>
+              }
+            </div>
+            } }
           </div>
         </pc-tab-panel>
 
@@ -532,39 +421,47 @@
           </div>
         </pc-tab-panel>
 
-        <pc-tab-panel id="connections" [activeTab]="activeTab()">
-          <pc-person-connections [personId]="id()" (countChange)="connectionCount.set($event)"></pc-person-connections>
-        </pc-tab-panel>
-
         <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (householdId() && !isPlaceholderHousehold()) { @defer {
-            <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            } } @else {
-            <div class="flex flex-col items-center gap-3 py-10 text-center">
-              <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
-              <div class="flex flex-col gap-1">
-                <span
-                  class="font-medium text-base-content"
-                  i18n="PersonView|Household empty heading@@person.household.emptyHeading"
-                  >Not part of a household yet</span
-                >
-                <span
-                  class="max-w-sm text-sm text-base-content/50"
-                  i18n="PersonView|Household empty cause@@person.household.emptyCause"
-                  >Households group people who share an address, so everyone at the same address stays in sync.</span
-                >
+          <div class="flex flex-col gap-6">
+            <!-- Household members -->
+            <div class="flex flex-col gap-4">
+              @if (householdId() && !isPlaceholderHousehold()) { @defer {
+              <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+              } @placeholder {
+              <div class="skeleton w-full h-32"></div>
+              } } @else {
+              <div class="flex flex-col items-center gap-3 py-10 text-center">
+                <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
+                <div class="flex flex-col gap-1">
+                  <span
+                    class="font-medium text-base-content"
+                    i18n="PersonView|Household empty heading@@person.household.emptyHeading"
+                    >Not part of a household yet</span
+                  >
+                  <span
+                    class="max-w-sm text-sm text-base-content/50"
+                    i18n="PersonView|Household empty cause@@person.household.emptyCause"
+                    >Households group people who share an address, so everyone at the same address stays in sync.</span
+                  >
+                </div>
+                <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
+                  <pc-icon name="home" [size]="4"></pc-icon>
+                  <ng-container i18n="PersonView|Assign household action@@person.household.assign"
+                    >Assign household</ng-container
+                  >
+                </button>
               </div>
-              <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
-                <pc-icon name="home" [size]="4"></pc-icon>
-                <ng-container i18n="PersonView|Assign household action@@person.household.assign"
-                  >Assign household</ng-container
-                >
-              </button>
+              }
             </div>
-            }
+
+            <!-- Connections (folded into Household) -->
+            <div class="flex flex-col gap-2 border-t border-base-200 pt-4">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Connections</span>
+              <pc-person-connections
+                [personId]="id()"
+                (countChange)="connectionCount.set($event)"
+              ></pc-person-connections>
+            </div>
           </div>
         </pc-tab-panel>
       </pc-tabs>
