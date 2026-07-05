@@ -45,6 +45,8 @@ Project-specific how-tos live in `.claude/skills/<name>/SKILL.md`. If one exists
 
 If none exists for a recurring task you had to figure out the hard way, write one — don't just solve it and move on.
 
+If a change you make invalidates an existing skill (a path it names, a flow it describes, a command it gives), update that skill in the same change — a stale skill is worse than none, because it's trusted.
+
 ## 1. Repository Structure & Imports
 
 **Monorepo layout — keep logic in its layer:**
@@ -184,6 +186,7 @@ This project uses Angular's experimental signal-forms API (`form`, `required`, `
 - **Activity Log:** Every component that modifies data must include `<pc-record-activities [entity]="..." [entityId]="...">` at the bottom.
 - **Toasts:** Use `AlertService.showSuccess()` / `AlertService.showError()` for all user feedback. Do not use `window.alert` or custom inline banners.
 - **Dialogs:** Use the project dialog component for confirmation prompts — not the browser dialog and not the alert toast.
+- **Help Center (keep in sync):** Whenever you add a new user-facing feature or materially change an existing one (new flow, renamed/moved UI, changed shortcut or behavior), update the in-app Help Center in the same change — do not leave it for later. Articles are typed TypeScript data in `apps/frontend/src/app/experiences/help/data/articles/*.ts` (one file per category, aggregated in `help-content.ts`); add or edit the relevant article and its `related`/link references. The integrity spec (`data/help-content.spec.ts`) catches broken slugs/links but **not** stale prose, so re-read the affected articles yourself. Run `npx vitest run src/app/experiences/help` from `apps/frontend`. This applies to backend-driven features too if they change what the user sees or does. See the `pplcrm-add-entity` checklist for the per-entity step.
 
 ### Styling & Theming (Tailwind v4 + DaisyUI v5)
 
