@@ -191,7 +191,7 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'users',
       },
       {
-        name: 'Configuration',
+        name: 'Workspace',
         route: '/configuration',
         icon: 'wrench-screwdriver',
       },
