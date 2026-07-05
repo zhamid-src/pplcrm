@@ -143,7 +143,7 @@ describe('WebFormsController Integration', () => {
         redirect_url: 'https://example.com/thankyou',
         target_tags: JSON.stringify(['newsletter', 'public-form']),
         target_lists: JSON.stringify([listId]),
-        status: 'active',
+        status: 'published',
         createdby_id: userId,
         updatedby_id: userId,
       })
@@ -239,7 +239,7 @@ describe('WebFormsController Integration', () => {
         id: formId,
         tenant_id: tenantId,
         name: 'Newsletter Form',
-        status: 'active',
+        status: 'published',
         createdby_id: userId,
         updatedby_id: userId,
       })
@@ -279,7 +279,7 @@ describe('WebFormsController Integration', () => {
         id: formId,
         tenant_id: tenantId,
         name: 'Newsletter Form',
-        status: 'active',
+        status: 'published',
         createdby_id: userId,
         updatedby_id: userId,
       })
@@ -314,7 +314,7 @@ describe('WebFormsController Integration', () => {
         id: formId,
         tenant_id: tenantId,
         name: 'Donation Form Test',
-        status: 'active',
+        status: 'published',
         form_type: 'donation',
         createdby_id: userId,
         updatedby_id: userId,
@@ -385,7 +385,7 @@ describe('WebFormsController Integration', () => {
         form_type: 'standard',
         name: 'Required Fields Test',
         fields: JSON.stringify(['first_name', 'mobile:required']),
-        status: 'active',
+        status: 'published',
         createdby_id: userId,
         updatedby_id: userId,
       })
@@ -420,5 +420,130 @@ describe('WebFormsController Integration', () => {
       .executeTakeFirstOrThrow();
 
     expect(person.mobile).toBe('555-0000');
+  });
+});
+
+describe('WebFormsController lifecycle', () => {
+  const controller = new WebFormsController();
+  const db = (BaseRepository as any)._db;
+  let tenantId: string;
+  let userId: string;
+
+  const auth = () => ({ tenant_id: tenantId, user_id: userId, session_id: 'test-session', name: 'Test User' });
+
+  beforeEach(async () => {
+    const seed = await createTestSeed(db);
+    tenantId = seed.tenantId;
+    userId = seed.userId;
+  });
+
+  afterEach(async () => {
+    await db.deleteFrom('form_submissions').where('tenant_id', '=', tenantId).execute();
+    await cleanTenant(db, tenantId);
+  });
+
+  it('creates a draft from a template with normalized fields, a slug, and template copy', async () => {
+    const form = await controller.createForm({ name: 'June phone bank signup', type: 'signup' }, auth() as any);
+
+    expect(form.status).toBe('draft');
+    expect(form.type).toBe('signup');
+    expect(form.slug).toBe('june-phone-bank-signup');
+    expect(form.submit_label).toBe('Sign me up');
+
+    const fields = form.fields as Array<{ key: string; on: boolean; required: boolean }>;
+    const email = fields.find((f) => f.key === 'email');
+    expect(email).toMatchObject({ on: true, required: true });
+    // Standard optional catalog fields are merged in, off by default.
+    expect(fields.find((f) => f.key === 'street1')).toMatchObject({ on: false });
+  });
+
+  it('gives duplicate names distinct slugs within a tenant', async () => {
+    const first = await controller.createForm({ name: 'Volunteer signup', type: 'signup' }, auth() as any);
+    const second = await controller.createForm({ name: 'Volunteer signup', type: 'signup' }, auth() as any);
+    expect(first.slug).toBe('volunteer-signup');
+    expect(second.slug).toBe('volunteer-signup-2');
+  });
+
+  it('keeps the email field on+required even when a live update tries to disable it', async () => {
+    const form = await controller.createForm({ name: 'Contact form', type: 'signup' }, auth() as any);
+    const tampered = (form.fields as Array<Record<string, unknown>>).map((f) =>
+      f['key'] === 'email' ? { ...f, on: false, required: false } : f,
+    );
+    const updated = await controller.updateFormLive(form.id, { fields: tampered as any }, auth() as any);
+    const email = (updated.fields as Array<{ key: string; on: boolean; required: boolean }>).find(
+      (f) => f.key === 'email',
+    );
+    expect(email).toMatchObject({ on: true, required: true });
+  });
+
+  it('walks publish → unpublish → archive → restore, and restore lands in draft', async () => {
+    const form = await controller.createForm({ name: 'Lifecycle form', type: 'signup' }, auth() as any);
+    expect((await controller.publishForm(form.id, auth() as any)).status).toBe('published');
+    expect((await controller.unpublishForm(form.id, auth() as any)).status).toBe('draft');
+    const archived = await controller.archiveForm(form.id, auth() as any);
+    expect(archived.status).toBe('archived');
+    expect(archived.archived_at).not.toBeNull();
+    expect((await controller.restoreForm(form.id, auth() as any)).status).toBe('draft');
+  });
+
+  it('refuses to delete a published form and allows deleting a zero-response draft', async () => {
+    const published = await controller.createForm({ name: 'Keep me', type: 'signup' }, auth() as any);
+    await controller.publishForm(published.id, auth() as any);
+    await expect(controller.deleteForm(published.id, auth() as any)).rejects.toThrow(/draft with no responses/i);
+
+    const draft = await controller.createForm({ name: 'Throwaway', type: 'signup' }, auth() as any);
+    await expect(controller.deleteForm(draft.id, auth() as any)).resolves.toBeDefined();
+    const gone = await db
+      .selectFrom('web_forms')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', draft.id)
+      .executeTakeFirst();
+    expect(gone).toBeUndefined();
+  });
+
+  it('records a submission (splitting full_name) and surfaces it in getFormSubmissions', async () => {
+    const form = await controller.createForm({ name: 'Signup live', type: 'signup' }, auth() as any);
+    await controller.publishForm(form.id, auth() as any);
+
+    await controller.submitFormPublic(
+      form.id,
+      { email: 'responder@example.com', full_name: 'Rey Poll', availability: 'Event day' },
+      '127.0.0.9',
+    );
+
+    const res = await controller.getFormSubmissions(form.id, tenantId);
+    expect(res.total).toBe(1);
+    expect(res.items[0]?.person_name).toBe('Rey Poll');
+    expect(res.items[0]?.answers['availability']).toBe('Event day');
+
+    const person = await db
+      .selectFrom('persons')
+      .select(['first_name', 'last_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('email', '=', 'responder@example.com')
+      .executeTakeFirstOrThrow();
+    expect(person.first_name).toBe('Rey');
+    expect(person.last_name).toBe('Poll');
+  });
+
+  it('excludes donation forms from listForms', async () => {
+    await controller.createForm({ name: 'Signup A', type: 'signup' }, auth() as any);
+    await db
+      .insertInto('web_forms')
+      .values({
+        id: randomUUID(),
+        tenant_id: tenantId,
+        name: 'Donation page',
+        status: 'published',
+        form_type: 'donation',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    const forms = await controller.listForms(tenantId);
+    expect(forms.some((f: any) => f.name === 'Signup A')).toBe(true);
+    expect(forms.some((f: any) => f.name === 'Donation page')).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import type { Transaction } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
 
 export async function seedOnboardingData(
@@ -191,11 +192,20 @@ export async function seedOnboardingData(
       tenant_id: tenant_id,
       name: 'Newsletter Sign-Up [SAMPLE]',
       description: 'Sample sign-up form for your website. Customize the fields or delete and create your own.',
-      fields: JSON.stringify(['first_name', 'last_name', 'email:required', 'mobile', 'notes']),
+      fields: JSON.stringify(fieldsForTemplate('signup')),
       target_tags: JSON.stringify(['subscriber']),
-      status: 'active',
+      target_lists: JSON.stringify([]),
+      status: 'published',
+      type: 'signup',
+      slug: 'newsletter-sign-up',
+      submit_label: FORM_TEMPLATES.signup.submitLabel,
+      thanks_title: 'Thank you!',
+      thanks_body: 'You’re on the list — thanks for signing up.',
+      confirm_subject: 'Thanks for signing up',
+      confirm_body: 'Hi [First name],\n\nThanks for signing up — we’ll be in touch soon.',
       send_confirmation: true,
       send_alert: false,
+      notify_team_on: false,
       form_type: 'standard',
       createdby_id: user_id,
       updatedby_id: user_id,

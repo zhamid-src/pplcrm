@@ -81,6 +81,7 @@ export interface Models {
   event_ticket_types: EventTicketTypes;
   event_registrations: EventRegistrations;
   web_forms: WebForms;
+  form_submissions: FormSubmissions;
   background_jobs: BackgroundJobs;
   webhook_events: WebhookEvents;
   data_exports: DataExports;
@@ -496,11 +497,29 @@ interface WebForms extends RecordType {
   redirect_url: string | null;
   target_tags: Json | null;
   target_lists: Json | null;
-  status: 'active' | 'archived';
+  status: 'draft' | 'published' | 'archived';
   fields: Json | null;
   send_confirmation: boolean;
   send_alert: boolean;
   form_type: string;
+  type: string | null;
+  slug: string | null;
+  submit_label: string | null;
+  thanks_title: string | null;
+  thanks_body: string | null;
+  confirm_subject: string | null;
+  confirm_body: string | null;
+  notify_team_on: Generated<boolean>;
+  archived_at: Timestamp | null;
+}
+
+interface FormSubmissions {
+  id: Generated<string>;
+  tenant_id: string;
+  form_id: string;
+  person_id: string;
+  answers: Json;
+  created_at: Generated<Timestamp>;
 }
 
 interface EmailComments extends RecordType {

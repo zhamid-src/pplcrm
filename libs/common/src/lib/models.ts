@@ -44,6 +44,9 @@ import type {
   AddWebFormObj,
   UpdateWebFormObj,
   WebFormsObj,
+  CreateFormObj,
+  UpdateFormObj,
+  FormSubmissionObj,
   QueryBuilderRuleNode,
   QueryBuilderGroupNode,
   QueryBuilderNode,
@@ -151,6 +154,9 @@ export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
 export type AddWebFormType = z.infer<typeof AddWebFormObj>;
 export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
 export type WebFormsType = z.infer<typeof WebFormsObj>;
+export type CreateFormType = z.infer<typeof CreateFormObj>;
+export type UpdateFormType = z.infer<typeof UpdateFormObj>;
+export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
 
 export type WorkflowsType = z.infer<typeof WorkflowObj>;
 export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
