@@ -5,7 +5,7 @@ import { By } from '@angular/platform-browser';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DetailHeader } from './detail-header';
 import { FormActions } from '../form-actions/form-actions';
-import { Breadcrumbs } from '../breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
 
 describe('DetailHeader', () => {
   let fixture: ComponentFixture<DetailHeader>;
@@ -39,29 +39,41 @@ describe('DetailHeader', () => {
     expect(fixture.debugElement.query(By.css('pc-icon'))).not.toBeNull();
   });
 
-  it('does not render breadcrumbs when crumbs is empty', () => {
+  it('does not render breadcrumbs inline (they are hoisted to the navbar)', () => {
+    fixture.componentRef.setInput('crumbs', [{ label: 'People' }, { label: 'Jane Doe' }]);
     fixture.detectChanges();
-    expect(fixture.debugElement.query(By.directive(Breadcrumbs))).toBeNull();
+    expect(fixture.debugElement.query(By.css('pc-breadcrumbs'))).toBeNull();
   });
 
-  it('renders breadcrumbs when crumbs has entries and relays prev/next events', () => {
+  it('publishes the crumb trail to BreadcrumbsService and relays pager prev/next', () => {
+    const breadcrumbs = TestBed.inject(BreadcrumbsService);
     fixture.componentRef.setInput('crumbs', [{ label: 'People' }, { label: 'Jane Doe' }]);
     fixture.detectChanges();
 
-    const crumbsDe = fixture.debugElement.query(By.directive(Breadcrumbs));
-    expect(crumbsDe).not.toBeNull();
+    const trail = breadcrumbs.trail();
+    expect(trail).not.toBeNull();
+    expect(trail?.crumbs).toEqual([{ label: 'People' }, { label: 'Jane Doe' }]);
 
     const prevSpy = vi.fn();
     const nextSpy = vi.fn();
     component.prevRecord.subscribe(prevSpy);
     component.nextRecord.subscribe(nextSpy);
 
-    const breadcrumbs = crumbsDe.componentInstance as Breadcrumbs;
-    breadcrumbs.prev.emit();
-    breadcrumbs.next.emit();
+    trail?.onPrev();
+    trail?.onNext();
 
     expect(prevSpy).toHaveBeenCalledTimes(1);
     expect(nextSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the published trail when the header is destroyed', () => {
+    const breadcrumbs = TestBed.inject(BreadcrumbsService);
+    fixture.componentRef.setInput('crumbs', [{ label: 'People' }]);
+    fixture.detectChanges();
+    expect(breadcrumbs.trail()).not.toBeNull();
+
+    fixture.destroy();
+    expect(breadcrumbs.trail()).toBeNull();
   });
 
   it('shows pc-form-actions when showActions is true (default) and hides it when false', () => {

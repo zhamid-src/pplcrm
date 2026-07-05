@@ -1,7 +1,7 @@
-import { Component, computed, effect, ElementRef, inject, input } from '@angular/core';
+import { Component, computed, DestroyRef, effect, ElementRef, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Icon } from '@icons/icon';
-import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 
 import { categoryNeighbors, getHelpArticle, getHelpCategory, relatedArticles } from '../data/help-content';
 import { readingMinutes, stripHelpInline } from '../data/help-types';
@@ -18,11 +18,12 @@ interface TocEntry {
 /** One help article: header, typed content blocks, on-page TOC, related reading. */
 @Component({
   selector: 'pc-help-article',
-  imports: [Breadcrumbs, HelpBlocks, Icon, RouterLink],
+  imports: [HelpBlocks, Icon, RouterLink],
   templateUrl: './help-article.html',
 })
 export class HelpArticlePage {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
 
   public readonly id = input.required<string>();
 
@@ -67,6 +68,22 @@ export class HelpArticlePage {
       this.id();
       this.host.nativeElement.scrollIntoView?.({ block: 'start' });
     });
+
+    // Hoist the crumb trail into the navbar (no record pager on help pages).
+    effect(() => {
+      this.breadcrumbs.set({
+        crumbs: this.crumbs(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
+        prevLabel: 'Previous record',
+        nextLabel: 'Next record',
+        onPrev: () => undefined,
+        onNext: () => undefined,
+      });
+    });
+
+    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
   }
 
   protected scrollTo(anchorId: string): void {

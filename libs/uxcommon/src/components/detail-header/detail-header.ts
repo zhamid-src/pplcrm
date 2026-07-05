@@ -1,27 +1,16 @@
-import { Component, computed, input, output } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
 
-import { Breadcrumbs, PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
 import { FormActions } from '../form-actions/form-actions';
 
 @Component({
   selector: 'pc-detail-header',
-  imports: [Icon, FormActions, Breadcrumbs],
+  imports: [Icon, FormActions],
   template: `
     <div class="flex flex-col gap-2 border-b border-base-200 pb-4">
-      @if (crumbs().length) {
-        <pc-breadcrumbs
-          [crumbs]="crumbs()"
-          [positionLabel]="positionLabel()"
-          [hasPrev]="hasPrev()"
-          [hasNext]="hasNext()"
-          [prevLabel]="prevLabel()"
-          [nextLabel]="nextLabel()"
-          (prev)="prevRecord.emit()"
-          (next)="nextRecord.emit()"
-        ></pc-breadcrumbs>
-      }
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex min-w-0 items-center gap-3">
           @if (icon()) {
@@ -94,6 +83,8 @@ import { FormActions } from '../form-actions/form-actions';
   `,
 })
 export class DetailHeader {
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
   public readonly delete = output<void>();
   public readonly save = output<any>();
   public readonly prevRecord = output<void>();
@@ -135,4 +126,24 @@ export class DetailHeader {
   protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
     this.showDelete() ? 'two' : this.buttonsToShow(),
   );
+
+  constructor() {
+    // The breadcrumb trail + record pager render in the navbar, not the page body.
+    // Publish this page's trail whenever its inputs change; clear it on destroy so
+    // the strip empties when navigating to a page (e.g. a grid) that owns no trail.
+    effect(() => {
+      this.breadcrumbs.set({
+        crumbs: this.crumbs(),
+        positionLabel: this.positionLabel(),
+        hasPrev: this.hasPrev(),
+        hasNext: this.hasNext(),
+        prevLabel: this.prevLabel(),
+        nextLabel: this.nextLabel(),
+        onPrev: () => this.prevRecord.emit(),
+        onNext: () => this.nextRecord.emit(),
+      });
+    });
+
+    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
+  }
 }
