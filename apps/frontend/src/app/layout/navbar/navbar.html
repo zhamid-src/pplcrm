@@ -200,7 +200,7 @@
       <!-- Menu -->
       <ul
         tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
         (click)="closeDropdown()"
       >
         <li class="hover:text-primary">
@@ -221,6 +221,7 @@
             <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
           </a>
         </li>
+        <li class="base-neutral px-0 mx-0"></li>
         <li class="hover:text-primary" (click)="signOut()">
           <a>
             <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>

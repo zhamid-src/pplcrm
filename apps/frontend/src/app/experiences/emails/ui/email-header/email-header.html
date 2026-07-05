@@ -51,16 +51,6 @@
         </div>
 
         @if (!isFolderTrash()) {
-        <!-- Star/Favorite -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Toggle favourite"
-          aria-label="Star"
-          data-testid="favorite-button"
-          (click)="toggleFavourite()"
-        >
-          <pc-icon [size]="4" [name]="getFavouriteIcon()" [class.text-primary]="isFavourite()"></pc-icon>
-        </button>
 
         <!-- Close/Mark as Done -->
         <button

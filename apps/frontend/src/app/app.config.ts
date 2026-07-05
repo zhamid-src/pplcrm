@@ -2,12 +2,13 @@ import type { ApplicationConfig } from '@angular/core';
 import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
 import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
 import { ENVIRONMENT } from './environment-token';
-import { RouteReuseStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
+import { RouteReuseStrategy, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { Loader } from '@googlemaps/js-api-loader';
 import { environment } from '../environments/environment';
 
 import { appRoutes } from './app.routes';
+import { AppTitleStrategy } from './services/tab-title.service';
 import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { jsendInterceptor } from './services/jsend.interceptor';
@@ -37,6 +38,10 @@ export const appConfig: ApplicationConfig = {
     {
       provide: RouteReuseStrategy,
       useClass: CustomRouteReuseStrategy,
+    },
+    {
+      provide: TitleStrategy,
+      useClass: AppTitleStrategy,
     },
     provideRouter(appRoutes, withComponentInputBinding()),
 

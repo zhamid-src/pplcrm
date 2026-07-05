@@ -21,9 +21,62 @@
     </button>
   </div>
 
-  <!-- Loading Overlay -->
+  <!-- Metric Cards — always visible; show skeletons (not a spinner) on first load (§3) -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+    <pc-stat-card
+      [title]="'Total Open Emails'"
+      [value]="totalOpenCount()"
+      [loading]="isInitialLoading()"
+      [description]="'All open inbox conversations'"
+      [icon]="'envelope'"
+      [valueColorClass]="'text-primary'"
+      [iconColorClass]="'text-primary'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Unassigned Open'"
+      [value]="unassignedOpenCount()"
+      [loading]="isInitialLoading()"
+      [description]="'Awaiting user assignment'"
+      [icon]="'exclamation-circle'"
+      [valueColorClass]="'text-warning'"
+      [iconColorClass]="'text-warning'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg 1st Response'"
+      [value]="avgFirstResponse()"
+      [loading]="isInitialLoading()"
+      [description]="'Time to reply or comment'"
+      [icon]="'clock'"
+      [valueColorClass]="'text-info'"
+      [iconColorClass]="'text-info'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Avg Time to Close'"
+      [value]="avgTimeToClose()"
+      [loading]="isInitialLoading()"
+      [description]="'From arrival to closed status'"
+      [icon]="'check-circle'"
+      [valueColorClass]="'text-success'"
+      [iconColorClass]="'text-success'"
+    ></pc-stat-card>
+
+    <pc-stat-card
+      [title]="'Contacts Growth'"
+      [value]="'+' + activeContactsCount()"
+      [loading]="isInitialLoading()"
+      [description]="'New contacts (last 30 days)'"
+      [icon]="'user-plus'"
+      [valueColorClass]="'text-secondary'"
+      [iconColorClass]="'text-secondary'"
+    ></pc-stat-card>
+  </div>
+
+  <!-- Loading Overlay (charts/analytics area only) -->
   @if (isLoading() && linePoints().length === 0) {
-  <div class="flex flex-col items-center justify-center py-32">
+  <div class="flex flex-col items-center justify-center py-24">
     <span class="loading loading-bars loading-lg text-primary"></span>
     <p class="text-base-content/60 mt-4">Analyzing database metrics...</p>
   </div>
@@ -126,59 +179,6 @@
       [(activeTab)]="defaultSlaTab"
     />
     }
-
-    <!-- Metric Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-      <!-- Card 1 -->
-      <pc-stat-card
-        [title]="'Total Open Emails'"
-        [value]="totalOpenCount()"
-        [description]="'All open inbox conversations'"
-        [icon]="'envelope'"
-        [valueColorClass]="'text-primary'"
-        [iconColorClass]="'text-primary'"
-      ></pc-stat-card>
-
-      <!-- Card 2 -->
-      <pc-stat-card
-        [title]="'Unassigned Open'"
-        [value]="unassignedOpenCount()"
-        [description]="'Awaiting user assignment'"
-        [icon]="'exclamation-circle'"
-        [valueColorClass]="'text-warning'"
-        [iconColorClass]="'text-warning'"
-      ></pc-stat-card>
-
-      <!-- Card 3 -->
-      <pc-stat-card
-        [title]="'Avg 1st Response'"
-        [value]="avgFirstResponse()"
-        [description]="'Time to reply or comment'"
-        [icon]="'clock'"
-        [valueColorClass]="'text-info'"
-        [iconColorClass]="'text-info'"
-      ></pc-stat-card>
-
-      <!-- Card 4 -->
-      <pc-stat-card
-        [title]="'Avg Time to Close'"
-        [value]="avgTimeToClose()"
-        [description]="'From arrival to closed status'"
-        [icon]="'check-circle'"
-        [valueColorClass]="'text-success'"
-        [iconColorClass]="'text-success'"
-      ></pc-stat-card>
-
-      <!-- Card 5 -->
-      <pc-stat-card
-        [title]="'Contacts Growth'"
-        [value]="'+' + activeContactsCount()"
-        [description]="'New contacts (last 30 days)'"
-        [icon]="'user-plus'"
-        [valueColorClass]="'text-secondary'"
-        [iconColorClass]="'text-secondary'"
-      ></pc-stat-card>
-    </div>
 
     <!-- Charts Layout -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">

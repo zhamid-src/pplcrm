@@ -156,11 +156,16 @@ describe('DataGrid', () => {
       await fixture.whenStable();
 
       expect(component.selectedTags()).toContain('donor');
-      const chips = (component as unknown as { filterChips: () => { kind: string; key: string }[] }).filterChips();
-      expect(chips).toContainEqual(expect.objectContaining({ kind: 'tag', key: 'donor' }));
+      // OR-ed tags collapse into a single combined chip keyed 'tags' (label names the members).
+      const chips = (
+        component as unknown as { filterChips: () => { kind: string; key: string; label: string }[] }
+      ).filterChips();
+      expect(chips).toContainEqual(
+        expect.objectContaining({ kind: 'tag', key: 'tags', label: expect.stringContaining('donor') }),
+      );
 
-      const chip = chips.find((c) => c.key === 'donor');
-      if (!chip) throw new Error('expected a "donor" tag chip to be present');
+      const chip = chips.find((c) => c.kind === 'tag' && c.key === 'tags');
+      if (!chip) throw new Error('expected a combined tag chip to be present');
       (component as unknown as { removeFilterChip: (c: unknown) => void }).removeFilterChip(chip);
       await fixture.whenStable();
 
