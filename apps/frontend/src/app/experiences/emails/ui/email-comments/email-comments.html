@@ -17,7 +17,7 @@
       <span class="font-medium">{{ getUserName(comment.author_id) }}</span>
 
       @if (comment.created_at) {
-      <span class="text-gray-500 tooltip cursor-pointer" [attr.data-tip]="comment.created_at | date:'medium'">
+      <span class="text-base-content/50 tooltip cursor-pointer" [attr.data-tip]="comment.created_at | date:'medium'">
         {{ comment.created_at | timeAgo:{ thresholdDays: 7, style: 'long' } }}
       </span>
       }
