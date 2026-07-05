@@ -874,6 +874,238 @@ export default '';
 </pc-auth-layout>
 ```
 
+## File: apps/frontend/src/app/auth/signin-page/signin-page.html
+
+```html
+<pc-auth-layout>
+  @if (rateLimitSecondsLeft() > 0) {
+  <div class="alert alert-error text-sm mb-4">
+    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
+    <div>
+      <p class="font-semibold" i18n>Too many attempts</p>
+      <p class="text-xs mt-1 flex items-center gap-1">
+        <span i18n>Try again in</span>
+        <span class="countdown font-mono text-lg">
+          @if (rateLimitMins() > 0) {
+          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
+            >{{rateLimitMins()}}</span
+          >
+          m }
+          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
+            >{{rateLimitRemSecs()}}</span
+          >
+          s
+        </span>
+      </p>
+    </div>
+  </div>
+  } @switch (step()) { @case ('email') {
+  <label class="label text-neutral-100">Enter your email to sign in</label>
+  <form (submit)="continueWithEmail($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="at-symbol" />
+        <input
+          type="email"
+          placeholder="Enter your email"
+          [formField]="emailForm.email"
+          aria-label="Email"
+          autocomplete="email"
+        />
+      </label>
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { Continue }
+        </button>
+      </div>
+    </div>
+  </form>
+  <div class="pt-4 text-center">
+    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
+  </div>
+  } @case ('passkey') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
+      <p class="text-sm text-white">{{ emailData().email }}</p>
+      @if (isLoading()) {
+      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
+      }
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="signInWithPasskey()"
+        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
+      >
+        @if (isLoading()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Sign in with Passkey
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="usePasswordInstead()"
+        [disabled]="isLoading()"
+      >
+        Use password instead
+      </button>
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
+        (click)="goBackToEmail()"
+        [disabled]="isLoading()"
+      >
+        Back
+      </button>
+    </div>
+  </div>
+  } @case ('password') { @if (verificationPending()) {
+  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
+    <div class="flex flex-col gap-2 w-full">
+      <div class="flex items-center gap-2 font-semibold">
+        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+        <span>Verification Pending</span>
+      </div>
+      <p class="text-xs text-amber-200/80">
+        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
+        inbox.
+      </p>
+      <button
+        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
+        type="button"
+        (click)="resendVerification()"
+        [disabled]="resending() || resendCooldownSeconds() > 0"
+      >
+        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
+        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
+      </button>
+    </div>
+  </div>
+  }
+
+  <div class="flex items-center gap-2 text-sm mb-3">
+    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
+    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
+    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
+      Change
+    </button>
+  </div>
+
+  <label class="label text-neutral-100">Enter your password</label>
+  <form (submit)="signIn($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="lock-closed" />
+        <input
+          type="password"
+          placeholder="Enter your password"
+          [formField]="passwordForm.password"
+          aria-label="Password"
+          autocomplete="current-password"
+        />
+      </label>
+
+      <div class="flex items-center justify-between pt-2">
+        <div class="flex items-center">
+          <input
+            id="remember_me"
+            name="remember_me"
+            type="checkbox"
+            class="checkbox checkbox-primary checkbox-sm"
+            [checked]="persistence()"
+            (change)="togglePersistence($event.target)"
+          />
+          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
+        </div>
+        <div class="text-sm">
+          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
+        </div>
+      </div>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { SIGN IN }
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('2fa') {
+  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
+  <form (submit)="verify2FA($event)" novalidate>
+    <div class="space-y-3">
+      <label class="input w-full validator">
+        <pc-icon [size]="4" name="shield-exclamation" />
+        <input
+          type="text"
+          placeholder="6-digit code"
+          [formField]="otpForm.code"
+          aria-label="Verification Code"
+          autocomplete="one-time-code"
+        />
+      </label>
+
+      <div>
+        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
+          @if (isLoading()) {
+          <span class="loading loading-dots loading-lg text-primary"></span>
+          } @else { VERIFY }
+        </button>
+      </div>
+
+      <div class="text-center pt-2">
+        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
+          Back to Sign In
+        </button>
+      </div>
+    </div>
+  </form>
+  } @case ('passkey-setup') {
+  <div class="flex flex-col items-center text-center gap-5 py-4">
+    <div class="rounded-full bg-primary/10 p-5">
+      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
+      <p class="text-sm text-white">
+        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
+        sign-ins.
+      </p>
+    </div>
+    <div class="flex flex-col gap-3 w-full pt-2">
+      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
+        @if (settingUpPasskey()) {
+        <span class="loading loading-spinner loading-sm"></span>
+        } @else {
+        <pc-icon name="lock-closed" [size]="4"></pc-icon>
+        } Set Up Passkey
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
+        Skip for now
+      </button>
+    </div>
+  </div>
+  } }
+
+  <div class="text-neutral-200 text-center text-xs pt-2">
+    <span>
+      Copyright © 2024
+      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
+```
+
 ## File: apps/frontend/src/app/auth/signup-page/signup-page.html
 
 ```html
@@ -1069,6 +1301,39 @@ export default '';
     </span>
   </div>
 </pc-auth-layout>
+```
+
+## File: apps/frontend/src/app/auth/auth-guard.ts
+
+```typescript
+import { inject } from '@angular/core';
+import type { CanActivateFn } from '@angular/router';
+import { Router } from '@angular/router';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+export const authGuard: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  const user = auth.getUser();
+
+  if (!user) return router.navigateByUrl('/signin');
+
+  if (!user.email_verified) {
+    return router.navigateByUrl(`/signin?verificationPending=true&email=${encodeURIComponent(user.email)}`);
+  }
+
+  // /cancel-deletion and /resume-account are public, so these won't loop
+  if (user.tenant_deletion_scheduled_at) {
+    return router.navigateByUrl('/cancel-deletion');
+  }
+
+  if (user.tenant_paused_at) {
+    return router.navigateByUrl('/resume-account');
+  }
+
+  return true;
+};
 ```
 
 ## File: apps/frontend/src/app/auth/role-guard.ts
@@ -2851,6 +3116,200 @@ function toNum(n: unknown): number | undefined {
   if (typeof n === 'string') return Number(n) || 0;
   if (typeof n === 'number') return n;
   return undefined;
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/services/store/email-state.store.ts
+
+```typescript
+import { computed, signal, Service, linkedSignal } from '@angular/core';
+
+import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Service()
+export class EmailStateStore {
+  public readonly activeFolderId = signal<string | null>(null);
+
+  public readonly currentSelectedEmailId = linkedSignal<string | null, string | null>({
+    source: () => this.activeFolderId(),
+    computation: () => null,
+  });
+
+  public readonly emailsById = signal<Record<string, EmailType>>({});
+
+  public readonly currentSelectedEmail = computed(() => {
+    const id = this.currentSelectedEmailId();
+    return id ? (this.emailsById()[id] ?? null) : null;
+  });
+
+  public readonly emailIdsByFolderId = signal<Record<string, string[]>>({});
+
+  public readonly hasAttachmentByEmailId = signal<Record<string, boolean | undefined>>({});
+
+  public readonly isBodyExpanded = signal<boolean>(false);
+
+  public readonly mobilePanelView = signal<'folders' | 'list' | 'detail'>('folders');
+
+  public clearHasAttachment(emailId: string) {
+    this.hasAttachmentByEmailId.update((m) => {
+      const next = { ...m };
+      delete next[emailId];
+      return next;
+    });
+  }
+
+  public emailsInFolderWithFlags(folderId: string) {
+    return computed(() => {
+      const ids = this.emailIdsByFolderId()[folderId] ?? [];
+      const emailsMap = this.emailsById();
+      const flags = this.hasAttachmentByEmailId();
+      return ids
+        .map((id) => emailsMap[id])
+        .filter(Boolean)
+        .map((e) => ({ ...e!, has_attachment: flags[e!.id] ?? false }));
+    });
+  }
+
+  public hasAttachment(emailId: string) {
+    return computed<boolean | undefined>(() => this.hasAttachmentByEmailId()[emailId]);
+  }
+
+  public mergeHasRows(rows: Array<{ email_id: string; has: boolean }>, fillFalseForIds?: string[]) {
+    const map: Record<string, boolean> = {};
+    for (const r of rows) map[String(r.email_id)] = !!r.has;
+
+    // Optional: mark any requested ids that didn't come back as false
+    if (fillFalseForIds?.length) {
+      for (const id of fillFalseForIds) if (!(id in map)) map[id] = false;
+    }
+
+    this.setManyHasAttachment(map);
+  }
+
+  public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
+    const prev = this.readEmail(emailKey);
+    if (!prev) return undefined;
+    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
+    return prev;
+  }
+
+  public readEmail(emailKey: string): EmailType | undefined {
+    return this.emailsById()[emailKey];
+  }
+
+  public removeEmail(emailId: string): void {
+    // Remove from normalized map
+    this.emailsById.update((m) => {
+      const next = { ...m };
+      delete next[emailId];
+      return next;
+    });
+
+    // Remove from folder lists
+    this.emailIdsByFolderId.update((map) => {
+      const next: Record<string, string[]> = {};
+      for (const [fid, ids] of Object.entries(map)) {
+        next[fid] = ids.filter((id) => id !== emailId);
+      }
+      return next;
+    });
+
+    // Clear attachment flag
+    this.clearHasAttachment(emailId);
+  }
+
+  public replaceEmail(emailKey: string, value: EmailType): void {
+    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
+  }
+
+  public selectEmail(email: EmailType | { id: EmailId } | null): void {
+    this.currentSelectedEmailId.set(email ? String(email.id) : null);
+  }
+
+  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[], append = false): void {
+    const ids: string[] = [];
+    const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
+
+    this.emailsById.update((map) => {
+      const next = { ...map };
+      for (const s of serverEmails) {
+        const id = String(s.id);
+        ids.push(id);
+
+        // reuse your existing helper; prefer hasMap[id] when provided
+        const { has, count } = deriveHasAndCount(s);
+        flagsMap[id] = has;
+
+        const e: EmailType = {
+          id,
+          folder_id: String(s.folder_id),
+          updated_at: new Date(s.updated_at),
+          date_sent: s.date_sent ? new Date(s.date_sent) : undefined,
+          is_favourite: !!s.is_favourite,
+          attachment_count: count,
+          status: (s as any).status || 'open',
+          from_email: s.from_email ?? undefined,
+          to_email: s.to_email ?? undefined,
+          subject: s.subject ?? undefined,
+          preview: s.preview ?? undefined,
+          assigned_to: s.assigned_to ?? undefined,
+          has_attachment: has, // keep in the normalized email too
+          is_read: !!(s as any).is_read,
+          sender_first_name: s.sender_first_name ?? undefined,
+          sender_last_name: s.sender_last_name ?? undefined,
+        };
+
+        next[id] = e;
+      }
+      return next;
+    });
+
+    this.emailIdsByFolderId.update((m) => {
+      const existing = append ? (m[folderId] ?? []) : [];
+      const combined = [...existing];
+      for (const id of ids) {
+        if (!combined.includes(id)) {
+          combined.push(id);
+        }
+      }
+      return { ...m, [folderId]: combined };
+    });
+
+    // seed/refresh the per-id flags cache
+    this.setManyHasAttachment(flagsMap);
+  }
+
+  public setHasAttachment(emailId: string, hasAttachment: boolean | undefined) {
+    this.hasAttachmentByEmailId.update((m) => ({ ...m, [emailId]: hasAttachment }));
+  }
+
+  public setManyHasAttachment(map: Record<string, boolean | undefined>) {
+    this.hasAttachmentByEmailId.update((prev) => ({ ...prev, ...map }));
+  }
+
+  public toggleBodyExpanded(): void {
+    this.isBodyExpanded.update((v) => !v);
+  }
+}
+
+export type EmailId = string | number;
+
+function deriveHasAndCount(s: ServerEmail): { has: boolean; count: number } {
+  if (typeof s.has_attachment === 'boolean') {
+    const n = toNum(s.attachment_count);
+    // if backend didn’t send a count, synthesize a minimal one
+    return { has: s.has_attachment, count: n ?? (s.has_attachment ? 1 : 0) };
+  }
+  const count = toNum(s.attachment_count);
+  return { has: count > 0, count };
+}
+
+function toNum(n: unknown): number {
+  if (typeof n === 'bigint') return Number(n);
+  if (typeof n === 'string') return Number(n) || 0;
+  if (typeof n === 'number') return n;
+  return 0;
 }
 ```
 
@@ -10330,219 +10789,6 @@ export class DashboardService extends TRPCService<any> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/summary/services/getting-started.service.ts
-
-```typescript
-import { Injectable, computed, inject, signal } from '@angular/core';
-
-import { NewslettersService } from '../../newsletters/services/newsletters-service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { SettingsService } from '../../settings/services/settings-service';
-
-/** One first-run onboarding step, composed from real account state. */
-export interface GettingStartedStep {
-  id: 'import' | 'verify-sender' | 'first-newsletter';
-  /** The step name, sentence case. */
-  label: string;
-  done: boolean;
-  /** Evidence shown when done, e.g. "5,012 imported" — null until then. */
-  evidence: string | null;
-  /** Where the primary link for this step goes. */
-  route: string;
-  /** Primary-link label when this is the next incomplete step. */
-  cta: string;
-}
-
-const DISMISS_KEY = 'pc-getting-started-dismissed';
-
-/**
- * Drives the dashboard's first-run checklist by composing three existing signals — contact
- * count, a verified sending address, and whether any newsletter exists. No dedicated backend
- * endpoint: each fact comes from an endpoint that already ships. Dismissal persists locally.
- */
-@Injectable({ providedIn: 'root' })
-export class GettingStartedService {
-  private readonly persons = inject(PersonsService);
-  private readonly newsletters = inject(NewslettersService);
-  private readonly settings = inject(SettingsService);
-
-  private readonly _steps = signal<GettingStartedStep[] | null>(null);
-  public readonly steps = this._steps.asReadonly();
-  private readonly _dismissed = signal<boolean>(this.readDismissed());
-
-  public readonly doneCount = computed(() => (this._steps() ?? []).filter((s) => s.done).length);
-  public readonly total = computed(() => this._steps()?.length ?? 0);
-  public readonly nextStep = computed<GettingStartedStep | null>(
-    () => (this._steps() ?? []).find((s) => !s.done) ?? null,
-  );
-  private readonly allDone = computed(() => this._steps() !== null && this.nextStep() === null);
-  /** Show the card only once loaded, not fully complete, and not dismissed. */
-  public readonly visible = computed(() => !this._dismissed() && this._steps() !== null && !this.allDone());
-
-  /** Fetch the three facts and (re)build the step list. No-op once dismissed. */
-  public async refresh(): Promise<void> {
-    if (this._dismissed()) return;
-
-    const [contacts, newsletters] = await Promise.all([
-      this.safeCount(() => this.persons.count()),
-      this.safeCount(() => this.newsletters.count()),
-    ]);
-    await this.settings.load().catch(() => undefined);
-    const sender = this.resolveVerifiedSender();
-
-    this._steps.set([
-      {
-        id: 'import',
-        label: 'Import your contacts',
-        done: contacts > 0,
-        evidence: contacts > 0 ? `${contacts.toLocaleString()} imported` : null,
-        route: '/imports',
-        cta: 'Import contacts',
-      },
-      {
-        id: 'verify-sender',
-        label: 'Verify a sending address',
-        done: sender !== null,
-        evidence: sender ? `${sender} verified` : null,
-        route: '/configuration/communications',
-        cta: 'Verify a sending address',
-      },
-      {
-        id: 'first-newsletter',
-        label: 'Send your first newsletter',
-        done: newsletters > 0,
-        evidence: newsletters > 0 ? `${newsletters.toLocaleString()} created` : null,
-        route: '/newsletters/add',
-        cta: 'Send your first newsletter',
-      },
-    ]);
-  }
-
-  /** Hide the card for good on this device. */
-  public dismiss(): void {
-    this._dismissed.set(true);
-    try {
-      localStorage.setItem(DISMISS_KEY, '1');
-    } catch {
-      /* private mode / storage disabled — a non-persisted dismiss is still fine for the session */
-    }
-  }
-
-  private resolveVerifiedSender(): string | null {
-    const emails = this.settings.getValue<string[]>('communications.verified_emails') ?? [];
-    if (emails.length) return emails[0] ?? null;
-    const domains =
-      this.settings.getValue<{ domain: string; status: string }[]>('communications.verified_domains') ?? [];
-    return domains.find((d) => d.status === 'verified')?.domain ?? null;
-  }
-
-  private async safeCount(fn: () => Promise<number>): Promise<number> {
-    try {
-      return (await fn()) ?? 0;
-    } catch {
-      return 0;
-    }
-  }
-
-  private readDismissed(): boolean {
-    try {
-      return localStorage.getItem(DISMISS_KEY) === '1';
-    } catch {
-      return false;
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { GettingStartedService } from './services/getting-started.service';
-
-/**
- * First-run checklist card on the dashboard: "GETTING STARTED · N of 3 done". Completed steps
- * show a success check with their evidence; the next incomplete step is a primary link. Auto-
- * hides once all steps are done; dismissible before then (§3). All state is real (see the
- * service) — nothing is faked.
- */
-@Component({
-  selector: 'pc-getting-started-card',
-  imports: [Icon, RouterLink],
-  template: `
-    @if (visible()) {
-      <div class="animate-drop card border border-base-200 bg-base-100 shadow-sm">
-        <div class="card-body gap-4 p-5">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
-                Getting started · {{ doneCount() }} of {{ total() }} done
-              </div>
-              <h2 class="mt-1 text-lg font-bold text-base-content">Finish setting up your workspace</h2>
-            </div>
-            <button
-              type="button"
-              class="btn btn-ghost btn-xs btn-circle"
-              (click)="dismiss()"
-              aria-label="Dismiss getting started"
-              i18n-aria-label="@@gettingStarted.dismiss.ariaLabel"
-            >
-              <pc-icon name="x-mark" [size]="4"></pc-icon>
-            </button>
-          </div>
-
-          <ul class="flex flex-col gap-2.5">
-            @for (step of steps(); track step.id) {
-              <li class="flex items-center gap-3">
-                @if (step.done) {
-                  <pc-icon name="check-circle" [size]="5" class="shrink-0 text-success"></pc-icon>
-                  <span class="text-sm text-base-content/70">{{ step.label }}</span>
-                  @if (step.evidence) {
-                    <span class="ml-auto text-xs font-medium text-success">{{ step.evidence }}</span>
-                  }
-                } @else if (step.id === nextStep()?.id) {
-                  <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-primary">
-                    <span class="h-2 w-2 rounded-full bg-primary"></span>
-                  </span>
-                  <span class="text-sm font-medium text-base-content">{{ step.label }}</span>
-                  <a [routerLink]="step.route" class="btn btn-primary btn-sm ml-auto">{{ step.cta }}</a>
-                } @else {
-                  <span class="h-5 w-5 shrink-0 rounded-full border-2 border-base-300"></span>
-                  <span class="text-sm text-base-content/50">{{ step.label }}</span>
-                }
-              </li>
-            }
-          </ul>
-        </div>
-      </div>
-    }
-  `,
-})
-export class GettingStartedCard {
-  private readonly svc = inject(GettingStartedService);
-  private readonly alerts = inject(AlertService);
-
-  protected readonly visible = this.svc.visible;
-  protected readonly steps = this.svc.steps;
-  protected readonly doneCount = this.svc.doneCount;
-  protected readonly total = this.svc.total;
-  protected readonly nextStep = this.svc.nextStep;
-
-  constructor() {
-    void this.svc.refresh();
-  }
-
-  protected dismiss(): void {
-    this.svc.dismiss();
-    this.alerts.showInfo('Getting started hidden. It won’t appear again.');
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/summary/sla-details.html
 
 ```html
@@ -14598,271 +14844,6 @@ export const loginGuard: CanActivateFn = () =>
   inject(AuthService).getUser() ? inject(Router).navigateByUrl('/summary') : true;
 ```
 
-## File: apps/frontend/src/app/auth/signin-page/signin-page.html
-
-```html
-<pc-auth-layout>
-  @if (rateLimitSecondsLeft() > 0) {
-  <div class="alert alert-error text-sm mb-4">
-    <pc-icon name="exclamation-circle" [size]="5" class="shrink-0"></pc-icon>
-    <div>
-      <p class="font-semibold" i18n>Too many attempts</p>
-      <p class="text-xs mt-1 flex items-center gap-1">
-        <span i18n>Try again in</span>
-        <span class="countdown font-mono text-lg">
-          @if (rateLimitMins() > 0) {
-          <span [style]="'--value:' + rateLimitMins()" aria-live="polite" [attr.aria-label]="rateLimitMins()"
-            >{{rateLimitMins()}}</span
-          >
-          m }
-          <span [style]="'--value:' + rateLimitRemSecs()" aria-live="polite" [attr.aria-label]="rateLimitRemSecs()"
-            >{{rateLimitRemSecs()}}</span
-          >
-          s
-        </span>
-      </p>
-    </div>
-  </div>
-  } @switch (step()) { @case ('email') {
-  <label class="label text-neutral-100">Enter your email to sign in</label>
-  <form (submit)="continueWithEmail($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="at-symbol" />
-        <input
-          type="email"
-          placeholder="Enter your email"
-          [formField]="emailForm.email"
-          aria-label="Email"
-          autocomplete="email"
-        />
-      </label>
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { Continue }
-        </button>
-      </div>
-    </div>
-  </form>
-  <div class="pt-4 text-center">
-    <a routerLink="/signup" class="link link-hover text-neutral-100">SIGN UP</a>
-  </div>
-  } @case ('passkey') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-1">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in with passkey</h2>
-      <p class="text-sm text-white">{{ emailData().email }}</p>
-      @if (isLoading()) {
-      <p class="text-xs text-neutral-500 pt-1">Waiting for your passkey…</p>
-      }
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        (click)="signInWithPasskey()"
-        [disabled]="isLoading() || rateLimitSecondsLeft() > 0"
-      >
-        @if (isLoading()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Sign in with Passkey
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="usePasswordInstead()"
-        [disabled]="isLoading()"
-      >
-        Use password instead
-      </button>
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-white hover:text-neutral-100"
-        (click)="goBackToEmail()"
-        [disabled]="isLoading()"
-      >
-        Back
-      </button>
-    </div>
-  </div>
-  } @case ('password') { @if (verificationPending()) {
-  <div class="alert alert-warning text-sm mb-4 bg-amber-950/40 border-amber-500/40 text-amber-200">
-    <div class="flex flex-col gap-2 w-full">
-      <div class="flex items-center gap-2 font-semibold">
-        <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-        <span>Verification Pending</span>
-      </div>
-      <p class="text-xs text-amber-200/80">
-        A verification link was sent to <strong class="text-amber-100">{{ pendingEmail() }}</strong>. Please check your
-        inbox.
-      </p>
-      <button
-        class="btn btn-xs btn-outline btn-warning mt-1 w-fit"
-        type="button"
-        (click)="resendVerification()"
-        [disabled]="resending() || resendCooldownSeconds() > 0"
-      >
-        @if (resending()) { Sending... } @else if (resendCooldownSeconds() > 0) { Resend in @if (resendCooldownMins() >
-        0) { {{ resendCooldownMins() }}m } {{ resendCooldownRemSecs() }}s } @else { Resend Verification Email }
-      </button>
-    </div>
-  </div>
-  }
-
-  <div class="flex items-center gap-2 text-sm mb-3">
-    <pc-icon [size]="4" name="at-symbol" class="text-white shrink-0" />
-    <span class="text-neutral-200 truncate">{{ emailData().email }}</span>
-    <button type="button" class="link link-hover text-xs text-white ml-auto shrink-0" (click)="goBackToEmail()">
-      Change
-    </button>
-  </div>
-
-  <label class="label text-neutral-100">Enter your password</label>
-  <form (submit)="signIn($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="lock-closed" />
-        <input
-          type="password"
-          placeholder="Enter your password"
-          [formField]="passwordForm.password"
-          aria-label="Password"
-          autocomplete="current-password"
-        />
-      </label>
-
-      <div class="flex items-center justify-between pt-2">
-        <div class="flex items-center">
-          <input
-            id="remember_me"
-            name="remember_me"
-            type="checkbox"
-            class="checkbox checkbox-primary checkbox-sm"
-            [checked]="persistence()"
-            (change)="togglePersistence($event.target)"
-          />
-          <label for="remember_me" class="ml-2 block text-sm text-neutral-100">Remember me</label>
-        </div>
-        <div class="text-sm">
-          <a routerLink="/resetpassword" class="link link-hover text-neutral-100">Forgot your password?</a>
-        </div>
-      </div>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { SIGN IN }
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('2fa') {
-  <label class="label text-neutral-100">Enter the 6-digit verification code sent to your email</label>
-  <form (submit)="verify2FA($event)" novalidate>
-    <div class="space-y-3">
-      <label class="input w-full validator">
-        <pc-icon [size]="4" name="shield-exclamation" />
-        <input
-          type="text"
-          placeholder="6-digit code"
-          [formField]="otpForm.code"
-          aria-label="Verification Code"
-          autocomplete="one-time-code"
-        />
-      </label>
-
-      <div>
-        <button type="submit" class="btn btn-primary w-full" [disabled]="isLoading() || rateLimitSecondsLeft() > 0">
-          @if (isLoading()) {
-          <span class="loading loading-dots loading-lg text-primary"></span>
-          } @else { VERIFY }
-        </button>
-      </div>
-
-      <div class="text-center pt-2">
-        <button type="button" class="link link-hover text-sm text-neutral-100" (click)="goBackToEmail()">
-          Back to Sign In
-        </button>
-      </div>
-    </div>
-  </form>
-  } @case ('passkey-setup') {
-  <div class="flex flex-col items-center text-center gap-5 py-4">
-    <div class="rounded-full bg-primary/10 p-5">
-      <pc-icon name="lock-closed" [size]="10" class="text-primary"></pc-icon>
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-lg font-semibold text-neutral-100">Sign in faster with a passkey</h2>
-      <p class="text-sm text-white">
-        Passkeys use your device's biometrics or PIN — no password needed. Set one up now for quicker, more secure
-        sign-ins.
-      </p>
-    </div>
-    <div class="flex flex-col gap-3 w-full pt-2">
-      <button type="button" class="btn btn-primary w-full" (click)="setupPasskey()" [disabled]="settingUpPasskey()">
-        @if (settingUpPasskey()) {
-        <span class="loading loading-spinner loading-sm"></span>
-        } @else {
-        <pc-icon name="lock-closed" [size]="4"></pc-icon>
-        } Set Up Passkey
-      </button>
-      <button type="button" class="btn btn-ghost btn-sm text-white hover:text-neutral-100" (click)="skipPasskeySetup()">
-        Skip for now
-      </button>
-    </div>
-  </div>
-  } }
-
-  <div class="text-neutral-200 text-center text-xs pt-2">
-    <span>
-      Copyright © 2024
-      <a href="" rel="" target="_blank" title="CampaignRaven" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
-```
-
-## File: apps/frontend/src/app/auth/auth-guard.ts
-
-```typescript
-import { inject } from '@angular/core';
-import type { CanActivateFn } from '@angular/router';
-import { Router } from '@angular/router';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-export const authGuard: CanActivateFn = () => {
-  const auth = inject(AuthService);
-  const router = inject(Router);
-  const user = auth.getUser();
-
-  if (!user) return router.navigateByUrl('/signin');
-
-  if (!user.email_verified) {
-    return router.navigateByUrl(`/signin?verificationPending=true&email=${encodeURIComponent(user.email)}`);
-  }
-
-  // /cancel-deletion and /resume-account are public, so these won't loop
-  if (user.tenant_deletion_scheduled_at) {
-    return router.navigateByUrl('/cancel-deletion');
-  }
-
-  if (user.tenant_paused_at) {
-    return router.navigateByUrl('/resume-account');
-  }
-
-  return true;
-};
-```
-
 ## File: apps/frontend/src/app/auth/auth-layout.ts
 
 ```typescript
@@ -15519,198 +15500,86 @@ export class MergeSummaryComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/services/store/email-state.store.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
 
-```typescript
-import { computed, signal, Service, linkedSignal } from '@angular/core';
+```html
+<div class="flex text-sm bg-base-100 h-full overflow-hidden">
+  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
+  <div [class]="folderPanelClass()">
+    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
+  </div>
 
-import { ServerEmail } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Service()
-export class EmailStateStore {
-  public readonly activeFolderId = signal<string | null>(null);
-
-  public readonly currentSelectedEmailId = linkedSignal<string | null, string | null>({
-    source: () => this.activeFolderId(),
-    computation: () => null,
-  });
-
-  public readonly emailsById = signal<Record<string, EmailType>>({});
-
-  public readonly currentSelectedEmail = computed(() => {
-    const id = this.currentSelectedEmailId();
-    return id ? (this.emailsById()[id] ?? null) : null;
-  });
-
-  public readonly emailIdsByFolderId = signal<Record<string, string[]>>({});
-
-  public readonly hasAttachmentByEmailId = signal<Record<string, boolean | undefined>>({});
-
-  public readonly isBodyExpanded = signal<boolean>(false);
-
-  public readonly mobilePanelView = signal<'folders' | 'list' | 'detail'>('folders');
-
-  public clearHasAttachment(emailId: string) {
-    this.hasAttachmentByEmailId.update((m) => {
-      const next = { ...m };
-      delete next[emailId];
-      return next;
-    });
+  <!-- Email list panel -->
+  @if (!isBodyExpanded()) {
+  <div [class]="listPanelClass()">
+    <!-- Mobile back button -->
+    <div class="md:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
+      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Folders
+      </button>
+    </div>
+    <pc-email-list
+      class="flex-1 min-h-0 block"
+      (emailSelected)="onEmail($event!)"
+      (reply)="onReply($event)"
+      (replyAll)="onReplyAll($event)"
+      (forward)="onForward($event)"
+    ></pc-email-list>
+  </div>
   }
 
-  public emailsInFolderWithFlags(folderId: string) {
-    return computed(() => {
-      const ids = this.emailIdsByFolderId()[folderId] ?? [];
-      const emailsMap = this.emailsById();
-      const flags = this.hasAttachmentByEmailId();
-      return ids
-        .map((id) => emailsMap[id])
-        .filter(Boolean)
-        .map((e) => ({ ...e!, has_attachment: flags[e!.id] ?? false }));
-    });
-  }
+  <!-- Right pane: compose OR details -->
+  <div [class]="detailPanelClass()">
+    <!-- Mobile back button -->
+    <div class="md:hidden flex items-center mb-2 shrink-0">
+      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+    </div>
 
-  public hasAttachment(emailId: string) {
-    return computed<boolean | undefined>(() => this.hasAttachmentByEmailId()[emailId]);
-  }
-
-  public mergeHasRows(rows: Array<{ email_id: string; has: boolean }>, fillFalseForIds?: string[]) {
-    const map: Record<string, boolean> = {};
-    for (const r of rows) map[String(r.email_id)] = !!r.has;
-
-    // Optional: mark any requested ids that didn't come back as false
-    if (fillFalseForIds?.length) {
-      for (const id of fillFalseForIds) if (!(id in map)) map[id] = false;
-    }
-
-    this.setManyHasAttachment(map);
-  }
-
-  public patchEmail(emailKey: string, patch: Partial<EmailType>): EmailType | undefined {
-    const prev = this.readEmail(emailKey);
-    if (!prev) return undefined;
-    this.emailsById.update((m) => ({ ...m, [emailKey]: { ...prev, ...patch } }));
-    return prev;
-  }
-
-  public readEmail(emailKey: string): EmailType | undefined {
-    return this.emailsById()[emailKey];
-  }
-
-  public removeEmail(emailId: string): void {
-    // Remove from normalized map
-    this.emailsById.update((m) => {
-      const next = { ...m };
-      delete next[emailId];
-      return next;
-    });
-
-    // Remove from folder lists
-    this.emailIdsByFolderId.update((map) => {
-      const next: Record<string, string[]> = {};
-      for (const [fid, ids] of Object.entries(map)) {
-        next[fid] = ids.filter((id) => id !== emailId);
+    <div class="flex-1 min-h-0 overflow-hidden">
+      @if (isComposing()) {
+      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
+        <pc-compose-email
+          #composer
+          class="h-full"
+          [draftId]="draftIdToLoad()"
+          [initial]="composePrefill()"
+          (finished)="closeCompose()"
+        ></pc-compose-email>
+      </div>
+      } @else {
+      <pc-email-details
+        class="h-full"
+        [email]="selectedEmail()"
+        (reply)="onReply($event)"
+        (replyAll)="onReplyAll($event)"
+        (forward)="onForward($event)"
+      ></pc-email-details>
       }
-      return next;
-    });
+    </div>
+  </div>
 
-    // Clear attachment flag
-    this.clearHasAttachment(emailId);
+  @if (isBodyExpanded() && selectedEmail()) {
+  <!-- Keep your existing BODY overlay when expanded -->
+  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
+    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
+      <div class="flex items-center justify-end">
+        <button class="btn btn-ghost btn-md" (click)="toggleExpanded()">
+          <pc-icon name="collapse-content" class="mr-1"></pc-icon>Collapse
+        </button>
+      </div>
+      <div class="flex-1 min-h-0">
+        <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3">
+          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
+        </div>
+      </div>
+    </div>
+  </div>
   }
-
-  public replaceEmail(emailKey: string, value: EmailType): void {
-    this.emailsById.update((m) => ({ ...m, [emailKey]: value }));
-  }
-
-  public selectEmail(email: EmailType | { id: EmailId } | null): void {
-    this.currentSelectedEmailId.set(email ? String(email.id) : null);
-  }
-
-  public setEmailsForFolder(folderId: string, serverEmails: ServerEmail[], append = false): void {
-    const ids: string[] = [];
-    const flagsMap: Record<string, boolean> = {}; // collect booleans while we normalize rows
-
-    this.emailsById.update((map) => {
-      const next = { ...map };
-      for (const s of serverEmails) {
-        const id = String(s.id);
-        ids.push(id);
-
-        // reuse your existing helper; prefer hasMap[id] when provided
-        const { has, count } = deriveHasAndCount(s);
-        flagsMap[id] = has;
-
-        const e: EmailType = {
-          id,
-          folder_id: String(s.folder_id),
-          updated_at: new Date(s.updated_at),
-          date_sent: s.date_sent ? new Date(s.date_sent) : undefined,
-          is_favourite: !!s.is_favourite,
-          attachment_count: count,
-          status: (s as any).status || 'open',
-          from_email: s.from_email ?? undefined,
-          to_email: s.to_email ?? undefined,
-          subject: s.subject ?? undefined,
-          preview: s.preview ?? undefined,
-          assigned_to: s.assigned_to ?? undefined,
-          has_attachment: has, // keep in the normalized email too
-          is_read: !!(s as any).is_read,
-          sender_first_name: s.sender_first_name ?? undefined,
-          sender_last_name: s.sender_last_name ?? undefined,
-        };
-
-        next[id] = e;
-      }
-      return next;
-    });
-
-    this.emailIdsByFolderId.update((m) => {
-      const existing = append ? (m[folderId] ?? []) : [];
-      const combined = [...existing];
-      for (const id of ids) {
-        if (!combined.includes(id)) {
-          combined.push(id);
-        }
-      }
-      return { ...m, [folderId]: combined };
-    });
-
-    // seed/refresh the per-id flags cache
-    this.setManyHasAttachment(flagsMap);
-  }
-
-  public setHasAttachment(emailId: string, hasAttachment: boolean | undefined) {
-    this.hasAttachmentByEmailId.update((m) => ({ ...m, [emailId]: hasAttachment }));
-  }
-
-  public setManyHasAttachment(map: Record<string, boolean | undefined>) {
-    this.hasAttachmentByEmailId.update((prev) => ({ ...prev, ...map }));
-  }
-
-  public toggleBodyExpanded(): void {
-    this.isBodyExpanded.update((v) => !v);
-  }
-}
-
-export type EmailId = string | number;
-
-function deriveHasAndCount(s: ServerEmail): { has: boolean; count: number } {
-  if (typeof s.has_attachment === 'boolean') {
-    const n = toNum(s.attachment_count);
-    // if backend didn’t send a count, synthesize a minimal one
-    return { has: s.has_attachment, count: n ?? (s.has_attachment ? 1 : 0) };
-  }
-  const count = toNum(s.attachment_count);
-  return { has: count > 0, count };
-}
-
-function toNum(n: unknown): number {
-  if (typeof n === 'bigint') return Number(n);
-  if (typeof n === 'string') return Number(n) || 0;
-  if (typeof n === 'number') return n;
-  return 0;
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-comments/email-comments.html
@@ -16621,6 +16490,114 @@ export class EmailDetails {
     </button>
   </div>
 </aside>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
+
+```html
+<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full md:w-48 bg-base-200">
+  <!-- Toolbar -->
+  <div
+    class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
+  >
+    <span class="text-xs font-semibold text-neutral-content">Sort</span>
+    <div class="dropdown dropdown-end">
+      <label
+        tabindex="0"
+        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
+      >
+        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
+        <pc-icon name="chevron-down" [size]="3"></pc-icon>
+      </label>
+      <ul
+        tabindex="0"
+        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
+      >
+        <li>
+          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
+        </li>
+        <li>
+          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
+    @for (email of sortedEmails(); track email.id) {
+    <li
+      (click)="selectEmail(email)"
+      (contextmenu)="onContextMenu($event, email)"
+      [class.bg-primary/10]="isSelected(email.id)"
+      class="border-b border-base-200 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
+    >
+      <div
+        class="truncate text-xs flex gap-1 items-center"
+        [class.text-base-content/90]="!email.is_read"
+        [class.text-base-content/60]="email.is_read"
+      >
+        @if (!email.is_read) {
+        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
+        } @if (email.from_email || email.to_email) {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
+          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
+          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
+        </span>
+        } @else {
+        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
+        }
+        <span class="flex-none"
+          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
+        >
+      </div>
+      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
+        @if (email?.subject) {
+        <span class="truncate flex-1">{{ email.subject }}</span>
+        } @else {
+        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
+        } @if (email.has_attachment) {
+        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
+        }
+      </div>
+      <div class="truncate font-light text-xs text-base-content/60 mt-0.5">{{ email.preview }}</div>
+    </li>
+    } @empty {
+    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
+      <pc-icon name="inbox" [size]="8"></pc-icon>
+      <span>No emails</span>
+    </li>
+    } @if (isLoadingMore()) {
+    <li class="flex justify-center p-3 border-b border-base-200">
+      <span class="loading loading-spinner loading-sm text-primary"></span>
+    </li>
+    }
+  </ul>
+
+  @if (showContextMenu() && contextMenuEmail()) {
+  <div
+    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
+    [style.left.px]="contextMenuPosition().x"
+    [style.top.px]="contextMenuPosition().y"
+  >
+    @for (section of menuSections; track $index; let last = $last) {
+    <div class="px-1.5 py-0.5">
+      @for (item of section.items; track item.label) {
+      <button
+        (click)="item.action()"
+        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
+      >
+        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
+        <span>{{ item.label }}</span>
+      </button>
+      }
+    </div>
+
+    @if (!last) {
+    <div class="border-t border-base-300 my-1"></div>
+    } }
+  </div>
+  }
+</section>
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-grid.ts
@@ -18948,211 +18925,6 @@ export function readingMinutes(article: HelpArticle): number {
     .split(/\s+/)
     .filter(Boolean).length;
   return Math.max(1, Math.round(words / WORDS_PER_MINUTE));
-}
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-article.html
-
-```html
-<div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
-  @if (article(); as article) {
-  <div class="grid gap-10 xl:grid-cols-[minmax(0,1fr)_230px]">
-    <article class="min-w-0 max-w-3xl">
-      <header class="mb-7">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{{ category()?.label }}</p>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight text-base-content">{{ article.title }}</h1>
-        <p class="mt-2 text-[15px] leading-7 text-base-content/60">{{ article.summary }}</p>
-        <p class="mt-3 text-xs tabular-nums text-base-content/50">{{ minutes() }} min read</p>
-      </header>
-
-      <pc-help-blocks [blocks]="article.blocks"></pc-help-blocks>
-
-      <!-- Previous / next within the category -->
-      @if (neighbors().prev || neighbors().next) {
-      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More in this category">
-        @if (neighbors().prev; as prev) {
-        <a
-          [routerLink]="['/help', prev.id]"
-          class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
-        >
-          <div class="card-body gap-0.5 p-4">
-            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
-              <pc-icon name="chevron-left" [size]="4"></pc-icon>
-              Previous
-            </span>
-            <span class="truncate text-sm font-medium text-base-content">{{ prev.title }}</span>
-          </div>
-        </a>
-        } @else {
-        <span class="hidden sm:block" aria-hidden="true"></span>
-        } @if (neighbors().next; as next) {
-        <a
-          [routerLink]="['/help', next.id]"
-          class="card border border-base-300 bg-base-100 text-right shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
-        >
-          <div class="card-body items-end gap-0.5 p-4">
-            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
-              Next
-              <pc-icon name="chevron-right" [size]="4"></pc-icon>
-            </span>
-            <span class="truncate text-sm font-medium text-base-content">{{ next.title }}</span>
-          </div>
-        </a>
-        }
-      </nav>
-      }
-
-      <!-- Related reading -->
-      @if (related().length > 0) {
-      <section class="mt-12">
-        <h2 class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">Related articles</h2>
-        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          @for (rel of related(); track rel.id) {
-          <a
-            [routerLink]="['/help', rel.id]"
-            class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
-          >
-            <div class="card-body gap-1 p-4">
-              <h3 class="text-sm font-semibold leading-5 text-base-content">{{ rel.title }}</h3>
-              <p class="line-clamp-2 text-xs leading-5 text-base-content/60">{{ rel.summary }}</p>
-            </div>
-          </a>
-          }
-        </div>
-      </section>
-      }
-    </article>
-
-    <!-- On this page -->
-    @if (toc().length >= 3) {
-    <aside class="hidden xl:block">
-      <nav class="sticky top-6 rounded-xl border border-base-300 bg-base-100 p-4 shadow-sm" aria-label="On this page">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">On this page</p>
-        <ul class="mt-2 space-y-0.5">
-          @for (entry of toc(); track entry.id) {
-          <li>
-            <button
-              type="button"
-              class="w-full truncate rounded-lg px-2 py-1.5 text-left text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-primary"
-              (click)="scrollTo(entry.id)"
-            >
-              {{ entry.label }}
-            </button>
-          </li>
-          }
-        </ul>
-      </nav>
-    </aside>
-    }
-  </div>
-  } @else {
-  <!-- Guided not-found state -->
-  <div class="mx-auto mt-16 flex max-w-md flex-col items-center gap-3 text-center">
-    <pc-icon name="information-circle" [size]="10" class="text-base-content/20"></pc-icon>
-    <p class="text-sm font-medium text-base-content/80">This help article doesn't exist</p>
-    <p class="text-xs leading-5 text-base-content/50">
-      It may have moved. Search the help center to find what you were looking for.
-    </p>
-    <a routerLink="/help" class="btn btn-primary btn-sm mt-1">Browse all help articles</a>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/help/ui/help-article.ts
-
-```typescript
-import { Component, computed, DestroyRef, effect, ElementRef, inject, input } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-
-import { categoryNeighbors, getHelpArticle, getHelpCategory, relatedArticles } from '../data/help-content';
-import { readingMinutes, stripHelpInline } from '../data/help-types';
-import { HelpBlocks } from './help-blocks';
-
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import type { HelpArticle, HelpBlock } from '../data/help-types';
-
-interface TocEntry {
-  id: string;
-  label: string;
-}
-
-/** One help article: header, typed content blocks, on-page TOC, related reading. */
-@Component({
-  selector: 'pc-help-article',
-  imports: [HelpBlocks, Icon, RouterLink],
-  templateUrl: './help-article.html',
-})
-export class HelpArticlePage {
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  public readonly id = input.required<string>();
-
-  protected readonly article = computed(() => getHelpArticle(this.id()));
-  protected readonly category = computed(() => {
-    const article = this.article();
-    return article ? getHelpCategory(article.category) : undefined;
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Help', route: '/help' },
-    { label: this.article()?.title ?? 'Article' },
-  ]);
-
-  protected readonly minutes = computed(() => {
-    const article = this.article();
-    return article ? readingMinutes(article) : 0;
-  });
-
-  protected readonly related = computed<HelpArticle[]>(() => {
-    const article = this.article();
-    return article ? relatedArticles(article) : [];
-  });
-
-  protected readonly neighbors = computed(() => {
-    const article = this.article();
-    return article ? categoryNeighbors(article) : {};
-  });
-
-  protected readonly toc = computed<TocEntry[]>(() => {
-    const article = this.article();
-    if (!article) return [];
-    return article.blocks
-      .filter((b): b is Extract<HelpBlock, { kind: 'h2' }> => b.kind === 'h2')
-      .map((b) => ({ id: b.id, label: stripHelpInline(b.text) }));
-  });
-
-  constructor() {
-    // Jump back to the top whenever the reader moves to another article.
-    // Optional call: jsdom (unit tests) doesn't implement scrollIntoView.
-    effect(() => {
-      this.id();
-      this.host.nativeElement.scrollIntoView?.({ block: 'start' });
-    });
-
-    // Hoist the crumb trail into the navbar (no record pager on help pages).
-    effect(() => {
-      this.breadcrumbs.set({
-        crumbs: this.crumbs(),
-        positionLabel: null,
-        hasPrev: false,
-        hasNext: false,
-        prevLabel: 'Previous record',
-        nextLabel: 'Next record',
-        onPrev: () => undefined,
-        onNext: () => undefined,
-      });
-    });
-
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
-  }
-
-  protected scrollTo(anchorId: string): void {
-    document.getElementById(anchorId)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
-  }
 }
 ```
 
@@ -23521,631 +23293,214 @@ export class ShiftsGridComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/summary/summary.html
+## File: apps/frontend/src/app/experiences/summary/services/getting-started.service.ts
 
-```html
-<div class="p-6 max-w-7xl mx-auto space-y-6">
-  <!-- Header -->
-  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight text-base-content flex items-center gap-2">
-        <pc-icon name="presentation-chart-line" class="text-primary" [size]="7"></pc-icon>
-        CRM Summary Dashboard
-      </h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Overview of key performance metrics, email response rates, and contact database growth.
-      </p>
-    </div>
-    <button
-      class="btn btn-outline btn-sm gap-2 cursor-pointer hover:btn-primary"
-      pcSpinOnClick
-      (click)="loadStats()"
-      [disabled]="isRefreshing()"
-    >
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Reload Stats
-    </button>
-  </div>
+```typescript
+import { Injectable, computed, inject, signal } from '@angular/core';
 
-  <!-- First-run checklist — composed from real account state; self-hides when complete (§3) -->
-  <pc-getting-started-card></pc-getting-started-card>
+import { NewslettersService } from '../../newsletters/services/newsletters-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { SettingsService } from '../../settings/services/settings-service';
 
-  <!-- Metric Cards — always visible; show skeletons (not a spinner) on first load (§3) -->
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-    <pc-stat-card
-      [title]="'Total Open Emails'"
-      [value]="totalOpenCount()"
-      [loading]="isInitialLoading()"
-      [description]="'All open inbox conversations'"
-      [icon]="'envelope'"
-      [valueColorClass]="'text-primary'"
-      [iconColorClass]="'text-primary'"
-    ></pc-stat-card>
+/** One first-run onboarding step, composed from real account state. */
+export interface GettingStartedStep {
+  id: 'import' | 'verify-sender' | 'first-newsletter';
+  /** The step name, sentence case. */
+  label: string;
+  done: boolean;
+  /** Evidence shown when done, e.g. "5,012 imported" — null until then. */
+  evidence: string | null;
+  /** Where the primary link for this step goes. */
+  route: string;
+  /** Primary-link label when this is the next incomplete step. */
+  cta: string;
+}
 
-    <pc-stat-card
-      [title]="'Unassigned Open'"
-      [value]="unassignedOpenCount()"
-      [loading]="isInitialLoading()"
-      [description]="'Awaiting user assignment'"
-      [icon]="'exclamation-circle'"
-      [valueColorClass]="'text-warning'"
-      [iconColorClass]="'text-warning'"
-    ></pc-stat-card>
+const DISMISS_KEY = 'pc-getting-started-dismissed';
 
-    <pc-stat-card
-      [title]="'Avg 1st Response'"
-      [value]="avgFirstResponse()"
-      [loading]="isInitialLoading()"
-      [description]="'Time to reply or comment'"
-      [icon]="'clock'"
-      [valueColorClass]="'text-info'"
-      [iconColorClass]="'text-info'"
-    ></pc-stat-card>
+/**
+ * Drives the dashboard's first-run checklist by composing three existing signals — contact
+ * count, a verified sending address, and whether any newsletter exists. No dedicated backend
+ * endpoint: each fact comes from an endpoint that already ships. Dismissal persists locally.
+ */
+@Injectable({ providedIn: 'root' })
+export class GettingStartedService {
+  private readonly persons = inject(PersonsService);
+  private readonly newsletters = inject(NewslettersService);
+  private readonly settings = inject(SettingsService);
 
-    <pc-stat-card
-      [title]="'Avg Time to Close'"
-      [value]="avgTimeToClose()"
-      [loading]="isInitialLoading()"
-      [description]="'From arrival to closed status'"
-      [icon]="'check-circle'"
-      [valueColorClass]="'text-success'"
-      [iconColorClass]="'text-success'"
-    ></pc-stat-card>
+  private readonly _steps = signal<GettingStartedStep[] | null>(null);
+  public readonly steps = this._steps.asReadonly();
+  private readonly _dismissed = signal<boolean>(this.readDismissed());
 
-    <pc-stat-card
-      [title]="'Contacts Growth'"
-      [value]="'+' + activeContactsCount()"
-      [loading]="isInitialLoading()"
-      [description]="'New contacts (last 30 days)'"
-      [icon]="'user-plus'"
-      [valueColorClass]="'text-secondary'"
-      [iconColorClass]="'text-secondary'"
-    ></pc-stat-card>
-  </div>
+  public readonly doneCount = computed(() => (this._steps() ?? []).filter((s) => s.done).length);
+  public readonly total = computed(() => this._steps()?.length ?? 0);
+  public readonly nextStep = computed<GettingStartedStep | null>(
+    () => (this._steps() ?? []).find((s) => !s.done) ?? null,
+  );
+  private readonly allDone = computed(() => this._steps() !== null && this.nextStep() === null);
+  /** Show the card only once loaded, not fully complete, and not dismissed. */
+  public readonly visible = computed(() => !this._dismissed() && this._steps() !== null && !this.allDone());
 
-  <!-- Loading Overlay (charts/analytics area only) -->
-  @if (isLoading() && linePoints().length === 0) {
-  <div class="flex flex-col items-center justify-center py-24">
-    <span class="loading loading-bars loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Analyzing database metrics...</p>
-  </div>
-  } @if (linePoints().length > 0) {
-  <div class="space-y-6">
-    <!-- SLA Status Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- Email SLA Card -->
-      <div
-        class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
-        [class.bg-success]="emailSlaStatus() === 'healthy'"
-        [class.text-success-content]="emailSlaStatus() === 'healthy'"
-        [class.bg-warning]="emailSlaStatus() === 'warning'"
-        [class.text-warning-content]="emailSlaStatus() === 'warning'"
-        [class.bg-error]="emailSlaStatus() === 'critical'"
-        [class.text-error-content]="emailSlaStatus() === 'critical'"
-      >
-        <div class="card-body p-5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Email SLA Status</span>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
-              (click)="toggleSlaDetails('emails')"
-            >
-              <pc-icon
-                [name]="showSlaDetails() && defaultSlaTab() === 'emails' ? 'chevron-up' : 'chevron-down'"
-                [size]="4"
-              ></pc-icon>
-              {{ showSlaDetails() && defaultSlaTab() === 'emails' ? 'Hide Details' : 'View Details' }}
-            </button>
-          </div>
-          <div class="flex items-baseline gap-2 mt-1">
-            <h3 class="text-2xl font-black">
-              {{ totalEmailSlaBreaches() === 0 ? 'Healthy' : totalEmailSlaBreaches() + ' Breached' }}
-            </h3>
-            <span class="text-xs opacity-85"> ({{ unassignedEmailSlaBreaches() }} unassigned breaches) </span>
-          </div>
-          <div class="mt-2 flex items-center justify-between text-xs opacity-75 border-t border-white/10 pt-2">
-            <span>Limit: {{ emailSlaHours() }}h response</span>
-            <span>Warning: &ge;{{ emailSlaWarningThreshold() }} • Critical: &ge;{{ emailSlaCriticalThreshold() }}</span>
-          </div>
-        </div>
-      </div>
+  /** Fetch the three facts and (re)build the step list. No-op once dismissed. */
+  public async refresh(): Promise<void> {
+    if (this._dismissed()) return;
 
-      <!-- Task SLA Card -->
-      <div
-        class="card shadow-md border-none transition-all duration-300 hover:scale-[1.01]"
-        [class.bg-success]="taskSlaStatus() === 'healthy'"
-        [class.text-success-content]="taskSlaStatus() === 'healthy'"
-        [class.bg-warning]="taskSlaStatus() === 'warning'"
-        [class.text-warning-content]="taskSlaStatus() === 'warning'"
-        [class.bg-error]="taskSlaStatus() === 'critical'"
-        [class.text-error-content]="taskSlaStatus() === 'critical'"
-      >
-        <div class="card-body p-5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs uppercase font-bold opacity-90 tracking-wider">Task SLA Status</span>
-            <button
-              type="button"
-              class="btn btn-xs btn-ghost text-inherit hover:bg-black/10 flex items-center gap-1 font-bold"
-              (click)="toggleSlaDetails('tasks')"
-            >
-              <pc-icon
-                [name]="showSlaDetails() && defaultSlaTab() === 'tasks' ? 'chevron-up' : 'chevron-down'"
-                [size]="4"
-              ></pc-icon>
-              {{ showSlaDetails() && defaultSlaTab() === 'tasks' ? 'Hide Details' : 'View Details' }}
-            </button>
-          </div>
-          <div class="flex items-baseline gap-2 mt-1">
-            <h3 class="text-2xl font-black">
-              {{ totalTaskSlaBreaches() === 0 ? 'Healthy' : totalTaskSlaBreaches() + ' Breached' }}
-            </h3>
-            <span class="text-xs opacity-85"> ({{ unassignedTaskSlaBreaches() }} unassigned breaches) </span>
-          </div>
-          <div class="mt-2 flex items-center justify-between text-xs opacity-75 border-t border-white/10 pt-2">
-            <span>Limit: {{ taskSlaHours() }}h resolution</span>
-            <span>Warning: &ge;{{ taskSlaWarningThreshold() }} • Critical: &ge;{{ taskSlaCriticalThreshold() }}</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    const [contacts, newsletters] = await Promise.all([
+      this.safeCount(() => this.persons.count()),
+      this.safeCount(() => this.newsletters.count()),
+    ]);
+    await this.settings.load().catch(() => undefined);
+    const sender = this.resolveVerifiedSender();
 
-    <!-- SLA Details Action Center -->
-    @if (showSlaDetails()) {
-    <pc-sla-details
-      [breachedEmails]="breachedEmails()"
-      [breachedTasks]="breachedTasks()"
-      [emailSlaHours]="emailSlaHours()"
-      [taskSlaHours]="taskSlaHours()"
-      [totalEmailBreaches]="totalEmailSlaBreaches()"
-      [totalTaskBreaches]="totalTaskSlaBreaches()"
-      [hasMoreEmails]="hasMoreEmails()"
-      [hasMoreTasks]="hasMoreTasks()"
-      [isLoadingEmails]="isLoadingEmails()"
-      [isLoadingTasks]="isLoadingTasks()"
-      (loadMoreEmails)="loadMoreEmails()"
-      (loadMoreTasks)="loadMoreTasks()"
-      [(activeTab)]="defaultSlaTab"
-    />
-    }
-
-    <!-- Charts Layout -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Left / Main Chart: Contacts Growth Line -->
-      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-        <div class="card-body p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-              <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
-              New Contacts Growth
-            </h3>
-            <span class="text-xs text-base-content/55">Last 30 Days</span>
-          </div>
-
-          <div class="relative w-full h-[220px]">
-            <svg viewBox="0 0 600 200" class="w-full h-full overflow-visible">
-              <defs>
-                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"></stop>
-                  <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.0"></stop>
-                </linearGradient>
-              </defs>
-
-              <!-- Grid Lines -->
-              <line
-                x1="20"
-                y1="20"
-                x2="580"
-                y2="20"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="60"
-                x2="580"
-                y2="60"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="100"
-                x2="580"
-                y2="100"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line
-                x1="20"
-                y1="140"
-                x2="580"
-                y2="140"
-                stroke="currentColor"
-                class="text-base-content/5"
-                stroke-dasharray="4"
-              ></line>
-              <line x1="20" y1="180" x2="580" y2="180" stroke="currentColor" class="text-base-content/10"></line>
-
-              <!-- Y Axis Labels -->
-              @for (label of yAxisLabels(); track label.y) {
-              <text
-                [attr.x]="12"
-                [attr.y]="label.y + 3"
-                text-anchor="end"
-                class="fill-current text-base-content/40 text-[9px] font-mono"
-              >
-                {{ label.value }}
-              </text>
-              }
-
-              <!-- Line paths -->
-              <path [attr.d]="areaPath()" fill="url(#areaGrad)"></path>
-              <path
-                [attr.d]="linePath()"
-                fill="none"
-                stroke="#3b82f6"
-                stroke-width="3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              ></path>
-
-              <!-- Interactive Points -->
-              @for (p of linePoints(); track p.date; let first = $first; let last = $last) {
-              <circle
-                [attr.cx]="p.x"
-                [attr.cy]="p.y"
-                r="4.5"
-                fill="#ffffff"
-                stroke="#3b82f6"
-                stroke-width="2"
-                class="hover:scale-150 transition-all duration-150 cursor-pointer"
-                style="transform-origin: center; transform-box: fill-box"
-                (mouseenter)="hoveredPoint.set(p)"
-                (mouseleave)="hoveredPoint.set(null)"
-              ></circle>
-              }
-
-              <!-- X Axis Labels -->
-              @for (label of xAxisLabels(); track label.x) {
-              <text
-                [attr.x]="label.x"
-                [attr.y]="195"
-                text-anchor="middle"
-                class="fill-current text-base-content/40 text-[9px] font-mono"
-              >
-                {{ label.label }}
-              </text>
-              }
-            </svg>
-
-            <!-- Tooltip -->
-            @if (hoveredPoint(); as p) {
-            <div
-              class="absolute z-10 bg-base-100 border border-base-300 px-3 py-2 rounded-lg shadow-xl font-sans pointer-events-none transform -translate-x-1/2 -translate-y-full mt-[-8px] transition-all duration-100"
-              [style.left.%]="(p.x / 600) * 100"
-              [style.top.%]="(p.y / 200) * 100"
-            >
-              <div class="text-[10px] text-base-content/50 font-semibold uppercase tracking-wider">
-                {{ formatDate(p.date) }}
-              </div>
-              <div class="text-sm font-bold text-base-content mt-0.5 flex items-center gap-1.5 whitespace-nowrap">
-                <span class="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-                +{{ p.count }} Contacts
-              </div>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-
-      <!-- Right: Donut Chart - Emails Assigned -->
-      <div class="card bg-base-100 border border-base-300 shadow-xl">
-        <div class="card-body p-6 flex flex-col justify-between">
-          <div class="mb-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-                <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
-                Open Conversations
-              </h3>
-              <p class="text-xs text-base-content/50 mt-0.5">Inbox emails assigned by rep</p>
-            </div>
-            <!-- Filter Radios -->
-            <div class="join join-horizontal self-start sm:self-auto border border-base-300">
-              <button
-                class="btn btn-xs join-item"
-                [class.btn-active]="showAllOpen()"
-                [class.btn-neutral]="showAllOpen()"
-                [class.btn-ghost]="!showAllOpen()"
-                (click)="showAllOpen.set(true)"
-              >
-                All Open
-              </button>
-              <button
-                class="btn btn-xs join-item"
-                [class.btn-active]="!showAllOpen()"
-                [class.btn-neutral]="!showAllOpen()"
-                [class.btn-ghost]="showAllOpen()"
-                (click)="showAllOpen.set(false)"
-              >
-                Assigned
-              </button>
-            </div>
-          </div>
-
-          <div class="flex items-center justify-center py-4">
-            @if (assignedRepSlices().length === 0) {
-            <div class="text-sm text-base-content/40 py-10 italic">No open emails assigned.</div>
-            } @if (assignedRepSlices().length > 0) {
-            <div class="relative w-[160px] h-[160px]">
-              <svg
-                width="160"
-                height="160"
-                viewBox="0 0 160 160"
-                class="transform -rotate-90 w-full h-full overflow-visible"
-              >
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="60"
-                  fill="transparent"
-                  stroke="currentColor"
-                  class="text-base-300/30"
-                  stroke-width="14"
-                ></circle>
-                @for (slice of assignedRepSlices(); track slice.name) {
-                <circle
-                  cx="80"
-                  cy="80"
-                  r="60"
-                  fill="transparent"
-                  [attr.stroke]="slice.color"
-                  [attr.stroke-width]="hoveredSlice()?.name === slice.name ? 18 : 14"
-                  [attr.stroke-dasharray]="slice.strokeDash"
-                  [attr.stroke-dashoffset]="slice.strokeOffset"
-                  class="cursor-pointer transition-all duration-200 origin-center"
-                  [style.opacity]="hoveredSlice() && hoveredSlice()?.name !== slice.name ? 0.45 : 1"
-                  (mouseenter)="hoveredSlice.set(slice)"
-                  (mouseleave)="hoveredSlice.set(null)"
-                ></circle>
-                }
-              </svg>
-
-              <!-- Center Text Overlay -->
-              <div
-                class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-2"
-              >
-                @if (hoveredSlice(); as hs) {
-                <span class="text-[10px] text-base-content/50 uppercase font-bold tracking-wider truncate max-w-[110px]"
-                  >{{ hs.name }}</span
-                >
-                <span class="text-xl font-extrabold text-base-content leading-none mt-1">{{ hs.count }}</span>
-                <span class="text-[10px] text-base-content/40 font-mono mt-0.5">{{ hs.percentage }}%</span>
-                } @else {
-                <span class="text-[9px] text-base-content/50 uppercase font-semibold tracking-wider">
-                  {{ showAllOpen() ? 'Total Open' : 'Total Assigned' }}
-                </span>
-                <span class="text-2xl font-extrabold text-base-content leading-none mt-1">{{ donutTotalCount() }}</span>
-                <span class="text-[9px] text-base-content/40 mt-0.5">Conversations</span>
-                }
-              </div>
-            </div>
-            }
-          </div>
-
-          <!-- Legend -->
-          <div class="space-y-1.5 overflow-y-auto max-h-[140px] pr-1">
-            @for (slice of assignedRepSlices(); track slice.name) {
-            <div
-              class="flex items-center justify-between text-xs p-1 rounded-md transition-all duration-150 cursor-pointer animate-fade-in"
-              [class.bg-base-200]="hoveredSlice()?.name === slice.name"
-              (mouseenter)="hoveredSlice.set(slice)"
-              (mouseleave)="hoveredSlice.set(null)"
-            >
-              <div class="flex items-center gap-2">
-                <span class="w-2.5 h-2.5 rounded-full" [style.background-color]="slice.color"></span>
-                <span class="font-semibold text-base-content">{{ slice.name }}</span>
-              </div>
-              <span class="text-base-content/60 font-mono">{{ slice.count }} ({{ slice.percentage }}%)</span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Representative Performance Table -->
-    <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
-      <div class="card-body p-6">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-            <pc-icon name="user-group" class="text-primary" [size]="5"></pc-icon>
-            Representative Performance & Response Stats
-          </h3>
-          <span class="text-xs text-base-content/55">Real-time stats</span>
-        </div>
-
-        <div class="overflow-x-auto">
-          <table class="table table-zebra w-full text-sm">
-            <thead>
-              <tr class="bg-base-200/50">
-                <th>Representative</th>
-                <th class="text-center">Open Emails</th>
-                <th class="text-center">Closed Emails</th>
-                <th class="text-center">Total Handled</th>
-                <th class="text-center">Resolution Rate</th>
-                <th class="text-center">Avg 1st Response</th>
-                <th class="text-center">Avg Time to Close</th>
-                <th class="text-center">Email SLA Breaches</th>
-                <th class="text-center">Task SLA Breaches</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (user of userStats(); track user.user_id) {
-              <tr class="hover">
-                <td class="font-semibold text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-                <td class="text-center font-mono font-semibold text-base-content">{{ user.openCount }}</td>
-                <td class="text-center font-mono text-base-content/70">{{ user.closedCount }}</td>
-                <td class="text-center font-mono text-base-content/70">{{ user.openCount + user.closedCount }}</td>
-                <td class="text-center">
-                  <span
-                    class="badge font-semibold"
-                    [class.badge-success]="user.resolutionRate >= 75"
-                    [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                    [class.badge-error]="user.resolutionRate < 40"
-                  >
-                    {{ user.resolutionRate }}%
-                  </span>
-                </td>
-                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgFirstResponse }}</td>
-                <td class="text-center font-mono text-xs text-base-content/70">{{ user.avgTimeToClose }}</td>
-                <td class="text-center">
-                  @if (user.emailSlaBreaches > 0) {
-                  <div class="badge badge-error badge-sm font-mono font-bold animate-pulse">
-                    {{ user.emailSlaBreaches }}
-                  </div>
-                  } @else {
-                  <div class="badge badge-success badge-sm font-mono font-bold text-white">0</div>
-                  }
-                </td>
-                <td class="text-center">
-                  @if (user.taskSlaBreaches > 0) {
-                  <div class="badge badge-warning badge-sm font-mono font-bold">{{ user.taskSlaBreaches }}</div>
-                  } @else {
-                  <div class="badge badge-success badge-sm font-mono font-bold text-white">0</div>
-                  }
-                </td>
-              </tr>
-              } @empty {
-              <tr>
-                <td colspan="8" class="text-center py-6 text-base-content/40 italic">
-                  No representative performance statistics available.
-                </td>
-              </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bottom Chart: Closed Emails by Rep -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div class="lg:col-span-2 card bg-base-100 border border-base-300 shadow-xl">
-        <div class="card-body p-6">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="font-bold text-lg text-base-content flex items-center gap-2">
-              <pc-icon name="check-circle" class="text-primary" [size]="5"></pc-icon>
-              Emails Closed by Rep
-            </h3>
-            <span class="text-xs text-base-content/50">Performance metrics</span>
-          </div>
-
-          @if (closedRepBars().length === 0) {
-          <div class="text-sm text-base-content/40 py-16 italic text-center">No emails closed by representatives.</div>
-          } @if (closedRepBars().length > 0) {
-          <div class="relative w-full h-[180px]">
-            <svg viewBox="0 0 500 180" class="w-full h-full overflow-visible">
-              @for (bar of closedRepBars(); track bar.name; let idx = $index) {
-              <g>
-                <!-- Label -->
-                <text
-                  x="10"
-                  [attr.y]="bar.y + 14"
-                  fill="currentColor"
-                  class="text-base-content text-xs font-semibold"
-                  text-anchor="start"
-                >
-                  {{ bar.name }}
-                </text>
-                <!-- Bar Background -->
-                <rect
-                  x="130"
-                  [attr.y]="bar.y"
-                  width="360"
-                  height="18"
-                  rx="4"
-                  fill="currentColor"
-                  class="text-base-200/50"
-                ></rect>
-                <!-- Bar Foreground -->
-                <rect
-                  x="130"
-                  [attr.y]="bar.y"
-                  [attr.width]="bar.width"
-                  height="18"
-                  rx="4"
-                  fill="#10b981"
-                  class="transition-all duration-500 ease-out"
-                ></rect>
-                <!-- Value -->
-                <text
-                  [attr.x]="135 + bar.width"
-                  [attr.y]="bar.y + 13"
-                  fill="currentColor"
-                  class="text-base-content text-[11px] font-mono font-bold"
-                >
-                  {{ bar.count }}
-                </text>
-              </g>
-              }
-            </svg>
-          </div>
-          }
-        </div>
-      </div>
-
-      <!-- Quick Info Card -->
-      <div class="card bg-base-200/40 border border-base-300 shadow-xl flex flex-col justify-between">
-        <div class="card-body p-6">
-          <h4 class="font-bold text-base-content flex items-center gap-2 mb-3">
-            <pc-icon name="information-circle" class="text-primary" [size]="5"></pc-icon>
-            Dashboard Insights
-          </h4>
-
-          <!-- Radial Progress resolution rate -->
-          <div class="flex items-center gap-4 p-3 mb-4 rounded-xl border border-base-300 bg-base-100 shadow-xs">
-            <div
-              class="radial-progress text-success font-bold text-xs"
-              [style.--value]="resolutionRate()"
-              [style.--size]="'3.5rem'"
-              [style.--thickness]="'4px'"
-              role="progressbar"
-            >
-              {{ resolutionRate() }}%
-            </div>
-            <div>
-              <div class="text-xs font-bold text-base-content">Email Resolution Rate</div>
-              <div class="text-[10px] text-base-content/50">Closed emails vs total assigned</div>
-            </div>
-          </div>
-
-          <div class="text-xs text-base-content/70 space-y-3 leading-relaxed">
-            <p>
-              • <strong>First Response Time</strong> tracks how long representatives take to send an initial reply or
-              comment on incoming inbox messages.
-            </p>
-            <p>
-              • <strong>Time to Close</strong> measures the average life cycle of an email thread from the time it lands
-              in the inbox until it is marked closed.
-            </p>
-            <p>
-              • <strong>Contacts Growth</strong> logs database entry growth over the last 30 days to reflect outreach
-              campaigns and imports.
-            </p>
-          </div>
-          <div class="alert alert-info py-2 text-[10px] mt-4">
-            <span>Data is aggregated in real-time. Hit "Reload Stats" to fetch the latest analytics.</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+    this._steps.set([
+      {
+        id: 'import',
+        label: 'Import your contacts',
+        done: contacts > 0,
+        evidence: contacts > 0 ? `${contacts.toLocaleString()} imported` : null,
+        route: '/imports',
+        cta: 'Import contacts',
+      },
+      {
+        id: 'verify-sender',
+        label: 'Verify a sending address',
+        done: sender !== null,
+        evidence: sender ? `${sender} verified` : null,
+        route: '/configuration/communications',
+        cta: 'Verify a sending address',
+      },
+      {
+        id: 'first-newsletter',
+        label: 'Send your first newsletter',
+        done: newsletters > 0,
+        evidence: newsletters > 0 ? `${newsletters.toLocaleString()} created` : null,
+        route: '/newsletters/add',
+        cta: 'Send your first newsletter',
+      },
+    ]);
   }
-</div>
+
+  /** Hide the card for good on this device. */
+  public dismiss(): void {
+    this._dismissed.set(true);
+    try {
+      localStorage.setItem(DISMISS_KEY, '1');
+    } catch {
+      /* private mode / storage disabled — a non-persisted dismiss is still fine for the session */
+    }
+  }
+
+  private resolveVerifiedSender(): string | null {
+    const emails = this.settings.getValue<string[]>('communications.verified_emails') ?? [];
+    if (emails.length) return emails[0] ?? null;
+    const domains =
+      this.settings.getValue<{ domain: string; status: string }[]>('communications.verified_domains') ?? [];
+    return domains.find((d) => d.status === 'verified')?.domain ?? null;
+  }
+
+  private async safeCount(fn: () => Promise<number>): Promise<number> {
+    try {
+      return (await fn()) ?? 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  private readDismissed(): boolean {
+    try {
+      return localStorage.getItem(DISMISS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { GettingStartedService } from './services/getting-started.service';
+
+/**
+ * First-run checklist card on the dashboard: "GETTING STARTED · N of 3 done". Completed steps
+ * show a success check with their evidence; the next incomplete step is a primary link. Auto-
+ * hides once all steps are done; dismissible before then (§3). All state is real (see the
+ * service) — nothing is faked.
+ */
+@Component({
+  selector: 'pc-getting-started-card',
+  imports: [Icon, RouterLink],
+  template: `
+    @if (visible()) {
+      <div class="animate-drop card border border-line bg-base-100 shadow-sm">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-center justify-between gap-3">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+              Getting started · {{ doneCount() }} of {{ total() }} done
+            </div>
+            <button
+              type="button"
+              class="text-xs font-medium text-base-content/50 underline underline-offset-2 hover:text-base-content"
+              (click)="dismiss()"
+              i18n="@@gettingStarted.dismiss.label"
+            >
+              Dismiss
+            </button>
+          </div>
+
+          <ul class="flex flex-col gap-2.5">
+            @for (step of steps(); track step.id) {
+              <li class="flex items-center gap-2.5">
+                @if (step.done) {
+                  <pc-icon name="check-circle" [size]="5" class="shrink-0 text-success"></pc-icon>
+                  <span class="text-sm text-base-content/70"
+                    >{{ step.label }}
+                    @if (step.evidence) {
+                      — {{ step.evidence }}
+                    }
+                  </span>
+                } @else if (step.id === nextStep()?.id) {
+                  <pc-icon name="chevron-right" [size]="5" class="shrink-0 text-primary"></pc-icon>
+                  <a [routerLink]="step.route" class="text-sm font-semibold text-primary hover:underline">{{
+                    step.label
+                  }}</a>
+                } @else {
+                  <span class="ml-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-base-300"></span>
+                  <span class="text-sm text-base-content/50">{{ step.label }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+      </div>
+    }
+  `,
+})
+export class GettingStartedCard {
+  private readonly svc = inject(GettingStartedService);
+  private readonly alerts = inject(AlertService);
+
+  protected readonly visible = this.svc.visible;
+  protected readonly steps = this.svc.steps;
+  protected readonly doneCount = this.svc.doneCount;
+  protected readonly total = this.svc.total;
+  protected readonly nextStep = this.svc.nextStep;
+
+  constructor() {
+    void this.svc.refresh();
+  }
+
+  protected dismiss(): void {
+    this.svc.dismiss();
+    this.alerts.showInfo('Getting started hidden. It won’t appear again.');
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-grid.ts
@@ -28477,6 +27832,527 @@ export class ResumeAccountPage extends TRPCService<any> {
 }
 ```
 
+## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
+
+```typescript
+import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
+import { AbstractControl, ValidatorFn } from '@angular/forms';
+import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { TokenService } from '../../services/api/token-service';
+import { getUserErrorMessage } from '../../services/api/user-message';
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
+
+@Component({
+  selector: 'pc-login',
+  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
+  templateUrl: './signin-page.html',
+})
+export class SignInPage implements OnInit, OnDestroy {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly suppressNavigation = signal<boolean>(false);
+  private readonly tokenService = inject(TokenService);
+
+  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
+  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
+  private _loading = createLoadingGate();
+
+  protected readonly step = signal<SignInStep>('email');
+  protected readonly emailData = signal({ email: '' });
+  protected readonly passwordData = signal({ password: '' });
+  protected readonly otpData = signal({ code: '' });
+  protected readonly emailFor2FA = signal<string>('');
+  protected readonly pendingEmail = signal<string>('');
+  protected readonly rateLimitSecondsLeft = signal<number>(0);
+  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
+  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
+  protected readonly resending = signal<boolean>(false);
+  protected readonly resendCooldownSeconds = signal<number>(0);
+  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
+  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
+  protected readonly settingUpPasskey = signal<boolean>(false);
+  protected readonly verificationPending = signal<boolean>(false);
+
+  protected isLoading = this._loading.visible;
+  protected persistence = signal(this.tokenService.getPersistence());
+
+  public readonly emailForm = form(this.emailData, (p) => {
+    required(p.email);
+    email(p.email);
+  });
+
+  public readonly passwordForm = form(this.passwordData, (p) => {
+    required(p.password);
+    minLength(p.password, 8);
+  });
+
+  public readonly otpForm = form(this.otpData, (p) => {
+    required(p.code);
+    pattern(p.code, /^\d{6}$/);
+  });
+
+  constructor() {
+    effect(() => {
+      const user = this.authService.getUserSignal();
+      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
+    });
+  }
+
+  public get emailField() {
+    return this.emailForm.email();
+  }
+
+  public get password() {
+    return this.passwordForm.password();
+  }
+
+  public get code() {
+    return this.otpForm.code();
+  }
+
+  public ngOnInit() {
+    const params = this.route.snapshot.queryParamMap;
+    const emailVal = params.get('email') || '';
+    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      if (emailVal) {
+        this.emailForm.email().value.set(emailVal);
+        this.step.set('password');
+      }
+    }
+  }
+
+  public ngOnDestroy() {
+    this.clearCountdown();
+    this.clearResendCooldown();
+  }
+
+  public goBackToEmail() {
+    this.step.set('email');
+    this.verificationPending.set(false);
+    this.passwordData.update((p) => ({ ...p, password: '' }));
+    this.otpData.update((o) => ({ ...o, code: '' }));
+  }
+
+  public usePasswordInstead() {
+    this.step.set('password');
+  }
+
+  public async continueWithEmail(event?: Event) {
+    event?.preventDefault();
+
+    const rawEmail = this.emailData().email;
+    const emailVal = rawEmail.trim().toLowerCase();
+
+    if (rawEmail !== emailVal) {
+      this.emailForm.email().value.set(emailVal);
+    }
+
+    this.emailForm().markAsTouched();
+
+    await submit(this.emailForm, {
+      action: async () => {
+        let hasPasskeys = false;
+        const end = this._loading.begin();
+        try {
+          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
+        } catch {
+          // network error — fall through to password
+        } finally {
+          end();
+        }
+
+        if (hasPasskeys) {
+          this.step.set('passkey');
+          await this.signInWithPasskey();
+        } else {
+          this.step.set('password');
+        }
+
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.emailForm.email();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
+      },
+    });
+  }
+
+  public async signInWithPasskey() {
+    const end = this._loading.begin();
+    try {
+      const result = await this.authService.signInWithPasskey(this.persistence());
+      if (result.cancelled) {
+        this.step.set('password');
+        return;
+      }
+      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        this.step.set('password');
+        return;
+      }
+      this.handleError(err);
+    } finally {
+      end();
+    }
+  }
+
+  public async signIn(event?: Event) {
+    event?.preventDefault();
+
+    this.tokenService.clearAll();
+
+    const emailVal = this.emailData().email.trim().toLowerCase();
+    const passwordVal = this.passwordData().password;
+
+    this.verificationPending.set(false);
+    this.passwordForm().markAsTouched();
+
+    await submit(this.passwordForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          this.suppressNavigation.set(true);
+          const res = await this.authService.signIn({
+            email: emailVal,
+            password: passwordVal,
+            rememberMe: this.persistence(),
+          });
+          if (res.requires2FA) {
+            this.suppressNavigation.set(false);
+            this.step.set('2fa');
+            this.emailFor2FA.set(res.email || emailVal);
+            this.otpData.update((o) => ({ ...o, code: '' }));
+          } else {
+            const user = this.authService.getUser();
+            const dismissed = !!user?.passkey_setup_dismissed_at;
+            if (!dismissed) {
+              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
+              if (passkeys.length === 0) {
+                this.step.set('passkey-setup');
+                return null;
+              }
+            }
+            this.suppressNavigation.set(false);
+          }
+        } catch (err) {
+          this.suppressNavigation.set(false);
+          this.handleError(err, emailVal);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.passwordForm.password();
+        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
+        this.alertSvc.showError(
+          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
+        );
+      },
+    });
+  }
+
+  public async verify2FA(event?: Event) {
+    event?.preventDefault();
+
+    this.otpForm().markAsTouched();
+
+    await submit(this.otpForm, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const emailVal = this.emailFor2FA();
+          const codeVal = this.otpData().code.trim();
+          await this.authService.verify2FA({
+            email: emailVal,
+            code: codeVal,
+            rememberMe: this.persistence(),
+          });
+        } catch (err) {
+          this.handleError(err);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        const f = this.otpForm.code();
+        const hasRequired = f.errors().some((e) => e.kind === 'required');
+        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
+        const msg = hasRequired
+          ? 'Verification code is required.'
+          : hasPattern
+            ? 'Verification code must be exactly 6 digits.'
+            : 'Please enter a valid verification code.';
+        this.alertSvc.showError(msg);
+      },
+    });
+  }
+
+  public async setupPasskey() {
+    this.settingUpPasskey.set(true);
+    try {
+      const result = await this.authService.registerPasskey();
+      if (result.verified) {
+        this.alertSvc.showSuccess('Passkey set up successfully!');
+      }
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
+      }
+    } finally {
+      this.settingUpPasskey.set(false);
+      this.suppressNavigation.set(false);
+    }
+  }
+
+  public async skipPasskeySetup() {
+    try {
+      await this.authService.dismissPasskeyPrompt();
+    } catch {
+      // non-fatal — still allow navigation
+    }
+    this.suppressNavigation.set(false);
+  }
+
+  public togglePersistence(target: EventTarget | null) {
+    if (!target) return;
+    const checked = (target as HTMLInputElement).checked;
+    this.tokenService.setPersistence(checked);
+    this.persistence.set(checked);
+  }
+
+  public async resendVerification() {
+    const emailVal = this.pendingEmail().trim();
+    if (!emailVal || this.resendCooldownSeconds() > 0) return;
+    this.resending.set(true);
+    try {
+      await this.authService.resendVerificationEmail(emailVal);
+      this.alertSvc.showSuccess('Verification email sent successfully!');
+      this.startResendCooldown(60);
+    } catch (err) {
+      const tRPCData = getTRPCData(err);
+      const retryAfterSec =
+        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
+      if (retryAfterSec) {
+        this.startResendCooldown(retryAfterSec);
+      } else {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
+      }
+    } finally {
+      this.resending.set(false);
+    }
+  }
+
+  private clearCountdown() {
+    if (this._countdownInterval !== null) {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+    }
+  }
+
+  private clearResendCooldown() {
+    if (this._resendCooldownInterval !== null) {
+      clearInterval(this._resendCooldownInterval);
+      this._resendCooldownInterval = null;
+    }
+  }
+
+  private startResendCooldown(seconds: number) {
+    this.clearResendCooldown();
+    this.resendCooldownSeconds.set(seconds);
+    this._resendCooldownInterval = setInterval(() => {
+      const current = this.resendCooldownSeconds();
+      if (current <= 1) {
+        this.resendCooldownSeconds.set(0);
+        this.clearResendCooldown();
+      } else {
+        this.resendCooldownSeconds.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+
+  private handleError(err: unknown, emailVal?: string) {
+    const tRPCData = getTRPCData(err);
+    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
+    const retryAfterSec =
+      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
+      this.parseRetryAfterSec(message);
+    if (retryAfterSec) {
+      this.startRateLimitCountdown(retryAfterSec);
+      return;
+    }
+    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
+    if (emailVal && message.toLowerCase().includes('not verified')) {
+      this.verificationPending.set(true);
+      this.pendingEmail.set(emailVal);
+      this.alertSvc.showError(message);
+    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
+    } else {
+      this.alertSvc.showError(message);
+    }
+  }
+
+  private parseRetryAfterSec(message: string): number | undefined {
+    const match = message?.match(/retry in (\d+) second/i);
+    return match ? parseInt(match[1]!, 10) : undefined;
+  }
+
+  private startRateLimitCountdown(seconds: number) {
+    this.clearCountdown();
+    this.rateLimitSecondsLeft.set(seconds);
+
+    this._countdownInterval = setInterval(() => {
+      const current = this.rateLimitSecondsLeft();
+      if (current < 1) {
+        this.clearCountdown();
+      } else {
+        this.rateLimitSecondsLeft.update((s) => s - 1);
+      }
+    }, 1000);
+  }
+}
+
+export function emailSafeValidator(): ValidatorFn {
+  return (control: AbstractControl) => {
+    const v = (control.value ?? '').toString().trim();
+    return v && EMAIL_SAFE.test(v) ? null : { email: true };
+  };
+}
+
+const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
+function getTRPCData(err: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(err)) return undefined;
+  const originalError = err['originalError'];
+  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
+  return isRecord(err['data']) ? err['data'] : undefined;
+}
+```
+
+## File: apps/frontend/src/app/auth/signup-page/signup-page.ts
+
+```typescript
+import { DecimalPipe } from '@angular/common';
+import { Component, inject, signal } from '@angular/core';
+import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { IAuthUser, signUpInputType } from '../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+import { getUserErrorMessage } from 'apps/frontend/src/app/services/api/user-message';
+
+@Component({
+  selector: 'pc-signup',
+  imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
+  templateUrl: './signup-page.html',
+})
+export class SignUpPage {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly router = inject(Router);
+
+  private _loading = createLoadingGate();
+
+  protected readonly signUpData = signal({
+    organization: '',
+    email: '',
+    password: '',
+    first_name: '',
+    middle_names: '',
+    last_name: '',
+    terms: '',
+  });
+
+  public readonly form = form(this.signUpData, (p) => {
+    required(p.organization);
+    required(p.email);
+    email(p.email);
+    required(p.password);
+    minLength(p.password, 8);
+    required(p.first_name);
+  });
+
+  protected isLoading = this._loading.visible;
+
+  protected passwordBreachNumber = passwordBreachNumber;
+  protected passwordInBreach = passwordInBreach;
+
+  public get email() {
+    return this.form.email();
+  }
+
+  public get firstName() {
+    return this.form.first_name();
+  }
+
+  public get organization() {
+    return this.form.organization();
+  }
+
+  public get password() {
+    return this.form.password();
+  }
+
+  public async join(event?: Event) {
+    event?.preventDefault();
+    this.form().markAsTouched();
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const data = await this.authService.signUp(this.signUpData() as signUpInputType);
+          const user = data as IAuthUser;
+          if (user) {
+            await this.router.navigate(['/signin'], {
+              queryParams: { verificationPending: 'true', email: user.email },
+            });
+          } else {
+            this.alertSvc.showError('Unable to complete signup.');
+          }
+        } catch (err) {
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not complete the signup. Please try again.'));
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please enter all information before continuing.');
+      },
+    });
+  }
+}
+```
+
 ## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.ts
 
 ```typescript
@@ -30195,88 +30071,6 @@ export class EmailBody {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
-
-```html
-<div class="flex text-sm bg-base-100 h-full overflow-hidden">
-  <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
-  <div [class]="folderPanelClass()">
-    <pc-email-folder-list (folderSelected)="onFolder($event)" (newEmail)="openCompose()"></pc-email-folder-list>
-  </div>
-
-  <!-- Email list panel -->
-  @if (!isBodyExpanded()) {
-  <div [class]="listPanelClass()">
-    <!-- Mobile back button -->
-    <div class="md:hidden flex items-center px-2 py-1 border-b border-base-300 bg-base-200 shrink-0">
-      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Folders
-      </button>
-    </div>
-    <pc-email-list
-      class="flex-1 min-h-0 block"
-      (emailSelected)="onEmail($event!)"
-      (reply)="onReply($event)"
-      (replyAll)="onReplyAll($event)"
-      (forward)="onForward($event)"
-    ></pc-email-list>
-  </div>
-  }
-
-  <!-- Right pane: compose OR details -->
-  <div [class]="detailPanelClass()">
-    <!-- Mobile back button -->
-    <div class="md:hidden flex items-center mb-2 shrink-0">
-      <button class="btn btn-ghost btn-xs gap-1" (click)="mobileGoBack()">
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-        Back
-      </button>
-    </div>
-
-    <div class="flex-1 min-h-0 overflow-hidden">
-      @if (isComposing()) {
-      <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3 relative z-20">
-        <pc-compose-email
-          #composer
-          class="h-full"
-          [draftId]="draftIdToLoad()"
-          [initial]="composePrefill()"
-          (finished)="closeCompose()"
-        ></pc-compose-email>
-      </div>
-      } @else {
-      <pc-email-details
-        class="h-full"
-        [email]="selectedEmail()"
-        (reply)="onReply($event)"
-        (replyAll)="onReplyAll($event)"
-        (forward)="onForward($event)"
-      ></pc-email-details>
-      }
-    </div>
-  </div>
-
-  @if (isBodyExpanded() && selectedEmail()) {
-  <!-- Keep your existing BODY overlay when expanded -->
-  <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
-    <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
-      <div class="flex items-center justify-end">
-        <button class="btn btn-ghost btn-md" (click)="toggleExpanded()">
-          <pc-icon name="collapse-content" class="mr-1"></pc-icon>Collapse
-        </button>
-      </div>
-      <div class="flex-1 min-h-0">
-        <div class="h-full border border-base-300 rounded-lg bg-base-100 p-3">
-          <pc-email-body class="h-full" [email]="selectedEmail()!"></pc-email-body>
-        </div>
-      </div>
-    </div>
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.html
 
 ```html
@@ -30370,6 +30164,618 @@ export class EmailBody {
   </div>
   }
 </section>
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
+
+```typescript
+import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
+
+@Component({
+  selector: 'pc-email-folder-list',
+  imports: [Swap, Icon],
+  templateUrl: 'email-folder-list.html',
+})
+export class EmailFolderList implements OnInit {
+  protected readonly store = inject(EmailsStore);
+
+  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
+
+  public readonly folderSelected = output<EmailFolderType>();
+
+  public readonly folders = this.store.allFolders;
+
+  public readonly foldersCollapsed = signal(false);
+
+  public readonly realFoldersCollapsed = signal(true);
+
+  public readonly newEmail = output<void>();
+
+  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
+  protected readonly asideClass = computed(
+    () =>
+      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
+      'w-full md:w-12 ' +
+      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
+  );
+
+  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
+  protected readonly labelClass = computed(
+    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
+  );
+
+  protected readonly countClass = computed(
+    () =>
+      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
+      (this.foldersCollapsed() ? '' : ' lg:block'),
+  );
+
+  protected readonly sectionHeaderClass = computed(
+    () =>
+      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
+      (this.foldersCollapsed() ? '' : ' lg:flex'),
+  );
+
+  protected readonly buttonLabelClass = computed(
+    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
+  );
+
+  protected readonly separatorClass = computed(
+    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
+  );
+
+  public emitNewEmail() {
+    this.newEmail.emit();
+  }
+
+  public getEmailCount(folder: EmailFolderType): number {
+    return (folder as any).email_count ?? 0;
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    try {
+      await this.store.loadAllFoldersWithCounts();
+    } catch (e) {
+      console.error('Failed to load folders with counts', e);
+    }
+  }
+
+  public selectFolder(folder: EmailFolderType): void {
+    this.folderSelected.emit(folder);
+  }
+
+  public toggleFolders(): void {
+    this.foldersCollapsed.update((v) => !v);
+  }
+
+  public toggleRealFolders(): void {
+    this.realFoldersCollapsed.update((v) => !v);
+  }
+
+  protected getIcon(folder: EmailFolderType): PcIconNameType {
+    return folder.icon as PcIconNameType;
+  }
+
+  protected isSelected(folder: EmailFolderType): boolean {
+    return String(folder.id) === String(this.store.currentSelectedFolderId());
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
+
+```html
+<header class="border-b border-base-300 px-4 pb-4">
+  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
+    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
+  </div>
+  <div class="flex items-start gap-3 mt-2">
+    <pc-email-assign [email]="email()"></pc-email-assign>
+    <div class="min-w-0 flex-1"></div>
+
+    <div class="flex items-center gap-1 text-sm text-base-content/70">
+      <span class="whitespace-nowrap pr-2">
+        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
+      </span>
+
+      <div class="border-t border-base-300 my-1 h-0"></div>
+      <div class="hidden md:block">
+        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
+        <div class="dropdown dropdown-end inline-block align-middle">
+          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
+            <pc-icon name="reply" [size]="4"></pc-icon>
+            <pc-icon name="chevron-down" [size]="3"></pc-icon>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+          >
+            <li>
+              <a
+                (click)="handleReply()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleReplyAll()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleForward()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        @if (!isFolderTrash()) {
+
+        <!-- Close/Mark as Done -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="markAsDoneText()"
+          aria-label="Mark as Done"
+          (click)="toggleClosed()"
+        >
+          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
+        </button>
+        } @else {
+        <!-- Restore from Trash -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          data-tip="Restore from Trash"
+          aria-label="Restore from Trash"
+          (click)="restoreFromTrash()"
+        >
+          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
+        </button>
+        }
+
+        <!-- Delete -->
+        <button
+          class="tooltip btn btn-ghost btn-circle btn-sm"
+          [attr.data-tip]="getTrashText()"
+          [attr.aria-label]="getTrashText()"
+          (click)="deleteEmail()"
+        >
+          @if (isFolderTrash()) {
+          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
+          } @else {
+          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
+          }
+        </button>
+      </div>
+      <!-- More Actions Dropdown -->
+      <div class="dropdown dropdown-end">
+        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
+          <svg viewBox="0 0 24 24" class="h-5 w-5">
+            <path
+              fill="currentColor"
+              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
+            />
+          </svg>
+        </button>
+        <ul
+          tabindex="0"
+          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
+        >
+          <li>
+            <a
+              (click)="handleCreateTask()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
+            </a>
+          </li>
+          <div class="border-t border-base-300 my-1 h-0"></div>
+          <li>
+            <a
+              (click)="handleReply()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleReplyAll()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="handleForward()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
+          <li>
+            <a
+              (click)="markAsSpam()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
+            </a>
+          </li>
+          } @else {
+          <li>
+            <a
+              (click)="moveToInbox()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
+            </a>
+          </li>
+          } }
+          <li>
+            <a
+              (click)="handleMarkAsUnread()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              (click)="toggleFavourite()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                [name]="getFavouriteIcon()"
+                [size]="4"
+                [class.text-amber-500]="isFavourite()"
+                [class.text-base-content/60]="!isFavourite()"
+              ></pc-icon>
+              {{ isFavourite() ? 'Unstar' : 'Star' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="toggleClosed()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon
+                name="check-circle"
+                [size]="4"
+                [class.text-success]="isClosed()"
+                [class.text-base-content/60]="!isClosed()"
+              ></pc-icon>
+              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
+            </a>
+          </li>
+          <li>
+            <a
+              (click)="deleteEmail()"
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
+            </a>
+          </li>
+
+          <div class="border-t border-base-300 my-1 h-0"></div>
+
+          <li>
+            <a
+              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
+            >
+              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3 flex items-center gap-3">
+    <div class="avatar">
+      @if (headerData()?.person; as person) {
+      <a
+        [routerLink]="['/people', person.id]"
+        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
+      >
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </a>
+      } @else {
+      <div class="w-10 rounded-full bg-base-200">
+        <span class="flex h-full w-full items-center justify-center font-medium">
+          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
+        </span>
+      </div>
+      }
+    </div>
+
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-1.5 min-w-0">
+        @if (headerData()?.person; as person) {
+        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
+          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
+          (email()!.from_name || email()!.from_email) }}
+        </a>
+        <div class="dropdown dropdown-bottom inline-block">
+          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
+            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
+          </button>
+          <div
+            tabindex="0"
+            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
+          >
+            <div class="space-y-4">
+              <div class="flex items-center gap-3">
+                <div class="avatar placeholder">
+                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
+                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
+                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
+                  @if (person.company_name) {
+                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
+                  }
+                </div>
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-2 text-xs">
+                <div class="flex items-center gap-2">
+                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span class="truncate">{{ person.email }}</span>
+                </div>
+                @if (person.mobile) {
+                <div class="flex items-center gap-2">
+                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
+                  <span>{{ person.mobile }}</span>
+                </div>
+                } @if (person.notes) {
+                <div class="flex flex-col gap-1 mt-1">
+                  <span class="font-semibold text-base-content/60">Notes:</span>
+                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
+                    {{ person.notes }}
+                  </p>
+                </div>
+                }
+              </div>
+
+              <div class="divider my-1"></div>
+
+              <div class="space-y-3">
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Tags:</span
+                  >
+                  <pc-tags
+                    [tags]="personTags()"
+                    [type]="'tag'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add tag...'"
+                    (tagAdded)="onTagAdded($event)"
+                    (tagRemoved)="onTagRemoved($event)"
+                  ></pc-tags>
+                  @if (!personTags().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
+                  }
+                </div>
+
+                <div>
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
+                    >Issues:</span
+                  >
+                  <pc-tags
+                    [tags]="personIssues()"
+                    [type]="'issue'"
+                    [canDelete]="true"
+                    [compact]="true"
+                    [placeholder]="'Add issue...'"
+                    (tagAdded)="onIssueAdded($event)"
+                    (tagRemoved)="onIssueRemoved($event)"
+                  ></pc-tags>
+                  @if (!personIssues().length) {
+                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        } @else {
+        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
+        }
+        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
+      </div>
+
+      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
+      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
+        @for (tag of person.tags; track tag.name) {
+        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        } @for (issue of person.issues; track issue.name) {
+        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+        }
+      </div>
+      } }
+
+      <div class="text-xs text-base-content/60 mt-1">
+        to
+        <div class="dropdown inline-block">
+          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
+            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
+            (getToRecipients().length > 1) {
+            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
+            } } @else { {{ email()!.to_email }} }
+            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+              <path
+                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
+              />
+            </svg>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
+          >
+            <!-- Recipients Section -->
+            <li class="menu-title text-xs">Recipients</li>
+
+            @if (getToRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">To:</li>
+            @for (recipient of getToRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getCcRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">CC:</li>
+            @for (recipient of getCcRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getBccRecipients().length > 0) {
+            <li class="menu-title text-xs mt-2">BCC:</li>
+            @for (recipient of getBccRecipients(); track recipient.email) {
+            <li>
+              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
+            </li>
+            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
+            0) {
+            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
+            }
+
+            <!-- Email Details Section -->
+            <li class="divider mt-3"></li>
+            <li class="menu-title text-xs">Email Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Subject:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Date:</span>
+                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">From:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Reply-To:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
+                </div>
+              </div>
+            </li>
+
+            <!-- Technical Details Section -->
+            <li class="divider mt-2"></li>
+            <li class="menu-title text-xs">Technical Details</li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Message-ID:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Mailed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Security:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Signed-By:</span>
+                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li>
+              <div class="flex flex-col gap-1 py-1">
+                <div class="flex justify-between">
+                  <span class="text-xs font-medium">Return-Path:</span>
+                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="flex items-center gap-1">
+      <pc-icon
+        class="hover:text-primary tooltip tooltip-left cursor-pointer"
+        [attr.data-tip]="'Expand email body'"
+        name="expand-content"
+        [size]="4"
+        (click)="toggleExpand()"
+      ></pc-icon>
+    </div>
+  </div>
+</header>
+
+<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
@@ -30645,114 +31051,6 @@ export class EmailHeader {
     return this.store.toggleEmailFavoriteStatus(e.id, this.isFavourite());
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
-
-```html
-<section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full md:w-48 bg-base-200">
-  <!-- Toolbar -->
-  <div
-    class="flex items-center justify-between border-t border-base-300 px-3 border-double border-b-4 min-h-[33px] shrink-0 bg-base-200"
-  >
-    <span class="text-xs font-semibold text-neutral-content">Sort</span>
-    <div class="dropdown dropdown-end">
-      <label
-        tabindex="0"
-        class="btn btn-ghost btn-xs gap-0.5 px-1 normal-case font-normal text-xs text-base-content/75 hover:bg-base-200 cursor-pointer"
-      >
-        {{ sortOrder() === 'newest' ? 'Newest' : 'Oldest' }}
-        <pc-icon name="chevron-down" [size]="3"></pc-icon>
-      </label>
-      <ul
-        tabindex="0"
-        class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-28 text-xs z-30 border border-base-200"
-      >
-        <li>
-          <a (click)="sortOrder.set('newest')" [class.active]="sortOrder() === 'newest'">Newest First</a>
-        </li>
-        <li>
-          <a (click)="sortOrder.set('oldest')" [class.active]="sortOrder() === 'oldest'">Oldest First</a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <ul #scrollContainer (scroll)="onScroll($event)" class="flex-1 overflow-y-auto min-h-0 email-scrollbar bg-base-100">
-    @for (email of sortedEmails(); track email.id) {
-    <li
-      (click)="selectEmail(email)"
-      (contextmenu)="onContextMenu($event, email)"
-      [class.bg-primary/10]="isSelected(email.id)"
-      class="border-b border-base-200 cursor-pointer px-4 py-3 hover:bg-primary/5 transition-colors duration-150 ease-in-out"
-    >
-      <div
-        class="truncate text-xs flex gap-1 items-center"
-        [class.text-base-content/90]="!email.is_read"
-        [class.text-base-content/60]="email.is_read"
-      >
-        @if (!email.is_read) {
-        <span class="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mr-1" title="Unread"></span>
-        } @if (email.from_email || email.to_email) {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">
-          {{ email.sender_first_name || email.sender_last_name ? (email.sender_first_name + ' ' +
-          (email.sender_last_name || '')).trim() : (email.from_name || email.from_email || email.to_email) }}
-        </span>
-        } @else {
-        <span class="truncate flex-1" [class.font-semibold]="!email.is_read">No recipient</span>
-        }
-        <span class="flex-none"
-          >{{ (email.date_sent || email.updated_at) | timeAgo:{ thresholdDays: 7, style: 'short' } }}</span
-        >
-      </div>
-      <div class="truncate flex gap-1 mt-1" [class.font-semibold]="!email.is_read" [class.font-medium]="email.is_read">
-        @if (email?.subject) {
-        <span class="truncate flex-1">{{ email.subject }}</span>
-        } @else {
-        <span class="truncate flex-1 italic font-light text-base-content/40">No Subject</span>
-        } @if (email.has_attachment) {
-        <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
-        }
-      </div>
-      <div class="truncate font-light text-xs text-base-content/60 mt-0.5">{{ email.preview }}</div>
-    </li>
-    } @empty {
-    <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
-      <pc-icon name="inbox" [size]="8"></pc-icon>
-      <span>No emails</span>
-    </li>
-    } @if (isLoadingMore()) {
-    <li class="flex justify-center p-3 border-b border-base-200">
-      <span class="loading loading-spinner loading-sm text-primary"></span>
-    </li>
-    }
-  </ul>
-
-  @if (showContextMenu() && contextMenuEmail()) {
-  <div
-    class="fixed bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-[220px] py-1 z-[100] select-none"
-    [style.left.px]="contextMenuPosition().x"
-    [style.top.px]="contextMenuPosition().y"
-  >
-    @for (section of menuSections; track $index; let last = $last) {
-    <div class="px-1.5 py-0.5">
-      @for (item of section.items; track item.label) {
-      <button
-        (click)="item.action()"
-        [class]="'w-full flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left ' + (item.extraClass || '')"
-      >
-        <pc-icon [name]="item.icon" [size]="5" [class]="item.iconClass || 'text-base-content/60'"></pc-icon>
-        <span>{{ item.label }}</span>
-      </button>
-      }
-    </div>
-
-    @if (!last) {
-    <div class="border-t border-base-300 my-1"></div>
-    } }
-  </div>
-  }
-</section>
 ```
 
 ## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
@@ -31565,6 +31863,211 @@ export class FundraisingGridComponent {
       valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
     },
   ];
+}
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-article.html
+
+```html
+<div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+  @if (article(); as article) {
+  <div class="grid gap-10 xl:grid-cols-[minmax(0,1fr)_230px]">
+    <article class="min-w-0 max-w-3xl">
+      <header class="mb-7">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-primary">{{ category()?.label }}</p>
+        <h1 class="mt-1 text-2xl font-bold tracking-tight text-base-content">{{ article.title }}</h1>
+        <p class="mt-2 text-[15px] leading-7 text-base-content/60">{{ article.summary }}</p>
+        <p class="mt-3 text-xs tabular-nums text-base-content/50">{{ minutes() }} min read</p>
+      </header>
+
+      <pc-help-blocks [blocks]="article.blocks"></pc-help-blocks>
+
+      <!-- Previous / next within the category -->
+      @if (neighbors().prev || neighbors().next) {
+      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="More in this category">
+        @if (neighbors().prev; as prev) {
+        <a
+          [routerLink]="['/help', prev.id]"
+          class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+        >
+          <div class="card-body gap-0.5 p-4">
+            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
+              <pc-icon name="chevron-left" [size]="4"></pc-icon>
+              Previous
+            </span>
+            <span class="truncate text-sm font-medium text-base-content">{{ prev.title }}</span>
+          </div>
+        </a>
+        } @else {
+        <span class="hidden sm:block" aria-hidden="true"></span>
+        } @if (neighbors().next; as next) {
+        <a
+          [routerLink]="['/help', next.id]"
+          class="card border border-base-300 bg-base-100 text-right shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+        >
+          <div class="card-body items-end gap-0.5 p-4">
+            <span class="flex items-center gap-1 text-[11px] uppercase tracking-wide text-base-content/50">
+              Next
+              <pc-icon name="chevron-right" [size]="4"></pc-icon>
+            </span>
+            <span class="truncate text-sm font-medium text-base-content">{{ next.title }}</span>
+          </div>
+        </a>
+        }
+      </nav>
+      }
+
+      <!-- Related reading -->
+      @if (related().length > 0) {
+      <section class="mt-12">
+        <h2 class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">Related articles</h2>
+        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          @for (rel of related(); track rel.id) {
+          <a
+            [routerLink]="['/help', rel.id]"
+            class="card border border-base-300 bg-base-100 shadow-sm transition-all duration-150 hover:border-primary/40 hover:shadow-md"
+          >
+            <div class="card-body gap-1 p-4">
+              <h3 class="text-sm font-semibold leading-5 text-base-content">{{ rel.title }}</h3>
+              <p class="line-clamp-2 text-xs leading-5 text-base-content/60">{{ rel.summary }}</p>
+            </div>
+          </a>
+          }
+        </div>
+      </section>
+      }
+    </article>
+
+    <!-- On this page -->
+    @if (toc().length >= 3) {
+    <aside class="hidden xl:block">
+      <nav class="sticky top-6 rounded-xl border border-base-300 bg-base-100 p-4 shadow-sm" aria-label="On this page">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-base-content/50">On this page</p>
+        <ul class="mt-2 space-y-0.5">
+          @for (entry of toc(); track entry.id) {
+          <li>
+            <button
+              type="button"
+              class="w-full truncate rounded-lg px-2 py-1.5 text-left text-sm text-base-content/70 transition-colors hover:bg-base-200 hover:text-primary"
+              (click)="scrollTo(entry.id)"
+            >
+              {{ entry.label }}
+            </button>
+          </li>
+          }
+        </ul>
+      </nav>
+    </aside>
+    }
+  </div>
+  } @else {
+  <!-- Guided not-found state -->
+  <div class="mx-auto mt-16 flex max-w-md flex-col items-center gap-3 text-center">
+    <pc-icon name="information-circle" [size]="10" class="text-base-content/20"></pc-icon>
+    <p class="text-sm font-medium text-base-content/80">This help article doesn't exist</p>
+    <p class="text-xs leading-5 text-base-content/50">
+      It may have moved. Search the help center to find what you were looking for.
+    </p>
+    <a routerLink="/help" class="btn btn-primary btn-sm mt-1">Browse all help articles</a>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/help/ui/help-article.ts
+
+```typescript
+import { Component, computed, DestroyRef, effect, ElementRef, inject, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+
+import { categoryNeighbors, getHelpArticle, getHelpCategory, relatedArticles } from '../data/help-content';
+import { readingMinutes, stripHelpInline } from '../data/help-types';
+import { HelpBlocks } from './help-blocks';
+
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import type { HelpArticle, HelpBlock } from '../data/help-types';
+
+interface TocEntry {
+  id: string;
+  label: string;
+}
+
+/** One help article: header, typed content blocks, on-page TOC, related reading. */
+@Component({
+  selector: 'pc-help-article',
+  imports: [HelpBlocks, Icon, RouterLink],
+  templateUrl: './help-article.html',
+})
+export class HelpArticlePage {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
+
+  public readonly id = input.required<string>();
+
+  protected readonly article = computed(() => getHelpArticle(this.id()));
+  protected readonly category = computed(() => {
+    const article = this.article();
+    return article ? getHelpCategory(article.category) : undefined;
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Help', route: '/help' },
+    { label: this.article()?.title ?? 'Article' },
+  ]);
+
+  protected readonly minutes = computed(() => {
+    const article = this.article();
+    return article ? readingMinutes(article) : 0;
+  });
+
+  protected readonly related = computed<HelpArticle[]>(() => {
+    const article = this.article();
+    return article ? relatedArticles(article) : [];
+  });
+
+  protected readonly neighbors = computed(() => {
+    const article = this.article();
+    return article ? categoryNeighbors(article) : {};
+  });
+
+  protected readonly toc = computed<TocEntry[]>(() => {
+    const article = this.article();
+    if (!article) return [];
+    return article.blocks
+      .filter((b): b is Extract<HelpBlock, { kind: 'h2' }> => b.kind === 'h2')
+      .map((b) => ({ id: b.id, label: stripHelpInline(b.text) }));
+  });
+
+  constructor() {
+    // Jump back to the top whenever the reader moves to another article.
+    // Optional call: jsdom (unit tests) doesn't implement scrollIntoView.
+    effect(() => {
+      this.id();
+      this.host.nativeElement.scrollIntoView?.({ block: 'start' });
+    });
+
+    // Hoist the crumb trail into the navbar (no record pager on help pages).
+    effect(() => {
+      this.breadcrumbs.set({
+        crumbs: this.crumbs(),
+        positionLabel: null,
+        hasPrev: false,
+        hasNext: false,
+        prevLabel: 'Previous record',
+        nextLabel: 'Next record',
+        onPrev: () => undefined,
+        onNext: () => undefined,
+      });
+    });
+
+    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
+  }
+
+  protected scrollTo(anchorId: string): void {
+    document.getElementById(anchorId)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }
 }
 ```
 
@@ -33328,421 +33831,435 @@ export class DonationsSettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/summary/summary.ts
+## File: apps/frontend/src/app/experiences/summary/summary.html
 
-```typescript
-import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
-import { DashboardService } from './services/dashboard.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { SlaDetails } from './sla-details';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { GettingStartedCard } from './getting-started-card';
+```html
+<div class="mx-auto max-w-7xl space-y-6 p-6">
+  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="min-w-0">
+      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
+      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
+        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ unassignedOpenCount() }} unassigned conversations</a
+        >
+        need an owner and
+        <button
+          type="button"
+          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          (click)="toggleSlaDetails('tasks')"
+        >
+          {{ totalTaskSlaBreaches() }} tasks
+        </button>
+        have breached SLA. Email response is {{ emailHealthWord() }},
+        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ activeContactsCount() }} new contacts</a
+        >
+        arrived this month@if (draftNewsletter(); as draft) {, and
+        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
+        >}.
+      </p>
+    </div>
 
-@Component({
-  imports: [Icon, SpinOnClickDirective, SlaDetails, StatCard, GettingStartedCard],
-  selector: 'pc-summary',
-  templateUrl: './summary.html',
-})
-export class Summary implements OnInit {
-  private readonly dashboardSvc = inject(DashboardService);
-  private readonly alertSvc = inject(AlertService);
+    <button
+      class="btn btn-outline btn-sm shrink-0 gap-2"
+      pcSpinOnClick
+      (click)="loadStats()"
+      [disabled]="isRefreshing()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Reload stats
+    </button>
+  </div>
 
-  constructor() {
-    effect(() => {
-      const tab = this.defaultSlaTab();
-      const open = this.showSlaDetails();
-      if (open) {
-        if (tab === 'emails') {
-          if (this.breachedEmails().length === 0) {
-            this.emailPage.set(1);
-            void this.loadMoreEmails();
+  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
+  <pc-getting-started-card></pc-getting-started-card>
+
+  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <!-- Task SLA -->
+    @if (totalTaskSlaBreaches() > 0) {
+    <button
+      type="button"
+      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
+      (click)="toggleSlaDetails('tasks')"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
+        <span class="text-sm font-semibold">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs opacity-70">
+        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
+        View the {{ totalTaskSlaBreaches() }} tasks
+      </div>
+    </button>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
+    </div>
+    }
+
+    <!-- Unassigned conversations -->
+    @if (unassignedOpenCount() > 0) {
+    <a
+      routerLink="/inbox"
+      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
+        <span class="text-sm font-semibold">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/60">
+        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
+        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
+    </a>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
+    </div>
+    }
+
+    <!-- Draft newsletter -->
+    @if (draftNewsletter(); as draft) {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
+        <span class="text-sm font-semibold">Draft newsletter</span>
+      </div>
+      <div class="mt-1 truncate text-xs text-base-content/60">
+        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
+    </a>
+    } @else {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
+        <span class="text-sm font-semibold">Draft newsletters</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
+    </a>
+    }
+  </div>
+
+  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
+  @if (showSlaDetails()) {
+  <pc-sla-details
+    [breachedEmails]="breachedEmails()"
+    [breachedTasks]="breachedTasks()"
+    [emailSlaHours]="emailSlaHours()"
+    [taskSlaHours]="taskSlaHours()"
+    [totalEmailBreaches]="totalEmailSlaBreaches()"
+    [totalTaskBreaches]="totalTaskSlaBreaches()"
+    [hasMoreEmails]="hasMoreEmails()"
+    [hasMoreTasks]="hasMoreTasks()"
+    [isLoadingEmails]="isLoadingEmails()"
+    [isLoadingTasks]="isLoadingTasks()"
+    (loadMoreEmails)="loadMoreEmails()"
+    (loadMoreTasks)="loadMoreTasks()"
+    [(activeTab)]="defaultSlaTab"
+  />
+  }
+
+  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
+        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
+        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
+        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
+        {{ avgFirstResponse() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
+        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
+        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
+        +{{ activeContactsCount() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
+    </div>
+  </div>
+
+  <!-- Growth chart (2fr) + Coming up (1fr) -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- New contacts line chart -->
+    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
+        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
+      </div>
+
+      @if (isInitialLoading()) {
+      <div class="skeleton h-[200px] w-full rounded-lg"></div>
+      } @else if (linePoints().length > 0) {
+      <div class="relative h-[200px] w-full">
+        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
+              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+
+          @for (label of yAxisLabels(); track label.y) {
+          <line
+            x1="20"
+            [attr.y1]="label.y"
+            x2="580"
+            [attr.y2]="label.y"
+            stroke="currentColor"
+            class="text-base-content/10"
+            stroke-dasharray="4"
+          ></line>
+          <text
+            [attr.x]="12"
+            [attr.y]="label.y + 3"
+            text-anchor="end"
+            class="fill-current text-[9px] tabular-nums text-base-content/40"
+          >
+            {{ label.value }}
+          </text>
           }
-        } else {
-          if (this.breachedTasks().length === 0) {
-            this.taskPage.set(1);
-            void this.loadMoreTasks();
+
+          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
+          <path
+            [attr.d]="linePath()"
+            fill="none"
+            stroke="var(--color-primary)"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></path>
+
+          @for (p of linePoints(); track p.date) {
+          <circle
+            [attr.cx]="p.x"
+            [attr.cy]="p.y"
+            r="4"
+            fill="var(--color-base-100)"
+            stroke="var(--color-primary)"
+            stroke-width="2"
+            class="cursor-pointer"
+            (mouseenter)="hoveredPoint.set(p)"
+            (mouseleave)="hoveredPoint.set(null)"
+          ></circle>
+          } @for (label of xAxisLabels(); track label.x) {
+          <text
+            [attr.x]="label.x"
+            [attr.y]="195"
+            text-anchor="middle"
+            class="fill-current text-[9px] text-base-content/40"
+          >
+            {{ label.label }}
+          </text>
           }
+        </svg>
+
+        @if (hoveredPoint(); as p) {
+        <div
+          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
+          [style.left.%]="(p.x / 600) * 100"
+          [style.top.%]="(p.y / 200) * 100"
+        >
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
+            {{ formatDate(p.date) }}
+          </div>
+          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
+            <span class="h-2 w-2 rounded-full bg-primary"></span>
+            +{{ p.count }} contacts
+          </div>
+        </div>
         }
+      </div>
+      } @else {
+      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
+        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
+        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Import your people</a
+        >
+      </div>
       }
-    });
-  }
+    </div>
 
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly isRefreshing = signal(false);
+    <!-- Coming up -->
+    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
+      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
 
-  // KPIs
-  protected readonly totalAssignedCount = signal(0);
-  protected readonly unassignedOpenCount = signal(0);
-  protected readonly totalOpenCount = signal(0);
-  protected readonly avgFirstResponse = signal('—');
-  protected readonly avgTimeToClose = signal('—');
-  protected readonly activeContactsCount = signal(0);
-  protected readonly resolutionRate = signal(0);
-
-  // SLA Signals
-  protected readonly unassignedEmailSlaBreaches = signal(0);
-  protected readonly unassignedTaskSlaBreaches = signal(0);
-  protected readonly totalEmailSlaBreaches = signal(0);
-  protected readonly totalTaskSlaBreaches = signal(0);
-
-  protected readonly breachedEmails = signal<any[]>([]);
-  protected readonly breachedTasks = signal<any[]>([]);
-  protected readonly emailPage = signal(1);
-  protected readonly taskPage = signal(1);
-  protected readonly hasMoreEmails = signal(false);
-  protected readonly hasMoreTasks = signal(false);
-  protected readonly isLoadingEmails = signal(false);
-  protected readonly isLoadingTasks = signal(false);
-
-  protected readonly emailSlaHours = signal(24);
-  protected readonly taskSlaHours = signal(24);
-  protected readonly emailSlaWarningThreshold = signal(1);
-  protected readonly emailSlaCriticalThreshold = signal(4);
-  protected readonly taskSlaWarningThreshold = signal(1);
-  protected readonly taskSlaCriticalThreshold = signal(4);
-  protected readonly showSlaDetails = signal(false);
-  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
-
-  protected readonly emailSlaStatus = computed(() => {
-    const breaches = this.totalEmailSlaBreaches();
-    const warning = this.emailSlaWarningThreshold();
-    const critical = this.emailSlaCriticalThreshold();
-    if (breaches === 0) return 'healthy';
-    if (breaches >= critical) return 'critical';
-    if (breaches >= warning) return 'warning';
-    return 'healthy';
-  });
-
-  protected readonly taskSlaStatus = computed(() => {
-    const breaches = this.totalTaskSlaBreaches();
-    const warning = this.taskSlaWarningThreshold();
-    const critical = this.taskSlaCriticalThreshold();
-    if (breaches === 0) return 'healthy';
-    if (breaches >= critical) return 'critical';
-    if (breaches >= warning) return 'warning';
-    return 'healthy';
-  });
-
-  // SVG Chart data
-  protected readonly linePath = signal('');
-  protected readonly areaPath = signal('');
-  protected readonly linePoints = signal<any[]>([]);
-  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
-  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
-  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
-  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
-  protected readonly closedRepBars = signal<any[]>([]);
-  private readonly rawEmailsAssigned = signal<any[]>([]);
-  private readonly rawUnassignedCount = signal<number>(0);
-  protected readonly showAllOpen = signal<boolean>(true);
-
-  protected readonly donutTotalCount = computed(() => {
-    return this.showAllOpen() ? this.totalOpenCount() : this.totalAssignedCount();
-  });
-
-  protected readonly assignedRepSlices = computed(() => {
-    const assigned = this.rawEmailsAssigned();
-    const unassignedCount = this.rawUnassignedCount();
-    const showAll = this.showAllOpen();
-
-    const slicesData: { name: string; count: number; isUnassigned: boolean }[] = [
-      ...assigned.map((a: any) => ({
-        name: `${a.first_name || ''} ${a.last_name || ''}`.trim(),
-        count: Number(a.count || 0),
-        isUnassigned: false,
-      })),
-    ];
-
-    if (showAll && unassignedCount > 0) {
-      slicesData.push({
-        name: 'Unassigned',
-        count: unassignedCount,
-        isUnassigned: true,
-      });
-    }
-
-    const total = slicesData.reduce((acc, cur) => acc + cur.count, 0);
-
-    const radius = 60;
-    const circ = 2 * Math.PI * radius;
-    let cumulativeCount = 0;
-    const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#ef4444', '#ec4899', '#06b6d4'];
-    const unassignedColor = '#64748b'; // Slate gray for Unassigned
-
-    return slicesData.map((s: any, i: number) => {
-      const countVal = s.count;
-      const pct = total > 0 ? countVal / total : 0;
-      const sliceCirc = pct * circ;
-      const strokeDash = `${sliceCirc} ${circ}`;
-      const strokeOffset = -(cumulativeCount / total) * circ;
-      cumulativeCount += countVal;
-      return {
-        name: s.name,
-        count: countVal,
-        percentage: Math.round(pct * 100),
-        strokeDash,
-        strokeOffset,
-        color: s.isUnassigned ? unassignedColor : colors[i % colors.length],
-      };
-    });
-  });
-
-  protected readonly userStats = signal<any[]>([]);
-  protected readonly hoveredPoint = signal<any | null>(null);
-  protected readonly hoveredSlice = signal<any | null>(null);
-
-  public ngOnInit() {
-    void this.loadStats();
-  }
-
-  protected async loadStats() {
-    if (this.isRefreshing()) return;
-    this.isRefreshing.set(true);
-    const start = Date.now();
-    const end = this._loading.begin();
-    try {
-      const stats = await this.dashboardSvc.getStats();
-
-      // Set KPIs
-      const totalAssigned = (stats.emailsAssigned || []).reduce(
-        (acc: number, cur: any) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.totalAssignedCount.set(totalAssigned);
-      this.unassignedOpenCount.set(stats.unassignedCount || 0);
-      this.totalOpenCount.set(stats.totalOpenCount || 0);
-
-      const respHours = stats.avgFirstResponseHours;
-      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
-
-      const closeHours = stats.avgTimeToCloseHours;
-      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
-
-      const totalNewContacts = (stats.contactsGrowth || []).reduce(
-        (acc: number, cur: any) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.activeContactsCount.set(totalNewContacts);
-
-      const totalClosed = (stats.emailsClosed || []).reduce((acc: number, cur: any) => acc + Number(cur.count || 0), 0);
-      const totalEmails = totalAssigned + totalClosed;
-      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
-      this.resolutionRate.set(Math.round(rate));
-
-      // Set SLA breaches
-      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
-      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
-      this.unassignedEmailSlaBreaches.set(unassignedEmails);
-      this.unassignedTaskSlaBreaches.set(unassignedTasks);
-
-      const assignedEmailSla = (stats.userStats || []).reduce(
-        (acc: number, cur: any) => acc + Number(cur.emailSlaBreaches || 0),
-        0,
-      );
-      const assignedTaskSla = (stats.userStats || []).reduce(
-        (acc: number, cur: any) => acc + Number(cur.taskSlaBreaches || 0),
-        0,
-      );
-
-      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
-      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
-
-      // Set settings configurations (breached lists loaded on demand)
-      if (this.showSlaDetails()) {
-        if (this.defaultSlaTab() === 'emails') {
-          this.breachedEmails.set([]);
-          this.emailPage.set(1);
-        } else {
-          this.breachedTasks.set([]);
-          this.taskPage.set(1);
+      @if (upcomingEvents().length > 0) {
+      <ul class="flex flex-col gap-1">
+        @for (ev of upcomingEvents(); track ev.id) {
+        <li>
+          <a
+            routerLink="/events/shifts"
+            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
+          >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
+              <span class="block text-xs text-base-content/55">
+                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
+              </span>
+            </span>
+          </a>
+        </li>
         }
-      } else {
-        this.breachedEmails.set([]);
-        this.emailPage.set(1);
-        this.hasMoreEmails.set(false);
-
-        this.breachedTasks.set([]);
-        this.taskPage.set(1);
-        this.hasMoreTasks.set(false);
+      </ul>
+      } @else {
+      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
+        <a routerLink="/events/shifts" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Plan an event</a
+        >
+      </div>
       }
 
-      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
-      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
-      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
-      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
-      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
-      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
+      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
+        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
+        below
+      </div>
+    </div>
+  </div>
 
-      // Map representative stats
-      const formattedUserStats = (stats.userStats || []).map((u: any) => ({
-        ...u,
-        avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
-        avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
-        emailSlaBreaches: u.emailSlaBreaches || 0,
-        taskSlaBreaches: u.taskSlaBreaches || 0,
-      }));
-      this.userStats.set(formattedUserStats);
+  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
+  <div class="rounded-xl border border-line bg-base-100 p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
+      <span class="text-xs text-base-content/50">Real-time</span>
+    </div>
 
-      // Line Chart: Contacts Growth (last 30 days)
-      const growth = stats.contactsGrowth || [];
-      const maxCount = Math.max(...growth.map((g: any) => g.count), 1);
-      const width = 600;
-      const height = 200;
-      const padding = 20;
-
-      const points = growth.map((g: any, i: number) => {
-        const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
-        const y = height - padding - (g.count / maxCount) * (height - padding * 2);
-        return { x, y, date: g.date, count: g.count };
-      });
-      this.linePoints.set(points);
-
-      if (points.length > 0) {
-        const lPath = points.map((p: any, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-        this.linePath.set(lPath);
-        const firstX = points[0].x;
-        const lastX = points[points.length - 1].x;
-        this.areaPath.set(`${lPath} L ${lastX} ${height - padding} L ${firstX} ${height - padding} Z`);
-      } else {
-        this.linePath.set('');
-        this.areaPath.set('');
-      }
-
-      // Calculate Y axis labels
-      const yLabels = [
-        { y: 20, value: maxCount },
-        { y: 60, value: Math.round(maxCount * 0.75) },
-        { y: 100, value: Math.round(maxCount * 0.5) },
-        { y: 140, value: Math.round(maxCount * 0.25) },
-        { y: 180, value: 0 },
-      ];
-      this.yAxisLabels.set(yLabels);
-
-      // Calculate X axis labels (approx. 5 labels across the timeline)
-      const xLabels: { x: number; label: string }[] = [];
-      if (points.length > 0) {
-        const indices = [
-          0,
-          Math.floor(points.length * 0.25),
-          Math.floor(points.length * 0.5),
-          Math.floor(points.length * 0.75),
-          points.length - 1,
-        ];
-        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
-        for (const idx of uniqueIndices) {
-          const pt = points[idx];
-          let dateStr = pt.date;
-          try {
-            const dateObj = new Date(pt.date);
-            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-          } catch (_e) {}
-          xLabels.push({ x: pt.x, label: dateStr });
-        }
-      }
-      this.xAxisLabels.set(xLabels);
-
-      // Bar Chart: Closed Emails by Rep
-      const closed = stats.emailsClosed || [];
-      const maxClosed = Math.max(...closed.map((c: any) => c.count), 1);
-      const barMaxWidth = 360;
-      this.closedRepBars.set(
-        closed.map((c: any, i: number) => ({
-          name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
-          count: c.count,
-          width: (c.count / maxClosed) * barMaxWidth,
-          y: i * 40 + 10,
-        })),
-      );
-
-      // Set raw data for Donut Chart (assignedRepSlices will compute reactively)
-      this.rawEmailsAssigned.set(stats.emailsAssigned || []);
-      this.rawUnassignedCount.set(stats.unassignedCount || 0);
-    } catch (_err: unknown) {
-      this.alertSvc.showError('Failed to load dashboard metrics');
-    } finally {
-      end();
-      const elapsed = Date.now() - start;
-      const minSpin = 1000; // spin at least once (1 second minimum)
-      if (elapsed < minSpin) {
-        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
-      }
-      this.isRefreshing.set(false);
-    }
-  }
-
-  private formatHours(hours: number): string {
-    if (hours < 1) {
-      const minutes = Math.round(hours * 60);
-      return `${minutes}m`;
-    }
-    if (hours >= 24) {
-      const days = Math.floor(hours / 24);
-      const remainingHours = Math.round(hours % 24);
-      return `${days}d ${remainingHours}h`;
-    }
-    return `${hours.toFixed(1)}h`;
-  }
-
-  protected formatDate(dateStr: string): string {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    } catch (_e) {
-      return dateStr;
-    }
-  }
-
-  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
-    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
-      this.showSlaDetails.set(false);
-    } else {
-      this.defaultSlaTab.set(tab);
-      this.showSlaDetails.set(true);
-    }
-  }
-
-  protected async loadMoreEmails() {
-    if (this.isLoadingEmails()) return;
-    this.isLoadingEmails.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
-      if (this.emailPage() === 1) {
-        this.breachedEmails.set(res.items);
-      } else {
-        this.breachedEmails.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreEmails.set(res.hasMore);
-      this.emailPage.update((p) => p + 1);
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load breached emails');
-    } finally {
-      this.isLoadingEmails.set(false);
-    }
-  }
-
-  protected async loadMoreTasks() {
-    if (this.isLoadingTasks()) return;
-    this.isLoadingTasks.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
-      if (this.taskPage() === 1) {
-        this.breachedTasks.set(res.items);
-      } else {
-        this.breachedTasks.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreTasks.set(res.hasMore);
-      this.taskPage.update((p) => p + 1);
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load breached tasks');
-    } finally {
-      this.isLoadingTasks.set(false);
-    }
-  }
-}
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr
+            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
+          >
+            <th class="py-2 pr-4 font-medium">Representative</th>
+            <th class="py-2 pr-4 text-right font-medium">Open</th>
+            <th class="py-2 pr-4 text-right font-medium">Closed</th>
+            <th class="py-2 pr-4 font-medium">Resolution</th>
+            <th class="py-2 pr-4 font-medium">Avg first response</th>
+            <th class="py-2 font-medium">SLA breaches</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of userStats(); track user.user_id) {
+          <tr class="border-b border-line last:border-0">
+            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
+            <td class="py-2.5 pr-4">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.resolutionRate >= 75"
+                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                [class.badge-error]="user.resolutionRate < 40"
+                >{{ user.resolutionRate }}%</span
+              >
+            </td>
+            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
+            <td class="py-2.5">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
+                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
+                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
+              >
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
@@ -37184,523 +37701,225 @@ export class ResetPasswordPage {
 }
 ```
 
-## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
+## File: apps/frontend/src/app/auth/auth-service.ts
 
 ```typescript
-import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { AbstractControl, ValidatorFn } from '@angular/forms';
-import { FormField, email, form, minLength, pattern, required, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { GENERIC_SIGNIN_ERROR } from '../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
+import { signal, Service } from '@angular/core';
+import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { TRPCService } from '../services/api/trpc-service';
+import { TRPCError } from '@trpc/server';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
-import { TokenService } from '../../services/api/token-service';
-import { getUserErrorMessage } from '../../services/api/user-message';
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+@Service()
+export class AuthService extends TRPCService<'authusers'> {
+  private user = signal<IAuthUser | null>(null);
 
-type SignInStep = 'email' | 'passkey' | 'password' | '2fa' | 'passkey-setup';
+  public async getCurrentUser() {
+    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+    if (user) this.user.set(user);
+    return user;
+  }
 
-@Component({
-  selector: 'pc-login',
-  imports: [FormField, RouterLink, Icon, AuthLayoutComponent],
-  templateUrl: './signin-page.html',
-})
-export class SignInPage implements OnInit, OnDestroy {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly suppressNavigation = signal<boolean>(false);
-  private readonly tokenService = inject(TokenService);
+  public getUser(): IAuthUser | null {
+    return this.user();
+  }
 
-  private _countdownInterval: ReturnType<typeof setInterval> | null = null;
-  private _resendCooldownInterval: ReturnType<typeof setInterval> | null = null;
-  private _loading = createLoadingGate();
+  public getUserSignal() {
+    return this.user;
+  }
 
-  protected readonly step = signal<SignInStep>('email');
-  protected readonly emailData = signal({ email: '' });
-  protected readonly passwordData = signal({ password: '' });
-  protected readonly otpData = signal({ code: '' });
-  protected readonly emailFor2FA = signal<string>('');
-  protected readonly pendingEmail = signal<string>('');
-  protected readonly rateLimitSecondsLeft = signal<number>(0);
-  protected readonly rateLimitMins = computed(() => Math.floor(this.rateLimitSecondsLeft() / 60));
-  protected readonly rateLimitRemSecs = computed(() => this.rateLimitSecondsLeft() % 60);
-  protected readonly resending = signal<boolean>(false);
-  protected readonly resendCooldownSeconds = signal<number>(0);
-  protected readonly resendCooldownMins = computed(() => Math.floor(this.resendCooldownSeconds() / 60));
-  protected readonly resendCooldownRemSecs = computed(() => this.resendCooldownSeconds() % 60);
-  protected readonly settingUpPasskey = signal<boolean>(false);
-  protected readonly verificationPending = signal<boolean>(false);
+  public init() {
+    return this.getCurrentUser();
+  }
 
-  protected isLoading = this._loading.visible;
-  protected persistence = signal(this.tokenService.getPersistence());
+  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+        resolve(result.split(',')[1]!);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
 
-  public readonly emailForm = form(this.emailData, (p) => {
-    required(p.email);
-    email(p.email);
-  });
+    const res = (await this.api.auth.uploadAvatar.mutate({
+      dataBase64,
+      mimeType: file.type as any,
+      filename: file.name,
+    })) as { avatar_url: string };
 
-  public readonly passwordForm = form(this.passwordData, (p) => {
-    required(p.password);
-    minLength(p.password, 8);
-  });
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: res.avatar_url,
+      });
+    }
 
-  public readonly otpForm = form(this.otpData, (p) => {
-    required(p.code);
-    pattern(p.code, /^\d{6}$/);
-  });
+    return res;
+  }
 
-  constructor() {
-    effect(() => {
-      const user = this.authService.getUserSignal();
-      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
+  public async deleteAvatar(): Promise<{ success: boolean }> {
+    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: null,
+      });
+    }
+
+    return res;
+  }
+
+  public async cancelEmailChange() {
+    const response = await this.api.auth.cancelEmailChange.mutate();
+    await this.getCurrentUser();
+    return response;
+  }
+
+  public resetPassword(input: { code: string; password: string }) {
+    // The new-password page owns the error UX for this call.
+    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
     });
   }
 
-  public get emailField() {
-    return this.emailForm.email();
-  }
-
-  public get password() {
-    return this.passwordForm.password();
-  }
-
-  public get code() {
-    return this.otpForm.code();
-  }
-
-  public ngOnInit() {
-    const params = this.route.snapshot.queryParamMap;
-    const emailVal = params.get('email') || '';
-    if (params.get('emailChanged') === 'true' || params.get('verificationPending') === 'true') {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      if (emailVal) {
-        this.emailForm.email().value.set(emailVal);
-        this.step.set('password');
-      }
-    }
-  }
-
-  public ngOnDestroy() {
-    this.clearCountdown();
-    this.clearResendCooldown();
-  }
-
-  public goBackToEmail() {
-    this.step.set('email');
-    this.verificationPending.set(false);
-    this.passwordData.update((p) => ({ ...p, password: '' }));
-    this.otpData.update((o) => ({ ...o, code: '' }));
-  }
-
-  public usePasswordInstead() {
-    this.step.set('password');
-  }
-
-  public async continueWithEmail(event?: Event) {
-    event?.preventDefault();
-
-    const rawEmail = this.emailData().email;
-    const emailVal = rawEmail.trim().toLowerCase();
-
-    if (rawEmail !== emailVal) {
-      this.emailForm.email().value.set(emailVal);
-    }
-
-    this.emailForm().markAsTouched();
-
-    await submit(this.emailForm, {
-      action: async () => {
-        let hasPasskeys = false;
-        const end = this._loading.begin();
-        try {
-          ({ hasPasskeys } = await this.authService.checkEmail(emailVal));
-        } catch {
-          // network error — fall through to password
-        } finally {
-          end();
-        }
-
-        if (hasPasskeys) {
-          this.step.set('passkey');
-          await this.signInWithPasskey();
-        } else {
-          this.step.set('password');
-        }
-
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.emailForm.email();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        this.alertSvc.showError(hasRequired ? 'Email is required.' : 'Please enter a valid email address.');
-      },
+  public sendPasswordResetEmail(input: { email: string }) {
+    // The reset-password page owns the error UX for this call.
+    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
     });
   }
 
-  public async signInWithPasskey() {
-    const end = this._loading.begin();
+  public async signIn(
+    input: signInInputType & { rememberMe?: boolean },
+  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
+    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+
+    if (response && 'requires2FA' in response && response.requires2FA) {
+      return { requires2FA: true, email: response.email };
+    }
+
+    const user = await this.updateTokensAndGetCurrentUser(response);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { requires2FA: false, user };
+  }
+
+  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
+    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return user;
+  }
+
+  public async signOut() {
+    let apiReturn = null;
     try {
-      const result = await this.authService.signInWithPasskey(this.persistence());
-      if (result.cancelled) {
-        this.step.set('password');
-        return;
-      }
-      if (!result.user) throw new Error('Passkey authentication failed. Please try again.');
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') {
-        this.step.set('password');
-        return;
-      }
-      this.handleError(err);
-    } finally {
-      end();
+      apiReturn = await this.api.auth.signOut.mutate();
+    } catch (error) {
+      console.error('Error during sign out:', error);
     }
-  }
 
-  public async signIn(event?: Event) {
-    event?.preventDefault();
-
+    this.user.set(null);
     this.tokenService.clearAll();
+    void this.router.navigate(['/signin']);
 
-    const emailVal = this.emailData().email.trim().toLowerCase();
-    const passwordVal = this.passwordData().password;
-
-    this.verificationPending.set(false);
-    this.passwordForm().markAsTouched();
-
-    await submit(this.passwordForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          this.suppressNavigation.set(true);
-          const res = await this.authService.signIn({
-            email: emailVal,
-            password: passwordVal,
-            rememberMe: this.persistence(),
-          });
-          if (res.requires2FA) {
-            this.suppressNavigation.set(false);
-            this.step.set('2fa');
-            this.emailFor2FA.set(res.email || emailVal);
-            this.otpData.update((o) => ({ ...o, code: '' }));
-          } else {
-            const user = this.authService.getUser();
-            const dismissed = !!user?.passkey_setup_dismissed_at;
-            if (!dismissed) {
-              const passkeys = (await this.authService.listPasskeys().catch(() => [])) as any[];
-              if (passkeys.length === 0) {
-                this.step.set('passkey-setup');
-                return null;
-              }
-            }
-            this.suppressNavigation.set(false);
-          }
-        } catch (err) {
-          this.suppressNavigation.set(false);
-          this.handleError(err, emailVal);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.passwordForm.password();
-        const hasMinLength = f.errors().some((e) => e.kind === 'minLength');
-        this.alertSvc.showError(
-          hasMinLength ? 'Password must be at least 8 characters.' : 'Please enter your password.',
-        );
-      },
-    });
+    return apiReturn;
   }
 
-  public async verify2FA(event?: Event) {
-    event?.preventDefault();
-
-    this.otpForm().markAsTouched();
-
-    await submit(this.otpForm, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const emailVal = this.emailFor2FA();
-          const codeVal = this.otpData().code.trim();
-          await this.authService.verify2FA({
-            email: emailVal,
-            code: codeVal,
-            rememberMe: this.persistence(),
-          });
-        } catch (err) {
-          this.handleError(err);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        const f = this.otpForm.code();
-        const hasRequired = f.errors().some((e) => e.kind === 'required');
-        const hasPattern = f.errors().some((e) => e.kind === 'pattern');
-        const msg = hasRequired
-          ? 'Verification code is required.'
-          : hasPattern
-            ? 'Verification code must be exactly 6 digits.'
-            : 'Please enter a valid verification code.';
-        this.alertSvc.showError(msg);
-      },
-    });
+  public async signUp(input: signUpInputType) {
+    const token = await this.api.auth.signUp.mutate(input);
+    return this.updateTokensAndGetCurrentUser(token);
   }
 
-  public async setupPasskey() {
-    this.settingUpPasskey.set(true);
+  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
+    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
+  }
+
+  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
+    // Callers toast their own success/failure (and handle rate-limit countdowns).
+    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ success: boolean }>;
+  }
+
+  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
+    // The sign-in page silently falls back to the password step if this fails —
+    // a global error toast here would be noise.
+    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ hasPasskeys: boolean }>;
+  }
+
+  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
+    let response: any;
     try {
-      const result = await this.authService.registerPasskey();
-      if (result.verified) {
-        this.alertSvc.showSuccess('Passkey set up successfully!');
-      }
+      response = await startAuthentication({ optionsJSON: options });
     } catch (err) {
-      if (!(err instanceof Error && err.name === 'NotAllowedError')) {
-        this.alertSvc.showError(getUserErrorMessage(err, 'Failed to set up the passkey. Please try again.'));
-      }
-    } finally {
-      this.settingUpPasskey.set(false);
-      this.suppressNavigation.set(false);
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
+      throw err;
     }
-  }
-
-  public async skipPasskeySetup() {
-    try {
-      await this.authService.dismissPasskeyPrompt();
-    } catch {
-      // non-fatal — still allow navigation
+    const token = await (
+      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
+    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
     }
-    this.suppressNavigation.set(false);
+    return { user, cancelled: false };
   }
 
-  public togglePersistence(target: EventTarget | null) {
-    if (!target) return;
-    const checked = (target as HTMLInputElement).checked;
-    this.tokenService.setPersistence(checked);
-    this.persistence.set(checked);
+  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
+    const options = await this.api.auth.passkeyRegistrationOptions.query();
+    const response = await startRegistration({ optionsJSON: options as any });
+    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
+      verified: boolean;
+    };
   }
 
-  public async resendVerification() {
-    const emailVal = this.pendingEmail().trim();
-    if (!emailVal || this.resendCooldownSeconds() > 0) return;
-    this.resending.set(true);
-    try {
-      await this.authService.resendVerificationEmail(emailVal);
-      this.alertSvc.showSuccess('Verification email sent successfully!');
-      this.startResendCooldown(60);
-    } catch (err) {
-      const tRPCData = getTRPCData(err);
-      const retryAfterSec =
-        (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
-        this.parseRetryAfterSec(err instanceof Error && err.message ? err.message : '');
-      if (retryAfterSec) {
-        this.startResendCooldown(retryAfterSec);
-      } else {
-        this.alertSvc.showError(getUserErrorMessage(err, 'Could not send the verification email. Please try again.'));
-      }
-    } finally {
-      this.resending.set(false);
+  public listPasskeys() {
+    return this.api.auth.listPasskeys.query();
+  }
+
+  public deletePasskey(id: string) {
+    return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
+  }
+
+  public updatePasskeyName(id: string, friendlyName: string) {
+    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
+  }
+
+  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
+    if (!token || token instanceof TRPCError) {
+      throw token;
     }
-  }
-
-  private clearCountdown() {
-    if (this._countdownInterval !== null) {
-      clearInterval(this._countdownInterval);
-      this._countdownInterval = null;
-    }
-  }
-
-  private clearResendCooldown() {
-    if (this._resendCooldownInterval !== null) {
-      clearInterval(this._resendCooldownInterval);
-      this._resendCooldownInterval = null;
-    }
-  }
-
-  private startResendCooldown(seconds: number) {
-    this.clearResendCooldown();
-    this.resendCooldownSeconds.set(seconds);
-    this._resendCooldownInterval = setInterval(() => {
-      const current = this.resendCooldownSeconds();
-      if (current <= 1) {
-        this.resendCooldownSeconds.set(0);
-        this.clearResendCooldown();
-      } else {
-        this.resendCooldownSeconds.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-
-  private handleError(err: unknown, emailVal?: string) {
-    const tRPCData = getTRPCData(err);
-    const message = getUserErrorMessage(err, 'Something went wrong, please try again');
-    const retryAfterSec =
-      (typeof tRPCData?.['retryAfterSec'] === 'number' ? tRPCData['retryAfterSec'] : undefined) ??
-      this.parseRetryAfterSec(message);
-    if (retryAfterSec) {
-      this.startRateLimitCountdown(retryAfterSec);
-      return;
-    }
-    const code = typeof tRPCData?.['code'] === 'string' ? tRPCData['code'] : undefined;
-    if (emailVal && message.toLowerCase().includes('not verified')) {
-      this.verificationPending.set(true);
-      this.pendingEmail.set(emailVal);
-      this.alertSvc.showError(message);
-    } else if (emailVal && (code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-      this.alertSvc.showError(GENERIC_SIGNIN_ERROR);
-    } else {
-      this.alertSvc.showError(message);
-    }
-  }
-
-  private parseRetryAfterSec(message: string): number | undefined {
-    const match = message?.match(/retry in (\d+) second/i);
-    return match ? parseInt(match[1]!, 10) : undefined;
-  }
-
-  private startRateLimitCountdown(seconds: number) {
-    this.clearCountdown();
-    this.rateLimitSecondsLeft.set(seconds);
-
-    this._countdownInterval = setInterval(() => {
-      const current = this.rateLimitSecondsLeft();
-      if (current < 1) {
-        this.clearCountdown();
-      } else {
-        this.rateLimitSecondsLeft.update((s) => s - 1);
-      }
-    }, 1000);
-  }
-}
-
-export function emailSafeValidator(): ValidatorFn {
-  return (control: AbstractControl) => {
-    const v = (control.value ?? '').toString().trim();
-    return v && EMAIL_SAFE.test(v) ? null : { email: true };
-  };
-}
-
-const EMAIL_SAFE = /^(?!.*\.\.)(?!.*\.$)[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-/** Extract the tRPC error `data` payload (e.g. rate-limit metadata) from a caught error. */
-function getTRPCData(err: unknown): Record<string, unknown> | undefined {
-  if (!isRecord(err)) return undefined;
-  const originalError = err['originalError'];
-  if (isRecord(originalError) && isRecord(originalError['data'])) return originalError['data'];
-  return isRecord(err['data']) ? err['data'] : undefined;
-}
-```
-
-## File: apps/frontend/src/app/auth/signup-page/signup-page.ts
-
-```typescript
-import { DecimalPipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
-import { form, submit, required, email, minLength, FormField } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUser, signUpInputType } from '../../../../../../libs/common/src';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
-import { getUserErrorMessage } from 'apps/frontend/src/app/services/api/user-message';
-
-@Component({
-  selector: 'pc-signup',
-  imports: [DecimalPipe, FormField, Icon, RouterModule, AuthLayoutComponent],
-  templateUrl: './signup-page.html',
-})
-export class SignUpPage {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly router = inject(Router);
-
-  private _loading = createLoadingGate();
-
-  protected readonly signUpData = signal({
-    organization: '',
-    email: '',
-    password: '',
-    first_name: '',
-    middle_names: '',
-    last_name: '',
-    terms: '',
-  });
-
-  public readonly form = form(this.signUpData, (p) => {
-    required(p.organization);
-    required(p.email);
-    email(p.email);
-    required(p.password);
-    minLength(p.password, 8);
-    required(p.first_name);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  protected passwordBreachNumber = passwordBreachNumber;
-  protected passwordInBreach = passwordInBreach;
-
-  public get email() {
-    return this.form.email();
-  }
-
-  public get firstName() {
-    return this.form.first_name();
-  }
-
-  public get organization() {
-    return this.form.organization();
-  }
-
-  public get password() {
-    return this.form.password();
-  }
-
-  public async join(event?: Event) {
-    event?.preventDefault();
-    this.form().markAsTouched();
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const data = await this.authService.signUp(this.signUpData() as signUpInputType);
-          const user = data as IAuthUser;
-          if (user) {
-            await this.router.navigate(['/signin'], {
-              queryParams: { verificationPending: 'true', email: user.email },
-            });
-          } else {
-            this.alertSvc.showError('Unable to complete signup.');
-          }
-        } catch (err) {
-          this.alertSvc.showError(getUserErrorMessage(err, 'Could not complete the signup. Please try again.'));
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        this.alertSvc.showError('Please enter all information before continuing.');
-      },
-    });
+    this.tokenService.set(token);
+    return this.getCurrentUser();
   }
 }
 ```
@@ -38062,616 +38281,681 @@ export class EmailActivities {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
 
 ```typescript
-import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
-import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
-import { Swap } from '@uxcommon/components/swap/swap';
 
+import { EmailsService } from '../../services/emails-service';
 import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
+import { EmailStateStore } from '../../services/store/email-state.store';
+import { EmailBody } from '../email-body/email-body';
+import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
+import { EmailDetails } from '../email-details/email-details';
+import { EmailFolderList } from '../email-folder-list/email-folder-list';
+import { EmailList } from '../email-list/email-list';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { AuthService } from '@frontend/auth/auth-service';
 
 @Component({
-  selector: 'pc-email-folder-list',
-  imports: [Swap, Icon],
-  templateUrl: 'email-folder-list.html',
+  selector: 'pc-email-client',
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
+  host: {
+    class: 'block h-full',
+    '(document:keydown)': 'handleDocumentKeydown($event)',
+  },
+  templateUrl: 'email-client.html',
 })
-export class EmailFolderList implements OnInit {
+export class EmailClient {
+  private readonly composer = viewChild<ComposeEmailComponent>('composer');
+
+  private authService = inject(AuthService);
+
   protected readonly store = inject(EmailsStore);
+  private readonly stateStore = inject(EmailStateStore);
+  private readonly emailSvc = inject(EmailsService);
 
-  protected trackByFolderId = (_: number, f: EmailFolderType) => String(f.id);
+  protected composePrefill = signal<ComposeInitial | null>(null);
+  protected draftIdToLoad = signal<string | null>(null);
+  protected isComposing = signal(false);
 
-  public readonly folderSelected = output<EmailFolderType>();
+  protected mobileView = this.stateStore.mobilePanelView;
 
-  public readonly folders = this.store.allFolders;
-
-  public readonly foldersCollapsed = signal(false);
-
-  public readonly realFoldersCollapsed = signal(true);
-
-  public readonly newEmail = output<void>();
-
-  // Responsive Tailwind class strings — CSS handles breakpoint, signal handles manual toggle
-  protected readonly asideClass = computed(
-    () =>
-      'bg-base-200 border-r border-base-300 group flex flex-col transition-all duration-50 h-full ' +
-      'w-full md:w-12 ' +
-      (this.foldersCollapsed() ? 'lg:w-12 lg:hover:w-48' : 'lg:w-48'),
+  protected folderPanelClass = computed(() =>
+    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
   );
 
-  // Labels: visible on small (< md); hidden on md (collapsed); on lg+ hidden unless hovered or not collapsed
-  protected readonly labelClass = computed(
-    () => 'block md:hidden lg:group-hover:block' + (this.foldersCollapsed() ? '' : ' lg:block'),
+  protected listPanelClass = computed(() =>
+    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
   );
 
-  protected readonly countClass = computed(
-    () =>
-      'text-xs tabular-nums font-normal block md:hidden lg:group-hover:block' +
-      (this.foldersCollapsed() ? '' : ' lg:block'),
+  protected detailPanelClass = computed(() =>
+    this.mobileView() === 'detail'
+      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
+      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:p-4 md:pt-2 md:relative md:z-10',
   );
 
-  protected readonly sectionHeaderClass = computed(
-    () =>
-      'px-3 py-1.5 flex items-center justify-between text-[10px] font-bold tracking-wider text-neutral-content uppercase cursor-pointer hover:text-primary select-none flex md:hidden lg:group-hover:flex' +
-      (this.foldersCollapsed() ? '' : ' lg:flex'),
-  );
-
-  protected readonly buttonLabelClass = computed(
-    () => 'inline md:hidden lg:group-hover:inline' + (this.foldersCollapsed() ? '' : ' lg:inline'),
-  );
-
-  protected readonly separatorClass = computed(
-    () => 'h-px bg-base-300 my-2' + (this.foldersCollapsed() ? ' mx-1' : ' mx-1 lg:mx-3'),
-  );
-
-  public emitNewEmail() {
-    this.newEmail.emit();
+  constructor() {
+    effect(() => {
+      const id = this.emailId();
+      if (id) {
+        void untracked(() => this.loadEmailData(id));
+      }
+    });
   }
 
-  public getEmailCount(folder: EmailFolderType): number {
-    return (folder as any).email_count ?? 0;
-  }
+  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
 
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
+  private async loadEmailData(emailId: string): Promise<void> {
     try {
-      await this.store.loadAllFoldersWithCounts();
-    } catch (e) {
-      console.error('Failed to load folders with counts', e);
+      // 1. Fetch the email header/details from backend to know its folder_id
+      const res = await this.emailSvc.getEmailHeader(emailId);
+      if (res && res.email) {
+        const folderId = res.email.folder_id;
+
+        // 2. Ensure folders list is loaded
+        let folders = this.store.allFolders();
+        if (!folders || folders.length === 0) {
+          folders = await this.store.loadAllFoldersWithCounts();
+        }
+
+        // 3. Find the folder
+        const folder = folders.find((f) => String(f.id) === String(folderId));
+        if (folder) {
+          const emailObj: EmailType = {
+            id: String(res.email.id),
+            folder_id: String(res.email.folder_id),
+            updated_at: new Date(res.email.updated_at),
+            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
+            is_favourite: !!res.email.is_favourite,
+            attachment_count: res.email.attachment_count ?? 0,
+            status: res.email.status || 'open',
+            from_email: res.email.from_email ?? undefined,
+            to_email: res.email.to_email ?? undefined,
+            subject: res.email.subject ?? undefined,
+            preview: res.email.preview ?? undefined,
+            assigned_to: res.email.assigned_to ?? undefined,
+            has_attachment: !!res.email.has_attachment,
+            is_read: !!(res.email as any).is_read,
+          };
+
+          // Add to store's normalized map so it is available immediately
+          this.stateStore.replaceEmail(emailObj.id, emailObj);
+
+          // Select the folder and email
+          this.store.selectFolder(folder);
+          this.store.selectEmail(emailObj);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to pre-select email from notification link', err);
     }
   }
 
-  public selectFolder(folder: EmailFolderType): void {
-    this.folderSelected.emit(folder);
+  public readonly emails = this.store.emailsInSelectedFolder;
+
+  public readonly isBodyExpanded = this.store.isBodyExpanded;
+
+  public readonly selectedEmail = this.store.currentSelectedEmail;
+
+  public readonly selectedFolderId = this.store.currentSelectedFolderId;
+
+  public closeCompose() {
+    this.isComposing.set(false);
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(null);
   }
 
-  public toggleFolders(): void {
-    this.foldersCollapsed.update((v) => !v);
+  public newEmail() {
+    this.openCompose();
   }
 
-  public toggleRealFolders(): void {
-    this.realFoldersCollapsed.update((v) => !v);
+  // handle send from composer
+  public async onComposeSend(_payload: any) {
+    // TODO: integrate with your EmailActionsStore/EmailsService
+    // Example:
+    // await this.emailActions.sendEmail(payload);
+    this.isComposing.set(false);
+    // Optionally refresh current folder, show toast, etc.
   }
 
-  protected getIcon(folder: EmailFolderType): PcIconNameType {
-    return folder.icon as PcIconNameType;
+  public async onEmail(email: EmailType | null): Promise<void> {
+    const folderId = this.store.currentSelectedFolderId();
+    if (this.isComposing()) {
+      try {
+        const c = this.composer();
+        if (c?.form.dirty) {
+          await c.saveDraft();
+        }
+      } catch (e) {
+        console.error('Failed to save draft', e);
+        alert('Failed to save your draft. Please check your connection or copy your work.');
+        // Abort the function here.
+        // Do not close the composer or navigate to the new email.
+        return;
+      }
+      this.closeCompose();
+    }
+
+    // Always update the store selection so the list can reflect it
+    this.store.selectEmail(email);
+    this.mobileView.set('detail');
+
+    // In the drafts folder, also open the composer for the selected draft
+    if (folderId === ALL_FOLDERS.DRAFTS && email) {
+      this.draftIdToLoad.set(String(email.id));
+      this.isComposing.set(true);
+    }
   }
 
-  protected isSelected(folder: EmailFolderType): boolean {
-    return String(folder.id) === String(this.store.currentSelectedFolderId());
+  public onFolder(folder: EmailFolderType): void {
+    this.store.selectFolder(folder);
+    this.mobileView.set('list');
+  }
+
+  public mobileGoBack(): void {
+    if (this.isComposing()) {
+      this.closeCompose();
+    }
+    if (this.mobileView() === 'detail') {
+      this.mobileView.set('list');
+    } else if (this.mobileView() === 'list') {
+      this.mobileView.set('folders');
+    }
+  }
+
+  public onForward(email: EmailType) {
+    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
+    this.openCompose({ subject });
+  }
+
+  public onReply(email: EmailType) {
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to: email.from_email || '', subject });
+  }
+
+  public async onReplyAll(email: EmailType) {
+    const header = this.store.getEmailHeaderById(email.id)();
+    const recipients = new Set<string>();
+
+    const currentUser = await this.authService.getCurrentUser();
+    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
+
+    if (email.from_email) recipients.add(email.from_email);
+
+    header?.email?.to_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+    header?.email?.cc_list?.forEach((r: any) => {
+      if (r?.email) recipients.add(r.email);
+    });
+
+    const to = Array.from(recipients)
+      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
+      .join(', ');
+
+    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
+    this.openCompose({ to, subject });
+  }
+
+  public openCompose(prefill?: ComposeInitial | null) {
+    this.isBodyExpanded.set(false); // ensure body overlay is closed
+    this.draftIdToLoad.set(null);
+    this.composePrefill.set(prefill ?? null);
+    this.isComposing.set(true);
+    this.mobileView.set('detail');
+  }
+
+  public toggleExpanded(): void {
+    this.store.toggleBodyExpanded();
+  }
+
+  protected handleDocumentKeydown(ev: KeyboardEvent): void {
+    // Existing behaviour: Escape collapses an expanded body first.
+    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
+      this.store.toggleBodyExpanded();
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+
+    // Stay out of the way while composing, typing into a field, or when a
+    // command/ctrl/alt modifier is held (Cmd+K search, the global `g` chord…).
+    if (this.isComposing() || this.isTypingTarget(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) {
+      return;
+    }
+
+    // Shortcuts that work without a selection.
+    switch (ev.key) {
+      case 'c':
+        ev.preventDefault();
+        this.openCompose();
+        return;
+      case 'j':
+        ev.preventDefault();
+        this.selectRelative(1);
+        return;
+      case 'k':
+        ev.preventDefault();
+        this.selectRelative(-1);
+        return;
+    }
+
+    // Everything below acts on the currently selected email.
+    const email = this.selectedEmail();
+    if (!email) return;
+
+    switch (ev.key) {
+      case 'r':
+        ev.preventDefault();
+        this.onReply(email);
+        return;
+      case 'a':
+        ev.preventDefault();
+        void this.onReplyAll(email);
+        return;
+      case 'f':
+        ev.preventDefault();
+        this.onForward(email);
+        return;
+      case 'e':
+        ev.preventDefault();
+        void this.store.updateEmailStatus(email.id, 'closed');
+        return;
+      case 's':
+        ev.preventDefault();
+        void this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+        return;
+      case 'I': // Shift+I — mark as read
+        ev.preventDefault();
+        void this.store.toggleEmailReadStatus(email.id, true);
+        return;
+      case 'U': // Shift+U — mark as unread
+        ev.preventDefault();
+        void this.store.toggleEmailReadStatus(email.id, false);
+        return;
+      case '#':
+        ev.preventDefault();
+        void this.store.deleteEmail(email.id);
+        return;
+      case 'Enter':
+      case 'o':
+        ev.preventDefault();
+        this.toggleExpanded();
+        return;
+      case 'u':
+        ev.preventDefault();
+        this.store.selectEmail(null);
+        this.mobileView.set('list');
+        return;
+    }
+  }
+
+  /** Move the selection to the next (`delta > 0`) or previous email in the folder. */
+  private selectRelative(delta: number): void {
+    const list = this.emails();
+    if (!list.length) return;
+    const current = this.selectedEmail();
+    const currentIdx = current ? list.findIndex((e) => String(e.id) === String(current.id)) : -1;
+    const nextIdx = currentIdx === -1 ? (delta > 0 ? 0 : list.length - 1) : currentIdx + delta;
+    const next = list[nextIdx];
+    if (!next) return;
+    void this.onEmail(next);
+  }
+
+  /** True when the event originates from a field the user is typing into. */
+  private isTypingTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (target.isContentEditable) return true;
+    return target.getAttribute('role') === 'textbox';
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
+## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
 
-```html
-<header class="border-b border-base-300 px-4 pb-4">
-  <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
-    <h1 class="text-2xl font-semibold truncate">{{ email()!.subject }}</h1>
-  </div>
-  <div class="flex items-start gap-3 mt-2">
-    <pc-email-assign [email]="email()"></pc-email-assign>
-    <div class="min-w-0 flex-1"></div>
+```typescript
+import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
-    <div class="flex items-center gap-1 text-sm text-base-content/70">
-      <span class="whitespace-nowrap pr-2">
-        {{ (getDateSent() || email()!.updated_at) | date:'EEE, MMM d, h:mm a' }}
-      </span>
+import { EmailsStore } from '../../services/store/emailstore';
+import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { PcIconNameType } from '@icons/icons.index';
 
-      <div class="border-t border-base-300 my-1 h-0"></div>
-      <div class="hidden md:block">
-        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
-        <div class="dropdown dropdown-end inline-block align-middle">
-          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
-            <pc-icon name="reply" [size]="4"></pc-icon>
-            <pc-icon name="chevron-down" [size]="3"></pc-icon>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
-          >
-            <li>
-              <a
-                (click)="handleReply()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleReplyAll()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
-              </a>
-            </li>
-            <li>
-              <a
-                (click)="handleForward()"
-                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
-              >
-                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-              </a>
-            </li>
-          </ul>
-        </div>
+interface ContextMenuItem {
+  label: string;
+  icon: PcIconNameType;
+  action: () => void;
+  iconClass?: string; // The '?' makes it optional
+  extraClass?: string; // The '?' makes it optional
+}
 
-        @if (!isFolderTrash()) {
+interface ContextMenuSection {
+  show: boolean;
+  items: ContextMenuItem[];
+}
 
-        <!-- Close/Mark as Done -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="markAsDoneText()"
-          aria-label="Mark as Done"
-          (click)="toggleClosed()"
-        >
-          <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
-        </button>
-        } @else {
-        <!-- Restore from Trash -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Restore from Trash"
-          aria-label="Restore from Trash"
-          (click)="restoreFromTrash()"
-        >
-          <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
-        </button>
-        }
+@Component({
+  selector: 'pc-email-list',
+  imports: [Icon, TimeAgoPipe],
+  templateUrl: 'email-list.html',
+  host: {
+    '(document:click)': 'closeContextMenu()',
+    '(document:keydown.escape)': 'closeContextMenu()',
+  },
+})
+export class EmailList {
+  private readonly store = inject(EmailsStore);
+  private readonly alertSvc = inject(AlertService);
 
-        <!-- Delete -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          [attr.data-tip]="getTrashText()"
-          [attr.aria-label]="getTrashText()"
-          (click)="deleteEmail()"
-        >
-          @if (isFolderTrash()) {
-          <pc-icon [size]="5" name="trash-forever" class="text-error"></pc-icon>
-          } @else {
-          <pc-icon [size]="4" name="trash" class="text-error"></pc-icon>
-          }
-        </button>
-      </div>
-      <!-- More Actions Dropdown -->
-      <div class="dropdown dropdown-end">
-        <button tabindex="0" class="btn btn-ghost btn-circle btn-sm" aria-label="More">
-          <svg viewBox="0 0 24 24" class="h-5 w-5">
-            <path
-              fill="currentColor"
-              d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 6a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
-            />
-          </svg>
-        </button>
-        <ul
-          tabindex="0"
-          class="menu dropdown-content bg-base-100 border border-base-200 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] w-48 p-1 z-[1] select-none"
-        >
-          <li>
-            <a
-              (click)="handleCreateTask()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
-            </a>
-          </li>
-          <div class="border-t border-base-300 my-1 h-0"></div>
-          <li>
-            <a
-              (click)="handleReply()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply" class="text-base-content/60"></pc-icon> Reply
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleReplyAll()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="handleForward()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="forward" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
-            </a>
-          </li>
+  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
 
-          <div class="border-t border-base-300 my-1 h-0"></div>
+  public readonly emailSelected = output<EmailType>();
 
-          @if (!isFolderTrash()) { @if (!isFolderSpam()) {
-          <li>
-            <a
-              (click)="markAsSpam()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="exclamation-triangle" [size]="4" class="text-base-content/60"></pc-icon> Mark as spam
-            </a>
-          </li>
-          } @else {
-          <li>
-            <a
-              (click)="moveToInbox()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="inbox" [size]="4" class="text-base-content/60"></pc-icon> Not spam
-            </a>
-          </li>
-          } }
-          <li>
-            <a
-              (click)="handleMarkAsUnread()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon> Mark as unread
-            </a>
-          </li>
+  public readonly reply = output<EmailType>();
+  public readonly replyAll = output<EmailType>();
+  public readonly forward = output<EmailType>();
 
-          <div class="border-t border-base-300 my-1 h-0"></div>
+  public readonly showContextMenu = signal<boolean>(false);
+  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
+  public readonly contextMenuEmail = signal<EmailType | null>(null);
 
-          <li>
-            <a
-              (click)="toggleFavourite()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                [name]="getFavouriteIcon()"
-                [size]="4"
-                [class.text-amber-500]="isFavourite()"
-                [class.text-base-content/60]="!isFavourite()"
-              ></pc-icon>
-              {{ isFavourite() ? 'Unstar' : 'Star' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="toggleClosed()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon
-                name="check-circle"
-                [size]="4"
-                [class.text-success]="isClosed()"
-                [class.text-base-content/60]="!isClosed()"
-              ></pc-icon>
-              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
-            </a>
-          </li>
-          <li>
-            <a
-              (click)="deleteEmail()"
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon name="trash" [size]="4" class="text-error"></pc-icon> Delete
-            </a>
-          </li>
+  public readonly emails = this.store.emailsInSelectedFolder;
 
-          <div class="border-t border-base-300 my-1 h-0"></div>
+  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
 
-          <li>
-            <a
-              class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
-            >
-              <pc-icon [size]="4" name="print" class="text-base-content/60"></pc-icon> Print
-            </a>
-          </li>
-        </ul>
-      </div>
-    </div>
-  </div>
+  protected readonly isLoadingMore = this.store.isLoadingMore;
+  protected readonly ALL_FOLDERS = ALL_FOLDERS;
 
-  <div class="mt-3 flex items-center gap-3">
-    <div class="avatar">
-      @if (headerData()?.person; as person) {
-      <a
-        [routerLink]="['/people', person.id]"
-        class="w-10 rounded-full bg-base-200 hover:opacity-80 transition-opacity"
-      >
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </a>
-      } @else {
-      <div class="w-10 rounded-full bg-base-200">
-        <span class="flex h-full w-full items-center justify-center font-medium">
-          {{ (email()!.from_name || email()!.from_email)![0] | uppercase }}
-        </span>
-      </div>
+  protected onScroll(event: Event): void {
+    this.closeContextMenu();
+    const el = event.target as HTMLElement;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
+      void this.store.loadNextPage();
+    }
+  }
+
+  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
+
+  public readonly sortedEmails = computed(() => {
+    const list = [...this.emails()];
+    const order = this.sortOrder();
+    return list.sort((a, b) => {
+      const timeA = new Date(a.date_sent || a.updated_at).getTime();
+      const timeB = new Date(b.date_sent || b.updated_at).getTime();
+      return order === 'newest' ? timeB - timeA : timeA - timeB;
+    });
+  });
+
+  constructor() {
+    let lastFolderId: string | null = null;
+
+    // Auto-select the first email when the folder changes or the current selection is removed.
+    effect(() => {
+      const folderId = this.store.currentSelectedFolderId();
+      const emails = this.sortedEmails();
+      const selectedId = this.store.currentSelectedEmailId();
+
+      const folderChanged = folderId !== lastFolderId;
+      lastFolderId = folderId;
+
+      const container = this.scrollContainer();
+      if (folderChanged && container) {
+        container.nativeElement.scrollTop = 0;
       }
-    </div>
 
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-1.5 min-w-0">
-        @if (headerData()?.person; as person) {
-        <a [routerLink]="['/people', person.id]" class="font-semibold text-primary hover:underline cursor-pointer">
-          {{ person.first_name || person.last_name ? (person.first_name + ' ' + (person.last_name || '')).trim() :
-          (email()!.from_name || email()!.from_email) }}
-        </a>
-        <div class="dropdown dropdown-bottom inline-block">
-          <button tabindex="0" class="btn btn-ghost btn-circle btn-xs hover:bg-base-200" aria-label="Person details">
-            <pc-icon name="chevron-down" [size]="3" class="text-base-content/60"></pc-icon>
-          </button>
-          <div
-            tabindex="0"
-            class="dropdown-content z-50 card card-compact w-96 p-4 shadow-xl bg-base-100 border border-base-300 text-base-content mt-1 animate-drop"
-          >
-            <div class="space-y-4">
-              <div class="flex items-center gap-3">
-                <div class="avatar placeholder">
-                  <div class="w-10 rounded-full bg-primary/10 text-primary font-bold">
-                    <span class="flex h-full w-full items-center justify-center text-sm font-semibold">
-                      {{ (person.first_name || person.last_name || person.email || '?')[0] | uppercase }}
-                    </span>
-                  </div>
-                </div>
-                <div>
-                  <h3 class="font-bold text-sm">{{ person.first_name }} {{ person.last_name }}</h3>
-                  @if (person.company_name) {
-                  <p class="text-xs text-base-content/60">{{ person.company_name }}</p>
-                  }
-                </div>
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-2 text-xs">
-                <div class="flex items-center gap-2">
-                  <pc-icon name="envelope" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span class="truncate">{{ person.email }}</span>
-                </div>
-                @if (person.mobile) {
-                <div class="flex items-center gap-2">
-                  <pc-icon name="phone" [size]="4" class="text-base-content/60"></pc-icon>
-                  <span>{{ person.mobile }}</span>
-                </div>
-                } @if (person.notes) {
-                <div class="flex flex-col gap-1 mt-1">
-                  <span class="font-semibold text-base-content/60">Notes:</span>
-                  <p class="italic text-base-content/85 line-clamp-3 bg-base-200/50 p-1.5 rounded">
-                    {{ person.notes }}
-                  </p>
-                </div>
-                }
-              </div>
-
-              <div class="divider my-1"></div>
-
-              <div class="space-y-3">
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Tags:</span
-                  >
-                  <pc-tags
-                    [tags]="personTags()"
-                    [type]="'tag'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add tag...'"
-                    (tagAdded)="onTagAdded($event)"
-                    (tagRemoved)="onTagRemoved($event)"
-                  ></pc-tags>
-                  @if (!personTags().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No tags</span>
-                  }
-                </div>
-
-                <div>
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50 block mb-1"
-                    >Issues:</span
-                  >
-                  <pc-tags
-                    [tags]="personIssues()"
-                    [type]="'issue'"
-                    [canDelete]="true"
-                    [compact]="true"
-                    [placeholder]="'Add issue...'"
-                    (tagAdded)="onIssueAdded($event)"
-                    (tagRemoved)="onIssueRemoved($event)"
-                  ></pc-tags>
-                  @if (!personIssues().length) {
-                  <span class="text-xs italic text-base-content/40 block mt-1">No issues</span>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        } @else {
-        <span class="font-semibold truncate"> {{ email()!.from_name || email()!.from_email }} </span>
+      // If the list is empty, clear any existing selection and bail out.
+      if (emails.length === 0) {
+        if (selectedId) {
+          // The selected email was removed; clear selection so parent can react.
+          this.store.selectEmail(null);
         }
-        <span class="text-xs text-base-content/60 truncate"> &lt;{{ email()!.from_email }}&gt; </span>
-      </div>
+        return;
+      }
 
-      @if (headerData()?.person; as person) { @if (person.tags?.length || person.issues?.length) {
-      <div class="flex flex-wrap gap-1.5 mt-1 items-center">
-        @for (tag of person.tags; track tag.name) {
-        <pc-tagitem [name]="tag.name" [color]="tag.color" [canDelete]="false" [compact]="true"></pc-tagitem>
-        } @for (issue of person.issues; track issue.name) {
-        <pc-tagitem [name]="issue.name" [color]="issue.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+      if (folderId) {
+        // Auto-select the first email only if:
+        // 1. The folder has changed, OR
+        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
+        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
+
+        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
+          // Update the store directly — do NOT emit through emailSelected output, which would
+          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
+          this.store.selectEmail(emails[0]!);
         }
-      </div>
-      } }
+      }
+    });
+  }
 
-      <div class="text-xs text-base-content/60 mt-1">
-        to
-        <div class="dropdown inline-block">
-          <button tabindex="0" class="btn btn-link btn-sm font-light no-underline align-baseline p-0 h-auto min-h-0">
-            @if (getToRecipients().length > 0) { {{ getToRecipients()[0].name || getToRecipients()[0].email }} @if
-            (getToRecipients().length > 1) {
-            <span class="text-base-content/40">+{{ getToRecipients().length - 1 }} more</span>
-            } } @else { {{ email()!.to_email }} }
-            <svg class="ml-1 h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 10.94l3.71-3.71a.75.75 0 1 1 1.06 1.06l-4.24 4.24a.75.75 0 0 1-1.06 0L5.21 8.29a.75.75 0 0 1 .02-1.08z"
-              />
-            </svg>
-          </button>
-          <ul
-            tabindex="0"
-            class="menu menu-sm dropdown-content z-[1] mt-1 w-96 rounded-box bg-base-100 p-2 shadow max-h-96 overflow-y-auto"
-          >
-            <!-- Recipients Section -->
-            <li class="menu-title text-xs">Recipients</li>
+  public isSelected(id: string): boolean {
+    return this.store.currentSelectedEmailId() === id;
+  }
 
-            @if (getToRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">To:</li>
-            @for (recipient of getToRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getCcRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">CC:</li>
-            @for (recipient of getCcRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getBccRecipients().length > 0) {
-            <li class="menu-title text-xs mt-2">BCC:</li>
-            @for (recipient of getBccRecipients(); track recipient.email) {
-            <li>
-              <a class="truncate text-xs">{{ recipient.name || recipient.email }} &lt;{{ recipient.email }}&gt;</a>
-            </li>
-            } } @if (getToRecipients().length === 0 && getCcRecipients().length === 0 && getBccRecipients().length ===
-            0) {
-            <li><a class="truncate text-xs">{{ email()!.to_email }}</a></li>
-            }
+  public selectEmail(email: EmailType): void {
+    this.emailSelected.emit(email);
+  }
 
-            <!-- Email Details Section -->
-            <li class="divider mt-3"></li>
-            <li class="menu-title text-xs">Email Details</li>
+  public onContextMenu(event: MouseEvent, email: EmailType): void {
+    event.preventDefault();
+    this.selectEmail(email);
+    this.contextMenuEmail.set(email);
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Subject:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().subject }}</span>
-                </div>
-              </div>
-            </li>
+    // Dynamic viewport boundary collision checking
+    const menuWidth = 192; // equivalent to w-48
+    const menuHeight = 280; // approximate maximum height
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Date:</span>
-                  <span class="text-xs ml-2">{{ getHeaderInfo().date | date:'MMM d, y, h:mm a' }}</span>
-                </div>
-              </div>
-            </li>
+    let x = event.clientX;
+    let y = event.clientY;
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">From:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().from }}</span>
-                </div>
-              </div>
-            </li>
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 8;
+    }
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 8;
+    }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Reply-To:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().replyTo }}</span>
-                </div>
-              </div>
-            </li>
+    this.contextMenuPosition.set({ x, y });
+    this.showContextMenu.set(true);
+  }
 
-            <!-- Technical Details Section -->
-            <li class="divider mt-2"></li>
-            <li class="menu-title text-xs">Technical Details</li>
+  get menuSections(): ContextMenuSection[] {
+    const email = this.contextMenuEmail();
+    if (!email) return [];
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Message-ID:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().messageId }}</span>
-                </div>
-              </div>
-            </li>
+    return [
+      // Section 1: Actions
+      {
+        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
+        items: [
+          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
+          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
+          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
+        ] as ContextMenuItem[],
+      },
+      // Section 2: Spam & Read
+      {
+        show: true,
+        items: [
+          ...(!this.isFolderTrash()
+            ? [
+                {
+                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
+                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
+                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
+                },
+              ]
+            : []),
+          {
+            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
+            icon: 'envelope',
+            action: () => void this.toggleReadStatus(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 3: Status & Delete
+      {
+        show: true,
+        items: [
+          {
+            label: email.is_favourite ? 'Unstar' : 'Star',
+            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
+            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
+            action: () => void this.toggleFavourite(),
+          },
+          {
+            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
+            icon: 'check-circle',
+            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
+            action: () => void this.toggleClosed(),
+          },
+          ...(this.isFolderTrash()
+            ? [
+                {
+                  label: 'Restore to Inbox',
+                  icon: 'restore-from-trash',
+                  action: () => void this.restoreFromTrash(),
+                },
+              ]
+            : []),
+          {
+            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
+            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
+            iconClass: 'text-error',
+            action: () => void this.deleteEmail(),
+          },
+        ] as ContextMenuItem[],
+      },
+      // Section 4: Print
+      {
+        show: true,
+        items: [
+          {
+            label: 'Print',
+            icon: 'print',
+            extraClass: '!py-1',
+            action: () => {
+              window.print();
+            },
+          },
+        ] as ContextMenuItem[],
+      },
+    ].filter((section) => section.show && section.items.length > 0);
+  }
+  public closeContextMenu(): void {
+    this.showContextMenu.set(false);
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Mailed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().mailedBy }}</span>
-                </div>
-              </div>
-            </li>
+  protected handleReply(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.reply.emit(email);
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Security:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().security }}</span>
-                </div>
-              </div>
-            </li>
+  protected handleReplyAll(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.replyAll.emit(email);
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Signed-By:</span>
-                  <span class="text-xs truncate ml-2">{{ getHeaderInfo().signedBy }}</span>
-                </div>
-              </div>
-            </li>
+  protected handleForward(): void {
+    const email = this.contextMenuEmail();
+    this.closeContextMenu();
+    if (email) this.forward.emit(email);
+  }
 
-            <li>
-              <div class="flex flex-col gap-1 py-1">
-                <div class="flex justify-between">
-                  <span class="text-xs font-medium">Return-Path:</span>
-                  <span class="text-xs truncate ml-2 font-mono">{{ getHeaderInfo().returnPath }}</span>
-                </div>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-    </div>
-    <div class="flex items-center gap-1">
-      <pc-icon
-        class="hover:text-primary tooltip tooltip-left cursor-pointer"
-        [attr.data-tip]="'Expand email body'"
-        name="expand-content"
-        [size]="4"
-        (click)="toggleExpand()"
-      ></pc-icon>
-    </div>
-  </div>
-</header>
+  protected isFolderTrash(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.TRASH;
+  }
 
-<pc-email-create-task-dialog #createTaskDialog [email]="email()"></pc-email-create-task-dialog>
+  protected isFolderSpam(): boolean {
+    return this.currentFolderId() === ALL_FOLDERS.SPAM;
+  }
+
+  protected async toggleReadStatus() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update read status');
+    }
+  }
+
+  protected async toggleFavourite() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update favorite status');
+    }
+  }
+
+  protected async toggleClosed() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    const currentStatus = email.status || 'open';
+    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
+    try {
+      await this.store.updateEmailStatus(email.id, newStatus);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to update email status');
+    }
+  }
+
+  protected async deleteEmail() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.deleteEmail(email.id);
+    } catch (_e) {
+      this.alertSvc.showError('Failed to delete email');
+    }
+  }
+
+  protected restoreFromTrash() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    void this.store.restoreFromTrash(email.id);
+  }
+
+  protected async moveToInbox() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
+      this.alertSvc.showSuccess('Email moved to Inbox');
+    } catch (_e) {
+      this.alertSvc.showError('Failed to move email to Inbox');
+    }
+  }
+
+  protected async markAsSpam() {
+    const email = this.contextMenuEmail();
+    if (!email) return;
+    this.closeContextMenu();
+    try {
+      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
+      this.alertSvc.showSuccess('Email marked as spam');
+    } catch (_e) {
+      this.alertSvc.showError('Failed to mark email as spam');
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
@@ -39951,6 +40235,615 @@ export class PersonConnections implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/settings/settings-page.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
+import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
+import { AuthService } from '../../auth/auth-service';
+import { UserService } from '../../services/user.service';
+import { HouseholdsService } from '../households/services/households-service';
+import { AccountSettingsComponent } from './account/account-settings';
+import { BillingSettingsComponent } from './billing/billing-settings';
+import { DomainSettingsComponent } from './domains/domains-settings';
+import { DonationsSettingsComponent } from './donations/donations-settings';
+import { GoogleSyncSettings } from './google-sync/google-sync-settings';
+import { MsSyncSettings } from './ms-sync/ms-sync-settings';
+import { PasskeySettingsComponent } from './security/passkey-settings';
+import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
+import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
+
+interface SectionFieldState {
+  config: SettingsFieldConfig;
+  controlName: string;
+}
+
+interface SectionState {
+  config: SettingsSectionConfig;
+  fields: SectionFieldState[];
+  form: any;
+  payload: WritableSignal<Record<string, any>>;
+}
+
+@Component({
+  selector: 'pc-settings-page',
+  imports: [
+    FormField,
+    Icon,
+    MsSyncSettings,
+    GoogleSyncSettings,
+    BillingSettingsComponent,
+    DomainSettingsComponent,
+    DonationsSettingsComponent,
+    AccountSettingsComponent,
+    PasskeySettingsComponent,
+    DatePipe,
+  ],
+  templateUrl: './settings-page.html',
+})
+export class SettingsPage implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+
+  protected readonly currentMode: 'settings' | 'configuration';
+  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
+  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
+  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
+  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
+    const lastTime = this.lastFingerprintRecomputeTime();
+    if (!lastTime) return null;
+    const nextAvailable = new Date(lastTime.getTime());
+    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
+    return nextAvailable;
+  });
+  protected readonly hasLoaded = signal(false);
+  protected readonly householdsSvc = inject(HouseholdsService);
+  protected readonly isFingerprintRecomputeCooldown = computed(() => {
+    const nextAvailable = this.fingerprintRecomputeNextAvailable();
+    if (!nextAvailable) return false;
+    return Date.now() < nextAvailable.getTime();
+  });
+  protected readonly lastRequestedEmail = signal<string | null>(null);
+  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
+  protected readonly recomputingFingerprints = signal(false);
+  protected readonly savingSectionId = signal<string | null>(null);
+  protected readonly sectionStates: SectionState[];
+  protected readonly sections = SETTINGS_SECTIONS;
+  protected readonly selectedSectionId = signal<string>('');
+  protected readonly senderEmailInput = signal('');
+  protected readonly settingsSvc = inject(SettingsService);
+  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
+  protected readonly verifiedEmailsList = computed<string[]>(() => {
+    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+  });
+  protected readonly verifyingEmail = signal<string | null>(null);
+
+  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
+  protected trackSection = (_: number, section: SectionState) => section.config.id;
+
+  public readonly section = input<string>();
+
+  constructor() {
+    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration') || 'settings';
+    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
+
+    effect(() => {
+      const s = this.section();
+      if (s) {
+        this.selectedSectionId.set(s);
+      } else {
+        if (this.currentMode === 'settings') {
+          this.selectedSectionId.set('notifications');
+        } else if (this.currentMode === 'configuration') {
+          this.selectedSectionId.set('organization');
+        }
+      }
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      this.applySnapshot(snapshot, false);
+    });
+
+    effect(() => {
+      const snapshot = this.snapshotSignal();
+      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
+
+      const commsSection = this.sections.find((s) => s.id === 'communications');
+      if (commsSection) {
+        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
+        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
+
+        const options = [
+          { label: 'Select a verified email', value: '' },
+          ...verifiedEmails.map((email) => ({ label: email, value: email })),
+        ];
+
+        if (fromEmailField) {
+          fromEmailField.options = options;
+        }
+        if (replyToField) {
+          replyToField.options = options;
+        }
+      }
+    });
+  }
+
+  protected get visibleSections(): SectionState[] {
+    if (this.currentMode === 'settings') {
+      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
+    }
+    if (this.currentMode === 'configuration') {
+      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
+    }
+    return [];
+  }
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.settingsSvc.load();
+    this.hasLoaded.set(true);
+    this.applySnapshot(this.settingsSvc.snapshot(), true);
+    await this.loadUserPrefs();
+    await this.loadLastFingerprintRecomputeTime();
+  }
+
+  protected copyToClipboard(val: string | null | undefined) {
+    if (!val) return;
+    navigator.clipboard
+      .writeText(val)
+      .then(() => {
+        this.alerts.showSuccess('Copied to clipboard!');
+      })
+      .catch(() => {
+        this.alerts.showError('Failed to copy to clipboard.');
+      });
+  }
+
+  protected generateWebhookCredentials(section: SectionState) {
+    const key = 'pk_live_' + this.randomHex(24);
+    const secret = 'whsec_' + this.randomHex(32);
+
+    section.payload.update((p) => ({
+      ...p,
+      integrations_webhook_api_key: key,
+      integrations_webhook_api_secret: secret,
+    }));
+
+    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
+    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
+    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
+  }
+
+  protected getNotificationGroups(section: SectionState) {
+    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
+    const fields = section.fields;
+
+    for (const field of fields) {
+      if (field.config.key.endsWith('_in_app')) continue;
+
+      const inAppControlName = `${field.controlName}_in_app`;
+      const inAppField = fields.find((f) => f.controlName === inAppControlName);
+
+      groups.push({
+        label: field.config.label,
+        helper: field.config.helper || '',
+        emailField: field,
+        inAppField: inAppField,
+      });
+    }
+    return groups;
+  }
+
+  protected isEmailVerified(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+    return verified.includes(email.toLowerCase().trim());
+  }
+
+  protected isSaving(section: SectionState) {
+    return this.savingSectionId() === section.config.id;
+  }
+
+  protected isSectionDirty(section: SectionState) {
+    return section.form().dirty();
+  }
+
+  protected isSectionInvalid(section: SectionState) {
+    return section.form().invalid();
+  }
+
+  protected isSelected(sectionId: string) {
+    return this.selectedSectionId() === sectionId;
+  }
+
+  protected isVerifyCooldown(email: string | null | undefined): boolean {
+    if (!email) return false;
+    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
+    if (!lastTime) return false;
+    return Date.now() - lastTime < 60000;
+  }
+
+  protected async loadLastFingerprintRecomputeTime() {
+    try {
+      const res = await this.householdsSvc.getLastFingerprintRecomputation();
+      if (res && res.lastRunAt) {
+        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
+      } else {
+        this.lastFingerprintRecomputeTime.set(null);
+      }
+    } catch (err) {
+      console.error('Failed to load last fingerprint recompute time', err);
+    }
+  }
+
+  protected async loadUserPrefs() {
+    try {
+      const currentUser = await this.auth.getCurrentUser();
+      if (currentUser) {
+        const user = await this.userService.getProfileById(currentUser.id);
+        this.currentUserDetail.set(user);
+        const prefs = user.notification_preferences || {
+          mention_in_comment: true,
+          mention_in_comment_in_app: true,
+          task_assigned: true,
+          task_assigned_in_app: true,
+          task_due: true,
+          task_due_in_app: true,
+          person_assigned: true,
+          person_assigned_in_app: true,
+          export_ready: true,
+          export_ready_in_app: true,
+          import_summary: true,
+          import_summary_in_app: true,
+        };
+        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
+        if (notifState) {
+          notifState.payload.update((p) => ({
+            ...p,
+            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
+            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
+            notifications_task_assigned: prefs.task_assigned ?? true,
+            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
+            notifications_task_due: prefs.task_due ?? true,
+            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
+            notifications_person_assigned: prefs.person_assigned ?? true,
+            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
+            notifications_export_ready: prefs.export_ready ?? true,
+            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
+            notifications_import_summary: prefs.import_summary ?? true,
+            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
+          }));
+          notifState.form().reset();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load user preferences in settings page', err);
+    }
+  }
+
+  protected async recomputeAddressFingerprints() {
+    if (this.isFingerprintRecomputeCooldown()) {
+      this.alerts.showError('Fingerprints can only be recomputed once a month.');
+      return;
+    }
+
+    this.recomputingFingerprints.set(true);
+    try {
+      await this.householdsSvc.recomputeAddressFingerprints();
+      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
+      await this.loadLastFingerprintRecomputeTime();
+    } catch (err) {
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
+      );
+    } finally {
+      this.recomputingFingerprints.set(false);
+    }
+  }
+
+  protected resetSection(section: SectionState) {
+    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
+    if (section.config.id === 'notifications') {
+      void this.loadUserPrefs();
+    }
+  }
+
+  protected async saveSection(section: SectionState) {
+    if (!section.form().dirty()) return;
+
+    const entries: SettingsEntryType[] = [];
+    for (const field of section.fields) {
+      const fieldSignal = (section.form as any)[field.controlName]();
+      if (!fieldSignal.dirty()) continue;
+
+      // Skip user notification preferences from tenant settings upsert
+      if (section.config.id === 'notifications') {
+        continue;
+      }
+
+      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
+      entries.push({ key: field.config.key, value });
+    }
+
+    this.savingSectionId.set(section.config.id);
+    try {
+      if (entries.length > 0) {
+        const snapshot = await this.settingsSvc.upsert(entries);
+        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
+      }
+
+      if (section.config.id === 'notifications') {
+        const user = this.currentUserDetail();
+        if (user) {
+          const raw = section.payload();
+          const parseBool = (val: any) => val === true || val === 'true';
+          const payload: UpdateAuthUserType = {
+            notification_preferences: {
+              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
+              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
+              task_assigned: parseBool(raw['notifications_task_assigned']),
+              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
+              task_due: parseBool(raw['notifications_task_due']),
+              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
+              person_assigned: parseBool(raw['notifications_person_assigned']),
+              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
+              export_ready: parseBool(raw['notifications_export_ready']),
+              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
+              import_summary: parseBool(raw['notifications_import_summary']),
+              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
+            },
+          };
+          await this.userService.updateUserProfile(user.id, payload);
+          await this.loadUserPrefs();
+        }
+      }
+      this.alerts.showSuccess('Settings updated successfully');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to save settings';
+      this.alerts.showError(message);
+    } finally {
+      this.savingSectionId.set(null);
+    }
+  }
+
+  protected selectSection(sectionId: string) {
+    void this.router.navigate(['/', this.currentMode, sectionId]);
+  }
+
+  protected async verifySenderEmail(email: string | null | undefined) {
+    if (!email) return;
+    const normalized = email.toLowerCase().trim();
+
+    if (this.isVerifyCooldown(normalized)) {
+      this.alerts.showError('Please wait at least one minute before requesting verification again.');
+      return;
+    }
+
+    this.verifyingEmail.set(normalized);
+
+    try {
+      await this.settingsSvc.requestEmailVerification(normalized);
+      this.lastVerificationTimes.update((prev) => ({
+        ...prev,
+        [normalized]: Date.now(),
+      }));
+      this.startEmailCooldown(normalized);
+      this.lastRequestedEmail.set(normalized);
+      this.alerts.showSuccess(
+        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
+      );
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
+    } finally {
+      this.verifyingEmail.set(null);
+    }
+  }
+
+  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
+    const sections = target ? [target] : this.sectionStates;
+
+    for (const state of sections) {
+      const nextPayload = { ...state.payload() };
+      let changed = false;
+
+      for (const field of state.fields) {
+        const fieldSignal = (state.form as any)[field.controlName]();
+        if (!resetDirty && fieldSignal.dirty()) continue;
+
+        // Skip user notification preferences from tenant settings snapshot update
+        if (state.config.id === 'notifications') {
+          continue;
+        }
+
+        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
+        if (nextPayload[field.controlName] !== incoming) {
+          nextPayload[field.controlName] = incoming;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        state.payload.set(nextPayload);
+      }
+
+      if (resetDirty) {
+        state.form().reset();
+      }
+    }
+  }
+
+  private buildSectionState(section: SettingsSectionConfig): SectionState {
+    const initialPayload: Record<string, any> = {};
+    const fieldStates: SectionFieldState[] = [];
+
+    for (const field of section.fields) {
+      const controlName = this.controlNameFor(field.key);
+      initialPayload[controlName] = this.normalizeIncomingValue(
+        field,
+        this.settingsSvc.getValue(field.key, field.defaultValue),
+      );
+      fieldStates.push({ config: field, controlName });
+    }
+
+    const payload = signal(initialPayload);
+    const formSignal = form(payload, (p) => {
+      for (const field of section.fields) {
+        const controlName = this.controlNameFor(field.key);
+        if (field.type === 'email') {
+          email(p[controlName]);
+        }
+        if (field.type === 'url') {
+          pattern(p[controlName], /^https?:\/\//i);
+        }
+        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
+          validate(p[controlName], (ctx) => {
+            const val = ((ctx.value() as string) || '').toLowerCase().trim();
+            if (!val) return null;
+            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
+            if (!verified.includes(val)) {
+              return { kind: 'not-verified', message: 'Email address must be verified.' };
+            }
+            return null;
+          });
+        }
+      }
+    });
+
+    return { config: section, payload, form: formSignal, fields: fieldStates };
+  }
+
+  private controlNameFor(key: string) {
+    return key.replace(/[^a-zA-Z0-9]+/g, '_');
+  }
+
+  private defaultForField(field: SettingsFieldConfig) {
+    switch (field.type) {
+      case 'toggle':
+        return false;
+      case 'number':
+        return null;
+      case 'select':
+        return field.options?.[0]?.value ?? '';
+      default:
+        return '';
+    }
+  }
+
+  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
+    const fallback = field.defaultValue ?? this.defaultForField(field);
+
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(raw ?? fallback ?? false);
+      case 'number': {
+        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
+        const numeric = typeof raw === 'number' ? raw : Number(raw);
+        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
+      }
+      case 'select': {
+        const options = field.options ?? [];
+        const candidate = raw === undefined || raw === null ? fallback : String(raw);
+        const match = options.find((option) => option.value === candidate);
+        if (match) return match.value;
+        return (fallback ?? options[0]?.value ?? '') as string;
+      }
+      case 'date':
+        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+      case 'text':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      case 'textarea':
+        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
+      default:
+        return raw ?? fallback ?? '';
+    }
+  }
+
+  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
+    switch (field.type) {
+      case 'toggle':
+        return Boolean(value);
+      case 'number': {
+        if (value === '' || value === null || value === undefined) return null;
+        const numeric = typeof value === 'number' ? value : Number(value);
+        return Number.isFinite(numeric) ? numeric : null;
+      }
+      case 'select': {
+        const candidate = value === null || value === undefined ? '' : String(value);
+        const options = field.options ?? [];
+        const match = options.find((option) => option.value === candidate);
+        return match ? match.value : this.defaultForField(field);
+      }
+      case 'date':
+        return typeof value === 'string' ? value : value ? String(value) : '';
+      case 'textarea':
+      case 'text':
+      case 'email':
+      case 'tel':
+      case 'password':
+      case 'url':
+        return value === null || value === undefined ? '' : String(value);
+      default:
+        return value ?? '';
+    }
+  }
+
+  private randomHex(len: number): string {
+    const chars = '0123456789abcdef';
+    let result = '';
+    for (let i = 0; i < len; i++) {
+      result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+  }
+
+  private startEmailCooldown(email: string) {
+    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
+    const interval = setInterval(() => {
+      const current = this.emailCooldownSeconds()[email] || 0;
+      if (current <= 1) {
+        clearInterval(interval);
+        this.emailCooldownSeconds.update((prev) => {
+          const next = { ...prev };
+          delete next[email];
+          return next;
+        });
+      } else {
+        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
+      }
+    }, 1000);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
 
 ```html
@@ -41068,6 +41961,446 @@ export class ShiftFormComponent implements OnInit {
   </div>
   }
 </pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/summary/summary.ts
+
+```typescript
+import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { DashboardService } from './services/dashboard.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { SlaDetails } from './sla-details';
+import { GettingStartedCard } from './getting-started-card';
+import { AuthService } from '../../auth/auth-service';
+
+interface UpcomingEvent {
+  id: string;
+  name: string;
+  start_time: string;
+  capacity: number | null;
+  location_address: string | null;
+}
+
+interface DraftNewsletter {
+  id: string;
+  name: string;
+  total_recipients: number;
+}
+
+@Component({
+  imports: [Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, RouterLink],
+  selector: 'pc-summary',
+  templateUrl: './summary.html',
+})
+export class Summary implements OnInit {
+  private readonly dashboardSvc = inject(DashboardService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
+
+  constructor() {
+    effect(() => {
+      const tab = this.defaultSlaTab();
+      const open = this.showSlaDetails();
+      if (open) {
+        if (tab === 'emails') {
+          if (this.breachedEmails().length === 0) {
+            this.emailPage.set(1);
+            void this.loadMoreEmails();
+          }
+        } else {
+          if (this.breachedTasks().length === 0) {
+            this.taskPage.set(1);
+            void this.loadMoreTasks();
+          }
+        }
+      }
+    });
+  }
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly isRefreshing = signal(false);
+
+  // Greeting + date line (§1 "where am I": name the person and the day)
+  private readonly currentUser = this.auth.getUserSignal();
+  protected readonly todayLabel = computed(() =>
+    new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+  );
+  protected readonly greeting = computed(() => {
+    const hour = new Date().getHours();
+    const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    const name = this.currentUser()?.first_name?.trim();
+    return name ? `Good ${part}, ${name}` : `Good ${part}`;
+  });
+
+  // KPIs
+  protected readonly totalAssignedCount = signal(0);
+  protected readonly unassignedOpenCount = signal(0);
+  protected readonly totalOpenCount = signal(0);
+  protected readonly avgFirstResponse = signal('—');
+  protected readonly avgTimeToClose = signal('—');
+  protected readonly activeContactsCount = signal(0);
+  protected readonly resolutionRate = signal(0);
+
+  // Next-action context (real data from the backend; null when nothing applies)
+  protected readonly oldestUnassignedAgeHours = signal<number | null>(null);
+  protected readonly firstResponseDueHours = signal<number | null>(null);
+  protected readonly draftNewsletter = signal<DraftNewsletter | null>(null);
+  protected readonly upcomingEvents = signal<UpcomingEvent[]>([]);
+
+  // SLA Signals
+  protected readonly unassignedEmailSlaBreaches = signal(0);
+  protected readonly unassignedTaskSlaBreaches = signal(0);
+  protected readonly totalEmailSlaBreaches = signal(0);
+  protected readonly totalTaskSlaBreaches = signal(0);
+
+  protected readonly breachedEmails = signal<unknown[]>([]);
+  protected readonly breachedTasks = signal<unknown[]>([]);
+  protected readonly emailPage = signal(1);
+  protected readonly taskPage = signal(1);
+  protected readonly hasMoreEmails = signal(false);
+  protected readonly hasMoreTasks = signal(false);
+  protected readonly isLoadingEmails = signal(false);
+  protected readonly isLoadingTasks = signal(false);
+
+  protected readonly emailSlaHours = signal(24);
+  protected readonly taskSlaHours = signal(24);
+  protected readonly emailSlaWarningThreshold = signal(1);
+  protected readonly emailSlaCriticalThreshold = signal(4);
+  protected readonly taskSlaWarningThreshold = signal(1);
+  protected readonly taskSlaCriticalThreshold = signal(4);
+  protected readonly showSlaDetails = signal(false);
+  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
+
+  protected readonly emailSlaStatus = computed(() => {
+    const breaches = this.totalEmailSlaBreaches();
+    const warning = this.emailSlaWarningThreshold();
+    const critical = this.emailSlaCriticalThreshold();
+    if (breaches === 0) return 'healthy';
+    if (breaches >= critical) return 'critical';
+    if (breaches >= warning) return 'warning';
+    return 'healthy';
+  });
+
+  /** One-word email-health phrase for the briefing paragraph. */
+  protected readonly emailHealthWord = computed(() => {
+    switch (this.emailSlaStatus()) {
+      case 'critical':
+        return 'breaching SLA';
+      case 'warning':
+        return 'under pressure';
+      default:
+        return 'healthy';
+    }
+  });
+
+  // SVG line chart data (contacts growth)
+  protected readonly linePath = signal('');
+  protected readonly areaPath = signal('');
+  protected readonly linePoints = signal<Array<{ x: number; y: number; date: string; count: number }>>([]);
+  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
+  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
+  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
+  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
+
+  protected readonly userStats = signal<
+    Array<{
+      user_id: string;
+      first_name: string;
+      last_name: string;
+      openCount: number;
+      closedCount: number;
+      resolutionRate: number;
+      avgFirstResponse: string;
+      avgTimeToClose: string;
+      emailSlaBreaches: number;
+      taskSlaBreaches: number;
+    }>
+  >([]);
+  protected readonly hoveredPoint = signal<{ x: number; y: number; date: string; count: number } | null>(null);
+
+  public ngOnInit() {
+    void this.loadStats();
+  }
+
+  protected async loadStats() {
+    if (this.isRefreshing()) return;
+    this.isRefreshing.set(true);
+    const start = Date.now();
+    const end = this._loading.begin();
+    try {
+      const stats = await this.dashboardSvc.getStats();
+
+      // Set KPIs
+      const totalAssigned = (stats.emailsAssigned || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.totalAssignedCount.set(totalAssigned);
+      this.unassignedOpenCount.set(stats.unassignedCount || 0);
+      this.totalOpenCount.set(stats.totalOpenCount || 0);
+
+      const respHours = stats.avgFirstResponseHours;
+      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
+
+      const closeHours = stats.avgTimeToCloseHours;
+      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
+
+      const totalNewContacts = (stats.contactsGrowth || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.activeContactsCount.set(totalNewContacts);
+
+      const totalClosed = (stats.emailsClosed || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      const totalEmails = totalAssigned + totalClosed;
+      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
+      this.resolutionRate.set(Math.round(rate));
+
+      // Next-action context
+      this.oldestUnassignedAgeHours.set(stats.oldestUnassignedAgeHours ?? null);
+      this.firstResponseDueHours.set(stats.firstResponseDueHours ?? null);
+      this.draftNewsletter.set(stats.draftNewsletter ?? null);
+      this.upcomingEvents.set(stats.upcomingEvents ?? []);
+
+      // Set SLA breaches
+      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
+      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
+      this.unassignedEmailSlaBreaches.set(unassignedEmails);
+      this.unassignedTaskSlaBreaches.set(unassignedTasks);
+
+      const assignedEmailSla = (stats.userStats || []).reduce(
+        (acc: number, cur: { emailSlaBreaches?: number }) => acc + Number(cur.emailSlaBreaches || 0),
+        0,
+      );
+      const assignedTaskSla = (stats.userStats || []).reduce(
+        (acc: number, cur: { taskSlaBreaches?: number }) => acc + Number(cur.taskSlaBreaches || 0),
+        0,
+      );
+
+      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
+      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
+
+      // Reset breached lists (loaded on demand when the drill-down opens)
+      if (this.showSlaDetails()) {
+        if (this.defaultSlaTab() === 'emails') {
+          this.breachedEmails.set([]);
+          this.emailPage.set(1);
+        } else {
+          this.breachedTasks.set([]);
+          this.taskPage.set(1);
+        }
+      } else {
+        this.breachedEmails.set([]);
+        this.emailPage.set(1);
+        this.hasMoreEmails.set(false);
+
+        this.breachedTasks.set([]);
+        this.taskPage.set(1);
+        this.hasMoreTasks.set(false);
+      }
+
+      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
+      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
+      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
+      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
+      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
+      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
+
+      // Representative stats table
+      const formattedUserStats = (stats.userStats || []).map(
+        (u: {
+          user_id: string;
+          first_name: string;
+          last_name: string;
+          openCount: number;
+          closedCount: number;
+          resolutionRate: number;
+          avgFirstResponseHours: number;
+          avgTimeToCloseHours: number;
+          emailSlaBreaches?: number;
+          taskSlaBreaches?: number;
+        }) => ({
+          user_id: u.user_id,
+          first_name: u.first_name,
+          last_name: u.last_name,
+          openCount: u.openCount,
+          closedCount: u.closedCount,
+          resolutionRate: u.resolutionRate,
+          avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
+          avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
+          emailSlaBreaches: u.emailSlaBreaches || 0,
+          taskSlaBreaches: u.taskSlaBreaches || 0,
+        }),
+      );
+      this.userStats.set(formattedUserStats);
+
+      // Line chart: contacts growth (last 30 days)
+      const growth = stats.contactsGrowth || [];
+      const maxCount = Math.max(...growth.map((g: { count: number }) => g.count), 1);
+      const width = 600;
+      const height = 200;
+      const padding = 20;
+
+      const points: Array<{ x: number; y: number; date: string; count: number }> = growth.map(
+        (g: { date: string; count: number }, i: number) => {
+          const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
+          const y = height - padding - (g.count / maxCount) * (height - padding * 2);
+          return { x, y, date: g.date, count: g.count };
+        },
+      );
+      this.linePoints.set(points);
+
+      const firstPoint = points[0];
+      const lastPoint = points[points.length - 1];
+      if (firstPoint && lastPoint) {
+        const lPath = points.map((p, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        this.linePath.set(lPath);
+        this.areaPath.set(`${lPath} L ${lastPoint.x} ${height - padding} L ${firstPoint.x} ${height - padding} Z`);
+      } else {
+        this.linePath.set('');
+        this.areaPath.set('');
+      }
+
+      const yLabels = [
+        { y: 20, value: maxCount },
+        { y: 60, value: Math.round(maxCount * 0.75) },
+        { y: 100, value: Math.round(maxCount * 0.5) },
+        { y: 140, value: Math.round(maxCount * 0.25) },
+        { y: 180, value: 0 },
+      ];
+      this.yAxisLabels.set(yLabels);
+
+      const xLabels: { x: number; label: string }[] = [];
+      if (points.length > 0) {
+        const indices = [
+          0,
+          Math.floor(points.length * 0.25),
+          Math.floor(points.length * 0.5),
+          Math.floor(points.length * 0.75),
+          points.length - 1,
+        ];
+        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
+        for (const idx of uniqueIndices) {
+          const pt = points[idx];
+          if (!pt) continue;
+          let dateStr = pt.date;
+          try {
+            const dateObj = new Date(pt.date);
+            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+          } catch {
+            /* keep raw date string on parse failure */
+          }
+          xLabels.push({ x: pt.x, label: dateStr });
+        }
+      }
+      this.xAxisLabels.set(xLabels);
+    } catch {
+      this.alertSvc.showError('Failed to load dashboard metrics');
+    } finally {
+      end();
+      const elapsed = Date.now() - start;
+      const minSpin = 1000; // spin at least once (1 second minimum)
+      if (elapsed < minSpin) {
+        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
+      }
+      this.isRefreshing.set(false);
+    }
+  }
+
+  private formatHours(hours: number): string {
+    if (hours < 1) {
+      const minutes = Math.round(hours * 60);
+      return `${minutes}m`;
+    }
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = Math.round(hours % 24);
+      return `${days}d ${remainingHours}h`;
+    }
+    return `${hours.toFixed(1)}h`;
+  }
+
+  /** Short "2h" / "3d" relative label for the next-action cards. */
+  protected roundedHours(hours: number | null): string {
+    if (hours == null) return '—';
+    if (hours < 1) return `${Math.round(hours * 60)}m`;
+    if (hours >= 24) return `${Math.round(hours / 24)}d`;
+    return `${Math.round(hours)}h`;
+  }
+
+  protected formatEventTime(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  protected formatDate(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
+    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
+      this.showSlaDetails.set(false);
+    } else {
+      this.defaultSlaTab.set(tab);
+      this.showSlaDetails.set(true);
+    }
+  }
+
+  protected async loadMoreEmails() {
+    if (this.isLoadingEmails()) return;
+    this.isLoadingEmails.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
+      if (this.emailPage() === 1) {
+        this.breachedEmails.set(res.items);
+      } else {
+        this.breachedEmails.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreEmails.set(res.hasMore);
+      this.emailPage.update((p) => p + 1);
+    } catch {
+      this.alertSvc.showError('Failed to load breached emails');
+    } finally {
+      this.isLoadingEmails.set(false);
+    }
+  }
+
+  protected async loadMoreTasks() {
+    if (this.isLoadingTasks()) return;
+    this.isLoadingTasks.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
+      if (this.taskPage() === 1) {
+        this.breachedTasks.set(res.items);
+      } else {
+        this.breachedTasks.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreTasks.set(res.hasMore);
+      this.taskPage.update((p) => p + 1);
+    } catch {
+      this.alertSvc.showError('Failed to load breached tasks');
+    } finally {
+      this.isLoadingTasks.set(false);
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-view.ts
@@ -43090,308 +44423,6 @@ export class FavouriteToggle {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.ts
-
-```typescript
-import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Router, RouterLink } from '@angular/router';
-
-import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
-import { SearchService } from '../../services/api/search-service';
-import { FullScreenService } from '../../services/fullscreen.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
-import { UserService } from '@frontend/services/user.service';
-import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
-import { NotificationsService } from '../../services/api/notifications-service';
-
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: string | Date;
-};
-
-@Component({
-  selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle, Breadcrumbs],
-  templateUrl: './navbar.html',
-  host: {
-    '(window:keydown)': 'handleKeyDown($event)',
-  },
-})
-export class Navbar implements OnDestroy {
-  protected readonly emailActions = inject(EmailActionsStore);
-  protected readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly fullscreen = inject(FullScreenService);
-  private readonly searchSvc = inject(SearchService);
-  private readonly sideBarSvc = inject(SidebarService);
-  private readonly notificationsSvc = inject(NotificationsService);
-  private readonly router = inject(Router);
-
-  protected readonly currentUser = this.auth.getUserSignal();
-  protected readonly currentUserAvatar = computed(() => {
-    const user = this.currentUser();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  private pollInterval?: ReturnType<typeof setInterval>;
-
-  public readonly notifications = signal<NotificationItem[]>([]);
-  public readonly unreadCount = signal<number>(0);
-  public readonly isLoadingMore = signal<boolean>(false);
-  public readonly hasMore = signal<boolean>(true);
-  public readonly isPulsing = signal<boolean>(false);
-
-  protected isMobileOpen() {
-    return this.sideBarSvc.isMobileOpen();
-  }
-  protected readonly searchBarVisible = signal(false);
-
-  protected readonly searchStr = signal('');
-  protected readonly themeSvc = inject(ThemeService);
-
-  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
-
-  constructor() {
-    // Move focus to the search bar whenever it becomes visible
-    effect(() => {
-      if (this.searchBarVisible())
-        queueMicrotask(() => {
-          this.searchInputRef()?.nativeElement?.focus();
-        });
-    });
-
-    void this.initNotifications();
-    this.pollInterval = setInterval(() => {
-      void this.refreshCount();
-    }, 60000);
-  }
-
-  public ngOnDestroy() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-    }
-  }
-
-  private async initNotifications() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      this.unreadCount.set(count || 0);
-      if (count && count > 0) {
-        this.isPulsing.set(true);
-      }
-      await this.fetchInitial();
-    } catch (err) {
-      console.error('Failed to initialize notifications', err);
-    }
-  }
-
-  protected async fetchInitial() {
-    this.isLoadingMore.set(true);
-    try {
-      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
-      this.notifications.set(list || []);
-      this.hasMore.set((list || []).length === 5);
-    } catch (err) {
-      console.error('Failed to fetch initial notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async refreshCount() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      const oldCount = this.unreadCount();
-      this.unreadCount.set(count || 0);
-      if (count > oldCount) {
-        this.isPulsing.set(true);
-        // Notification count increased, fetch first 5 notifications in background
-        await this.fetchInitial();
-      }
-    } catch (err) {
-      console.error('Failed to poll notification count', err);
-    }
-  }
-
-  protected onNotificationOpen() {
-    this.isPulsing.set(false);
-    if (this.notifications().length === 0) {
-      void this.fetchInitial();
-    }
-  }
-
-  protected onScroll(event: Event) {
-    const target = event.target as HTMLElement;
-    const threshold = 20; // px from bottom
-    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
-    if (isNearBottom) {
-      void this.loadMore();
-    }
-  }
-
-  protected async loadMore() {
-    if (this.isLoadingMore() || !this.hasMore()) return;
-    this.isLoadingMore.set(true);
-    try {
-      const nextBatch = await this.notificationsSvc.getLatest({
-        limit: 5,
-        offset: this.notifications().length,
-      });
-      if (!nextBatch || nextBatch.length < 5) {
-        this.hasMore.set(false);
-      }
-      if (nextBatch && nextBatch.length > 0) {
-        const existingIds = new Set(this.notifications().map((n) => n.id));
-        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
-        if (uniqueNext.length > 0) {
-          this.notifications.set([...this.notifications(), ...uniqueNext]);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load more notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async clickNotification(notif: NotificationItem) {
-    if (!notif.read) {
-      try {
-        await this.notificationsSvc.markRead(notif.id);
-        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
-        this.unreadCount.update((c) => Math.max(0, c - 1));
-      } catch (err) {
-        console.error('Failed to mark notification read', err);
-      }
-    }
-    if (notif.link) {
-      void this.router.navigateByUrl(notif.link);
-    }
-    this.closeDropdown();
-  }
-
-  protected async markAllAsRead(event: Event) {
-    event.stopPropagation();
-    try {
-      await this.notificationsSvc.markAllRead();
-      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
-      this.unreadCount.set(0);
-    } catch (err) {
-      console.error('Failed to mark all read', err);
-    }
-  }
-
-  protected formatTime(dateStr: string | Date | null | undefined): string {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  public clearSearch(): void {
-    this.searchStr.set('');
-    this.searchSvc.clearSearch();
-  }
-
-  public handleKeyDown(event: KeyboardEvent): void {
-    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-    const isK = event?.key?.toLowerCase() === 'k';
-
-    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
-    if (isCtrlOrCmd && isK && !event.shiftKey) {
-      event.preventDefault();
-
-      this.showSearchBar();
-    } else if (event.key === 'Escape' && this.searchBarVisible()) {
-      this.clearSearch();
-      this.hideSearchBar();
-    }
-  }
-
-  protected hideSearchBar(): void {
-    this.searchBarVisible.set(false);
-  }
-
-  protected isFullScreenMode(): boolean {
-    return this.fullscreen.isFullScreenMode();
-  }
-
-  protected onBlurSearchBar() {
-    if (!this.searchStr().length) {
-      this.hideSearchBar();
-    }
-  }
-
-  protected onSearchEnter(): void {
-    this.searchSvc.doSearchImmediate(this.searchStr());
-  }
-
-  protected onSearchInput(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.searchStr.set(input.value);
-    this.search();
-  }
-
-  protected search(): void {
-    this.searchSvc.doSearch(this.searchStr());
-  }
-
-  protected showSearchBar(): void {
-    this.searchBarVisible.set(true);
-  }
-
-  protected signOut(): void {
-    void this.auth.signOut();
-  }
-
-  protected closeDropdown(): void {
-    const activeEl = document.activeElement as HTMLElement | null;
-    if (activeEl) {
-      activeEl.blur();
-    }
-  }
-
-  protected toggleFullScreen(): void {
-    void this.fullscreen.toggleFullScreen();
-  }
-
-  protected toggleMobile(): void {
-    this.sideBarSvc.toggleMobile();
-  }
-
-  protected toggleSearch(): void {
-    this.searchBarVisible.set(!this.searchBarVisible());
-  }
-
-  protected toggleTheme(): void {
-    this.themeSvc.toggleTheme();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
 
 ```typescript
@@ -44034,6 +45065,7 @@ export const dashboardRoutes: Routes = [
   name: 'light';
   default: true;
   --color-primary: #0ea5e9;
+  --color-primary-content: #ffffff;
   --color-secondary: #14e8a6;
   --color-secondary-content: #1f2937;
   --color-accent: #0c506e;
@@ -44043,11 +45075,17 @@ export const dashboardRoutes: Routes = [
   --color-base-100: #ffffff;
   --color-base-200: #f8f8f8ff;
   --color-base-300: #efeeeeff;
+  --color-base-content: #1f2937;
   --color-info: #38bdf8;
   --color-success: #2dd4bf;
+  --color-success-content: #053a34;
   --color-warning: #e5c963;
+  --color-warning-content: #4a3d0a;
   --color-error: #f37373;
-  --color-error-content: #f0f0f0;
+  --color-error-content: #ffffff;
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
 
   --tooltip-bg: #333333;
   --tooltip-color: #eeeeee;
@@ -44084,7 +45122,7 @@ label.input input:-webkit-autofill:active {
   --color-primary: #3ea6ff; /* bright azure */
   --color-secondary: #20d7a7; /* teal pop (optional) */
   --color-accent: #3ea6ff;
-  --color-accent-content: #f0f6ff; /* light text on blue */
+  --color-accent-content: #0b1220; /* dark text on bright azure */
 
   /* Text + neutrals */
   --color-neutral: #0e182b; /* chrome / panels */
@@ -44095,11 +45133,17 @@ label.input input:-webkit-autofill:active {
   --color-base-200: #131e31; /* row alt / subtle surface */
   --color-base-300: #1a2b45; /* headers / raised surface */
 
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
+
   /* Feedback */
   --color-info: #3ea6ff;
   --color-success: #22c55e;
+  --color-success-content: #052e12;
   --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
   --color-error: #ef4444;
+  --color-error-content: #2b0505;
 
   /* Tooltips */
   --tooltip-bg: #0e1626;
@@ -44119,7 +45163,7 @@ body {
 /* Custom scrollbar styles for email components */
 .email-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db #f3f4f6;
+  scrollbar-color: var(--color-base-300) var(--color-base-200);
 }
 
 .email-scrollbar::-webkit-scrollbar {
@@ -44128,17 +45172,17 @@ body {
 }
 
 .email-scrollbar::-webkit-scrollbar-track {
-  background: #f3f4f6;
+  background: var(--color-base-200);
   border-radius: 4px;
 }
 
 .email-scrollbar::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-base-300);
   border-radius: 4px;
 }
 
 .email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
 }
 
 .bg-image {
@@ -44225,6 +45269,21 @@ body {
     }
   }
 
+  /* Save-landed feedback for grids and forms — success tint fading to nothing.
+     Semantic token so it survives theme switch (design §5). Mirrors the
+     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
+  @keyframes savedFlash {
+    0% {
+      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+    }
+    60% {
+      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
   @keyframes exitUp {
     0% {
       transform: translateY(0%);
@@ -44299,6 +45358,15 @@ body {
   .animate-flash {
     animation: flash 1s ease-in-out 1;
   }
+  .animate-saved-flash {
+    animation: savedFlash 1.2s ease-out 1;
+  }
+}
+
+/* Hairline border helper — pairs with any border-width utility to paint the
+   app-wide line color (design §5). Use as `class="border-b border-line"`. */
+@utility border-line {
+  border-color: var(--color-line);
 }
 
 /* Dark mode overrides for Quill and email prose */
@@ -44407,229 +45475,6 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/auth-service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
-import { TRPCService } from '../services/api/trpc-service';
-import { TRPCError } from '@trpc/server';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-
-@Service()
-export class AuthService extends TRPCService<'authusers'> {
-  private user = signal<IAuthUser | null>(null);
-
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this.user.set(user);
-    return user;
-  }
-
-  public getUser(): IAuthUser | null {
-    return this.user();
-  }
-
-  public getUserSignal() {
-    return this.user;
-  }
-
-  public init() {
-    return this.getCurrentUser();
-  }
-
-  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
-    const dataBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
-        resolve(result.split(',')[1]!);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    const res = (await this.api.auth.uploadAvatar.mutate({
-      dataBase64,
-      mimeType: file.type as any,
-      filename: file.name,
-    })) as { avatar_url: string };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: res.avatar_url,
-      });
-    }
-
-    return res;
-  }
-
-  public async deleteAvatar(): Promise<{ success: boolean }> {
-    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: null,
-      });
-    }
-
-    return res;
-  }
-
-  public async cancelEmailChange() {
-    const response = await this.api.auth.cancelEmailChange.mutate();
-    await this.getCurrentUser();
-    return response;
-  }
-
-  public resetPassword(input: { code: string; password: string }) {
-    // The new-password page owns the error UX for this call.
-    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public sendPasswordResetEmail(input: { email: string }) {
-    // The reset-password page owns the error UX for this call.
-    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public async signIn(
-    input: signInInputType & { rememberMe?: boolean },
-  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
-    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-
-    if (response && 'requires2FA' in response && response.requires2FA) {
-      return { requires2FA: true, email: response.email };
-    }
-
-    const user = await this.updateTokensAndGetCurrentUser(response);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { requires2FA: false, user };
-  }
-
-  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
-    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return user;
-  }
-
-  public async signOut() {
-    let apiReturn = null;
-    try {
-      apiReturn = await this.api.auth.signOut.mutate();
-    } catch (error) {
-      console.error('Error during sign out:', error);
-    }
-
-    this.user.set(null);
-    this.tokenService.clearAll();
-    void this.router.navigate(['/signin']);
-
-    return apiReturn;
-  }
-
-  public async signUp(input: signUpInputType) {
-    const token = await this.api.auth.signUp.mutate(input);
-    return this.updateTokensAndGetCurrentUser(token);
-  }
-
-  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
-    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
-  }
-
-  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    // Callers toast their own success/failure (and handle rate-limit countdowns).
-    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ success: boolean }>;
-  }
-
-  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    // The sign-in page silently falls back to the password step if this fails —
-    // a global error toast here would be noise.
-    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ hasPasskeys: boolean }>;
-  }
-
-  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
-    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
-    let response: any;
-    try {
-      response = await startAuthentication({ optionsJSON: options });
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
-      throw err;
-    }
-    const token = await (
-      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { user, cancelled: false };
-  }
-
-  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
-    const options = await this.api.auth.passkeyRegistrationOptions.query();
-    const response = await startRegistration({ optionsJSON: options as any });
-    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
-      verified: boolean;
-    };
-  }
-
-  public listPasskeys() {
-    return this.api.auth.listPasskeys.query();
-  }
-
-  public deletePasskey(id: string) {
-    return this.api.auth.deletePasskey.mutate({ id });
-  }
-
-  public dismissPasskeyPrompt() {
-    return this.api.auth.dismissPasskeyPrompt.mutate();
-  }
-
-  public updatePasskeyName(id: string, friendlyName: string) {
-    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
-  }
-
-  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
-    if (!token || token instanceof TRPCError) {
-      throw token;
-    }
-    this.tokenService.set(token);
-    return this.getCurrentUser();
   }
 }
 ```
@@ -44881,348 +45726,6 @@ export class EmailAssign {
   public getUserName(id: string | null = null) {
     if (!id) return 'Noone';
     return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Noone';
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
-
-```typescript
-import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { EmailsStore } from '../../services/store/emailstore';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { PcIconNameType } from '@icons/icons.index';
-
-interface ContextMenuItem {
-  label: string;
-  icon: PcIconNameType;
-  action: () => void;
-  iconClass?: string; // The '?' makes it optional
-  extraClass?: string; // The '?' makes it optional
-}
-
-interface ContextMenuSection {
-  show: boolean;
-  items: ContextMenuItem[];
-}
-
-@Component({
-  selector: 'pc-email-list',
-  imports: [Icon, TimeAgoPipe],
-  templateUrl: 'email-list.html',
-  host: {
-    '(document:click)': 'closeContextMenu()',
-    '(document:keydown.escape)': 'closeContextMenu()',
-  },
-})
-export class EmailList {
-  private readonly store = inject(EmailsStore);
-  private readonly alertSvc = inject(AlertService);
-
-  public readonly scrollContainer = viewChild<ElementRef<HTMLUListElement>>('scrollContainer');
-
-  public readonly emailSelected = output<EmailType>();
-
-  public readonly reply = output<EmailType>();
-  public readonly replyAll = output<EmailType>();
-  public readonly forward = output<EmailType>();
-
-  public readonly showContextMenu = signal<boolean>(false);
-  public readonly contextMenuPosition = signal<{ x: number; y: number }>({ x: 0, y: 0 });
-  public readonly contextMenuEmail = signal<EmailType | null>(null);
-
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly currentFolderId = computed(() => this.store.currentSelectedFolderId());
-
-  protected readonly isLoadingMore = this.store.isLoadingMore;
-  protected readonly ALL_FOLDERS = ALL_FOLDERS;
-
-  protected onScroll(event: Event): void {
-    this.closeContextMenu();
-    const el = event.target as HTMLElement;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight < 100) {
-      void this.store.loadNextPage();
-    }
-  }
-
-  public readonly sortOrder = signal<'newest' | 'oldest'>('newest');
-
-  public readonly sortedEmails = computed(() => {
-    const list = [...this.emails()];
-    const order = this.sortOrder();
-    return list.sort((a, b) => {
-      const timeA = new Date(a.date_sent || a.updated_at).getTime();
-      const timeB = new Date(b.date_sent || b.updated_at).getTime();
-      return order === 'newest' ? timeB - timeA : timeA - timeB;
-    });
-  });
-
-  constructor() {
-    let lastFolderId: string | null = null;
-
-    // Auto-select the first email when the folder changes or the current selection is removed.
-    effect(() => {
-      const folderId = this.store.currentSelectedFolderId();
-      const emails = this.sortedEmails();
-      const selectedId = this.store.currentSelectedEmailId();
-
-      const folderChanged = folderId !== lastFolderId;
-      lastFolderId = folderId;
-
-      const container = this.scrollContainer();
-      if (folderChanged && container) {
-        container.nativeElement.scrollTop = 0;
-      }
-
-      // If the list is empty, clear any existing selection and bail out.
-      if (emails.length === 0) {
-        if (selectedId) {
-          // The selected email was removed; clear selection so parent can react.
-          this.store.selectEmail(null);
-        }
-        return;
-      }
-
-      if (folderId) {
-        // Auto-select the first email only if:
-        // 1. The folder has changed, OR
-        // 2. The previously selected email is no longer in the list (e.g., deleted or moved).
-        const currentSelectionStillExists = selectedId ? emails.some((e) => e.id === selectedId) : false;
-
-        if (folderChanged || (selectedId && !currentSelectionStillExists)) {
-          // Update the store directly — do NOT emit through emailSelected output, which would
-          // trigger the parent's onEmail() and reset mobileView to 'detail' on every init.
-          this.store.selectEmail(emails[0]!);
-        }
-      }
-    });
-  }
-
-  public isSelected(id: string): boolean {
-    return this.store.currentSelectedEmailId() === id;
-  }
-
-  public selectEmail(email: EmailType): void {
-    this.emailSelected.emit(email);
-  }
-
-  public onContextMenu(event: MouseEvent, email: EmailType): void {
-    event.preventDefault();
-    this.selectEmail(email);
-    this.contextMenuEmail.set(email);
-
-    // Dynamic viewport boundary collision checking
-    const menuWidth = 192; // equivalent to w-48
-    const menuHeight = 280; // approximate maximum height
-
-    let x = event.clientX;
-    let y = event.clientY;
-
-    if (x + menuWidth > window.innerWidth) {
-      x = window.innerWidth - menuWidth - 8;
-    }
-    if (y + menuHeight > window.innerHeight) {
-      y = window.innerHeight - menuHeight - 8;
-    }
-
-    this.contextMenuPosition.set({ x, y });
-    this.showContextMenu.set(true);
-  }
-
-  get menuSections(): ContextMenuSection[] {
-    const email = this.contextMenuEmail();
-    if (!email) return [];
-
-    return [
-      // Section 1: Actions
-      {
-        show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
-        items: [
-          { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
-          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
-          { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
-        ] as ContextMenuItem[],
-      },
-      // Section 2: Spam & Read
-      {
-        show: true,
-        items: [
-          ...(!this.isFolderTrash()
-            ? [
-                {
-                  label: this.isFolderSpam() ? 'Not spam' : 'Mark as spam',
-                  icon: (this.isFolderSpam() ? 'inbox' : 'exclamation-triangle') as PcIconNameType,
-                  action: () => (this.isFolderSpam() ? this.moveToInbox() : this.markAsSpam()),
-                },
-              ]
-            : []),
-          {
-            label: `Mark as ${email.is_read ? 'unread' : 'read'}`,
-            icon: 'envelope',
-            action: () => void this.toggleReadStatus(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 3: Status & Delete
-      {
-        show: true,
-        items: [
-          {
-            label: email.is_favourite ? 'Unstar' : 'Star',
-            icon: (email.is_favourite ? 'star-filled' : 'star') as PcIconNameType,
-            iconClass: email.is_favourite ? 'text-amber-500' : 'text-base-content/60',
-            action: () => void this.toggleFavourite(),
-          },
-          {
-            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
-            icon: 'check-circle',
-            iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
-            action: () => void this.toggleClosed(),
-          },
-          ...(this.isFolderTrash()
-            ? [
-                {
-                  label: 'Restore to Inbox',
-                  icon: 'restore-from-trash',
-                  action: () => void this.restoreFromTrash(),
-                },
-              ]
-            : []),
-          {
-            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
-            icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
-            iconClass: 'text-error',
-            action: () => void this.deleteEmail(),
-          },
-        ] as ContextMenuItem[],
-      },
-      // Section 4: Print
-      {
-        show: true,
-        items: [
-          {
-            label: 'Print',
-            icon: 'print',
-            extraClass: '!py-1',
-            action: () => {
-              window.print();
-            },
-          },
-        ] as ContextMenuItem[],
-      },
-    ].filter((section) => section.show && section.items.length > 0);
-  }
-  public closeContextMenu(): void {
-    this.showContextMenu.set(false);
-  }
-
-  protected handleReply(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.reply.emit(email);
-  }
-
-  protected handleReplyAll(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.replyAll.emit(email);
-  }
-
-  protected handleForward(): void {
-    const email = this.contextMenuEmail();
-    this.closeContextMenu();
-    if (email) this.forward.emit(email);
-  }
-
-  protected isFolderTrash(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.TRASH;
-  }
-
-  protected isFolderSpam(): boolean {
-    return this.currentFolderId() === ALL_FOLDERS.SPAM;
-  }
-
-  protected async toggleReadStatus() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailReadStatus(email.id, !email.is_read);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update read status');
-    }
-  }
-
-  protected async toggleFavourite() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update favorite status');
-    }
-  }
-
-  protected async toggleClosed() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    const currentStatus = email.status || 'open';
-    const newStatus = currentStatus === 'open' ? 'closed' : 'open';
-    try {
-      await this.store.updateEmailStatus(email.id, newStatus);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to update email status');
-    }
-  }
-
-  protected async deleteEmail() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.deleteEmail(email.id);
-    } catch (_e) {
-      this.alertSvc.showError('Failed to delete email');
-    }
-  }
-
-  protected restoreFromTrash() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    void this.store.restoreFromTrash(email.id);
-  }
-
-  protected async moveToInbox() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.INBOX);
-      this.alertSvc.showSuccess('Email moved to Inbox');
-    } catch (_e) {
-      this.alertSvc.showError('Failed to move email to Inbox');
-    }
-  }
-
-  protected async markAsSpam() {
-    const email = this.contextMenuEmail();
-    if (!email) return;
-    this.closeContextMenu();
-    try {
-      await this.store.moveToFolder(email.id, ALL_FOLDERS.SPAM);
-      this.alertSvc.showSuccess('Email marked as spam');
-    } catch (_e) {
-      this.alertSvc.showError('Failed to mark email as spam');
-    }
   }
 }
 ```
@@ -46739,615 +47242,6 @@ export class EventFormComponent implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/settings/settings-page.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
-import { FormField, email, form, pattern, validate } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { IAuthUserDetail, SettingsEntryType, UpdateAuthUserType } from '../../../../../../libs/common/src';
-import { AuthService } from '../../auth/auth-service';
-import { UserService } from '../../services/user.service';
-import { HouseholdsService } from '../households/services/households-service';
-import { AccountSettingsComponent } from './account/account-settings';
-import { BillingSettingsComponent } from './billing/billing-settings';
-import { DomainSettingsComponent } from './domains/domains-settings';
-import { DonationsSettingsComponent } from './donations/donations-settings';
-import { GoogleSyncSettings } from './google-sync/google-sync-settings';
-import { MsSyncSettings } from './ms-sync/ms-sync-settings';
-import { PasskeySettingsComponent } from './security/passkey-settings';
-import { SettingsService, TenantSettingsSnapshot } from './services/settings-service';
-import { SETTINGS_SECTIONS, SettingsFieldConfig, SettingsSectionConfig } from './settings.config';
-
-interface SectionFieldState {
-  config: SettingsFieldConfig;
-  controlName: string;
-}
-
-interface SectionState {
-  config: SettingsSectionConfig;
-  fields: SectionFieldState[];
-  form: any;
-  payload: WritableSignal<Record<string, any>>;
-}
-
-@Component({
-  selector: 'pc-settings-page',
-  imports: [
-    FormField,
-    Icon,
-    MsSyncSettings,
-    GoogleSyncSettings,
-    BillingSettingsComponent,
-    DomainSettingsComponent,
-    DonationsSettingsComponent,
-    AccountSettingsComponent,
-    PasskeySettingsComponent,
-    DatePipe,
-  ],
-  templateUrl: './settings-page.html',
-})
-export class SettingsPage implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-
-  protected readonly currentMode: 'settings' | 'configuration';
-  protected readonly currentUserDetail = signal<IAuthUserDetail | null>(null);
-  protected readonly emailCooldownSeconds = signal<Record<string, number>>({});
-  protected readonly lastFingerprintRecomputeTime = signal<Date | null>(null);
-  protected readonly fingerprintRecomputeNextAvailable = computed(() => {
-    const lastTime = this.lastFingerprintRecomputeTime();
-    if (!lastTime) return null;
-    const nextAvailable = new Date(lastTime.getTime());
-    nextAvailable.setMonth(nextAvailable.getMonth() + 1);
-    return nextAvailable;
-  });
-  protected readonly hasLoaded = signal(false);
-  protected readonly householdsSvc = inject(HouseholdsService);
-  protected readonly isFingerprintRecomputeCooldown = computed(() => {
-    const nextAvailable = this.fingerprintRecomputeNextAvailable();
-    if (!nextAvailable) return false;
-    return Date.now() < nextAvailable.getTime();
-  });
-  protected readonly lastRequestedEmail = signal<string | null>(null);
-  protected readonly lastVerificationTimes = signal<Record<string, number>>({});
-  protected readonly recomputingFingerprints = signal(false);
-  protected readonly savingSectionId = signal<string | null>(null);
-  protected readonly sectionStates: SectionState[];
-  protected readonly sections = SETTINGS_SECTIONS;
-  protected readonly selectedSectionId = signal<string>('');
-  protected readonly senderEmailInput = signal('');
-  protected readonly settingsSvc = inject(SettingsService);
-  private readonly snapshotSignal = this.settingsSvc.snapshotSignal;
-  protected readonly verifiedEmailsList = computed<string[]>(() => {
-    return this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-  });
-  protected readonly verifyingEmail = signal<string | null>(null);
-
-  protected trackField = (_: number, field: SectionFieldState) => field.controlName;
-  protected trackSection = (_: number, section: SectionState) => section.config.id;
-
-  public readonly section = input<string>();
-
-  constructor() {
-    this.currentMode = (this.route.snapshot.data['mode'] as 'settings' | 'configuration') || 'settings';
-    this.sectionStates = this.sections.map((section) => this.buildSectionState(section));
-
-    effect(() => {
-      const s = this.section();
-      if (s) {
-        this.selectedSectionId.set(s);
-      } else {
-        if (this.currentMode === 'settings') {
-          this.selectedSectionId.set('notifications');
-        } else if (this.currentMode === 'configuration') {
-          this.selectedSectionId.set('organization');
-        }
-      }
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      this.applySnapshot(snapshot, false);
-    });
-
-    effect(() => {
-      const snapshot = this.snapshotSignal();
-      const verifiedEmails = (snapshot['communications.verified_emails'] as string[]) || [];
-
-      const commsSection = this.sections.find((s) => s.id === 'communications');
-      if (commsSection) {
-        const fromEmailField = commsSection.fields.find((f) => f.key === 'communications.default_from_email');
-        const replyToField = commsSection.fields.find((f) => f.key === 'communications.reply_to');
-
-        const options = [
-          { label: 'Select a verified email', value: '' },
-          ...verifiedEmails.map((email) => ({ label: email, value: email })),
-        ];
-
-        if (fromEmailField) {
-          fromEmailField.options = options;
-        }
-        if (replyToField) {
-          replyToField.options = options;
-        }
-      }
-    });
-  }
-
-  protected get visibleSections(): SectionState[] {
-    if (this.currentMode === 'settings') {
-      return this.sectionStates.filter((s) => s.config.id === 'notifications' || s.config.id === 'appearance');
-    }
-    if (this.currentMode === 'configuration') {
-      return this.sectionStates.filter((s) => s.config.id !== 'notifications' && s.config.id !== 'appearance');
-    }
-    return [];
-  }
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.settingsSvc.load();
-    this.hasLoaded.set(true);
-    this.applySnapshot(this.settingsSvc.snapshot(), true);
-    await this.loadUserPrefs();
-    await this.loadLastFingerprintRecomputeTime();
-  }
-
-  protected copyToClipboard(val: string | null | undefined) {
-    if (!val) return;
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alerts.showSuccess('Copied to clipboard!');
-      })
-      .catch(() => {
-        this.alerts.showError('Failed to copy to clipboard.');
-      });
-  }
-
-  protected generateWebhookCredentials(section: SectionState) {
-    const key = 'pk_live_' + this.randomHex(24);
-    const secret = 'whsec_' + this.randomHex(32);
-
-    section.payload.update((p) => ({
-      ...p,
-      integrations_webhook_api_key: key,
-      integrations_webhook_api_secret: secret,
-    }));
-
-    (section.form as any)['integrations_webhook_api_key']().markAsDirty();
-    (section.form as any)['integrations_webhook_api_secret']().markAsDirty();
-    this.alerts.showSuccess('Generated credentials. Remember to click "Save" at the bottom to store them.');
-  }
-
-  protected getNotificationGroups(section: SectionState) {
-    const groups: { label: string; helper: string; emailField: any; inAppField: any }[] = [];
-    const fields = section.fields;
-
-    for (const field of fields) {
-      if (field.config.key.endsWith('_in_app')) continue;
-
-      const inAppControlName = `${field.controlName}_in_app`;
-      const inAppField = fields.find((f) => f.controlName === inAppControlName);
-
-      groups.push({
-        label: field.config.label,
-        helper: field.config.helper || '',
-        emailField: field,
-        inAppField: inAppField,
-      });
-    }
-    return groups;
-  }
-
-  protected isEmailVerified(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-    return verified.includes(email.toLowerCase().trim());
-  }
-
-  protected isSaving(section: SectionState) {
-    return this.savingSectionId() === section.config.id;
-  }
-
-  protected isSectionDirty(section: SectionState) {
-    return section.form().dirty();
-  }
-
-  protected isSectionInvalid(section: SectionState) {
-    return section.form().invalid();
-  }
-
-  protected isSelected(sectionId: string) {
-    return this.selectedSectionId() === sectionId;
-  }
-
-  protected isVerifyCooldown(email: string | null | undefined): boolean {
-    if (!email) return false;
-    const lastTime = this.lastVerificationTimes()[email.toLowerCase().trim()];
-    if (!lastTime) return false;
-    return Date.now() - lastTime < 60000;
-  }
-
-  protected async loadLastFingerprintRecomputeTime() {
-    try {
-      const res = await this.householdsSvc.getLastFingerprintRecomputation();
-      if (res && res.lastRunAt) {
-        this.lastFingerprintRecomputeTime.set(new Date(res.lastRunAt));
-      } else {
-        this.lastFingerprintRecomputeTime.set(null);
-      }
-    } catch (err) {
-      console.error('Failed to load last fingerprint recompute time', err);
-    }
-  }
-
-  protected async loadUserPrefs() {
-    try {
-      const currentUser = await this.auth.getCurrentUser();
-      if (currentUser) {
-        const user = await this.userService.getProfileById(currentUser.id);
-        this.currentUserDetail.set(user);
-        const prefs = user.notification_preferences || {
-          mention_in_comment: true,
-          mention_in_comment_in_app: true,
-          task_assigned: true,
-          task_assigned_in_app: true,
-          task_due: true,
-          task_due_in_app: true,
-          person_assigned: true,
-          person_assigned_in_app: true,
-          export_ready: true,
-          export_ready_in_app: true,
-          import_summary: true,
-          import_summary_in_app: true,
-        };
-        const notifState = this.sectionStates.find((s) => s.config.id === 'notifications');
-        if (notifState) {
-          notifState.payload.update((p) => ({
-            ...p,
-            notifications_mention_in_comment: prefs.mention_in_comment ?? true,
-            notifications_mention_in_comment_in_app: prefs.mention_in_comment_in_app ?? true,
-            notifications_task_assigned: prefs.task_assigned ?? true,
-            notifications_task_assigned_in_app: prefs.task_assigned_in_app ?? true,
-            notifications_task_due: prefs.task_due ?? true,
-            notifications_task_due_in_app: prefs.task_due_in_app ?? true,
-            notifications_person_assigned: prefs.person_assigned ?? true,
-            notifications_person_assigned_in_app: prefs.person_assigned_in_app ?? true,
-            notifications_export_ready: prefs.export_ready ?? true,
-            notifications_export_ready_in_app: prefs.export_ready_in_app ?? true,
-            notifications_import_summary: prefs.import_summary ?? true,
-            notifications_import_summary_in_app: prefs.import_summary_in_app ?? true,
-          }));
-          notifState.form().reset();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load user preferences in settings page', err);
-    }
-  }
-
-  protected async recomputeAddressFingerprints() {
-    if (this.isFingerprintRecomputeCooldown()) {
-      this.alerts.showError('Fingerprints can only be recomputed once a month.');
-      return;
-    }
-
-    this.recomputingFingerprints.set(true);
-    try {
-      await this.householdsSvc.recomputeAddressFingerprints();
-      this.alerts.showSuccess('Background job queued to recompute address fingerprints.');
-      await this.loadLastFingerprintRecomputeTime();
-    } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to trigger address fingerprint recomputation.',
-      );
-    } finally {
-      this.recomputingFingerprints.set(false);
-    }
-  }
-
-  protected resetSection(section: SectionState) {
-    this.applySnapshot(this.settingsSvc.snapshot(), true, section);
-    if (section.config.id === 'notifications') {
-      void this.loadUserPrefs();
-    }
-  }
-
-  protected async saveSection(section: SectionState) {
-    if (!section.form().dirty()) return;
-
-    const entries: SettingsEntryType[] = [];
-    for (const field of section.fields) {
-      const fieldSignal = (section.form as any)[field.controlName]();
-      if (!fieldSignal.dirty()) continue;
-
-      // Skip user notification preferences from tenant settings upsert
-      if (section.config.id === 'notifications') {
-        continue;
-      }
-
-      const value = this.prepareOutgoingValue(field.config, fieldSignal.value());
-      entries.push({ key: field.config.key, value });
-    }
-
-    this.savingSectionId.set(section.config.id);
-    try {
-      if (entries.length > 0) {
-        const snapshot = await this.settingsSvc.upsert(entries);
-        this.applySnapshot(snapshot ?? this.settingsSvc.snapshot(), true, section);
-      }
-
-      if (section.config.id === 'notifications') {
-        const user = this.currentUserDetail();
-        if (user) {
-          const raw = section.payload();
-          const parseBool = (val: any) => val === true || val === 'true';
-          const payload: UpdateAuthUserType = {
-            notification_preferences: {
-              mention_in_comment: parseBool(raw['notifications_mention_in_comment']),
-              mention_in_comment_in_app: parseBool(raw['notifications_mention_in_comment_in_app']),
-              task_assigned: parseBool(raw['notifications_task_assigned']),
-              task_assigned_in_app: parseBool(raw['notifications_task_assigned_in_app']),
-              task_due: parseBool(raw['notifications_task_due']),
-              task_due_in_app: parseBool(raw['notifications_task_due_in_app']),
-              person_assigned: parseBool(raw['notifications_person_assigned']),
-              person_assigned_in_app: parseBool(raw['notifications_person_assigned_in_app']),
-              export_ready: parseBool(raw['notifications_export_ready']),
-              export_ready_in_app: parseBool(raw['notifications_export_ready_in_app']),
-              import_summary: parseBool(raw['notifications_import_summary']),
-              import_summary_in_app: parseBool(raw['notifications_import_summary_in_app']),
-            },
-          };
-          await this.userService.updateUserProfile(user.id, payload);
-          await this.loadUserPrefs();
-        }
-      }
-      this.alerts.showSuccess('Settings updated successfully');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to save settings';
-      this.alerts.showError(message);
-    } finally {
-      this.savingSectionId.set(null);
-    }
-  }
-
-  protected selectSection(sectionId: string) {
-    void this.router.navigate(['/', this.currentMode, sectionId]);
-  }
-
-  protected async verifySenderEmail(email: string | null | undefined) {
-    if (!email) return;
-    const normalized = email.toLowerCase().trim();
-
-    if (this.isVerifyCooldown(normalized)) {
-      this.alerts.showError('Please wait at least one minute before requesting verification again.');
-      return;
-    }
-
-    this.verifyingEmail.set(normalized);
-
-    try {
-      await this.settingsSvc.requestEmailVerification(normalized);
-      this.lastVerificationTimes.update((prev) => ({
-        ...prev,
-        [normalized]: Date.now(),
-      }));
-      this.startEmailCooldown(normalized);
-      this.lastRequestedEmail.set(normalized);
-      this.alerts.showSuccess(
-        `Verification email sent to ${email}. Please check your inbox (and spam folder) and click the verification link.`,
-      );
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to send verification email.');
-    } finally {
-      this.verifyingEmail.set(null);
-    }
-  }
-
-  private applySnapshot(snapshot: TenantSettingsSnapshot, resetDirty: boolean, target?: SectionState) {
-    const sections = target ? [target] : this.sectionStates;
-
-    for (const state of sections) {
-      const nextPayload = { ...state.payload() };
-      let changed = false;
-
-      for (const field of state.fields) {
-        const fieldSignal = (state.form as any)[field.controlName]();
-        if (!resetDirty && fieldSignal.dirty()) continue;
-
-        // Skip user notification preferences from tenant settings snapshot update
-        if (state.config.id === 'notifications') {
-          continue;
-        }
-
-        const incoming = this.normalizeIncomingValue(field.config, snapshot[field.config.key]);
-        if (nextPayload[field.controlName] !== incoming) {
-          nextPayload[field.controlName] = incoming;
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        state.payload.set(nextPayload);
-      }
-
-      if (resetDirty) {
-        state.form().reset();
-      }
-    }
-  }
-
-  private buildSectionState(section: SettingsSectionConfig): SectionState {
-    const initialPayload: Record<string, any> = {};
-    const fieldStates: SectionFieldState[] = [];
-
-    for (const field of section.fields) {
-      const controlName = this.controlNameFor(field.key);
-      initialPayload[controlName] = this.normalizeIncomingValue(
-        field,
-        this.settingsSvc.getValue(field.key, field.defaultValue),
-      );
-      fieldStates.push({ config: field, controlName });
-    }
-
-    const payload = signal(initialPayload);
-    const formSignal = form(payload, (p) => {
-      for (const field of section.fields) {
-        const controlName = this.controlNameFor(field.key);
-        if (field.type === 'email') {
-          email(p[controlName]);
-        }
-        if (field.type === 'url') {
-          pattern(p[controlName], /^https?:\/\//i);
-        }
-        if (field.key === 'communications.default_from_email' || field.key === 'communications.reply_to') {
-          validate(p[controlName], (ctx) => {
-            const val = ((ctx.value() as string) || '').toLowerCase().trim();
-            if (!val) return null;
-            const verified = this.settingsSvc.getValue<string[]>('communications.verified_emails') || [];
-            if (!verified.includes(val)) {
-              return { kind: 'not-verified', message: 'Email address must be verified.' };
-            }
-            return null;
-          });
-        }
-      }
-    });
-
-    return { config: section, payload, form: formSignal, fields: fieldStates };
-  }
-
-  private controlNameFor(key: string) {
-    return key.replace(/[^a-zA-Z0-9]+/g, '_');
-  }
-
-  private defaultForField(field: SettingsFieldConfig) {
-    switch (field.type) {
-      case 'toggle':
-        return false;
-      case 'number':
-        return null;
-      case 'select':
-        return field.options?.[0]?.value ?? '';
-      default:
-        return '';
-    }
-  }
-
-  private normalizeIncomingValue(field: SettingsFieldConfig, raw: unknown) {
-    const fallback = field.defaultValue ?? this.defaultForField(field);
-
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(raw ?? fallback ?? false);
-      case 'number': {
-        if (raw === null || raw === undefined || raw === '') return fallback ?? null;
-        const numeric = typeof raw === 'number' ? raw : Number(raw);
-        return Number.isFinite(numeric) ? numeric : (fallback ?? null);
-      }
-      case 'select': {
-        const options = field.options ?? [];
-        const candidate = raw === undefined || raw === null ? fallback : String(raw);
-        const match = options.find((option) => option.value === candidate);
-        if (match) return match.value;
-        return (fallback ?? options[0]?.value ?? '') as string;
-      }
-      case 'date':
-        return typeof raw === 'string' && raw.length ? raw : ((fallback as string) ?? '');
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-      case 'text':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      case 'textarea':
-        return raw === undefined || raw === null ? ((fallback as string) ?? '') : String(raw);
-      default:
-        return raw ?? fallback ?? '';
-    }
-  }
-
-  private prepareOutgoingValue(field: SettingsFieldConfig, value: unknown) {
-    switch (field.type) {
-      case 'toggle':
-        return Boolean(value);
-      case 'number': {
-        if (value === '' || value === null || value === undefined) return null;
-        const numeric = typeof value === 'number' ? value : Number(value);
-        return Number.isFinite(numeric) ? numeric : null;
-      }
-      case 'select': {
-        const candidate = value === null || value === undefined ? '' : String(value);
-        const options = field.options ?? [];
-        const match = options.find((option) => option.value === candidate);
-        return match ? match.value : this.defaultForField(field);
-      }
-      case 'date':
-        return typeof value === 'string' ? value : value ? String(value) : '';
-      case 'textarea':
-      case 'text':
-      case 'email':
-      case 'tel':
-      case 'password':
-      case 'url':
-        return value === null || value === undefined ? '' : String(value);
-      default:
-        return value ?? '';
-    }
-  }
-
-  private randomHex(len: number): string {
-    const chars = '0123456789abcdef';
-    let result = '';
-    for (let i = 0; i < len; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
-  }
-
-  private startEmailCooldown(email: string) {
-    this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: 60 }));
-    const interval = setInterval(() => {
-      const current = this.emailCooldownSeconds()[email] || 0;
-      if (current <= 1) {
-        clearInterval(interval);
-        this.emailCooldownSeconds.update((prev) => {
-          const next = { ...prev };
-          delete next[email];
-          return next;
-        });
-      } else {
-        this.emailCooldownSeconds.update((prev) => ({ ...prev, [email]: current - 1 }));
-      }
-    }, 1000);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
 
 ```typescript
@@ -47782,266 +47676,310 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.html
+## File: apps/frontend/src/app/layout/navbar/navbar.ts
 
-```html
-<!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg relative">
-  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
-    <pc-icon name="bars-4"></pc-icon>
-  </div>
+```typescript
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@icons/icon';
+import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { Router, RouterLink } from '@angular/router';
 
-  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
-    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
-    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
-    <pc-breadcrumbs
-      class="hidden min-w-0 flex-1"
-      [class.sm:block]="!searchBarVisible()"
-      [crumbs]="trail.crumbs"
-      [positionLabel]="trail.positionLabel"
-      [hasPrev]="trail.hasPrev"
-      [hasNext]="trail.hasNext"
-      [prevLabel]="trail.prevLabel"
-      [nextLabel]="trail.nextLabel"
-      (prev)="trail.onPrev()"
-      (next)="trail.onNext()"
-    ></pc-breadcrumbs>
-    } }
+import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
+import { SearchService } from '../../services/api/search-service';
+import { FullScreenService } from '../../services/fullscreen.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { UserService } from '@frontend/services/user.service';
+import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
+import { NotificationsService } from '../../services/api/notifications-service';
 
-    <!-- Search bar -->
-    <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
-      <label class="input input-primary w-full flex items-center gap-2">
-        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
-        <input
-          #searchInput
-          type="text"
-          placeholder="Search"
-          i18n-placeholder="@@navbar.search.placeholder"
-          class="grow w-full"
-          (blur)="onBlurSearchBar()"
-          [value]="searchStr()"
-          (input)="onSearchInput($event)"
-          (keydown.enter)="onSearchEnter()"
-        />
-        <kbd class="kbd kbd-sm hidden sm:block">⌘</kbd>
-        <kbd class="kbd kbd-sm hidden sm:block">K</kbd>
-      </label>
-    </div>
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  created_at: string | Date;
+};
 
-    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
-    <span
-      class="tooltip tooltip-bottom"
-      [class.hidden]="searchBarVisible()"
-      data-tip="Search ⌘K · Command palette ⌘⇧K"
-      i18n-data-tip="@@navbar.search.tooltip"
-    >
-      <pc-icon
-        class="hover:text-primary text-base-400 cursor-pointer"
-        (click)="showSearchBar()"
-        name="magnifying-glass"
-      ></pc-icon>
-    </span>
+@Component({
+  selector: 'pc-navbar',
+  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle, Breadcrumbs],
+  templateUrl: './navbar.html',
+  host: {
+    '(window:keydown)': 'handleKeyDown($event)',
+  },
+})
+export class Navbar implements OnDestroy {
+  protected readonly emailActions = inject(EmailActionsStore);
+  protected readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly fullscreen = inject(FullScreenService);
+  private readonly searchSvc = inject(SearchService);
+  private readonly sideBarSvc = inject(SidebarService);
+  private readonly notificationsSvc = inject(NotificationsService);
+  private readonly router = inject(Router);
 
-    <pc-swap
-      class="hover:text-primary text-base-400 cursor-pointer"
-      swapOnIcon="arrows-pointing-out"
-      swapOffIcon="arrows-pointing-in"
-      [checked]="!isFullScreenMode()"
-      (click)="toggleFullScreen()"
-      aria-label="Toggle full screen"
-      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
-    ></pc-swap>
+  protected readonly currentUser = this.auth.getUserSignal();
+  protected readonly currentUserAvatar = computed(() => {
+    const user = this.currentUser();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
 
-    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
-    <pc-favourite-toggle></pc-favourite-toggle>
+  /** Initials shown in the avatar circle when the user has no picture. */
+  protected readonly userInitials = computed(() => {
+    const user = this.currentUser();
+    if (!user) return '';
+    const first = (user.first_name ?? '').trim();
+    const last = (user.last_name ?? '').trim();
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
+    return (initials || user.email?.charAt(0) || '?').toUpperCase();
+  });
 
-    <!-- light / dark theme switcher -->
-    <pc-swap
-      swapOnIcon="sun"
-      swapOffIcon="moon"
-      [checked]="themeSvc.getTheme() === 'light'"
-      (click)="toggleTheme()"
-      aria-label="Toggle theme"
-      i18n-aria-label="@@navbar.theme.ariaLabel"
-    ></pc-swap>
+  private pollInterval?: ReturnType<typeof setInterval>;
 
-    <!-- email sending status indicator -->
-    @if (emailActions.sendingCount() > 0) {
-    <div
-      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
-    >
-      <span class="loading loading-spinner loading-xs text-primary"></span>
-      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
-        >Sending ({{ emailActions.sendingCount() }})...</span
-      >
-    </div>
-    }
+  public readonly notifications = signal<NotificationItem[]>([]);
+  public readonly unreadCount = signal<number>(0);
+  public readonly isLoadingMore = signal<boolean>(false);
+  public readonly hasMore = signal<boolean>(true);
 
-    <!-- notifications drop down -->
-    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-ghost btn-circle relative"
-        aria-label="Notifications"
-        i18n-aria-label="@@navbar.notifications.ariaLabel"
-      >
-        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
-        @if (unreadCount() > 0) {
-        <span class="absolute top-2 right-2 w-3 h-3 bg-primary rounded-full" [class.animate-pulse]="isPulsing()"></span>
-        }
-      </div>
-
-      <!-- Notifications list -->
-      <div
-        tabindex="0"
-        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
-      >
-        <div class="card-body p-0">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
-            <h3
-              class="font-semibold text-sm"
-              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
-            >
-              Notifications
-            </h3>
-            @if (unreadCount() > 0) {
-            <button
-              class="text-xs text-primary hover:underline font-medium"
-              (click)="markAllAsRead($event)"
-              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
-            >
-              Mark all read
-            </button>
-            }
-          </div>
-
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
-            @if (notifications().length === 0) {
-            <div class="flex flex-col items-center justify-center py-8 text-base-400">
-              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
-              <p
-                class="text-xs font-light"
-                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
-              >
-                All caught up!
-              </p>
-            </div>
-            } @else { @for (notif of notifications(); track notif.id) {
-            <div
-              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
-              [class.bg-primary/5]="!notif.read"
-              (click)="clickNotification(notif)"
-            >
-              <!-- Icon Based on Type -->
-              <div class="flex-shrink-0">
-                <div
-                  class="w-8 h-8 rounded-lg flex items-center justify-center"
-                  [class.bg-info/10]="notif.type === 'info'"
-                  [class.text-info]="notif.type === 'info'"
-                  [class.bg-primary/10]="notif.type === 'email'"
-                  [class.text-primary]="notif.type === 'email'"
-                  [class.bg-warning/10]="notif.type === 'task'"
-                  [class.text-warning]="notif.type === 'task'"
-                >
-                  @if (notif.type === 'email') {
-                  <pc-icon name="envelope"></pc-icon>
-                  } @else if (notif.type === 'task') {
-                  <pc-icon name="clipboard-document-list"></pc-icon>
-                  } @else {
-                  <pc-icon name="information-circle"></pc-icon>
-                  }
-                </div>
-              </div>
-
-              <!-- Message Details -->
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-start gap-1">
-                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
-                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
-                </div>
-                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
-              </div>
-
-              <!-- Unread dot indicator -->
-              @if (!notif.read) {
-              <span
-                class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary animate-ping"
-              ></span>
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
-              }
-            </div>
-            } } @if (isLoadingMore()) {
-            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
-              <span class="loading loading-spinner loading-xs text-primary"></span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- profile drop down -->
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
-        <div
-          class="bg-base-100 border-primary hover:bg-base-300 hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
-        >
-          @if (currentUserAvatar()) {
-          <img
-            [src]="currentUserAvatar()!"
-            alt="User Profile Picture"
-            i18n-alt="@@navbar.profile.avatarAlt"
-            class="w-full h-full object-cover"
-          />
-          } @else {
-          <img alt="User Profile Picture" i18n-alt="@@navbar.profile.avatarAlt" src="assets/logo-sq.svg" class="p-1" />
-          }
-        </div>
-      </div>
-
-      <!-- Menu -->
-      <ul
-        tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
-        (click)="closeDropdown()"
-      >
-        <li class="hover:text-primary">
-          <a routerLink="/profile">
-            <pc-icon name="user-circle"></pc-icon>
-            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/settings">
-            <pc-icon name="cog-6-tooth"></pc-icon>
-            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/help">
-            <pc-icon name="information-circle"></pc-icon>
-            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
-          </a>
-        </li>
-        <li class="base-neutral px-0 mx-0"></li>
-        <li class="hover:text-primary" (click)="signOut()">
-          <a>
-            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
-            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
-          </a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Background email sending progress bar -->
-  @if (emailActions.sendingCount() > 0) {
-  <progress
-    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
-  ></progress>
+  protected isMobileOpen() {
+    return this.sideBarSvc.isMobileOpen();
   }
-</div>
+  protected readonly searchBarVisible = signal(false);
+
+  protected readonly searchStr = signal('');
+  protected readonly themeSvc = inject(ThemeService);
+
+  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+
+  constructor() {
+    // Move focus to the search bar whenever it becomes visible
+    effect(() => {
+      if (this.searchBarVisible())
+        queueMicrotask(() => {
+          this.searchInputRef()?.nativeElement?.focus();
+        });
+    });
+
+    void this.initNotifications();
+    this.pollInterval = setInterval(() => {
+      void this.refreshCount();
+    }, 60000);
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+  }
+
+  private async initNotifications() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      this.unreadCount.set(count || 0);
+      await this.fetchInitial();
+    } catch (err) {
+      console.error('Failed to initialize notifications', err);
+    }
+  }
+
+  protected async fetchInitial() {
+    this.isLoadingMore.set(true);
+    try {
+      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
+      this.notifications.set(list || []);
+      this.hasMore.set((list || []).length === 5);
+    } catch (err) {
+      console.error('Failed to fetch initial notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async refreshCount() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      const oldCount = this.unreadCount();
+      this.unreadCount.set(count || 0);
+      if (count > oldCount) {
+        // Notification count increased, fetch first 5 notifications in background
+        await this.fetchInitial();
+      }
+    } catch (err) {
+      console.error('Failed to poll notification count', err);
+    }
+  }
+
+  protected onNotificationOpen() {
+    if (this.notifications().length === 0) {
+      void this.fetchInitial();
+    }
+  }
+
+  protected onScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    const threshold = 20; // px from bottom
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
+    if (isNearBottom) {
+      void this.loadMore();
+    }
+  }
+
+  protected async loadMore() {
+    if (this.isLoadingMore() || !this.hasMore()) return;
+    this.isLoadingMore.set(true);
+    try {
+      const nextBatch = await this.notificationsSvc.getLatest({
+        limit: 5,
+        offset: this.notifications().length,
+      });
+      if (!nextBatch || nextBatch.length < 5) {
+        this.hasMore.set(false);
+      }
+      if (nextBatch && nextBatch.length > 0) {
+        const existingIds = new Set(this.notifications().map((n) => n.id));
+        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
+        if (uniqueNext.length > 0) {
+          this.notifications.set([...this.notifications(), ...uniqueNext]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load more notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async clickNotification(notif: NotificationItem) {
+    if (!notif.read) {
+      try {
+        await this.notificationsSvc.markRead(notif.id);
+        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
+        this.unreadCount.update((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error('Failed to mark notification read', err);
+      }
+    }
+    if (notif.link) {
+      void this.router.navigateByUrl(notif.link);
+    }
+    this.closeDropdown();
+  }
+
+  protected async markAllAsRead(event: Event) {
+    event.stopPropagation();
+    try {
+      await this.notificationsSvc.markAllRead();
+      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
+      this.unreadCount.set(0);
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  }
+
+  protected formatTime(dateStr: string | Date | null | undefined): string {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  public clearSearch(): void {
+    this.searchStr.set('');
+    this.searchSvc.clearSearch();
+  }
+
+  public handleKeyDown(event: KeyboardEvent): void {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+    const isK = event?.key?.toLowerCase() === 'k';
+
+    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
+    if (isCtrlOrCmd && isK && !event.shiftKey) {
+      event.preventDefault();
+
+      this.showSearchBar();
+    } else if (event.key === 'Escape' && this.searchBarVisible()) {
+      this.clearSearch();
+      this.hideSearchBar();
+    }
+  }
+
+  protected hideSearchBar(): void {
+    this.searchBarVisible.set(false);
+  }
+
+  protected isFullScreenMode(): boolean {
+    return this.fullscreen.isFullScreenMode();
+  }
+
+  protected onBlurSearchBar() {
+    if (!this.searchStr().length) {
+      this.hideSearchBar();
+    }
+  }
+
+  protected onSearchEnter(): void {
+    this.searchSvc.doSearchImmediate(this.searchStr());
+  }
+
+  protected onSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.searchStr.set(input.value);
+    this.search();
+  }
+
+  protected search(): void {
+    this.searchSvc.doSearch(this.searchStr());
+  }
+
+  protected showSearchBar(): void {
+    this.searchBarVisible.set(true);
+  }
+
+  protected signOut(): void {
+    void this.auth.signOut();
+  }
+
+  protected closeDropdown(): void {
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl) {
+      activeEl.blur();
+    }
+  }
+
+  protected toggleFullScreen(): void {
+    void this.fullscreen.toggleFullScreen();
+  }
+
+  protected toggleMobile(): void {
+    this.sideBarSvc.toggleMobile();
+  }
+
+  protected toggleSearch(): void {
+    this.searchBarVisible.set(!this.searchBarVisible());
+  }
+
+  protected toggleTheme(): void {
+    this.themeSvc.toggleTheme();
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
@@ -48443,341 +48381,6 @@ export class CompanyView {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-
-import { EmailsService } from '../../services/emails-service';
-import { EmailsStore } from '../../services/store/emailstore';
-import { EmailStateStore } from '../../services/store/email-state.store';
-import { EmailBody } from '../email-body/email-body';
-import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-compose';
-import { EmailDetails } from '../email-details/email-details';
-import { EmailFolderList } from '../email-folder-list/email-folder-list';
-import { EmailList } from '../email-list/email-list';
-import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { AuthService } from '@frontend/auth/auth-service';
-
-@Component({
-  selector: 'pc-email-client',
-  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
-  host: {
-    class: 'block h-full',
-    '(document:keydown)': 'handleDocumentKeydown($event)',
-  },
-  templateUrl: 'email-client.html',
-})
-export class EmailClient {
-  private readonly composer = viewChild<ComposeEmailComponent>('composer');
-
-  private authService = inject(AuthService);
-
-  protected readonly store = inject(EmailsStore);
-  private readonly stateStore = inject(EmailStateStore);
-  private readonly emailSvc = inject(EmailsService);
-
-  protected composePrefill = signal<ComposeInitial | null>(null);
-  protected draftIdToLoad = signal<string | null>(null);
-  protected isComposing = signal(false);
-
-  protected mobileView = this.stateStore.mobilePanelView;
-
-  protected folderPanelClass = computed(() =>
-    this.mobileView() === 'folders' ? 'flex-1 md:flex-none' : 'hidden md:block',
-  );
-
-  protected listPanelClass = computed(() =>
-    this.mobileView() === 'list' ? 'flex flex-col h-full flex-1 md:flex-none' : 'hidden md:flex md:flex-col md:h-full',
-  );
-
-  protected detailPanelClass = computed(() =>
-    this.mobileView() === 'detail'
-      ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:p-4 md:pt-2 md:relative md:z-10',
-  );
-
-  constructor() {
-    effect(() => {
-      const id = this.emailId();
-      if (id) {
-        void untracked(() => this.loadEmailData(id));
-      }
-    });
-  }
-
-  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
-
-  private async loadEmailData(emailId: string): Promise<void> {
-    try {
-      // 1. Fetch the email header/details from backend to know its folder_id
-      const res = await this.emailSvc.getEmailHeader(emailId);
-      if (res && res.email) {
-        const folderId = res.email.folder_id;
-
-        // 2. Ensure folders list is loaded
-        let folders = this.store.allFolders();
-        if (!folders || folders.length === 0) {
-          folders = await this.store.loadAllFoldersWithCounts();
-        }
-
-        // 3. Find the folder
-        const folder = folders.find((f) => String(f.id) === String(folderId));
-        if (folder) {
-          const emailObj: EmailType = {
-            id: String(res.email.id),
-            folder_id: String(res.email.folder_id),
-            updated_at: new Date(res.email.updated_at),
-            date_sent: res.email.date_sent ? new Date(res.email.date_sent) : undefined,
-            is_favourite: !!res.email.is_favourite,
-            attachment_count: res.email.attachment_count ?? 0,
-            status: res.email.status || 'open',
-            from_email: res.email.from_email ?? undefined,
-            to_email: res.email.to_email ?? undefined,
-            subject: res.email.subject ?? undefined,
-            preview: res.email.preview ?? undefined,
-            assigned_to: res.email.assigned_to ?? undefined,
-            has_attachment: !!res.email.has_attachment,
-            is_read: !!(res.email as any).is_read,
-          };
-
-          // Add to store's normalized map so it is available immediately
-          this.stateStore.replaceEmail(emailObj.id, emailObj);
-
-          // Select the folder and email
-          this.store.selectFolder(folder);
-          this.store.selectEmail(emailObj);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to pre-select email from notification link', err);
-    }
-  }
-
-  public readonly emails = this.store.emailsInSelectedFolder;
-
-  public readonly isBodyExpanded = this.store.isBodyExpanded;
-
-  public readonly selectedEmail = this.store.currentSelectedEmail;
-
-  public readonly selectedFolderId = this.store.currentSelectedFolderId;
-
-  public closeCompose() {
-    this.isComposing.set(false);
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(null);
-  }
-
-  public newEmail() {
-    this.openCompose();
-  }
-
-  // handle send from composer
-  public async onComposeSend(_payload: any) {
-    // TODO: integrate with your EmailActionsStore/EmailsService
-    // Example:
-    // await this.emailActions.sendEmail(payload);
-    this.isComposing.set(false);
-    // Optionally refresh current folder, show toast, etc.
-  }
-
-  public async onEmail(email: EmailType | null): Promise<void> {
-    const folderId = this.store.currentSelectedFolderId();
-    if (this.isComposing()) {
-      try {
-        const c = this.composer();
-        if (c?.form.dirty) {
-          await c.saveDraft();
-        }
-      } catch (e) {
-        console.error('Failed to save draft', e);
-        alert('Failed to save your draft. Please check your connection or copy your work.');
-        // Abort the function here.
-        // Do not close the composer or navigate to the new email.
-        return;
-      }
-      this.closeCompose();
-    }
-
-    // Always update the store selection so the list can reflect it
-    this.store.selectEmail(email);
-    this.mobileView.set('detail');
-
-    // In the drafts folder, also open the composer for the selected draft
-    if (folderId === ALL_FOLDERS.DRAFTS && email) {
-      this.draftIdToLoad.set(String(email.id));
-      this.isComposing.set(true);
-    }
-  }
-
-  public onFolder(folder: EmailFolderType): void {
-    this.store.selectFolder(folder);
-    this.mobileView.set('list');
-  }
-
-  public mobileGoBack(): void {
-    if (this.isComposing()) {
-      this.closeCompose();
-    }
-    if (this.mobileView() === 'detail') {
-      this.mobileView.set('list');
-    } else if (this.mobileView() === 'list') {
-      this.mobileView.set('folders');
-    }
-  }
-
-  public onForward(email: EmailType) {
-    const subject = email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject}`;
-    this.openCompose({ subject });
-  }
-
-  public onReply(email: EmailType) {
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to: email.from_email || '', subject });
-  }
-
-  public async onReplyAll(email: EmailType) {
-    const header = this.store.getEmailHeaderById(email.id)();
-    const recipients = new Set<string>();
-
-    const currentUser = await this.authService.getCurrentUser();
-    const currentUserEmail = currentUser.email.toLowerCase(); // Safe without ?.
-
-    if (email.from_email) recipients.add(email.from_email);
-
-    header?.email?.to_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-    header?.email?.cc_list?.forEach((r: any) => {
-      if (r?.email) recipients.add(r.email);
-    });
-
-    const to = Array.from(recipients)
-      .filter((e) => e && e.toLowerCase() !== currentUserEmail)
-      .join(', ');
-
-    const subject = email.subject?.startsWith('Re:') ? email.subject : `Re: ${email.subject}`;
-    this.openCompose({ to, subject });
-  }
-
-  public openCompose(prefill?: ComposeInitial | null) {
-    this.isBodyExpanded.set(false); // ensure body overlay is closed
-    this.draftIdToLoad.set(null);
-    this.composePrefill.set(prefill ?? null);
-    this.isComposing.set(true);
-    this.mobileView.set('detail');
-  }
-
-  public toggleExpanded(): void {
-    this.store.toggleBodyExpanded();
-  }
-
-  protected handleDocumentKeydown(ev: KeyboardEvent): void {
-    // Existing behaviour: Escape collapses an expanded body first.
-    if (ev.key === 'Escape' && !ev.repeat && this.isBodyExpanded()) {
-      this.store.toggleBodyExpanded();
-      ev.preventDefault();
-      ev.stopPropagation();
-      return;
-    }
-
-    // Stay out of the way while composing, typing into a field, or when a
-    // command/ctrl/alt modifier is held (Cmd+K search, the global `g` chord…).
-    if (this.isComposing() || this.isTypingTarget(ev.target) || ev.metaKey || ev.ctrlKey || ev.altKey) {
-      return;
-    }
-
-    // Shortcuts that work without a selection.
-    switch (ev.key) {
-      case 'c':
-        ev.preventDefault();
-        this.openCompose();
-        return;
-      case 'j':
-        ev.preventDefault();
-        this.selectRelative(1);
-        return;
-      case 'k':
-        ev.preventDefault();
-        this.selectRelative(-1);
-        return;
-    }
-
-    // Everything below acts on the currently selected email.
-    const email = this.selectedEmail();
-    if (!email) return;
-
-    switch (ev.key) {
-      case 'r':
-        ev.preventDefault();
-        this.onReply(email);
-        return;
-      case 'a':
-        ev.preventDefault();
-        void this.onReplyAll(email);
-        return;
-      case 'f':
-        ev.preventDefault();
-        this.onForward(email);
-        return;
-      case 'e':
-        ev.preventDefault();
-        void this.store.updateEmailStatus(email.id, 'closed');
-        return;
-      case 's':
-        ev.preventDefault();
-        void this.store.toggleEmailFavoriteStatus(email.id, !email.is_favourite);
-        return;
-      case 'I': // Shift+I — mark as read
-        ev.preventDefault();
-        void this.store.toggleEmailReadStatus(email.id, true);
-        return;
-      case 'U': // Shift+U — mark as unread
-        ev.preventDefault();
-        void this.store.toggleEmailReadStatus(email.id, false);
-        return;
-      case '#':
-        ev.preventDefault();
-        void this.store.deleteEmail(email.id);
-        return;
-      case 'Enter':
-      case 'o':
-        ev.preventDefault();
-        this.toggleExpanded();
-        return;
-      case 'u':
-        ev.preventDefault();
-        this.store.selectEmail(null);
-        this.mobileView.set('list');
-        return;
-    }
-  }
-
-  /** Move the selection to the next (`delta > 0`) or previous email in the folder. */
-  private selectRelative(delta: number): void {
-    const list = this.emails();
-    if (!list.length) return;
-    const current = this.selectedEmail();
-    const currentIdx = current ? list.findIndex((e) => String(e.id) === String(current.id)) : -1;
-    const nextIdx = currentIdx === -1 ? (delta > 0 ? 0 : list.length - 1) : currentIdx + delta;
-    const next = list[nextIdx];
-    if (!next) return;
-    void this.onEmail(next);
-  }
-
-  /** True when the event originates from a field the user is typing into. */
-  private isTypingTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return false;
-    const tag = target.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-    if (target.isContentEditable) return true;
-    return target.getAttribute('role') === 'textbox';
-  }
 }
 ```
 
@@ -51952,6 +51555,271 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/layout/navbar/navbar.html
+
+```html
+<!-- Navigation bar template with search, theme toggle, and user actions -->
+<div class="navbar bg-base-100 shadow-lg relative">
+  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
+    <pc-icon name="bars-4"></pc-icon>
+  </div>
+
+  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
+    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
+    <pc-breadcrumbs
+      class="hidden min-w-0 flex-1"
+      [class.sm:block]="!searchBarVisible()"
+      [crumbs]="trail.crumbs"
+      [positionLabel]="trail.positionLabel"
+      [hasPrev]="trail.hasPrev"
+      [hasNext]="trail.hasNext"
+      [prevLabel]="trail.prevLabel"
+      [nextLabel]="trail.nextLabel"
+      (prev)="trail.onPrev()"
+      (next)="trail.onNext()"
+    ></pc-breadcrumbs>
+    } }
+
+    <!-- Search bar — the flex-shrinking element so the icon cluster never overflows -->
+    <div
+      *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'"
+      class="min-w-0 max-w-[360px] shrink grow basis-[120px]"
+    >
+      <label class="input input-primary w-full flex items-center gap-2">
+        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
+        <input
+          #searchInput
+          type="text"
+          placeholder="Search people, emails, campaigns"
+          i18n-placeholder="@@navbar.search.placeholder"
+          class="grow w-full"
+          (blur)="onBlurSearchBar()"
+          [value]="searchStr()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="onSearchEnter()"
+        />
+        <kbd class="kbd kbd-sm hidden sm:inline-flex border-line">⌘K</kbd>
+      </label>
+    </div>
+
+    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
+    <span
+      class="tooltip tooltip-bottom"
+      [class.hidden]="searchBarVisible()"
+      data-tip="Search ⌘K · Command palette ⌘⇧K"
+      i18n-data-tip="@@navbar.search.tooltip"
+    >
+      <pc-icon
+        class="hover:text-primary text-base-400 cursor-pointer"
+        (click)="showSearchBar()"
+        name="magnifying-glass"
+      ></pc-icon>
+    </span>
+
+    <pc-swap
+      class="hover:text-primary text-base-400 cursor-pointer"
+      swapOnIcon="arrows-pointing-out"
+      swapOffIcon="arrows-pointing-in"
+      [checked]="!isFullScreenMode()"
+      (click)="toggleFullScreen()"
+      aria-label="Toggle full screen"
+      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
+    ></pc-swap>
+
+    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
+    <pc-favourite-toggle></pc-favourite-toggle>
+
+    <!-- light / dark theme switcher -->
+    <pc-swap
+      swapOnIcon="sun"
+      swapOffIcon="moon"
+      [checked]="themeSvc.getTheme() === 'light'"
+      (click)="toggleTheme()"
+      aria-label="Toggle theme"
+      i18n-aria-label="@@navbar.theme.ariaLabel"
+    ></pc-swap>
+
+    <!-- email sending status indicator -->
+    @if (emailActions.sendingCount() > 0) {
+    <div
+      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
+    >
+      <span class="loading loading-spinner loading-xs text-primary"></span>
+      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
+        >Sending ({{ emailActions.sendingCount() }})...</span
+      >
+    </div>
+    }
+
+    <!-- notifications drop down -->
+    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-ghost btn-circle relative"
+        aria-label="Notifications"
+        i18n-aria-label="@@navbar.notifications.ariaLabel"
+      >
+        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+        @if (unreadCount() > 0) {
+        <span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-base-100"></span>
+        }
+      </div>
+
+      <!-- Notifications list -->
+      <div
+        tabindex="0"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+      >
+        <div class="card-body p-0">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
+            <h3
+              class="font-semibold text-sm"
+              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
+            >
+              Notifications
+            </h3>
+            @if (unreadCount() > 0) {
+            <button
+              class="text-xs text-primary hover:underline font-medium"
+              (click)="markAllAsRead($event)"
+              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
+            >
+              Mark all read
+            </button>
+            }
+          </div>
+
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
+            @if (notifications().length === 0) {
+            <div class="flex flex-col items-center justify-center py-8 text-base-400">
+              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
+              <p
+                class="text-xs font-light"
+                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
+              >
+                All caught up!
+              </p>
+            </div>
+            } @else { @for (notif of notifications(); track notif.id) {
+            <div
+              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
+              [class.bg-primary/5]="!notif.read"
+              (click)="clickNotification(notif)"
+            >
+              <!-- Icon Based on Type -->
+              <div class="flex-shrink-0">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center"
+                  [class.bg-info/10]="notif.type === 'info'"
+                  [class.text-info]="notif.type === 'info'"
+                  [class.bg-primary/10]="notif.type === 'email'"
+                  [class.text-primary]="notif.type === 'email'"
+                  [class.bg-warning/10]="notif.type === 'task'"
+                  [class.text-warning]="notif.type === 'task'"
+                >
+                  @if (notif.type === 'email') {
+                  <pc-icon name="envelope"></pc-icon>
+                  } @else if (notif.type === 'task') {
+                  <pc-icon name="clipboard-document-list"></pc-icon>
+                  } @else {
+                  <pc-icon name="information-circle"></pc-icon>
+                  }
+                </div>
+              </div>
+
+              <!-- Message Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start gap-1">
+                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
+                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
+                </div>
+                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
+              </div>
+
+              <!-- Unread dot indicator (static — nothing loops but a working spinner, §7) -->
+              @if (!notif.read) {
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
+              }
+            </div>
+            } } @if (isLoadingMore()) {
+            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- profile drop down -->
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
+        <div
+          class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
+        >
+          @if (currentUserAvatar()) {
+          <img
+            [src]="currentUserAvatar()!"
+            alt="User Profile Picture"
+            i18n-alt="@@navbar.profile.avatarAlt"
+            class="w-full h-full object-cover"
+          />
+          } @else {
+          <span
+            class="flex h-full w-full items-center justify-center bg-primary/10 text-primary text-sm font-semibold select-none"
+            aria-hidden="true"
+            >{{ userInitials() }}</span
+          >
+          }
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <ul
+        tabindex="0"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
+        (click)="closeDropdown()"
+      >
+        <li class="hover:text-primary">
+          <a routerLink="/profile">
+            <pc-icon name="user-circle"></pc-icon>
+            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/settings">
+            <pc-icon name="cog-6-tooth"></pc-icon>
+            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/help">
+            <pc-icon name="information-circle"></pc-icon>
+            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
+          </a>
+        </li>
+        <li class="base-neutral px-0 mx-0"></li>
+        <li class="hover:text-primary" (click)="signOut()">
+          <a>
+            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
+            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Background email sending progress bar -->
+  @if (emailActions.sendingCount() > 0) {
+  <progress
+    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
+  ></progress>
+  }
+</div>
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
 
 ```typescript
@@ -53469,7 +53337,7 @@ export const SidebarItems: ISidebarItem[] = [
 <ng-template #navLink let-nav>
   <a
     *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-light hover:rounded-lg !cursor-pointer"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
     [class.animate-up]="nav.justPinned"
     [class.tooltip]="isEffectivelyNarrow()"
     [class.tooltip-right]="isEffectivelyNarrow()"
@@ -53500,7 +53368,7 @@ export const SidebarItems: ISidebarItem[] = [
 </ng-template>
 
 <div
-  class="bg-base-100 border-r-base-100 group min-h-full flex-col border-r-2 text-sm font-light sm:flex transition-all duration-50"
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
   [class.hidden]="!this.isMobileOpen()"
   [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
   [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
@@ -53516,13 +53384,13 @@ export const SidebarItems: ISidebarItem[] = [
 
   <a
     [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="avatar mx-2 mb-5 mt-3 w-10 cursor-pointer rounded-full p-0"
+    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
     routerLink="/summary"
     aria-label="Go to dashboard"
     i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
     (click)="this.closeMobile()"
   >
-    <img src="../../assets/logo-sq.svg" class="w-24 h-auto p-2" alt="Compact Logo" i18n-alt="@@sidebar.logoSqAlt" />
+    <span aria-hidden="true">pC</span>
   </a>
 
   @for (item of items(); track item.name) {

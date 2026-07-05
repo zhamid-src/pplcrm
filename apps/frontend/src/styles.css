@@ -12,6 +12,7 @@
   name: 'light';
   default: true;
   --color-primary: #0ea5e9;
+  --color-primary-content: #ffffff;
   --color-secondary: #14e8a6;
   --color-secondary-content: #1f2937;
   --color-accent: #0c506e;
@@ -21,11 +22,17 @@
   --color-base-100: #ffffff;
   --color-base-200: #f8f8f8ff;
   --color-base-300: #efeeeeff;
+  --color-base-content: #1f2937;
   --color-info: #38bdf8;
   --color-success: #2dd4bf;
+  --color-success-content: #053a34;
   --color-warning: #e5c963;
+  --color-warning-content: #4a3d0a;
   --color-error: #f37373;
-  --color-error-content: #f0f0f0;
+  --color-error-content: #ffffff;
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
 
   --tooltip-bg: #333333;
   --tooltip-color: #eeeeee;
@@ -62,7 +69,7 @@ label.input input:-webkit-autofill:active {
   --color-primary: #3ea6ff; /* bright azure */
   --color-secondary: #20d7a7; /* teal pop (optional) */
   --color-accent: #3ea6ff;
-  --color-accent-content: #f0f6ff; /* light text on blue */
+  --color-accent-content: #0b1220; /* dark text on bright azure */
 
   /* Text + neutrals */
   --color-neutral: #0e182b; /* chrome / panels */
@@ -73,11 +80,17 @@ label.input input:-webkit-autofill:active {
   --color-base-200: #131e31; /* row alt / subtle surface */
   --color-base-300: #1a2b45; /* headers / raised surface */
 
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
+
   /* Feedback */
   --color-info: #3ea6ff;
   --color-success: #22c55e;
+  --color-success-content: #052e12;
   --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
   --color-error: #ef4444;
+  --color-error-content: #2b0505;
 
   /* Tooltips */
   --tooltip-bg: #0e1626;
@@ -97,7 +110,7 @@ body {
 /* Custom scrollbar styles for email components */
 .email-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db #f3f4f6;
+  scrollbar-color: var(--color-base-300) var(--color-base-200);
 }
 
 .email-scrollbar::-webkit-scrollbar {
@@ -106,17 +119,17 @@ body {
 }
 
 .email-scrollbar::-webkit-scrollbar-track {
-  background: #f3f4f6;
+  background: var(--color-base-200);
   border-radius: 4px;
 }
 
 .email-scrollbar::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-base-300);
   border-radius: 4px;
 }
 
 .email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
 }
 
 .bg-image {
@@ -203,6 +216,21 @@ body {
     }
   }
 
+  /* Save-landed feedback for grids and forms — success tint fading to nothing.
+     Semantic token so it survives theme switch (design §5). Mirrors the
+     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
+  @keyframes savedFlash {
+    0% {
+      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+    }
+    60% {
+      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
   @keyframes exitUp {
     0% {
       transform: translateY(0%);
@@ -277,6 +305,15 @@ body {
   .animate-flash {
     animation: flash 1s ease-in-out 1;
   }
+  .animate-saved-flash {
+    animation: savedFlash 1.2s ease-out 1;
+  }
+}
+
+/* Hairline border helper — pairs with any border-width utility to paint the
+   app-wide line color (design §5). Use as `class="border-b border-line"`. */
+@utility border-line {
+  border-color: var(--color-line);
 }
 
 /* Dark mode overrides for Quill and email prose */
