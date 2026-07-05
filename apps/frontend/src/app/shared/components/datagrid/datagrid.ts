@@ -3,6 +3,7 @@
 import {
   AfterViewInit,
   Component,
+  DestroyRef,
   ElementRef,
   OnDestroy,
   OnInit,
@@ -43,6 +44,7 @@ import {
 // Context available for future slices/controllers (not yet used here)
 // import { GridContextService } from './state/grid-context.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { DateFormatService } from '../../services/date-format.service';
 
@@ -170,6 +172,7 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   // Injected Services
   public readonly alertSvc = inject(AlertService);
+  private readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly dateFormatSvc = inject(DateFormatService);
   private readonly columnsSvc = inject(DataGridColumnsService);
   private readonly dataSvc = inject(DataGridDataService);
@@ -745,6 +748,32 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     if (this.store) {
       this.store.grid = this;
     }
+
+    // Top-level grid pages publish a first-level crumb (e.g. "People") into the navbar.
+    // Only when the toolbar is shown — embedded/inline grids sit inside a detail page
+    // that owns its own trail, so they must not overwrite it. Cleared on destroy via
+    // DestroyRef (ngOnDestroy early-returns when there's no store).
+    let publishedCrumb = false;
+    effect(() => {
+      const title = this.title();
+      if (this.showToolbar() && title) {
+        this.breadcrumbs.set({
+          crumbs: [{ label: title }],
+          positionLabel: null,
+          hasPrev: false,
+          hasNext: false,
+          prevLabel: 'Previous record',
+          nextLabel: 'Next record',
+          onPrev: () => undefined,
+          onNext: () => undefined,
+        });
+        publishedCrumb = true;
+      }
+    });
+    inject(DestroyRef).onDestroy(() => {
+      if (publishedCrumb) this.breadcrumbs.clear();
+    });
+
     effect(() => {
       const count = this.gridSvc.refreshCount();
       if (count > 0) {

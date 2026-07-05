@@ -1,6 +1,8 @@
 import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { Icon } from '@icons/icon';
+import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
 import { Swap } from '@uxcommon/components/swap/swap';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { Router, RouterLink } from '@angular/router';
@@ -27,7 +29,7 @@ type NotificationItem = {
 
 @Component({
   selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle],
+  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle, Breadcrumbs],
   templateUrl: './navbar.html',
   host: {
     '(window:keydown)': 'handleKeyDown($event)',
@@ -35,6 +37,7 @@ type NotificationItem = {
 })
 export class Navbar implements OnDestroy {
   protected readonly emailActions = inject(EmailActionsStore);
+  protected readonly breadcrumbs = inject(BreadcrumbsService);
   private readonly auth = inject(AuthService);
   private readonly userService = inject(UserService);
   private readonly fullscreen = inject(FullScreenService);

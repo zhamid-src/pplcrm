@@ -5,6 +5,22 @@
   </div>
 
   <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
+    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
+    <pc-breadcrumbs
+      class="hidden min-w-0 flex-1"
+      [class.sm:block]="!searchBarVisible()"
+      [crumbs]="trail.crumbs"
+      [positionLabel]="trail.positionLabel"
+      [hasPrev]="trail.hasPrev"
+      [hasNext]="trail.hasNext"
+      [prevLabel]="trail.prevLabel"
+      [nextLabel]="trail.nextLabel"
+      (prev)="trail.onPrev()"
+      (next)="trail.onNext()"
+    ></pc-breadcrumbs>
+    } }
+
     <!-- Search bar -->
     <div *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'" class="flex-1 max-w-full">
       <label class="input input-primary w-full flex items-center gap-2">
