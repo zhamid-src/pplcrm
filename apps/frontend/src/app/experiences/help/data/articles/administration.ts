@@ -22,7 +22,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
       {
         kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Administrators set workspace defaults, but your choices here are yours.',
+        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Open them from **Settings** in the avatar menu; every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
       },
       {
         kind: 'callout',
@@ -96,7 +96,16 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. [Settings](/settings) (avatar menu → Settings) covers your notifications and appearance. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone.',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone and uses a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
       },
       { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace configuration' },
       {
@@ -117,6 +126,12 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         tone: 'info',
         title: 'Cannot see the Workspace section?',
         text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
       },
       {
         kind: 'callout',

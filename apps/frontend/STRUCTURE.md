@@ -135,6 +135,7 @@ apps/
                 email-folders.store.ts
                 email-state.store.ts
                 emailstore.ts
+              email-sla.ts
               emails-service.ts
             ui/
               email-activities/
@@ -169,6 +170,9 @@ apps/
               email-list/
                 email-list.html
                 email-list.ts
+              email-person-rail/
+                email-person-rail.html
+                email-person-rail.ts
           events/
             services/
               events-frontend-service.ts
@@ -302,6 +306,9 @@ apps/
             ms-sync/
               ms-sync-settings.html
               ms-sync-settings.ts
+            personal-settings-dialog/
+              personal-settings-dialog.html
+              personal-settings-dialog.ts
             security/
               passkey-settings.html
               passkey-settings.ts
@@ -3149,7 +3156,14 @@ export class EmailStateStore {
 
   public readonly isBodyExpanded = signal<boolean>(false);
 
+  /** Person context rail (§5): collapsed = 48px identity strip, expanded = 236px card. */
+  public readonly personRailCollapsed = signal<boolean>(false);
+
   public readonly mobilePanelView = signal<'folders' | 'list' | 'detail'>('folders');
+
+  public togglePersonRail(): void {
+    this.personRailCollapsed.update((v) => !v);
+  }
 
   public clearHasAttachment(emailId: string) {
     this.hasAttachmentByEmailId.update((m) => {
@@ -3311,6 +3325,353 @@ function toNum(n: unknown): number {
   if (typeof n === 'number') return n;
   return 0;
 }
+```
+
+## File: apps/frontend/src/app/experiences/emails/services/email-sla.ts
+
+```typescript
+import { calculateWorkingTimeMs } from '../../../../../../../libs/common/src/lib/sla';
+
+const MS_PER_HOUR = 3_600_000;
+/** Below this fraction of the target still remaining, the pill turns warning-tinted. */
+const WARNING_REMAINING_FRACTION = 0.25;
+
+export type SlaTone = 'neutral' | 'warning' | 'error';
+
+export interface SlaPill {
+  text: string;
+  tone: SlaTone;
+}
+
+export interface SlaInputs {
+  /** Workspace SLA target for an email reply, in working hours. */
+  emailsHours: number | null | undefined;
+  /** When the inbound email was received. */
+  receivedAt: Date | null | undefined;
+  status: string | null | undefined;
+  /** '09:00' */
+  workingHoursEnd: string | null | undefined;
+  /** '17:00' */
+  workingHoursStart: string | null | undefined;
+  /** '1,2,3,4,5' — day numbers, 0=Sun … 6=Sat. */
+  workingDays: string | null | undefined;
+}
+
+function parseWorkingDays(raw: string | null | undefined): number[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+}
+
+/**
+ * Honest per-thread SLA pill (§5) computed only from data we already have:
+ * the received timestamp + the workspace SLA config. We do NOT know the actual
+ * first-response time, so a closed thread reports only "Closed" — never a
+ * fabricated "sent in 1.2h". Returns null when there's nothing truthful to show.
+ */
+export function computeEmailSla(inputs: SlaInputs, now: Date = new Date()): SlaPill | null {
+  const status = (inputs.status ?? 'open').toLowerCase();
+
+  if (status === 'closed') {
+    return { text: 'Closed', tone: 'neutral' };
+  }
+
+  const target = inputs.emailsHours;
+  const received = inputs.receivedAt;
+  const workingDays = parseWorkingDays(inputs.workingDays);
+
+  // Nothing truthful to compute without a received time, a target and a schedule.
+  if (received == null || target == null || !Number.isFinite(target) || target <= 0 || workingDays.length === 0) {
+    return null;
+  }
+
+  const start = inputs.workingHoursStart || '09:00';
+  const end = inputs.workingHoursEnd || '17:00';
+
+  const elapsedHours = calculateWorkingTimeMs(received, now, workingDays, start, end) / MS_PER_HOUR;
+  const remaining = target - elapsedHours;
+  const targetLabel = Math.round(target);
+
+  if (remaining <= 0) {
+    const overdueBy = Math.max(1, Math.ceil(-remaining));
+    return { text: `First response overdue by ${overdueBy}h · ${targetLabel}h SLA`, tone: 'error' };
+  }
+
+  const dueIn = Math.max(1, Math.ceil(remaining));
+  const tone: SlaTone = remaining <= target * WARNING_REMAINING_FRACTION ? 'warning' : 'neutral';
+  return { text: `First response due in ${dueIn}h · ${targetLabel}h SLA`, tone };
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.ts
+
+```typescript
+// pc-compose-email.component.ts
+import { DecimalPipe } from '@angular/common';
+import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
+import { Icon } from '@icons/icon'; // your <pc-icon>
+import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
+
+import { QuillModule } from 'ngx-quill';
+import Quill from 'quill';
+
+import { EmailActionsStore } from '../../services/store/email-actions.store';
+
+@Component({
+  selector: 'pc-compose-email',
+  imports: [ReactiveFormsModule, QuillModule, Icon, AttachmentIconComponent, DecimalPipe, FileSizePipe, Swap],
+  host: { ngSkipHydration: 'true' }, // avoids hydration mismatches with rich editors
+  templateUrl: './email-compose.html',
+  styleUrls: ['./email-compose.css'],
+})
+export class ComposeEmailComponent {
+  private actions = inject(EmailActionsStore);
+  private dialogs = inject(ConfirmDialogService);
+  private draftIdSignal = signal<string | null>(null);
+  private fb = inject(NonNullableFormBuilder);
+  private quill!: Quill;
+
+  public readonly finished = output<void>();
+
+  public readonly draftId = input<string | null>(null);
+  public readonly initial = input<ComposeInitial | null>(null);
+
+  public attachments = signal<File[]>([]);
+  public dragOver = signal(false);
+  public readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
+  public form = this.fb.group({
+    to: [''],
+    cc: [''],
+    bcc: [''],
+    subject: ['', [Validators.maxLength(998)]],
+    html: [''],
+  });
+  public toolbarId = `compose-toolbar-${Math.random().toString(36).slice(2)}`;
+  public modules = {
+    toolbar: {
+      container: `#${this.toolbarId}`,
+      handlers: {
+        undo: () => this.historyUndo(),
+        redo: () => this.historyRedo(),
+        attach: () => this.triggerAttach(),
+      },
+    },
+    history: { delay: 500, maxStack: 200, userOnly: true },
+  };
+  public sending = signal(false);
+  public showHeader = signal(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
+  public showMore = signal(false);
+  public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
+
+  constructor() {
+    // Replaces the @Input() set draftId setter
+    effect(() => {
+      const id = this.draftId();
+      if (id) {
+        void this.loadDraft(id);
+      } else {
+        this.draftIdSignal.set(null);
+        this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
+        this.attachments.set([]);
+      }
+    });
+
+    // Replaces the @Input() set initial setter
+    effect(() => {
+      const value = this.initial();
+      if (!value) return;
+      this.form.patchValue({
+        to: value.to ?? '',
+        cc: value.cc ?? '',
+        bcc: value.bcc ?? '',
+        subject: value.subject ?? '',
+        html: value.html ?? '',
+      });
+    });
+  }
+
+  public async delete() {
+    const hasDraft = !!this.draftIdSignal();
+    const isDirty = this.form.dirty;
+    if (!isDirty && !hasDraft) {
+      this.finished.emit();
+      return;
+    }
+    const ok = await this.dialogs.confirm({
+      title: 'Discard draft?',
+      message: 'Your changes will be permanently removed.',
+      variant: 'danger',
+      icon: 'trash',
+      confirmText: 'Discard',
+      cancelText: 'Cancel',
+      allowBackdropClose: false,
+    });
+    if (ok) {
+      if (hasDraft) {
+        try {
+          await this.actions.deleteDraft(this.draftIdSignal()!);
+        } catch (e) {
+          console.error('Failed to delete draft', e);
+        }
+      }
+      this.finished.emit();
+    }
+  }
+
+  public async discard() {
+    return this.delete();
+  }
+
+  public async loadDraft(id: string) {
+    const d = await this.actions.getDraft(id);
+    this.form.patchValue({
+      to: (d.to_list || []).join(', '),
+      cc: (d.cc_list || []).join(', '),
+      bcc: (d.bcc_list || []).join(', '),
+      subject: d.subject || '',
+      html: d.body_html || '',
+    });
+    this.draftIdSignal.set(d.id);
+    this.form.markAsPristine();
+  }
+
+  public onDragLeave(e: DragEvent) {
+    e.preventDefault();
+    this.dragOver.set(false);
+  }
+
+  public onDragOver(e: DragEvent) {
+    e.preventDefault();
+    this.dragOver.set(true);
+  }
+
+  public onDrop(e: DragEvent) {
+    e.preventDefault();
+    this.dragOver.set(false);
+    if (e.dataTransfer?.files?.length) this.mergeFiles(e.dataTransfer.files);
+  }
+
+  // attachments
+  public onFileChoose(ev: Event) {
+    const input = ev.target as HTMLInputElement;
+    if (input.files?.length) this.mergeFiles(input.files);
+    if (input) input.value = '';
+  }
+
+  public onSend() {
+    if (!this.validTo()) return;
+    const v = this.form.getRawValue();
+    const input: ComposePayload = {
+      to: this.parseEmails(v.to),
+      cc: this.parseEmails(v.cc),
+      bcc: this.parseEmails(v.bcc),
+      subject: v.subject,
+      html: v.html,
+      attachments: this.attachments(),
+    };
+    void this.actions.sendEmail(input);
+    this.finished.emit(); // close composer immediately
+  }
+
+  public removeAttachment(index: number) {
+    const arr = this.attachments().slice();
+    arr.splice(index, 1);
+    this.attachments.set(arr);
+  }
+
+  public async saveDraft() {
+    const v = this.form.getRawValue();
+    const input: DraftPayload = {
+      id: this.draftIdSignal() || undefined,
+      to: this.parseEmails(v.to),
+      cc: this.parseEmails(v.cc),
+      bcc: this.parseEmails(v.bcc),
+      subject: v.subject,
+      html: v.html,
+    };
+    const res = await this.actions.saveDraft(input);
+    this.draftIdSignal.set(res.id);
+  }
+
+  public toggleHeader() {
+    this.showHeader.update((v) => !v);
+  }
+
+  public toggleMore() {
+    this.showMore.update((v) => !v);
+  }
+
+  public validTo() {
+    const to = this.form.get('to')?.value;
+    return to && to.trim().length > 0;
+  }
+
+  protected onEditorCreated(q: Quill) {
+    this.quill = q;
+  }
+
+  private historyRedo() {
+    if (!this.quill) return;
+
+    const history = this.quill.getModule('history');
+    if (!history) return;
+    (history as any).redo();
+  }
+
+  private historyUndo() {
+    if (!this.quill) return;
+    const history = this.quill.getModule('history');
+    if (!history) return;
+    (history as any).undo();
+  }
+
+  private mergeFiles(list: FileList) {
+    this.attachments.set([...this.attachments(), ...Array.from(list)]);
+  }
+
+  private parseEmails(raw: string | null | undefined): string[] {
+    return (raw || '')
+      .split(/[;,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  private triggerAttach() {
+    this.fileInput()?.nativeElement.click();
+  }
+}
+
+export type ComposeInitial = {
+  bcc?: string;
+  cc?: string;
+  html?: string;
+  subject?: string;
+  to?: string;
+};
+
+export type ComposePayload = {
+  attachments: File[];
+  bcc: string[];
+  cc: string[];
+  html: string; // keep HTML for simplicity; switch to Delta if you prefer
+  subject: string;
+  to: string[];
+};
+
+export type DraftPayload = {
+  bcc: string[];
+  cc: string[];
+  html: string;
+  id?: string;
+  subject: string;
+  to: string[];
+};
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.html
@@ -3608,6 +3969,217 @@ export class EmailCreateTaskDialog {
       .split(' ')
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
       .join(' ');
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.html
+
+```html
+@if (collapsed()) {
+<!-- Collapsed: 48px strip keeps IDENTITY (avatar initials), never nothing (§2) -->
+<aside class="box-border flex w-12 shrink-0 flex-col items-center gap-3 border-l border-base-300 bg-base-200 py-3">
+  <button
+    type="button"
+    class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
+    [attr.data-tip]="'Expand person context — ' + displayName()"
+    aria-label="Expand person context"
+    (click)="toggle()"
+  >
+    <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+  </button>
+  <div
+    class="tooltip tooltip-left flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
+    [attr.data-tip]="displayName()"
+  >
+    {{ initial() }}
+  </div>
+</aside>
+} @else {
+<!-- Expanded: 236px context card -->
+<aside
+  class="box-border flex w-[236px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-base-300 bg-base-200 p-4"
+>
+  <div class="flex items-center justify-between">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-base-content/45">Person context</span>
+    <button
+      type="button"
+      class="tooltip tooltip-left btn btn-ghost btn-xs btn-circle"
+      data-tip="Collapse person context"
+      aria-label="Collapse person context"
+      (click)="toggle()"
+    >
+      <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+    </button>
+  </div>
+
+  <!-- Identity -->
+  <div class="flex flex-col items-start gap-2">
+    <div
+      class="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary select-none"
+    >
+      {{ initial() }}
+    </div>
+    @if (person(); as p) {
+    <a
+      [routerLink]="['/people', p.id]"
+      class="text-[15px] font-semibold text-base-content underline decoration-primary/20 decoration-1 underline-offset-[3px] transition-colors hover:text-primary"
+    >
+      {{ displayName() }}
+    </a>
+    } @else {
+    <span class="text-[15px] font-semibold text-base-content">{{ displayName() }}</span>
+    } @if (subline()) {
+    <span class="text-xs text-base-content/60">{{ subline() }}</span>
+    }
+  </div>
+
+  @if (person(); as p) {
+  <!-- Contact card -->
+  <div class="flex flex-col gap-1.5 rounded-lg border border-base-300 bg-base-100 p-3 text-xs">
+    @if (p.email) {
+    <div class="flex items-center gap-2 min-w-0">
+      <pc-icon name="envelope" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
+      <span class="truncate">{{ p.email }}</span>
+    </div>
+    } @if (email()?.date_sent) {
+    <div class="flex items-center gap-2 text-base-content/60">
+      <pc-icon name="clock" [size]="4" class="shrink-0 text-base-content/50"></pc-icon>
+      <span>Last inbound {{ email()!.date_sent | timeAgo:{ style: 'long' } }}</span>
+    </div>
+    }
+  </div>
+
+  <!-- Tags -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Tags</span>
+    @if (tags().length) {
+    <div class="flex flex-wrap gap-1.5">
+      @for (t of tags(); track t.name) {
+      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+      }
+    </div>
+    } @else {
+    <span class="text-xs text-base-content/40">None yet</span>
+    }
+  </div>
+
+  <!-- Issues of interest -->
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Issues of interest</span>
+    @if (issues().length) {
+    <div class="flex flex-wrap gap-1.5">
+      @for (t of issues(); track t.name) {
+      <pc-tagitem [name]="t.name" [color]="t.color" [canDelete]="false" [compact]="true"></pc-tagitem>
+      }
+    </div>
+    } @else {
+    <span class="text-xs text-base-content/40">None yet</span>
+    }
+  </div>
+
+  <a [routerLink]="['/people', p.id]" class="btn btn-primary btn-sm mt-1 w-full">
+    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+    Open record
+  </a>
+  } @else {
+  <!-- No matched person: guide to the exit, don't dead-end (§3) -->
+  <div
+    class="flex flex-col items-start gap-2 rounded-lg border border-base-300 bg-base-100 p-3 text-xs text-base-content/60"
+  >
+    <pc-icon name="user-circle" [size]="6" class="text-base-content/30"></pc-icon>
+    <span>This sender isn't matched to a person record yet.</span>
+  </div>
+  }
+</aside>
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.ts
+
+```typescript
+import { Component, computed, inject, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { TagItem } from '@uxcommon/components/tags/tagitem';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import { EmailStateStore } from '../../services/store/email-state.store';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+
+interface RailTag {
+  color?: string | null;
+  name: string;
+}
+
+interface RailPerson {
+  company_name?: string | null;
+  email?: string | null;
+  first_name?: string | null;
+  id: string;
+  issues?: RailTag[];
+  last_name?: string | null;
+  tags?: RailTag[];
+}
+
+/**
+ * Person context rail (§5) — a 236px card giving the inbox a "who am I talking to"
+ * answer. Reuses the person already resolved for the email header; adds no backend.
+ * Collapses to a 48px strip that keeps the avatar initials (identity, never hidden).
+ */
+@Component({
+  selector: 'pc-email-person-rail',
+  imports: [RouterLink, Icon, TagItem, TimeAgoPipe],
+  templateUrl: 'email-person-rail.html',
+})
+export class EmailPersonRail {
+  protected readonly stateStore = inject(EmailStateStore);
+  private readonly store = inject(EmailsStore);
+
+  public readonly email = input<EmailType | null>(null);
+
+  protected readonly collapsed = this.stateStore.personRailCollapsed;
+
+  protected readonly person = computed<RailPerson | null>(() => {
+    const e = this.email();
+    if (!e) return null;
+    const header = this.store.getEmailHeaderById(e.id)();
+    const p = (header as { person?: RailPerson } | null | undefined)?.person;
+    return p ?? null;
+  });
+
+  /** Falls back to the raw sender when no person record is matched. */
+  protected readonly displayName = computed<string>(() => {
+    const p = this.person();
+    if (p) {
+      const full = `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim();
+      if (full) return full;
+      if (p.email) return p.email;
+    }
+    const e = this.email();
+    return e?.from_email ?? 'Unknown sender';
+  });
+
+  protected readonly initial = computed<string>(() => (this.displayName()[0] ?? '?').toUpperCase());
+
+  /** Honest role subline: only what the tags/fields actually say (§0 — no faked data). */
+  protected readonly subline = computed<string | null>(() => {
+    const p = this.person();
+    if (!p) return null;
+    const parts: string[] = [];
+    const tagNames = (p.tags ?? []).map((t) => t.name.toLowerCase());
+    if (tagNames.includes('donor')) parts.push('Donor');
+    else if (tagNames.includes('volunteer')) parts.push('Volunteer');
+    if (p.company_name) parts.push(p.company_name);
+    return parts.length ? parts.join(' · ') : null;
+  });
+
+  protected readonly tags = computed<RailTag[]>(() => this.person()?.tags ?? []);
+  protected readonly issues = computed<RailTag[]>(() => this.person()?.issues ?? []);
+
+  protected toggle(): void {
+    this.stateStore.togglePersonRail();
   }
 }
 ```
@@ -10496,6 +11068,305 @@ export class DomainSettingsComponent implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.html
+
+```html
+@if (open()) {
+<div class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
+  <!-- backdrop click closes -->
+  <button type="button" class="absolute inset-0 cursor-default" aria-label="Close settings" (click)="close()"></button>
+
+  <div
+    class="animate-drop relative z-[71] w-full max-w-[430px] rounded-2xl border border-base-200 bg-base-100 p-6 shadow-2xl"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Settings"
+  >
+    <!-- Header: scope stated up front (§5a) -->
+    <div class="flex items-start gap-3">
+      <div
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary select-none"
+      >
+        {{ initial() }}
+      </div>
+      <div class="min-w-0 flex-1">
+        <h2 class="text-lg font-bold leading-tight">Settings</h2>
+        <p class="text-xs text-base-content/60">Personal to you — nothing here affects teammates</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm btn-circle" aria-label="Close" (click)="close()">
+        <pc-icon name="x-mark" [size]="5"></pc-icon>
+      </button>
+    </div>
+
+    <!-- NOTIFICATIONS matrix -->
+    <div class="mt-5">
+      <div class="flex items-end gap-2">
+        <span class="flex-1 text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45"
+          >Notifications</span
+        >
+        <span class="w-10 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-base-content/45"
+          >Email</span
+        >
+        <span class="w-10 text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-base-content/45"
+          >In-app</span
+        >
+      </div>
+      <div class="mt-2 flex flex-col">
+        @for (row of rows; track row.emailKey) {
+        <div class="flex items-center gap-2 py-2">
+          <div class="min-w-0 flex-1">
+            <div class="text-sm font-medium text-base-content">{{ row.label }}</div>
+            <div class="text-xs text-base-content/55">{{ row.helper }}</div>
+          </div>
+          <label class="flex w-10 justify-center">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary checkbox-sm"
+              [checked]="isOn(row.emailKey)"
+              (change)="toggle(row.emailKey)"
+              [attr.aria-label]="row.label + ' — email'"
+            />
+          </label>
+          <label class="flex w-10 justify-center">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary checkbox-sm"
+              [checked]="isOn(row.inAppKey)"
+              (change)="toggle(row.inAppKey)"
+              [attr.aria-label]="row.label + ' — in-app'"
+            />
+          </label>
+        </div>
+        }
+      </div>
+    </div>
+
+    <div class="my-4 border-t border-base-200"></div>
+
+    <!-- APPEARANCE -->
+    <div>
+      <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Appearance</span>
+      <div class="mt-3 flex items-center justify-between">
+        <span class="text-sm font-medium">Theme</span>
+        <div class="join">
+          @for (opt of themeOptions; track opt.value) {
+          <button
+            type="button"
+            class="btn join-item btn-sm"
+            [class.btn-primary]="theme.getPreference() === opt.value"
+            (click)="setThemePreference(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+          }
+        </div>
+      </div>
+    </div>
+
+    <div class="my-4 border-t border-base-200"></div>
+
+    <!-- PASSKEYS -->
+    <div>
+      <span class="text-[10.5px] font-semibold uppercase tracking-[0.09em] text-base-content/45">Passkeys</span>
+      <div class="mt-2">
+        <pc-passkey-settings></pc-passkey-settings>
+      </div>
+    </div>
+
+    <div class="my-4 border-t border-base-200"></div>
+
+    <!-- Footer contract (§5a) -->
+    <p class="text-xs" [class.text-base-content/45]="!savedJustNow()" [class.text-success]="savedJustNow()">
+      {{ savedJustNow() ? 'Saved just now' : 'Changes apply instantly — nothing to save' }}
+    </p>
+  </div>
+</div>
+}
+```
+
+## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.ts
+
+```typescript
+import { Component, computed, effect, inject, model, output, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+
+import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
+import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { ThemePreference, ThemeService } from '../../../layout/theme/theme-service';
+import { PasskeySettingsComponent } from '../security/passkey-settings';
+
+interface NotifRow {
+  emailKey: string;
+  helper: string;
+  inAppKey: string;
+  label: string;
+}
+
+const NOTIF_ROWS: NotifRow[] = [
+  {
+    label: 'Mentioned in comment',
+    helper: 'When someone mentions you in a thread',
+    emailKey: 'mention_in_comment',
+    inAppKey: 'mention_in_comment_in_app',
+  },
+  {
+    label: 'Task assigned',
+    helper: 'When a task is assigned to you',
+    emailKey: 'task_assigned',
+    inAppKey: 'task_assigned_in_app',
+  },
+  {
+    label: 'Task due today / overdue',
+    helper: 'Daily reminder of active tasks due',
+    emailKey: 'task_due',
+    inAppKey: 'task_due_in_app',
+  },
+  {
+    label: 'Person assigned',
+    helper: 'When contact ownership is assigned to you',
+    emailKey: 'person_assigned',
+    inAppKey: 'person_assigned_in_app',
+  },
+  {
+    label: 'Export ready',
+    helper: 'Download link when a CSV export finishes',
+    emailKey: 'export_ready',
+    inAppKey: 'export_ready_in_app',
+  },
+  {
+    label: 'Import summary',
+    helper: 'Completion stats after a spreadsheet import',
+    emailKey: 'import_summary',
+    inAppKey: 'import_summary_in_app',
+  },
+];
+
+/**
+ * Personal Settings popup (§5a) — instant apply, no Save/Reset. Everything here is
+ * scoped to the signed-in user: notification matrix, appearance (theme + density),
+ * and passkeys. Reuses the notification-preferences model and PasskeySettings.
+ */
+@Component({
+  selector: 'pc-personal-settings-dialog',
+  imports: [Icon, PasskeySettingsComponent],
+  templateUrl: 'personal-settings-dialog.html',
+})
+export class PersonalSettingsDialog {
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly alerts = inject(AlertService);
+  protected readonly theme = inject(ThemeService);
+
+  protected readonly themeOptions: { label: string; value: ThemePreference }[] = [
+    { label: 'Light', value: 'light' },
+    { label: 'Dark', value: 'dark' },
+    { label: 'System', value: 'system' },
+  ];
+
+  /** Two-way open state, driven by the navbar avatar menu. */
+  public readonly open = model<boolean>(false);
+  public readonly closed = output<void>();
+
+  protected readonly rows = NOTIF_ROWS;
+
+  private readonly user = signal<IAuthUserDetail | null>(null);
+  private loadStarted = false;
+  protected readonly prefs = signal<Record<string, boolean>>({});
+  protected readonly savedJustNow = signal<boolean>(false);
+
+  protected readonly initial = computed<string>(() => {
+    const u = this.user();
+    const src = u?.first_name || u?.email || '?';
+    return src.charAt(0).toUpperCase();
+  });
+
+  constructor() {
+    // Load lazily on first open (the dialog is always mounted in the navbar) and
+    // reset the footer contract to its resting state each time it opens.
+    effect(() => {
+      if (!this.open()) return;
+      this.savedJustNow.set(false);
+      if (!this.loadStarted) {
+        this.loadStarted = true;
+        void this.load();
+      }
+    });
+  }
+
+  protected isOn(key: string): boolean {
+    return this.prefs()[key] ?? true;
+  }
+
+  protected toggle(key: string): void {
+    this.prefs.update((p) => ({ ...p, [key]: !(p[key] ?? true) }));
+    void this.persistNotifications();
+  }
+
+  protected setThemePreference(next: ThemePreference): void {
+    if (this.theme.getPreference() === next) return;
+    this.theme.setPreference(next);
+    this.flashSaved();
+  }
+
+  protected close(): void {
+    this.open.set(false);
+    this.closed.emit();
+  }
+
+  private async load(): Promise<void> {
+    try {
+      const current = await this.auth.getCurrentUser();
+      if (!current) return;
+      const detail = await this.userService.getProfileById(current.id);
+      this.user.set(detail);
+      const p = detail.notification_preferences ?? {};
+      const next: Record<string, boolean> = {};
+      for (const row of NOTIF_ROWS) {
+        next[row.emailKey] = (p as Record<string, boolean | undefined>)[row.emailKey] ?? true;
+        next[row.inAppKey] = (p as Record<string, boolean | undefined>)[row.inAppKey] ?? true;
+      }
+      this.prefs.set(next);
+    } catch (err) {
+      console.error('Failed to load personal settings', err);
+    }
+  }
+
+  private async persistNotifications(): Promise<void> {
+    const user = this.user();
+    if (!user) return;
+    const p = this.prefs();
+    const payload: UpdateAuthUserType = {
+      notification_preferences: {
+        mention_in_comment: p['mention_in_comment'] ?? true,
+        mention_in_comment_in_app: p['mention_in_comment_in_app'] ?? true,
+        task_assigned: p['task_assigned'] ?? true,
+        task_assigned_in_app: p['task_assigned_in_app'] ?? true,
+        task_due: p['task_due'] ?? true,
+        task_due_in_app: p['task_due_in_app'] ?? true,
+        person_assigned: p['person_assigned'] ?? true,
+        person_assigned_in_app: p['person_assigned_in_app'] ?? true,
+        export_ready: p['export_ready'] ?? true,
+        export_ready_in_app: p['export_ready_in_app'] ?? true,
+        import_summary: p['import_summary'] ?? true,
+        import_summary_in_app: p['import_summary_in_app'] ?? true,
+      },
+    };
+    try {
+      await this.userService.updateUserProfile(user.id, payload);
+      this.flashSaved();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Could not save your preference.');
+    }
+  }
+
+  private flashSaved(): void {
+    this.savedJustNow.set(true);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.html
 
 ```html
@@ -13059,9 +13930,14 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
 import { signal, Service, inject, effect } from '@angular/core';
 import { SettingsService } from '../../experiences/settings/services/settings-service';
 
+/** What the user asked for; 'system' follows the OS `prefers-color-scheme`. */
+export type ThemePreference = 'light' | 'dark' | 'system';
+
 @Service()
 export class ThemeService {
   private readonly theme = signal<'light' | 'dark'>('light');
+  /** The user's stated preference (drives the settings segmented control). */
+  private readonly preference = signal<ThemePreference>('system');
   private readonly settingsSvc = inject(SettingsService, { optional: true });
   private lastDefaultTheme: string | null = null;
 
@@ -13082,14 +13958,25 @@ export class ThemeService {
     }
   }
 
+  /** The resolved theme actually applied to the UI. */
   public getTheme() {
     return this.theme();
   }
 
+  /** The user's stated preference: 'light', 'dark', or 'system'. */
+  public getPreference(): ThemePreference {
+    return this.preference();
+  }
+
   public toggleTheme() {
-    const next = this.theme() === 'light' ? 'dark' : 'light';
-    this.theme.set(next);
-    localStorage.setItem('pc-theme', next);
+    this.setPreference(this.theme() === 'light' ? 'dark' : 'light');
+  }
+
+  public setPreference(pref: ThemePreference) {
+    // 'system' is stored explicitly so it wins over any workspace default and
+    // follows the OS live via the matchMedia listener.
+    localStorage.setItem('pc-theme', pref);
+    this.updateTheme();
   }
 
   private updateTheme() {
@@ -13106,17 +13993,29 @@ export class ThemeService {
 
     const stored = localStorage.getItem('pc-theme');
     if (stored === 'light' || stored === 'dark') {
+      this.preference.set(stored);
       this.theme.set(stored);
       return;
     }
 
+    if (stored === 'system') {
+      this.preference.set('system');
+      this.theme.set(this.systemTheme());
+      return;
+    }
+
+    // No personal override: follow the workspace default, else the OS. Reported
+    // to the UI as 'system' since the user hasn't pinned a specific theme.
+    this.preference.set('system');
     if (defaultTheme === 'light' || defaultTheme === 'dark') {
       this.theme.set(defaultTheme);
       return;
     }
+    this.theme.set(this.systemTheme());
+  }
 
-    const isSystemDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
-    this.theme.set(isSystemDark ? 'dark' : 'light');
+  private systemTheme(): 'light' | 'dark' {
+    return window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
   }
 }
 ```
@@ -15562,7 +16461,10 @@ export class MergeSummaryComponent {
     </div>
   </div>
 
-  @if (isBodyExpanded() && selectedEmail()) {
+  <!-- Person context rail (§5) — desktop only; mobile keeps stacked panes -->
+  @if (showPersonRail()) {
+  <pc-email-person-rail class="hidden shrink-0 md:block" [email]="selectedEmail()"></pc-email-person-rail>
+  } @if (isBodyExpanded() && selectedEmail()) {
   <!-- Keep your existing BODY overlay when expanded -->
   <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
     <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">
@@ -16044,282 +16946,16 @@ export class EmailComments {
 </form>
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.ts
-
-```typescript
-// pc-compose-email.component.ts
-import { DecimalPipe } from '@angular/common';
-import { Component, ElementRef, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { AttachmentIconComponent } from '@icons/attachment-icon'; // your <pc-attachment-icon>
-import { Icon } from '@icons/icon'; // your <pc-icon>
-import { ConfirmDialogService } from '../../../../services/shared-dialog.service';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
-
-import { QuillModule } from 'ngx-quill';
-import Quill from 'quill';
-
-import { EmailActionsStore } from '../../services/store/email-actions.store';
-
-@Component({
-  selector: 'pc-compose-email',
-  imports: [ReactiveFormsModule, QuillModule, Icon, AttachmentIconComponent, DecimalPipe, FileSizePipe, Swap],
-  host: { ngSkipHydration: 'true' }, // avoids hydration mismatches with rich editors
-  templateUrl: './email-compose.html',
-  styleUrls: ['./email-compose.css'],
-})
-export class ComposeEmailComponent {
-  private actions = inject(EmailActionsStore);
-  private dialogs = inject(ConfirmDialogService);
-  private draftIdSignal = signal<string | null>(null);
-  private fb = inject(NonNullableFormBuilder);
-  private quill!: Quill;
-
-  public readonly finished = output<void>();
-
-  public readonly draftId = input<string | null>(null);
-  public readonly initial = input<ComposeInitial | null>(null);
-
-  public attachments = signal<File[]>([]);
-  public dragOver = signal(false);
-  public readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
-  public form = this.fb.group({
-    to: [''],
-    cc: [''],
-    bcc: [''],
-    subject: ['', [Validators.maxLength(998)]],
-    html: [''],
-  });
-  public toolbarId = `compose-toolbar-${Math.random().toString(36).slice(2)}`;
-  public modules = {
-    toolbar: {
-      container: `#${this.toolbarId}`,
-      handlers: {
-        undo: () => this.historyUndo(),
-        redo: () => this.historyRedo(),
-        attach: () => this.triggerAttach(),
-      },
-    },
-    history: { delay: 500, maxStack: 200, userOnly: true },
-  };
-  public sending = signal(false);
-  public showHeader = signal(typeof window !== 'undefined' ? window.innerWidth >= 768 : true);
-  public showMore = signal(false);
-  public totalSize = computed(() => Math.round(this.attachments().reduce((s, f) => s + f.size, 0)));
-
-  constructor() {
-    // Replaces the @Input() set draftId setter
-    effect(() => {
-      const id = this.draftId();
-      if (id) {
-        void this.loadDraft(id);
-      } else {
-        this.draftIdSignal.set(null);
-        this.form.reset({ to: '', cc: '', bcc: '', subject: '', html: '' });
-        this.attachments.set([]);
-      }
-    });
-
-    // Replaces the @Input() set initial setter
-    effect(() => {
-      const value = this.initial();
-      if (!value) return;
-      this.form.patchValue({
-        to: value.to ?? '',
-        cc: value.cc ?? '',
-        bcc: value.bcc ?? '',
-        subject: value.subject ?? '',
-        html: value.html ?? '',
-      });
-    });
-  }
-
-  public async delete() {
-    const hasDraft = !!this.draftIdSignal();
-    const isDirty = this.form.dirty;
-    if (!isDirty && !hasDraft) {
-      this.finished.emit();
-      return;
-    }
-    const ok = await this.dialogs.confirm({
-      title: 'Discard draft?',
-      message: 'Your changes will be permanently removed.',
-      variant: 'danger',
-      icon: 'trash',
-      confirmText: 'Discard',
-      cancelText: 'Cancel',
-      allowBackdropClose: false,
-    });
-    if (ok) {
-      if (hasDraft) {
-        try {
-          await this.actions.deleteDraft(this.draftIdSignal()!);
-        } catch (e) {
-          console.error('Failed to delete draft', e);
-        }
-      }
-      this.finished.emit();
-    }
-  }
-
-  public async discard() {
-    return this.delete();
-  }
-
-  public async loadDraft(id: string) {
-    const d = await this.actions.getDraft(id);
-    this.form.patchValue({
-      to: (d.to_list || []).join(', '),
-      cc: (d.cc_list || []).join(', '),
-      bcc: (d.bcc_list || []).join(', '),
-      subject: d.subject || '',
-      html: d.body_html || '',
-    });
-    this.draftIdSignal.set(d.id);
-    this.form.markAsPristine();
-  }
-
-  public onDragLeave(e: DragEvent) {
-    e.preventDefault();
-    this.dragOver.set(false);
-  }
-
-  public onDragOver(e: DragEvent) {
-    e.preventDefault();
-    this.dragOver.set(true);
-  }
-
-  public onDrop(e: DragEvent) {
-    e.preventDefault();
-    this.dragOver.set(false);
-    if (e.dataTransfer?.files?.length) this.mergeFiles(e.dataTransfer.files);
-  }
-
-  // attachments
-  public onFileChoose(ev: Event) {
-    const input = ev.target as HTMLInputElement;
-    if (input.files?.length) this.mergeFiles(input.files);
-    if (input) input.value = '';
-  }
-
-  public onSend() {
-    if (!this.validTo()) return;
-    const v = this.form.getRawValue();
-    const input: ComposePayload = {
-      to: this.parseEmails(v.to),
-      cc: this.parseEmails(v.cc),
-      bcc: this.parseEmails(v.bcc),
-      subject: v.subject,
-      html: v.html,
-      attachments: this.attachments(),
-    };
-    void this.actions.sendEmail(input);
-    this.finished.emit(); // close composer immediately
-  }
-
-  public removeAttachment(index: number) {
-    const arr = this.attachments().slice();
-    arr.splice(index, 1);
-    this.attachments.set(arr);
-  }
-
-  public async saveDraft() {
-    const v = this.form.getRawValue();
-    const input: DraftPayload = {
-      id: this.draftIdSignal() || undefined,
-      to: this.parseEmails(v.to),
-      cc: this.parseEmails(v.cc),
-      bcc: this.parseEmails(v.bcc),
-      subject: v.subject,
-      html: v.html,
-    };
-    const res = await this.actions.saveDraft(input);
-    this.draftIdSignal.set(res.id);
-  }
-
-  public toggleHeader() {
-    this.showHeader.update((v) => !v);
-  }
-
-  public toggleMore() {
-    this.showMore.update((v) => !v);
-  }
-
-  public validTo() {
-    const to = this.form.get('to')?.value;
-    return to && to.trim().length > 0;
-  }
-
-  protected onEditorCreated(q: Quill) {
-    this.quill = q;
-  }
-
-  private historyRedo() {
-    if (!this.quill) return;
-
-    const history = this.quill.getModule('history');
-    if (!history) return;
-    (history as any).redo();
-  }
-
-  private historyUndo() {
-    if (!this.quill) return;
-    const history = this.quill.getModule('history');
-    if (!history) return;
-    (history as any).undo();
-  }
-
-  private mergeFiles(list: FileList) {
-    this.attachments.set([...this.attachments(), ...Array.from(list)]);
-  }
-
-  private parseEmails(raw: string | null | undefined): string[] {
-    return (raw || '')
-      .split(/[;,]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-
-  private triggerAttach() {
-    this.fileInput()?.nativeElement.click();
-  }
-}
-
-export type ComposeInitial = {
-  bcc?: string;
-  cc?: string;
-  html?: string;
-  subject?: string;
-  to?: string;
-};
-
-export type ComposePayload = {
-  attachments: File[];
-  bcc: string[];
-  cc: string[];
-  html: string; // keep HTML for simplicity; switch to Delta if you prefer
-  subject: string;
-  to: string[];
-};
-
-export type DraftPayload = {
-  bcc: string[];
-  cc: string[];
-  html: string;
-  id?: string;
-  subject: string;
-  to: string[];
-};
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.ts
 
 ```typescript
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
+import { SettingsService } from '@experiences/settings/services/settings-service';
+
 import { EmailsStore } from '../../services/store/emailstore';
+import { computeEmailSla } from '../../services/email-sla';
 import { EmailBody } from '../email-body/email-body';
 import { EmailComments } from '../email-comments/email-comments';
 import { EmailHeader } from '../email-header/email-header';
@@ -16336,9 +16972,25 @@ export class EmailDetails {
   private noEmailMsgDelay = createLoadingGate();
 
   protected readonly store = inject(EmailsStore);
+  private readonly settingsSvc = inject(SettingsService);
   protected readonly isLoading = this.store.emailsLoading;
 
   protected showNoEmailMsg = this.noEmailMsgDelay.visible;
+
+  /** Honest SLA pill (§5): computed from the received time + workspace SLA config. */
+  protected readonly slaPill = computed(() => {
+    const e = this.email();
+    if (!e) return null;
+    this.settingsSvc.snapshotSignal(); // react to settings loading in
+    return computeEmailSla({
+      status: e.status,
+      receivedAt: e.date_sent ? new Date(e.date_sent) : null,
+      emailsHours: Number(this.settingsSvc.getValue('sla.emails_hours', 24)),
+      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
+      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
+      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
+    });
+  });
 
   public readonly forward = output<EmailType>();
   public readonly reply = output<EmailType>();
@@ -16373,6 +17025,8 @@ export class EmailDetails {
       // Eager-load activities so the tab row's count is honest before opening.
       this.store.loadEmailActivities(e.id).catch(() => undefined);
     });
+    // Ensure workspace SLA config is available for the pill (idempotent).
+    void this.settingsSvc.load();
     this.noEmailMsgDelay.begin();
   }
 
@@ -16475,19 +17129,25 @@ export class EmailDetails {
   </ul>
 
   <div class="p-2 border-t border-base-300 flex flex-col gap-2 shrink-0">
-    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New Email">
+    <button class="btn btn-accent w-full" (click)="emitNewEmail()" title="New email">
       <pc-icon name="pencil-square"></pc-icon>
-      <span [class]="buttonLabelClass()">New Email</span>
+      <span [class]="buttonLabelClass()">New email</span>
     </button>
     <button
       class="btn btn-outline btn-primary w-full"
       [disabled]="store.isSyncing()"
       (click)="store.syncEmails()"
-      title="Sync Emails"
+      title="Sync now"
     >
       <pc-icon name="arrow-path" [class.animate-spin]="store.isSyncing()"></pc-icon>
-      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing...' : 'Sync Emails' }} </span>
+      <span [class]="buttonLabelClass()"> {{ store.isSyncing() ? 'Syncing…' : 'Sync now' }} </span>
     </button>
+    <!-- Evidence line: background work narrates itself (§2) -->
+    @if (store.lastSyncedAt(); as syncedAt) {
+    <span [class]="buttonLabelClass()" class="text-center text-[10.5px] text-base-content/45">
+      Synced {{ syncedAt | timeAgo:{ style: 'long' } }}
+    </span>
+    }
   </div>
 </aside>
 ```
@@ -16559,7 +17219,21 @@ export class EmailDetails {
         <pc-icon class="flex-none" name="paper-clip" [size]="4"></pc-icon>
         }
       </div>
-      <div class="truncate font-light text-xs text-base-content/60 mt-0.5">{{ email.preview }}</div>
+      <div class="mt-1 flex items-center gap-2">
+        <span class="min-w-0 flex-1 truncate font-light text-xs text-base-content/60">{{ email.preview }}</span>
+        @if (rowStatus(email); as st) {
+        <span
+          class="shrink-0 rounded-full px-1.5 py-0.5 text-[10.5px] font-semibold"
+          [class.bg-warning/15]="st.tone === 'warning'"
+          [class.text-warning]="st.tone === 'warning'"
+          [class.bg-info/15]="st.tone === 'info'"
+          [class.text-info]="st.tone === 'info'"
+          [class.bg-base-300]="st.tone === 'neutral'"
+          [class.text-base-content/70]="st.tone === 'neutral'"
+          >{{ st.label }}</span
+        >
+        }
+      </div>
     </li>
     } @empty {
     <li class="flex flex-col items-center justify-center h-32 text-base-content/40 text-sm gap-2">
@@ -17045,7 +17719,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'notifications', text: 'Notification preferences' },
       {
         kind: 'p',
-        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Administrators set workspace defaults, but your choices here are yours.',
+        text: 'Choose, per event, whether you are alerted — mentions in comments, tasks assigned to you, tasks due, contacts assigned to you, finished exports, and import summaries, each with separate email and in-app switches. Open them from **Settings** in the avatar menu; every switch applies instantly. Administrators set workspace defaults, but your choices there are yours. See [Settings and configuration](/help/settings).',
       },
       {
         kind: 'callout',
@@ -17119,7 +17793,16 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. [Settings](/settings) (avatar menu → Settings) covers your notifications and appearance. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone.',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/configuration) configuration — administrators only, under **System** in the sidebar — sets policy for everyone and uses a deliberate **Save** with a leave-guard.',
+      },
+      { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
+      {
+        kind: 'list',
+        items: [
+          '**Notifications** — a per-event matrix of email and in-app switches (mentions, task assigned, tasks due, person assigned, export ready, import summary). Each toggle saves as you flip it.',
+          '**Appearance** — Theme: Light, Dark, or System (follows your device’s setting), applied live.',
+          '**Passkeys** — the devices that can sign you in; add one with your device prompt, or remove one you no longer trust.',
+        ],
       },
       { kind: 'h2', id: 'configuration', text: 'What lives in the Workspace configuration' },
       {
@@ -17140,6 +17823,12 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         tone: 'info',
         title: 'Cannot see the Workspace section?',
         text: 'It is admin-only. If a setting here matters to you, ask a workspace administrator — see [Users and roles](/help/users-roles).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Unsaved changes stay visible',
+        text: 'Editing a Workspace section marks it dirty with an amber dot in the left rail, so you can move between sections without losing track of what still needs a **Save**. Navigating away while dirty asks before discarding.',
       },
       {
         kind: 'callout',
@@ -17641,327 +18330,6 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
-  {
-    id: 'welcome',
-    category: 'getting-started',
-    title: 'Welcome to PeopleCRM',
-    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
-    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
-    related: ['getting-around', 'add-people', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
-      },
-      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
-      {
-        kind: 'list',
-        items: [
-          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Engage** — [Inbox](/inbox) for incoming email, [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, and [Automations](/workflows).',
-          '**Contacts** — [People](/people), [Households](/households), [Companies](/companies), and the [Duplicates](/duplicates) finder.',
-          '**Campaign** — [Teams](/teams) and [Donations](/donations).',
-          '**Forms** — public-facing [Forms](/forms), volunteer [Shifts](/events/shifts), [Events](/events/pages), and [Fundraising](/donation-pages) pages.',
-          '**Tools** — [Tasks](/tasks), the [Task board](/board), [Files](/files), [Imports](/imports), and [Exports](/exports).',
-          '**System** (administrators only) — [Activity log](/activities), [Tags](/tags), [Issues](/issues), [Users](/users), and the [Workspace](/configuration) configuration.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Not seeing a section?',
-        text: 'The System section only appears for administrators. If you need access to tags, users, or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
-      },
-      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [People](/people)',
-            detail:
-              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
-          },
-          {
-            title: 'Open a profile',
-            detail:
-              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
-          },
-          {
-            title: 'Organize with tags and lists',
-            detail:
-              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
-          },
-          {
-            title: 'Send your first newsletter',
-            detail:
-              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
-          },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
-      },
-    ],
-  },
-  {
-    id: 'getting-around',
-    category: 'getting-started',
-    title: 'Finding your way around',
-    summary:
-      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
-    keywords: [
-      'navigation',
-      'breadcrumbs',
-      'sidebar',
-      'pins',
-      'bookmarks',
-      'favourites',
-      'favorites',
-      'theme',
-      'dark mode',
-      'fullscreen',
-      'next record',
-      'previous record',
-    ],
-    related: ['welcome', 'search', 'shortcuts'],
-    blocks: [
-      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
-      {
-        kind: 'p',
-        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
-      },
-      {
-        kind: 'p',
-        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'No pager on a record?',
-        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
-      },
-      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
-      {
-        kind: 'p',
-        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
-      },
-      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
-      {
-        kind: 'list',
-        items: [
-          'Collapse any section by clicking its heading — useful for areas you rarely use.',
-          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
-          'The logo takes you back to the [Dashboard](/summary) from anywhere.',
-          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
-        ],
-      },
-      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
-      {
-        kind: 'list',
-        items: [
-          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
-          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
-        ],
-      },
-    ],
-  },
-  {
-    id: 'search',
-    category: 'getting-started',
-    title: 'Search with ⌘K',
-    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
-    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
-    related: ['filters', 'shortcuts', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
-      },
-      {
-        kind: 'list',
-        items: [
-          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
-          'Search is case-insensitive and ignores extra spaces.',
-          'Clear the search box to bring every row back.',
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Search and filters stack',
-        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
-      },
-      {
-        kind: 'p',
-        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
-      },
-      {
-        kind: 'p',
-        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
-      },
-    ],
-  },
-  {
-    id: 'dashboard',
-    category: 'getting-started',
-    title: 'The dashboard and SLA health',
-    summary:
-      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
-    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
-    related: ['welcome', 'inbox', 'tasks', 'settings'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'The [Dashboard](/summary) is your daily starting point: headline numbers for your contacts and engagement, plus the current health of your response-time commitments.',
-      },
-      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
-      {
-        kind: 'p',
-        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
-      },
-      {
-        kind: 'list',
-        items: [
-          '**On track** — no open items have exceeded their target.',
-          '**Warning** — the number of breached items has reached the warning threshold.',
-          '**Critical** — breaches have reached the critical threshold and need attention now.',
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → SLA Configuration** — see [Settings and configuration](/help/settings).',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Chase the cause, not the number',
-        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
-      },
-    ],
-  },
-  {
-    id: 'shortcuts',
-    category: 'getting-started',
-    title: 'Keyboard shortcuts',
-    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
-    keywords: [
-      'keyboard',
-      'shortcuts',
-      'keys',
-      'hotkeys',
-      'productivity',
-      'j',
-      'k',
-      'command k',
-      'go to',
-      'g then',
-      'question mark',
-      'palette',
-    ],
-    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Press ? anywhere',
-        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
-      },
-      { kind: 'h2', id: 'global', text: 'Anywhere' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
-          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
-          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
-          { keys: ['?'], action: 'Show the shortcuts overlay' },
-          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
-        ],
-      },
-      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
-      {
-        kind: 'p',
-        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
-      },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['g', 'h'], action: 'Dashboard (home)' },
-          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
-          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
-          { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/workflows)' },
-          { keys: ['g', 'p'], action: '[People](/people)' },
-          { keys: ['g', 'u'], action: '[Households](/households)' },
-          { keys: ['g', 'c'], action: '[Companies](/companies)' },
-          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
-          { keys: ['g', 't'], action: '[Teams](/teams)' },
-          { keys: ['g', 'o'], action: '[Donations](/donations)' },
-          { keys: ['g', 'f'], action: '[Forms](/forms)' },
-          { keys: ['g', 's'], action: '[Shifts](/events/shifts)' },
-          { keys: ['g', 'e'], action: '[Events](/events/pages)' },
-          { keys: ['g', 'r'], action: '[Fundraising](/donation-pages)' },
-          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/board)' },
-          { keys: ['g', 'm'], action: '[Files](/files)' },
-        ],
-      },
-      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['c'], action: 'Compose' },
-          { keys: ['r'], action: 'Reply' },
-          { keys: ['a'], action: 'Reply all' },
-          { keys: ['f'], action: 'Forward' },
-          { keys: ['e'], action: 'Mark done' },
-          { keys: ['s'], action: 'Star or unstar' },
-          { keys: ['Shift', 'I'], action: 'Mark as read' },
-          { keys: ['Shift', 'U'], action: 'Mark as unread' },
-          { keys: ['#'], action: 'Delete' },
-          { keys: ['J'], action: 'Next email' },
-          { keys: ['K'], action: 'Previous email' },
-          { keys: ['Enter'], action: 'Open or expand' },
-          { keys: ['U'], action: 'Back to the list' },
-        ],
-      },
-      { kind: 'h2', id: 'records', text: 'On a record page' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['J'], action: 'Next record in the filtered set you came from' },
-          { keys: ['K'], action: 'Previous record in the filtered set' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'When J and K are quiet',
-        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
-      },
-      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
-      {
-        kind: 'keys',
-        rows: [
-          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
-          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
-        ],
-      },
-      {
-        kind: 'p',
-        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/experiences/help/data/articles/grids.ts
 
 ```typescript
@@ -18201,15 +18569,17 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around.',
+        text: 'The [Inbox](/inbox) is a full email client inside the CRM. The difference from a personal mailbox: conversations connect to contact records, so an exchange with a supporter shows up on their profile’s **Emails** tab — context nobody has to forward around. When you open a conversation, a **person context rail** on the right shows who you’re talking to — their tags, issues of interest, and a link straight to their record.',
       },
       { kind: 'h2', id: 'workflow', text: 'A healthy inbox rhythm' },
       {
         kind: 'list',
         items: [
-          'Answer oldest first — response-time targets (SLAs) are measured per email, and the [Dashboard](/summary) rolls breaches up into a status.',
+          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/summary) rolls breaches up into a status.',
+          'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
+          '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
           'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
-          'Notifications alert you to activity that needs you — tune them on your [Profile](/profile).',
+          'Notifications alert you to activity that needs you — tune them under **Settings** in the avatar menu.',
         ],
       },
       {
@@ -22291,6 +22661,14 @@ export class PasskeySettingsComponent implements OnInit {
             [size]="5"
           />
           {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
         </button>
         } @if (currentMode === 'settings') {
         <!-- Passkeys custom section -->
@@ -23413,92 +23791,6 @@ export class GettingStartedService {
     } catch {
       return false;
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-import { GettingStartedService } from './services/getting-started.service';
-
-/**
- * First-run checklist card on the dashboard: "GETTING STARTED · N of 3 done". Completed steps
- * show a success check with their evidence; the next incomplete step is a primary link. Auto-
- * hides once all steps are done; dismissible before then (§3). All state is real (see the
- * service) — nothing is faked.
- */
-@Component({
-  selector: 'pc-getting-started-card',
-  imports: [Icon, RouterLink],
-  template: `
-    @if (visible()) {
-      <div class="animate-drop card border border-line bg-base-100 shadow-sm">
-        <div class="card-body gap-3 p-5">
-          <div class="flex items-center justify-between gap-3">
-            <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
-              Getting started · {{ doneCount() }} of {{ total() }} done
-            </div>
-            <button
-              type="button"
-              class="text-xs font-medium text-base-content/50 underline underline-offset-2 hover:text-base-content"
-              (click)="dismiss()"
-              i18n="@@gettingStarted.dismiss.label"
-            >
-              Dismiss
-            </button>
-          </div>
-
-          <ul class="flex flex-col gap-2.5">
-            @for (step of steps(); track step.id) {
-              <li class="flex items-center gap-2.5">
-                @if (step.done) {
-                  <pc-icon name="check-circle" [size]="5" class="shrink-0 text-success"></pc-icon>
-                  <span class="text-sm text-base-content/70"
-                    >{{ step.label }}
-                    @if (step.evidence) {
-                      — {{ step.evidence }}
-                    }
-                  </span>
-                } @else if (step.id === nextStep()?.id) {
-                  <pc-icon name="chevron-right" [size]="5" class="shrink-0 text-primary"></pc-icon>
-                  <a [routerLink]="step.route" class="text-sm font-semibold text-primary hover:underline">{{
-                    step.label
-                  }}</a>
-                } @else {
-                  <span class="ml-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-base-300"></span>
-                  <span class="text-sm text-base-content/50">{{ step.label }}</span>
-                }
-              </li>
-            }
-          </ul>
-        </div>
-      </div>
-    }
-  `,
-})
-export class GettingStartedCard {
-  private readonly svc = inject(GettingStartedService);
-  private readonly alerts = inject(AlertService);
-
-  protected readonly visible = this.svc.visible;
-  protected readonly steps = this.svc.steps;
-  protected readonly doneCount = this.svc.doneCount;
-  protected readonly total = this.svc.total;
-  protected readonly nextStep = this.svc.nextStep;
-
-  constructor() {
-    void this.svc.refresh();
-  }
-
-  protected dismiss(): void {
-    this.svc.dismiss();
-    this.alerts.showInfo('Getting started hidden. It won’t appear again.');
   }
 }
 ```
@@ -29452,6 +29744,10 @@ export class EmailsStore {
   private readonly _isSyncing = signal(false);
   public readonly isSyncing = this._isSyncing.asReadonly();
 
+  /** When the last successful sync completed — powers the "Synced …" evidence line (§2). */
+  private readonly _lastSyncedAt = signal<Date | null>(null);
+  public readonly lastSyncedAt = this._lastSyncedAt.asReadonly();
+
   /*
   private readonly ensureHasAttachmentOnOpen = effect(() => {
     const id = this.currentSelectedEmailId();
@@ -29655,7 +29951,13 @@ export class EmailsStore {
         await this.loadEmailsForFolder(currentFolderId);
       }
       await this.refreshFolderCounts();
-      this.alerts.showSuccess('Sync complete!');
+      this._lastSyncedAt.set(new Date());
+      const inserted = result?.inserted ?? 0;
+      this.alerts.showSuccess(
+        inserted > 0
+          ? `Inbox synced — ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
+          : 'Inbox synced — no new emails',
+      );
       return result;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -30083,6 +30385,24 @@ export class EmailBody {
     (forward)="emitForward()"
   ></pc-email-header>
   <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-3">
+    <!-- SLA pill (§5): honest, computed from received time + workspace SLA config -->
+    @if (slaPill(); as sla) {
+    <div>
+      <span
+        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums"
+        [class.bg-base-200]="sla.tone === 'neutral'"
+        [class.text-base-content]="sla.tone === 'neutral'"
+        [class.bg-warning/15]="sla.tone === 'warning'"
+        [class.text-warning]="sla.tone === 'warning'"
+        [class.bg-error/15]="sla.tone === 'error'"
+        [class.text-error]="sla.tone === 'error'"
+      >
+        <pc-icon name="clock" [size]="4"></pc-icon>
+        {{ sla.text }}
+      </span>
+    </div>
+    }
+
     <!-- Body owns the space (§5) -->
     <pc-email-body
       class="flex-1 min-h-0 border-double border-b-2 border-base-300 rounded-lg bg-base-100"
@@ -30173,13 +30493,14 @@ import { Component, OnInit, computed, inject, output, signal } from '@angular/co
 import { Icon } from '@uxcommon/components/icons/icon';
 import type { PcIconNameType } from '@uxcommon/components/icons/icons.index';
 import { Swap } from '@uxcommon/components/swap/swap';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
 
 import { EmailsStore } from '../../services/store/emailstore';
 import type { EmailFolderType } from '../../../../../../../../libs/common/src/lib/models';
 
 @Component({
   selector: 'pc-email-folder-list',
-  imports: [Swap, Icon],
+  imports: [Swap, Icon, TimeAgoPipe],
   templateUrl: 'email-folder-list.html',
 })
 export class EmailFolderList implements OnInit {
@@ -30333,7 +30654,7 @@ export class EmailFolderList implements OnInit {
         <button
           class="tooltip btn btn-ghost btn-circle btn-sm"
           [attr.data-tip]="markAsDoneText()"
-          aria-label="Mark as Done"
+          aria-label="Mark as done"
           (click)="toggleClosed()"
         >
           <pc-icon [size]="4" name="check-circle" [class.text-primary]="isClosed()"></pc-icon>
@@ -30342,8 +30663,8 @@ export class EmailFolderList implements OnInit {
         <!-- Restore from Trash -->
         <button
           class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Restore from Trash"
-          aria-label="Restore from Trash"
+          data-tip="Restore"
+          aria-label="Restore"
           (click)="restoreFromTrash()"
         >
           <pc-icon [size]="5" name="restore-from-trash"></pc-icon>
@@ -30383,7 +30704,7 @@ export class EmailFolderList implements OnInit {
               (click)="handleCreateTask()"
               class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
             >
-              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create Task
+              <pc-icon [size]="4" name="task" class="text-base-content/60"></pc-icon> Create task
             </a>
           </li>
           <div class="border-t border-base-300 my-1 h-0"></div>
@@ -30400,7 +30721,7 @@ export class EmailFolderList implements OnInit {
               (click)="handleReplyAll()"
               class="flex items-center gap-3 px-3 py-2 text-sm text-base-content/80 hover:bg-base-300 hover:cursor-pointer rounded-lg transition-colors text-left"
             >
-              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply All
+              <pc-icon [size]="4" name="reply-all" class="text-base-content/60"></pc-icon> Reply all
             </a>
           </li>
           <li>
@@ -30469,7 +30790,7 @@ export class EmailFolderList implements OnInit {
                 [class.text-success]="isClosed()"
                 [class.text-base-content/60]="!isClosed()"
               ></pc-icon>
-              {{ isClosed() ? 'Mark as Open' : 'Mark as Done' }}
+              {{ isClosed() ? 'Reopen' : 'Mark as done' }}
             </a>
           </li>
           <li>
@@ -30952,7 +31273,7 @@ export class EmailHeader {
   }
 
   protected getTrashText() {
-    return this.isFolderTrash() ? 'Delete Permanently' : 'Move to Trash';
+    return this.isFolderTrash() ? 'Delete forever' : 'Move to Trash';
   }
 
   protected handleDocumentKeydown(ev: KeyboardEvent): void {
@@ -31013,7 +31334,7 @@ export class EmailHeader {
   }
 
   protected markAsDoneText() {
-    return this.isClosed() ? 'Mark as Open' : 'Mark as Done';
+    return this.isClosed() ? 'Reopen' : 'Mark as done';
   }
 
   protected restoreFromTrash() {
@@ -31864,6 +32185,336 @@ export class FundraisingGridComponent {
     },
   ];
 }
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
+
+```typescript
+import type { HelpArticle } from '../help-types';
+
+export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
+  {
+    id: 'welcome',
+    category: 'getting-started',
+    title: 'Welcome to PeopleCRM',
+    summary: 'What PeopleCRM is for and a five-minute tour of the main areas.',
+    keywords: ['introduction', 'overview', 'tour', 'start', 'basics', 'new user', 'onboarding'],
+    related: ['getting-around', 'add-people', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'PeopleCRM keeps every relationship your organization cares about — supporters, donors, volunteers, households, and companies — in one place, together with the conversations, donations, events, and tasks attached to them.',
+      },
+      { kind: 'h2', id: 'sidebar-map', text: 'The sidebar, section by section' },
+      {
+        kind: 'list',
+        items: [
+          '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
+          '**Engage** — [Inbox](/inbox) for incoming email, [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, and [Automations](/workflows).',
+          '**Contacts** — [People](/people), [Households](/households), [Companies](/companies), and the [Duplicates](/duplicates) finder.',
+          '**Campaign** — [Teams](/teams) and [Donations](/donations).',
+          '**Forms** — public-facing [Forms](/forms), volunteer [Shifts](/events/shifts), [Events](/events/pages), and [Fundraising](/donation-pages) pages.',
+          '**Tools** — [Tasks](/tasks), the [Task board](/board), [Files](/files), [Imports](/imports), and [Exports](/exports).',
+          '**System** (administrators only) — [Activity log](/activities), [Tags](/tags), [Issues](/issues), [Users](/users), and the [Workspace](/configuration) configuration.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Not seeing a section?',
+        text: 'The System section only appears for administrators. If you need access to tags, users, or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
+      },
+      { kind: 'h2', id: 'first-steps', text: 'A good first session' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [People](/people)',
+            detail:
+              'This grid is the heart of the app. Add a person with the + button, or bring your existing data in via [Import data from CSV](/help/import).',
+          },
+          {
+            title: 'Open a profile',
+            detail:
+              'Click the name in the first column to see everything about one person: activity, emails, newsletters, donations, events, and volunteer history.',
+          },
+          {
+            title: 'Organize with tags and lists',
+            detail:
+              'Tags describe people; lists group them for action. See [Tags and issues](/help/tags-issues) and [Static and dynamic lists](/help/lists).',
+          },
+          {
+            title: 'Send your first newsletter',
+            detail:
+              'Pick a template, choose an audience, and send — [Create and send a newsletter](/help/newsletters) walks through it.',
+          },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Every page in this help center is searchable — head back to [Help](/help) and start typing.',
+      },
+    ],
+  },
+  {
+    id: 'getting-around',
+    category: 'getting-started',
+    title: 'Finding your way around',
+    summary:
+      'Breadcrumbs, record-to-record navigation, pinned pages, themes, and the other navigation habits worth learning early.',
+    keywords: [
+      'navigation',
+      'breadcrumbs',
+      'sidebar',
+      'pins',
+      'bookmarks',
+      'favourites',
+      'favorites',
+      'theme',
+      'dark mode',
+      'fullscreen',
+      'next record',
+      'previous record',
+    ],
+    related: ['welcome', 'search', 'shortcuts'],
+    blocks: [
+      { kind: 'h2', id: 'orientation', text: 'Always know where you are' },
+      {
+        kind: 'p',
+        text: 'Every record page shows a breadcrumb trail (for example **People / Amira Hassan**). The first crumb takes you back to the grid you came from — with your filters, page, and scroll position exactly as you left them.',
+      },
+      {
+        kind: 'p',
+        text: 'When you open a record from a grid, the header also shows your position in the filtered set — “4 of 43 filtered” — with previous/next arrows. Press `K` and `J` to move between records without going back to the grid.',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'No pager on a record?',
+        text: 'The position label and J/K keys only appear when you arrived from a grid. If you opened the record from a direct link, there is no filtered set to step through.',
+      },
+      { kind: 'h2', id: 'pins', text: 'Pin the pages you live in' },
+      {
+        kind: 'p',
+        text: 'The bookmark icon in the top bar pins the main page you are on — a grid like People, or the dashboard — to a Pins section at the top of the sidebar. Click it again to unpin. On a record page the pin button explains that only main pages can be pinned; open the section itself to pin it.',
+      },
+      { kind: 'h2', id: 'sidebar-habits', text: 'Tune the sidebar' },
+      {
+        kind: 'list',
+        items: [
+          'Collapse any section by clicking its heading — useful for areas you rarely use.',
+          'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
+          'The logo takes you back to the [Dashboard](/summary) from anywhere.',
+          'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
+        ],
+      },
+      { kind: 'h2', id: 'appearance', text: 'Theme and focus' },
+      {
+        kind: 'list',
+        items: [
+          'Toggle light or dark theme with the sun/moon button in the top bar. Administrators can set the workspace default under **Workspace → Appearance**.',
+          'The arrows button in the top bar switches full-screen mode on and off when you want the grid to use every pixel.',
+        ],
+      },
+    ],
+  },
+  {
+    id: 'search',
+    category: 'getting-started',
+    title: 'Search with ⌘K',
+    summary: 'The top-bar search filters the page you are on as you type — here is how to get the most from it.',
+    keywords: ['search', 'find', 'command k', 'cmd k', 'ctrl k', 'quick find', 'filter text'],
+    related: ['filters', 'shortcuts', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Press `⌘K` (or `Ctrl K` on Windows and Linux), or click the magnifying glass in the top bar, and start typing. Search applies to the view you are on: in a grid like [People](/people), rows narrow live as you type.',
+      },
+      {
+        kind: 'list',
+        items: [
+          'Results update a moment after you stop typing; press `Enter` to apply the search immediately.',
+          'Search is case-insensitive and ignores extra spaces.',
+          'Clear the search box to bring every row back.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Search and filters stack',
+        text: 'Text search combines with any tag, issue, or list filters you have applied — the grid states how many rows match the combination, so you always know what you are looking at.',
+      },
+      {
+        kind: 'p',
+        text: 'There is also a command palette on `⌘⇧K` for jumping around by keyboard, and `g`-then-a-letter chords for the sidebar sections — the full map is in [Keyboard shortcuts](/help/shortcuts).',
+      },
+      {
+        kind: 'p',
+        text: 'Need something more precise than text matching — say, everyone in a city with a certain tag? Use the grid filters and the query builder instead: [Filters and the query builder](/help/filters).',
+      },
+    ],
+  },
+  {
+    id: 'dashboard',
+    category: 'getting-started',
+    title: 'The dashboard and SLA health',
+    summary:
+      'What the numbers and status indicators on your landing page mean, and where to change the thresholds behind them.',
+    keywords: ['dashboard', 'summary', 'sla', 'service level', 'metrics', 'stats', 'health', 'warning', 'critical'],
+    related: ['welcome', 'inbox', 'tasks', 'settings'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'The [Dashboard](/summary) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**Next-action cards** — the three cards below the briefing surface your most urgent queues: task-SLA breaches, conversations waiting for an owner, and a draft newsletter ready to send. A card turns quiet when there is nothing to do there.',
+          '**Stat tiles** — a row of headline numbers (open emails, unassigned, average first response and time to close, contact growth). Use **Reload stats** to refresh them.',
+          '**New contacts** and **Coming up** — a 30-day growth chart beside your upcoming events. Empty states link you to the next step when there is nothing scheduled yet.',
+          '**Representative performance** — a quiet table of each teammate’s open/closed counts, resolution rate, and SLA breaches.',
+        ],
+      },
+      { kind: 'h2', id: 'sla', text: 'How SLA status works' },
+      {
+        kind: 'p',
+        text: 'A service-level agreement (SLA) is a promise about response time — for example, “reply to every inbox email within 24 working hours” or “close tasks within 24 working hours”. The dashboard tracks open items against those targets and rolls them up into a status.',
+      },
+      {
+        kind: 'list',
+        items: [
+          '**On track** — no open items have exceeded their target.',
+          '**Warning** — the number of breached items has reached the warning threshold.',
+          '**Critical** — breaches have reached the critical threshold and need attention now.',
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Targets count **working hours only**. Administrators define working days, business hours, the hour targets, and both thresholds under **Workspace → SLA Configuration** — see [Settings and configuration](/help/settings).',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Chase the cause, not the number',
+        text: 'A warning status is a queue, not a verdict: open the [Inbox](/inbox) or [Tasks](/tasks) and work the oldest items first — those are the ones breaching.',
+      },
+    ],
+  },
+  {
+    id: 'shortcuts',
+    category: 'getting-started',
+    title: 'Keyboard shortcuts',
+    summary: 'Every keyboard shortcut in PeopleCRM on one page — and the ? overlay that shows them anywhere.',
+    keywords: [
+      'keyboard',
+      'shortcuts',
+      'keys',
+      'hotkeys',
+      'productivity',
+      'j',
+      'k',
+      'command k',
+      'go to',
+      'g then',
+      'question mark',
+      'palette',
+    ],
+    related: ['getting-around', 'search', 'inbox', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Press ? anywhere',
+        text: 'The `?` key opens a shortcuts overlay with this list, wherever you are (press `Esc` to close it). This article is the long-form version with context.',
+      },
+      { kind: 'h2', id: 'global', text: 'Anywhere' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['⌘', 'K'], action: 'Focus the search bar (Ctrl K on Windows and Linux)' },
+          { keys: ['⌘', '⇧', 'K'], action: 'Open the command palette' },
+          { keys: ['g'], action: 'Start a “go to” chord — follow with a section key below' },
+          { keys: ['?'], action: 'Show the shortcuts overlay' },
+          { keys: ['Esc'], action: 'Close the open dialog or overlay' },
+        ],
+      },
+      { kind: 'h2', id: 'go-to', text: 'Go to a section: g, then a letter' },
+      {
+        kind: 'p',
+        text: 'Press `g`, then within a moment the letter for where you want to be. Shortcuts never fire while you are typing in a field, and the letters appear as hints beside the sidebar items.',
+      },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['g', 'h'], action: 'Dashboard (home)' },
+          { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
+          { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
+          { keys: ['g', 'l'], action: '[Lists](/lists)' },
+          { keys: ['g', 'a'], action: '[Automations](/workflows)' },
+          { keys: ['g', 'p'], action: '[People](/people)' },
+          { keys: ['g', 'u'], action: '[Households](/households)' },
+          { keys: ['g', 'c'], action: '[Companies](/companies)' },
+          { keys: ['g', 'd'], action: '[Duplicates](/duplicates)' },
+          { keys: ['g', 't'], action: '[Teams](/teams)' },
+          { keys: ['g', 'o'], action: '[Donations](/donations)' },
+          { keys: ['g', 'f'], action: '[Forms](/forms)' },
+          { keys: ['g', 's'], action: '[Shifts](/events/shifts)' },
+          { keys: ['g', 'e'], action: '[Events](/events/pages)' },
+          { keys: ['g', 'r'], action: '[Fundraising](/donation-pages)' },
+          { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
+          { keys: ['g', 'b'], action: '[Task board](/board)' },
+          { keys: ['g', 'm'], action: '[Files](/files)' },
+        ],
+      },
+      { kind: 'h2', id: 'inbox-keys', text: 'In the inbox' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['c'], action: 'Compose' },
+          { keys: ['r'], action: 'Reply' },
+          { keys: ['a'], action: 'Reply all' },
+          { keys: ['f'], action: 'Forward' },
+          { keys: ['e'], action: 'Mark done' },
+          { keys: ['s'], action: 'Star or unstar' },
+          { keys: ['Shift', 'I'], action: 'Mark as read' },
+          { keys: ['Shift', 'U'], action: 'Mark as unread' },
+          { keys: ['#'], action: 'Delete' },
+          { keys: ['J'], action: 'Next email' },
+          { keys: ['K'], action: 'Previous email' },
+          { keys: ['Enter'], action: 'Open or expand' },
+          { keys: ['U'], action: 'Back to the list' },
+        ],
+      },
+      { kind: 'h2', id: 'records', text: 'On a record page' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['J'], action: 'Next record in the filtered set you came from' },
+          { keys: ['K'], action: 'Previous record in the filtered set' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'When J and K are quiet',
+        text: 'They only work when you opened the record from a grid (the “N of M filtered” pager is visible) and are ignored while you are typing in a field.',
+      },
+      { kind: 'h2', id: 'grid-editing', text: 'In a grid' },
+      {
+        kind: 'keys',
+        rows: [
+          { keys: ['↑', '↓', '←', '→'], action: 'Move between cells' },
+          { keys: ['Enter'], action: 'Edit the focused cell (when the column allows editing)' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'You can also double-click any editable cell to start editing. More in [Working in grids](/help/grid-basics).',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/experiences/help/ui/help-article.html
@@ -33831,435 +34482,90 @@ export class DonationsSettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/summary/summary.html
+## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
 
-```html
-<div class="mx-auto max-w-7xl space-y-6 p-6">
-  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
-  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-    <div class="min-w-0">
-      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
-      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
-      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
-        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ unassignedOpenCount() }} unassigned conversations</a
-        >
-        need an owner and
-        <button
-          type="button"
-          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          (click)="toggleSlaDetails('tasks')"
-        >
-          {{ totalTaskSlaBreaches() }} tasks
-        </button>
-        have breached SLA. Email response is {{ emailHealthWord() }},
-        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >{{ activeContactsCount() }} new contacts</a
-        >
-        arrived this month@if (draftNewsletter(); as draft) {, and
-        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
-          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
-        >}.
-      </p>
-    </div>
+```typescript
+import { Component, inject } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
 
-    <button
-      class="btn btn-outline btn-sm shrink-0 gap-2"
-      pcSpinOnClick
-      (click)="loadStats()"
-      [disabled]="isRefreshing()"
-    >
-      <pc-icon name="arrow-path" [size]="4"></pc-icon>
-      Reload stats
-    </button>
-  </div>
+import { GettingStartedService } from './services/getting-started.service';
 
-  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
-  <pc-getting-started-card></pc-getting-started-card>
+/**
+ * First-run checklist card on the dashboard: "GETTING STARTED · N of 3 done". Completed steps
+ * show a success check with their evidence; the next incomplete step is a primary link. Auto-
+ * hides once all steps are done; dismissible before then (§3). All state is real (see the
+ * service) — nothing is faked.
+ */
+@Component({
+  selector: 'pc-getting-started-card',
+  imports: [Icon, RouterLink],
+  template: `
+    @if (visible()) {
+      <div class="animate-drop card border border-line bg-base-100 shadow-sm">
+        <div class="card-body gap-3 p-5">
+          <div class="flex items-center justify-between gap-3">
+            <div class="text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+              Getting started · {{ doneCount() }} of {{ total() }} done
+            </div>
+            <button
+              type="button"
+              class="text-xs font-medium text-base-content/50 underline underline-offset-2 hover:text-base-content"
+              (click)="dismiss()"
+              i18n="@@gettingStarted.dismiss.label"
+            >
+              Dismiss
+            </button>
+          </div>
 
-  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-    <!-- Task SLA -->
-    @if (totalTaskSlaBreaches() > 0) {
-    <button
-      type="button"
-      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
-      (click)="toggleSlaDetails('tasks')"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
-        <span class="text-sm font-semibold">Task SLA breaches</span>
+          <ul class="flex flex-col gap-2.5">
+            @for (step of steps(); track step.id) {
+              <li class="flex items-center gap-2.5">
+                @if (step.done) {
+                  <pc-icon name="check-circle" [size]="5" class="shrink-0 text-success"></pc-icon>
+                  <span class="text-sm text-base-content/70"
+                    >{{ step.label }}
+                    @if (step.evidence) {
+                      — {{ step.evidence }}
+                    }
+                  </span>
+                } @else if (step.id === nextStep()?.id) {
+                  <pc-icon name="chevron-right" [size]="5" class="shrink-0 text-primary"></pc-icon>
+                  <a [routerLink]="step.route" class="text-sm font-semibold text-primary hover:underline">{{
+                    step.label
+                  }}</a>
+                } @else {
+                  <span class="ml-0.5 h-4 w-4 shrink-0 rounded-full border-2 border-base-300"></span>
+                  <span class="text-sm text-base-content/50">{{ step.label }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </div>
       </div>
-      <div class="mt-1 text-xs opacity-70">
-        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
-        View the {{ totalTaskSlaBreaches() }} tasks
-      </div>
-    </button>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
-    </div>
     }
+  `,
+})
+export class GettingStartedCard {
+  private readonly svc = inject(GettingStartedService);
+  private readonly alerts = inject(AlertService);
 
-    <!-- Unassigned conversations -->
-    @if (unassignedOpenCount() > 0) {
-    <a
-      routerLink="/inbox"
-      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
-        <span class="text-sm font-semibold">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/60">
-        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
-        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
-    </a>
-    } @else {
-    <div class="rounded-xl border border-line bg-base-100 p-5">
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
-        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
-    </div>
-    }
+  protected readonly visible = this.svc.visible;
+  protected readonly steps = this.svc.steps;
+  protected readonly doneCount = this.svc.doneCount;
+  protected readonly total = this.svc.total;
+  protected readonly nextStep = this.svc.nextStep;
 
-    <!-- Draft newsletter -->
-    @if (draftNewsletter(); as draft) {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
-        <span class="text-sm font-semibold">Draft newsletter</span>
-      </div>
-      <div class="mt-1 truncate text-xs text-base-content/60">
-        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
-      </div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
-    </a>
-    } @else {
-    <a
-      routerLink="/newsletters"
-      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
-    >
-      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
-      <div class="mt-1 flex items-baseline gap-2">
-        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
-        <span class="text-sm font-semibold">Draft newsletters</span>
-      </div>
-      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
-      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
-    </a>
-    }
-  </div>
-
-  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
-  @if (showSlaDetails()) {
-  <pc-sla-details
-    [breachedEmails]="breachedEmails()"
-    [breachedTasks]="breachedTasks()"
-    [emailSlaHours]="emailSlaHours()"
-    [taskSlaHours]="taskSlaHours()"
-    [totalEmailBreaches]="totalEmailSlaBreaches()"
-    [totalTaskBreaches]="totalTaskSlaBreaches()"
-    [hasMoreEmails]="hasMoreEmails()"
-    [hasMoreTasks]="hasMoreTasks()"
-    [isLoadingEmails]="isLoadingEmails()"
-    [isLoadingTasks]="isLoadingTasks()"
-    (loadMoreEmails)="loadMoreEmails()"
-    (loadMoreTasks)="loadMoreTasks()"
-    [(activeTab)]="defaultSlaTab"
-  />
+  constructor() {
+    void this.svc.refresh();
   }
 
-  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
-  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
-        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
-        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
-        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
-        {{ avgFirstResponse() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
-        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
-    </div>
-
-    <div class="rounded-lg border border-line bg-base-100 p-4">
-      <div class="flex items-start justify-between">
-        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
-        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
-      </div>
-      @if (isInitialLoading()) {
-      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
-      } @else {
-      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
-        +{{ activeContactsCount() }}
-      </div>
-      }
-      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
-    </div>
-  </div>
-
-  <!-- Growth chart (2fr) + Coming up (1fr) -->
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <!-- New contacts line chart -->
-    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
-        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
-      </div>
-
-      @if (isInitialLoading()) {
-      <div class="skeleton h-[200px] w-full rounded-lg"></div>
-      } @else if (linePoints().length > 0) {
-      <div class="relative h-[200px] w-full">
-        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
-          <defs>
-            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
-              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
-            </linearGradient>
-          </defs>
-
-          @for (label of yAxisLabels(); track label.y) {
-          <line
-            x1="20"
-            [attr.y1]="label.y"
-            x2="580"
-            [attr.y2]="label.y"
-            stroke="currentColor"
-            class="text-base-content/10"
-            stroke-dasharray="4"
-          ></line>
-          <text
-            [attr.x]="12"
-            [attr.y]="label.y + 3"
-            text-anchor="end"
-            class="fill-current text-[9px] tabular-nums text-base-content/40"
-          >
-            {{ label.value }}
-          </text>
-          }
-
-          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
-          <path
-            [attr.d]="linePath()"
-            fill="none"
-            stroke="var(--color-primary)"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          ></path>
-
-          @for (p of linePoints(); track p.date) {
-          <circle
-            [attr.cx]="p.x"
-            [attr.cy]="p.y"
-            r="4"
-            fill="var(--color-base-100)"
-            stroke="var(--color-primary)"
-            stroke-width="2"
-            class="cursor-pointer"
-            (mouseenter)="hoveredPoint.set(p)"
-            (mouseleave)="hoveredPoint.set(null)"
-          ></circle>
-          } @for (label of xAxisLabels(); track label.x) {
-          <text
-            [attr.x]="label.x"
-            [attr.y]="195"
-            text-anchor="middle"
-            class="fill-current text-[9px] text-base-content/40"
-          >
-            {{ label.label }}
-          </text>
-          }
-        </svg>
-
-        @if (hoveredPoint(); as p) {
-        <div
-          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
-          [style.left.%]="(p.x / 600) * 100"
-          [style.top.%]="(p.y / 200) * 100"
-        >
-          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
-            {{ formatDate(p.date) }}
-          </div>
-          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
-            <span class="h-2 w-2 rounded-full bg-primary"></span>
-            +{{ p.count }} contacts
-          </div>
-        </div>
-        }
-      </div>
-      } @else {
-      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
-        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
-        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Import your people</a
-        >
-      </div>
-      }
-    </div>
-
-    <!-- Coming up -->
-    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
-      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
-
-      @if (upcomingEvents().length > 0) {
-      <ul class="flex flex-col gap-1">
-        @for (ev of upcomingEvents(); track ev.id) {
-        <li>
-          <a
-            routerLink="/events/shifts"
-            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
-          >
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
-              <span class="block text-xs text-base-content/55">
-                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
-              </span>
-            </span>
-          </a>
-        </li>
-        }
-      </ul>
-      } @else {
-      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
-        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
-        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
-        <a routerLink="/events/shifts" class="text-sm font-semibold text-primary underline underline-offset-2"
-          >Plan an event</a
-        >
-      </div>
-      }
-
-      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
-        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
-        below
-      </div>
-    </div>
-  </div>
-
-  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
-  <div class="rounded-xl border border-line bg-base-100 p-6">
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
-      <span class="text-xs text-base-content/50">Real-time</span>
-    </div>
-
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead>
-          <tr
-            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
-          >
-            <th class="py-2 pr-4 font-medium">Representative</th>
-            <th class="py-2 pr-4 text-right font-medium">Open</th>
-            <th class="py-2 pr-4 text-right font-medium">Closed</th>
-            <th class="py-2 pr-4 font-medium">Resolution</th>
-            <th class="py-2 pr-4 font-medium">Avg first response</th>
-            <th class="py-2 font-medium">SLA breaches</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (user of userStats(); track user.user_id) {
-          <tr class="border-b border-line last:border-0">
-            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
-            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
-            <td class="py-2.5 pr-4">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.resolutionRate >= 75"
-                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
-                [class.badge-error]="user.resolutionRate < 40"
-                >{{ user.resolutionRate }}%</span
-              >
-            </td>
-            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
-            <td class="py-2.5">
-              <span
-                class="badge badge-soft badge-sm tabular-nums"
-                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
-                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
-                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
-              >
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
+  protected dismiss(): void {
+    this.svc.dismiss();
+    this.alerts.showInfo('Getting started hidden. It won’t appear again.');
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
@@ -38295,13 +38601,14 @@ import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-co
 import { EmailDetails } from '../email-details/email-details';
 import { EmailFolderList } from '../email-folder-list/email-folder-list';
 import { EmailList } from '../email-list/email-list';
+import { EmailPersonRail } from '../email-person-rail/email-person-rail';
 import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
 import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { AuthService } from '@frontend/auth/auth-service';
 
 @Component({
   selector: 'pc-email-client',
-  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, EmailPersonRail, Icon],
   host: {
     class: 'block h-full',
     '(document:keydown)': 'handleDocumentKeydown($event)',
@@ -38334,8 +38641,11 @@ export class EmailClient {
   protected detailPanelClass = computed(() =>
     this.mobileView() === 'detail'
       ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:p-4 md:pt-2 md:relative md:z-10',
+      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10',
   );
+
+  /** The person context rail (§5) shows only for a real selection on desktop. */
+  protected showPersonRail = computed(() => !!this.selectedEmail() && !this.isComposing() && !this.isBodyExpanded());
 
   constructor() {
     effect(() => {
@@ -38739,6 +39049,14 @@ export class EmailList {
     return this.store.currentSelectedEmailId() === id;
   }
 
+  /** Triage status chip per row (§5): one pill shape, semantic tint. */
+  protected rowStatus(email: EmailType): { label: string; tone: 'info' | 'neutral' | 'warning' } {
+    if (this.isFolderTrash()) return { label: 'In Trash', tone: 'neutral' };
+    if ((email.status || 'open') === 'closed') return { label: 'Closed', tone: 'neutral' };
+    if (email.assigned_to) return { label: 'Assigned', tone: 'info' };
+    return { label: 'Unassigned', tone: 'warning' };
+  }
+
   public selectEmail(email: EmailType): void {
     this.emailSelected.emit(email);
   }
@@ -38776,7 +39094,7 @@ export class EmailList {
         show: this.currentFolderId() !== this.ALL_FOLDERS.DRAFTS,
         items: [
           { label: 'Reply', icon: 'reply', action: () => this.handleReply() },
-          { label: 'Reply All', icon: 'reply-all', action: () => this.handleReplyAll() },
+          { label: 'Reply all', icon: 'reply-all', action: () => this.handleReplyAll() },
           { label: 'Forward', icon: 'forward', iconClass: 'scale-x-[-1]', action: () => this.handleForward() },
         ] as ContextMenuItem[],
       },
@@ -38811,7 +39129,7 @@ export class EmailList {
             action: () => void this.toggleFavourite(),
           },
           {
-            label: email.status === 'closed' ? 'Mark as Open' : 'Mark as Done',
+            label: email.status === 'closed' ? 'Reopen' : 'Mark as done',
             icon: 'check-circle',
             iconClass: email.status === 'closed' ? 'text-success' : 'text-base-content/60',
             action: () => void this.toggleClosed(),
@@ -38819,14 +39137,14 @@ export class EmailList {
           ...(this.isFolderTrash()
             ? [
                 {
-                  label: 'Restore to Inbox',
+                  label: 'Restore',
                   icon: 'restore-from-trash',
                   action: () => void this.restoreFromTrash(),
                 },
               ]
             : []),
           {
-            label: this.isFolderTrash() ? 'Delete Permanently' : 'Delete',
+            label: this.isFolderTrash() ? 'Delete forever' : 'Delete',
             icon: (this.isFolderTrash() ? 'trash-forever' : 'trash') as PcIconNameType,
             iconClass: 'text-error',
             action: () => void this.deleteEmail(),
@@ -41963,444 +42281,435 @@ export class ShiftFormComponent implements OnInit {
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/summary/summary.ts
+## File: apps/frontend/src/app/experiences/summary/summary.html
 
-```typescript
-import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { DashboardService } from './services/dashboard.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { SlaDetails } from './sla-details';
-import { GettingStartedCard } from './getting-started-card';
-import { AuthService } from '../../auth/auth-service';
+```html
+<div class="mx-auto max-w-7xl space-y-6 p-6">
+  <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="min-w-0">
+      <div class="text-xs text-base-content/50">{{ todayLabel() }}</div>
+      <h1 class="mt-0.5 text-2xl font-bold tracking-tight text-base-content">{{ greeting() }}</h1>
+      <p class="mt-2 max-w-3xl text-sm leading-relaxed text-base-content/70">
+        <a routerLink="/inbox" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ unassignedOpenCount() }} unassigned conversations</a
+        >
+        need an owner and
+        <button
+          type="button"
+          class="cursor-pointer font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          (click)="toggleSlaDetails('tasks')"
+        >
+          {{ totalTaskSlaBreaches() }} tasks
+        </button>
+        have breached SLA. Email response is {{ emailHealthWord() }},
+        <a routerLink="/people" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >{{ activeContactsCount() }} new contacts</a
+        >
+        arrived this month@if (draftNewsletter(); as draft) {, and
+        <a routerLink="/newsletters" class="font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+          >"{{ draft.name }}" is drafted for {{ draft.total_recipients }} people</a
+        >}.
+      </p>
+    </div>
 
-interface UpcomingEvent {
-  id: string;
-  name: string;
-  start_time: string;
-  capacity: number | null;
-  location_address: string | null;
-}
+    <button
+      class="btn btn-outline btn-sm shrink-0 gap-2"
+      pcSpinOnClick
+      (click)="loadStats()"
+      [disabled]="isRefreshing()"
+    >
+      <pc-icon name="arrow-path" [size]="4"></pc-icon>
+      Reload stats
+    </button>
+  </div>
 
-interface DraftNewsletter {
-  id: string;
-  name: string;
-  total_recipients: number;
-}
+  <!-- First-run checklist — real account state; self-hides when complete (§3) -->
+  <pc-getting-started-card></pc-getting-started-card>
 
-@Component({
-  imports: [Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, RouterLink],
-  selector: 'pc-summary',
-  templateUrl: './summary.html',
-})
-export class Summary implements OnInit {
-  private readonly dashboardSvc = inject(DashboardService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly auth = inject(AuthService);
+  <!-- Next-action cards: color is a message — attention (warning), waiting (info), ready (neutral) -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+    <!-- Task SLA -->
+    @if (totalTaskSlaBreaches() > 0) {
+    <button
+      type="button"
+      class="rounded-xl bg-warning p-5 text-left text-warning-content transition-shadow hover:shadow-md"
+      (click)="toggleSlaDetails('tasks')"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">Needs attention</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ totalTaskSlaBreaches() }}</span>
+        <span class="text-sm font-semibold">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs opacity-70">
+        {{ unassignedTaskSlaBreaches() }} unassigned · {{ taskSlaHours() }}h resolution target
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">
+        View the {{ totalTaskSlaBreaches() }} tasks
+      </div>
+    </button>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">On track</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Task SLA breaches</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Every task is within its {{ taskSlaHours() }}h target</div>
+    </div>
+    }
 
-  constructor() {
-    effect(() => {
-      const tab = this.defaultSlaTab();
-      const open = this.showSlaDetails();
-      if (open) {
-        if (tab === 'emails') {
-          if (this.breachedEmails().length === 0) {
-            this.emailPage.set(1);
-            void this.loadMoreEmails();
+    <!-- Unassigned conversations -->
+    @if (unassignedOpenCount() > 0) {
+    <a
+      routerLink="/inbox"
+      class="rounded-xl border border-info/30 bg-info/10 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Waiting for an owner</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">{{ unassignedOpenCount() }}</span>
+        <span class="text-sm font-semibold">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/60">
+        @if (oldestUnassignedAgeHours() != null) { Oldest arrived {{ roundedHours(oldestUnassignedAgeHours()) }} ago ·
+        first response due in {{ roundedHours(firstResponseDueHours()) }} } @else { Awaiting first response }
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Triage the inbox</div>
+    </a>
+    } @else {
+    <div class="rounded-xl border border-line bg-base-100 p-5">
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Inbox clear</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums text-success">0</span>
+        <span class="text-sm font-semibold text-base-content">Unassigned conversations</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">Everything open has an owner</div>
+    </div>
+    }
+
+    <!-- Draft newsletter -->
+    @if (draftNewsletter(); as draft) {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Ready to send</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">1</span>
+        <span class="text-sm font-semibold">Draft newsletter</span>
+      </div>
+      <div class="mt-1 truncate text-xs text-base-content/60">
+        "{{ draft.name }}" · {{ draft.total_recipients }} recipients
+      </div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Review &amp; send</div>
+    </a>
+    } @else {
+    <a
+      routerLink="/newsletters"
+      class="rounded-xl border border-line bg-base-100 p-5 text-base-content transition-shadow hover:shadow-md"
+    >
+      <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Reach your people</div>
+      <div class="mt-1 flex items-baseline gap-2">
+        <span class="text-[26px] font-bold leading-none tabular-nums">0</span>
+        <span class="text-sm font-semibold">Draft newsletters</span>
+      </div>
+      <div class="mt-1 text-xs text-base-content/50">No drafts waiting</div>
+      <div class="mt-3 text-sm font-semibold underline underline-offset-2">Start a newsletter</div>
+    </a>
+    }
+  </div>
+
+  <!-- SLA drill-down — opened from the briefing "tasks" link or the attention card -->
+  @if (showSlaDetails()) {
+  <pc-sla-details
+    [breachedEmails]="breachedEmails()"
+    [breachedTasks]="breachedTasks()"
+    [emailSlaHours]="emailSlaHours()"
+    [taskSlaHours]="taskSlaHours()"
+    [totalEmailBreaches]="totalEmailSlaBreaches()"
+    [totalTaskBreaches]="totalTaskSlaBreaches()"
+    [hasMoreEmails]="hasMoreEmails()"
+    [hasMoreTasks]="hasMoreTasks()"
+    [isLoadingEmails]="isLoadingEmails()"
+    [isLoadingTasks]="isLoadingTasks()"
+    (loadMoreEmails)="loadMoreEmails()"
+    (loadMoreTasks)="loadMoreTasks()"
+    [(activeTab)]="defaultSlaTab"
+  />
+  }
+
+  <!-- Quiet stat tiles: neutral values, primary icons; color only when it means something (§5) -->
+  <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-5">
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Open emails</div>
+        <pc-icon name="envelope" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ totalOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">All open inbox conversations</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Unassigned open</div>
+        <pc-icon name="exclamation-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-warning">{{ unassignedOpenCount() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Awaiting assignment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg first response</div>
+        <pc-icon name="clock" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">
+        {{ avgFirstResponse() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Time to reply or comment</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Avg time to close</div>
+        <pc-icon name="check-circle" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-base-content">{{ avgTimeToClose() }}</div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">Arrival to closed status</div>
+    </div>
+
+    <div class="rounded-lg border border-line bg-base-100 p-4">
+      <div class="flex items-start justify-between">
+        <div class="text-[10.5px] font-semibold uppercase tracking-wider text-base-content/50">Contacts growth</div>
+        <pc-icon name="user-plus" [size]="4" class="shrink-0 text-primary"></pc-icon>
+      </div>
+      @if (isInitialLoading()) {
+      <div class="skeleton mt-2 h-6 w-14 rounded"></div>
+      } @else {
+      <div class="mt-1 text-[23px] font-bold leading-tight tabular-nums text-secondary">
+        +{{ activeContactsCount() }}
+      </div>
+      }
+      <div class="mt-1 text-[11px] text-base-content/45">New in the last 30 days</div>
+    </div>
+  </div>
+
+  <!-- Growth chart (2fr) + Coming up (1fr) -->
+  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
+    <!-- New contacts line chart -->
+    <div class="rounded-xl border border-line bg-base-100 p-6 lg:col-span-2">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-[15px] font-semibold text-base-content">New contacts</h2>
+        <span class="text-xs text-base-content/50">Last 30 days · +{{ activeContactsCount() }}</span>
+      </div>
+
+      @if (isInitialLoading()) {
+      <div class="skeleton h-[200px] w-full rounded-lg"></div>
+      } @else if (linePoints().length > 0) {
+      <div class="relative h-[200px] w-full">
+        <svg viewBox="0 0 600 200" class="h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id="contactsArea" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.18"></stop>
+              <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+
+          @for (label of yAxisLabels(); track label.y) {
+          <line
+            x1="20"
+            [attr.y1]="label.y"
+            x2="580"
+            [attr.y2]="label.y"
+            stroke="currentColor"
+            class="text-base-content/10"
+            stroke-dasharray="4"
+          ></line>
+          <text
+            [attr.x]="12"
+            [attr.y]="label.y + 3"
+            text-anchor="end"
+            class="fill-current text-[9px] tabular-nums text-base-content/40"
+          >
+            {{ label.value }}
+          </text>
           }
-        } else {
-          if (this.breachedTasks().length === 0) {
-            this.taskPage.set(1);
-            void this.loadMoreTasks();
+
+          <path [attr.d]="areaPath()" fill="url(#contactsArea)"></path>
+          <path
+            [attr.d]="linePath()"
+            fill="none"
+            stroke="var(--color-primary)"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          ></path>
+
+          @for (p of linePoints(); track p.date) {
+          <circle
+            [attr.cx]="p.x"
+            [attr.cy]="p.y"
+            r="4"
+            fill="var(--color-base-100)"
+            stroke="var(--color-primary)"
+            stroke-width="2"
+            class="cursor-pointer"
+            (mouseenter)="hoveredPoint.set(p)"
+            (mouseleave)="hoveredPoint.set(null)"
+          ></circle>
+          } @for (label of xAxisLabels(); track label.x) {
+          <text
+            [attr.x]="label.x"
+            [attr.y]="195"
+            text-anchor="middle"
+            class="fill-current text-[9px] text-base-content/40"
+          >
+            {{ label.label }}
+          </text>
           }
+        </svg>
+
+        @if (hoveredPoint(); as p) {
+        <div
+          class="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-line bg-base-100 px-3 py-2 shadow-lg"
+          [style.left.%]="(p.x / 600) * 100"
+          [style.top.%]="(p.y / 200) * 100"
+        >
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-base-content/50">
+            {{ formatDate(p.date) }}
+          </div>
+          <div class="mt-0.5 flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-base-content">
+            <span class="h-2 w-2 rounded-full bg-primary"></span>
+            +{{ p.count }} contacts
+          </div>
+        </div>
         }
+      </div>
+      } @else {
+      <div class="flex h-[200px] flex-col items-center justify-center gap-2 text-center">
+        <pc-icon name="user-plus" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">No new contacts in the last 30 days yet</p>
+        <a routerLink="/imports" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Import your people</a
+        >
+      </div>
       }
-    });
-  }
+    </div>
 
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly isRefreshing = signal(false);
+    <!-- Coming up -->
+    <div class="flex flex-col rounded-xl border border-line bg-base-100 p-6">
+      <h2 class="mb-4 text-[15px] font-semibold text-base-content">Coming up</h2>
 
-  // Greeting + date line (§1 "where am I": name the person and the day)
-  private readonly currentUser = this.auth.getUserSignal();
-  protected readonly todayLabel = computed(() =>
-    new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
-  );
-  protected readonly greeting = computed(() => {
-    const hour = new Date().getHours();
-    const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
-    const name = this.currentUser()?.first_name?.trim();
-    return name ? `Good ${part}, ${name}` : `Good ${part}`;
-  });
-
-  // KPIs
-  protected readonly totalAssignedCount = signal(0);
-  protected readonly unassignedOpenCount = signal(0);
-  protected readonly totalOpenCount = signal(0);
-  protected readonly avgFirstResponse = signal('—');
-  protected readonly avgTimeToClose = signal('—');
-  protected readonly activeContactsCount = signal(0);
-  protected readonly resolutionRate = signal(0);
-
-  // Next-action context (real data from the backend; null when nothing applies)
-  protected readonly oldestUnassignedAgeHours = signal<number | null>(null);
-  protected readonly firstResponseDueHours = signal<number | null>(null);
-  protected readonly draftNewsletter = signal<DraftNewsletter | null>(null);
-  protected readonly upcomingEvents = signal<UpcomingEvent[]>([]);
-
-  // SLA Signals
-  protected readonly unassignedEmailSlaBreaches = signal(0);
-  protected readonly unassignedTaskSlaBreaches = signal(0);
-  protected readonly totalEmailSlaBreaches = signal(0);
-  protected readonly totalTaskSlaBreaches = signal(0);
-
-  protected readonly breachedEmails = signal<unknown[]>([]);
-  protected readonly breachedTasks = signal<unknown[]>([]);
-  protected readonly emailPage = signal(1);
-  protected readonly taskPage = signal(1);
-  protected readonly hasMoreEmails = signal(false);
-  protected readonly hasMoreTasks = signal(false);
-  protected readonly isLoadingEmails = signal(false);
-  protected readonly isLoadingTasks = signal(false);
-
-  protected readonly emailSlaHours = signal(24);
-  protected readonly taskSlaHours = signal(24);
-  protected readonly emailSlaWarningThreshold = signal(1);
-  protected readonly emailSlaCriticalThreshold = signal(4);
-  protected readonly taskSlaWarningThreshold = signal(1);
-  protected readonly taskSlaCriticalThreshold = signal(4);
-  protected readonly showSlaDetails = signal(false);
-  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
-
-  protected readonly emailSlaStatus = computed(() => {
-    const breaches = this.totalEmailSlaBreaches();
-    const warning = this.emailSlaWarningThreshold();
-    const critical = this.emailSlaCriticalThreshold();
-    if (breaches === 0) return 'healthy';
-    if (breaches >= critical) return 'critical';
-    if (breaches >= warning) return 'warning';
-    return 'healthy';
-  });
-
-  /** One-word email-health phrase for the briefing paragraph. */
-  protected readonly emailHealthWord = computed(() => {
-    switch (this.emailSlaStatus()) {
-      case 'critical':
-        return 'breaching SLA';
-      case 'warning':
-        return 'under pressure';
-      default:
-        return 'healthy';
-    }
-  });
-
-  // SVG line chart data (contacts growth)
-  protected readonly linePath = signal('');
-  protected readonly areaPath = signal('');
-  protected readonly linePoints = signal<Array<{ x: number; y: number; date: string; count: number }>>([]);
-  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
-  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
-  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
-  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
-
-  protected readonly userStats = signal<
-    Array<{
-      user_id: string;
-      first_name: string;
-      last_name: string;
-      openCount: number;
-      closedCount: number;
-      resolutionRate: number;
-      avgFirstResponse: string;
-      avgTimeToClose: string;
-      emailSlaBreaches: number;
-      taskSlaBreaches: number;
-    }>
-  >([]);
-  protected readonly hoveredPoint = signal<{ x: number; y: number; date: string; count: number } | null>(null);
-
-  public ngOnInit() {
-    void this.loadStats();
-  }
-
-  protected async loadStats() {
-    if (this.isRefreshing()) return;
-    this.isRefreshing.set(true);
-    const start = Date.now();
-    const end = this._loading.begin();
-    try {
-      const stats = await this.dashboardSvc.getStats();
-
-      // Set KPIs
-      const totalAssigned = (stats.emailsAssigned || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.totalAssignedCount.set(totalAssigned);
-      this.unassignedOpenCount.set(stats.unassignedCount || 0);
-      this.totalOpenCount.set(stats.totalOpenCount || 0);
-
-      const respHours = stats.avgFirstResponseHours;
-      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
-
-      const closeHours = stats.avgTimeToCloseHours;
-      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
-
-      const totalNewContacts = (stats.contactsGrowth || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      this.activeContactsCount.set(totalNewContacts);
-
-      const totalClosed = (stats.emailsClosed || []).reduce(
-        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
-        0,
-      );
-      const totalEmails = totalAssigned + totalClosed;
-      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
-      this.resolutionRate.set(Math.round(rate));
-
-      // Next-action context
-      this.oldestUnassignedAgeHours.set(stats.oldestUnassignedAgeHours ?? null);
-      this.firstResponseDueHours.set(stats.firstResponseDueHours ?? null);
-      this.draftNewsletter.set(stats.draftNewsletter ?? null);
-      this.upcomingEvents.set(stats.upcomingEvents ?? []);
-
-      // Set SLA breaches
-      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
-      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
-      this.unassignedEmailSlaBreaches.set(unassignedEmails);
-      this.unassignedTaskSlaBreaches.set(unassignedTasks);
-
-      const assignedEmailSla = (stats.userStats || []).reduce(
-        (acc: number, cur: { emailSlaBreaches?: number }) => acc + Number(cur.emailSlaBreaches || 0),
-        0,
-      );
-      const assignedTaskSla = (stats.userStats || []).reduce(
-        (acc: number, cur: { taskSlaBreaches?: number }) => acc + Number(cur.taskSlaBreaches || 0),
-        0,
-      );
-
-      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
-      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
-
-      // Reset breached lists (loaded on demand when the drill-down opens)
-      if (this.showSlaDetails()) {
-        if (this.defaultSlaTab() === 'emails') {
-          this.breachedEmails.set([]);
-          this.emailPage.set(1);
-        } else {
-          this.breachedTasks.set([]);
-          this.taskPage.set(1);
+      @if (upcomingEvents().length > 0) {
+      <ul class="flex flex-col gap-1">
+        @for (ev of upcomingEvents(); track ev.id) {
+        <li>
+          <a
+            routerLink="/events/shifts"
+            class="-mx-2 flex items-start gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-base-200"
+          >
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <pc-icon name="user-group" [size]="4" class="text-primary"></pc-icon>
+            </span>
+            <span class="min-w-0">
+              <span class="block truncate text-sm font-medium text-base-content">{{ ev.name }}</span>
+              <span class="block text-xs text-base-content/55">
+                {{ formatEventTime(ev.start_time) }}@if (ev.capacity != null) { · {{ ev.capacity }} spots }
+              </span>
+            </span>
+          </a>
+        </li>
         }
-      } else {
-        this.breachedEmails.set([]);
-        this.emailPage.set(1);
-        this.hasMoreEmails.set(false);
-
-        this.breachedTasks.set([]);
-        this.taskPage.set(1);
-        this.hasMoreTasks.set(false);
+      </ul>
+      } @else {
+      <div class="flex flex-1 flex-col items-center justify-center gap-2 py-6 text-center">
+        <pc-icon name="file-calendar" [size]="7" class="text-base-content/20"></pc-icon>
+        <p class="text-sm text-base-content/50">Nothing scheduled yet</p>
+        <a routerLink="/events/shifts" class="text-sm font-semibold text-primary underline underline-offset-2"
+          >Plan an event</a
+        >
+      </div>
       }
 
-      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
-      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
-      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
-      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
-      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
-      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
+      <div class="mt-4 border-t border-line pt-3 text-xs text-base-content/50">
+        Email resolution this quarter: <span class="tabular-nums">{{ resolutionRate() }}%</span> · details in the table
+        below
+      </div>
+    </div>
+  </div>
 
-      // Representative stats table
-      const formattedUserStats = (stats.userStats || []).map(
-        (u: {
-          user_id: string;
-          first_name: string;
-          last_name: string;
-          openCount: number;
-          closedCount: number;
-          resolutionRate: number;
-          avgFirstResponseHours: number;
-          avgTimeToCloseHours: number;
-          emailSlaBreaches?: number;
-          taskSlaBreaches?: number;
-        }) => ({
-          user_id: u.user_id,
-          first_name: u.first_name,
-          last_name: u.last_name,
-          openCount: u.openCount,
-          closedCount: u.closedCount,
-          resolutionRate: u.resolutionRate,
-          avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
-          avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
-          emailSlaBreaches: u.emailSlaBreaches || 0,
-          taskSlaBreaches: u.taskSlaBreaches || 0,
-        }),
-      );
-      this.userStats.set(formattedUserStats);
+  <!-- Representative performance — quiet table, hairline rows, tinted pills, no zebra -->
+  <div class="rounded-xl border border-line bg-base-100 p-6">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-[15px] font-semibold text-base-content">Representative performance</h2>
+      <span class="text-xs text-base-content/50">Real-time</span>
+    </div>
 
-      // Line chart: contacts growth (last 30 days)
-      const growth = stats.contactsGrowth || [];
-      const maxCount = Math.max(...growth.map((g: { count: number }) => g.count), 1);
-      const width = 600;
-      const height = 200;
-      const padding = 20;
-
-      const points: Array<{ x: number; y: number; date: string; count: number }> = growth.map(
-        (g: { date: string; count: number }, i: number) => {
-          const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
-          const y = height - padding - (g.count / maxCount) * (height - padding * 2);
-          return { x, y, date: g.date, count: g.count };
-        },
-      );
-      this.linePoints.set(points);
-
-      const firstPoint = points[0];
-      const lastPoint = points[points.length - 1];
-      if (firstPoint && lastPoint) {
-        const lPath = points.map((p, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-        this.linePath.set(lPath);
-        this.areaPath.set(`${lPath} L ${lastPoint.x} ${height - padding} L ${firstPoint.x} ${height - padding} Z`);
-      } else {
-        this.linePath.set('');
-        this.areaPath.set('');
-      }
-
-      const yLabels = [
-        { y: 20, value: maxCount },
-        { y: 60, value: Math.round(maxCount * 0.75) },
-        { y: 100, value: Math.round(maxCount * 0.5) },
-        { y: 140, value: Math.round(maxCount * 0.25) },
-        { y: 180, value: 0 },
-      ];
-      this.yAxisLabels.set(yLabels);
-
-      const xLabels: { x: number; label: string }[] = [];
-      if (points.length > 0) {
-        const indices = [
-          0,
-          Math.floor(points.length * 0.25),
-          Math.floor(points.length * 0.5),
-          Math.floor(points.length * 0.75),
-          points.length - 1,
-        ];
-        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
-        for (const idx of uniqueIndices) {
-          const pt = points[idx];
-          if (!pt) continue;
-          let dateStr = pt.date;
-          try {
-            const dateObj = new Date(pt.date);
-            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-          } catch {
-            /* keep raw date string on parse failure */
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr
+            class="border-b border-line text-left text-[11.5px] font-medium uppercase tracking-wide text-base-content/50"
+          >
+            <th class="py-2 pr-4 font-medium">Representative</th>
+            <th class="py-2 pr-4 text-right font-medium">Open</th>
+            <th class="py-2 pr-4 text-right font-medium">Closed</th>
+            <th class="py-2 pr-4 font-medium">Resolution</th>
+            <th class="py-2 pr-4 font-medium">Avg first response</th>
+            <th class="py-2 font-medium">SLA breaches</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of userStats(); track user.user_id) {
+          <tr class="border-b border-line last:border-0">
+            <td class="py-2.5 pr-4 font-medium text-base-content">{{ user.first_name }} {{ user.last_name }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.openCount }}</td>
+            <td class="py-2.5 pr-4 text-right tabular-nums text-base-content/70">{{ user.closedCount }}</td>
+            <td class="py-2.5 pr-4">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.resolutionRate >= 75"
+                [class.badge-warning]="user.resolutionRate >= 40 && user.resolutionRate < 75"
+                [class.badge-error]="user.resolutionRate < 40"
+                >{{ user.resolutionRate }}%</span
+              >
+            </td>
+            <td class="py-2.5 pr-4 tabular-nums text-base-content/70">{{ user.avgFirstResponse }}</td>
+            <td class="py-2.5">
+              <span
+                class="badge badge-soft badge-sm tabular-nums"
+                [class.badge-success]="user.emailSlaBreaches + user.taskSlaBreaches === 0"
+                [class.badge-error]="user.emailSlaBreaches + user.taskSlaBreaches > 0"
+                >{{ user.emailSlaBreaches + user.taskSlaBreaches }}</span
+              >
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="6" class="py-8 text-center text-sm text-base-content/40">No representative activity yet</td>
+          </tr>
           }
-          xLabels.push({ x: pt.x, label: dateStr });
-        }
-      }
-      this.xAxisLabels.set(xLabels);
-    } catch {
-      this.alertSvc.showError('Failed to load dashboard metrics');
-    } finally {
-      end();
-      const elapsed = Date.now() - start;
-      const minSpin = 1000; // spin at least once (1 second minimum)
-      if (elapsed < minSpin) {
-        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
-      }
-      this.isRefreshing.set(false);
-    }
-  }
-
-  private formatHours(hours: number): string {
-    if (hours < 1) {
-      const minutes = Math.round(hours * 60);
-      return `${minutes}m`;
-    }
-    if (hours >= 24) {
-      const days = Math.floor(hours / 24);
-      const remainingHours = Math.round(hours % 24);
-      return `${days}d ${remainingHours}h`;
-    }
-    return `${hours.toFixed(1)}h`;
-  }
-
-  /** Short "2h" / "3d" relative label for the next-action cards. */
-  protected roundedHours(hours: number | null): string {
-    if (hours == null) return '—';
-    if (hours < 1) return `${Math.round(hours * 60)}m`;
-    if (hours >= 24) return `${Math.round(hours / 24)}d`;
-    return `${Math.round(hours)}h`;
-  }
-
-  protected formatEventTime(dateStr: string): string {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
-    } catch {
-      return dateStr;
-    }
-  }
-
-  protected formatDate(dateStr: string): string {
-    try {
-      const d = new Date(dateStr);
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    } catch {
-      return dateStr;
-    }
-  }
-
-  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
-    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
-      this.showSlaDetails.set(false);
-    } else {
-      this.defaultSlaTab.set(tab);
-      this.showSlaDetails.set(true);
-    }
-  }
-
-  protected async loadMoreEmails() {
-    if (this.isLoadingEmails()) return;
-    this.isLoadingEmails.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
-      if (this.emailPage() === 1) {
-        this.breachedEmails.set(res.items);
-      } else {
-        this.breachedEmails.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreEmails.set(res.hasMore);
-      this.emailPage.update((p) => p + 1);
-    } catch {
-      this.alertSvc.showError('Failed to load breached emails');
-    } finally {
-      this.isLoadingEmails.set(false);
-    }
-  }
-
-  protected async loadMoreTasks() {
-    if (this.isLoadingTasks()) return;
-    this.isLoadingTasks.set(true);
-    try {
-      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
-      if (this.taskPage() === 1) {
-        this.breachedTasks.set(res.items);
-      } else {
-        this.breachedTasks.update((prev) => [...prev, ...res.items]);
-      }
-      this.hasMoreTasks.set(res.hasMore);
-      this.taskPage.update((p) => p + 1);
-    } catch {
-      this.alertSvc.showError('Failed to load breached tasks');
-    } finally {
-      this.isLoadingTasks.set(false);
-    }
-  }
-}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-view.ts
@@ -45048,437 +45357,6 @@ export const dashboardRoutes: Routes = [
 ];
 ```
 
-## File: apps/frontend/src/styles.css
-
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
-
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #0ea5e9;
-  --color-primary-content: #ffffff;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #0c506e;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: #efeeeeff;
-  --color-base-content: #1f2937;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-success-content: #053a34;
-  --color-warning: #e5c963;
-  --color-warning-content: #4a3d0a;
-  --color-error: #f37373;
-  --color-error-content: #ffffff;
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #e7e5e4;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
-}
-
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
-}
-
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #0b1220; /* dark text on bright azure */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #1a2b45;
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-success-content: #052e12;
-  --color-warning: #f59e0b;
-  --color-warning-content: #3d2a05;
-  --color-error: #ef4444;
-  --color-error-content: #2b0505;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-base-300) var(--color-base-200);
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-base-200);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-base-300);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  /* Save-landed feedback for grids and forms — success tint fading to nothing.
-     Semantic token so it survives theme switch (design §5). Mirrors the
-     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
-  @keyframes savedFlash {
-    0% {
-      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-    }
-    60% {
-      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
-    }
-    100% {
-      background-color: transparent;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-  .animate-saved-flash {
-    animation: savedFlash 1.2s ease-out 1;
-  }
-}
-
-/* Hairline border helper — pairs with any border-width utility to paint the
-   app-wide line color (design §5). Use as `class="border-b border-line"`. */
-@utility border-line {
-  border-color: var(--color-line);
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 400 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
-
-/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
-   Semantic primary token so it survives theme switch (design §5). */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
-   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-
-/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
 
 ```typescript
@@ -47242,6 +47120,446 @@ export class EventFormComponent implements OnInit {
 </div>
 ```
 
+## File: apps/frontend/src/app/experiences/summary/summary.ts
+
+```typescript
+import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { DashboardService } from './services/dashboard.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { SlaDetails } from './sla-details';
+import { GettingStartedCard } from './getting-started-card';
+import { AuthService } from '../../auth/auth-service';
+
+interface UpcomingEvent {
+  id: string;
+  name: string;
+  start_time: string;
+  capacity: number | null;
+  location_address: string | null;
+}
+
+interface DraftNewsletter {
+  id: string;
+  name: string;
+  total_recipients: number;
+}
+
+@Component({
+  imports: [Icon, SpinOnClickDirective, SlaDetails, GettingStartedCard, RouterLink],
+  selector: 'pc-summary',
+  templateUrl: './summary.html',
+})
+export class Summary implements OnInit {
+  private readonly dashboardSvc = inject(DashboardService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
+
+  constructor() {
+    effect(() => {
+      const tab = this.defaultSlaTab();
+      const open = this.showSlaDetails();
+      if (open) {
+        if (tab === 'emails') {
+          if (this.breachedEmails().length === 0) {
+            this.emailPage.set(1);
+            void this.loadMoreEmails();
+          }
+        } else {
+          if (this.breachedTasks().length === 0) {
+            this.taskPage.set(1);
+            void this.loadMoreTasks();
+          }
+        }
+      }
+    });
+  }
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly isRefreshing = signal(false);
+
+  // Greeting + date line (§1 "where am I": name the person and the day)
+  private readonly currentUser = this.auth.getUserSignal();
+  protected readonly todayLabel = computed(() =>
+    new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+  );
+  protected readonly greeting = computed(() => {
+    const hour = new Date().getHours();
+    const part = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening';
+    const name = this.currentUser()?.first_name?.trim();
+    return name ? `Good ${part}, ${name}` : `Good ${part}`;
+  });
+
+  // KPIs
+  protected readonly totalAssignedCount = signal(0);
+  protected readonly unassignedOpenCount = signal(0);
+  protected readonly totalOpenCount = signal(0);
+  protected readonly avgFirstResponse = signal('—');
+  protected readonly avgTimeToClose = signal('—');
+  protected readonly activeContactsCount = signal(0);
+  protected readonly resolutionRate = signal(0);
+
+  // Next-action context (real data from the backend; null when nothing applies)
+  protected readonly oldestUnassignedAgeHours = signal<number | null>(null);
+  protected readonly firstResponseDueHours = signal<number | null>(null);
+  protected readonly draftNewsletter = signal<DraftNewsletter | null>(null);
+  protected readonly upcomingEvents = signal<UpcomingEvent[]>([]);
+
+  // SLA Signals
+  protected readonly unassignedEmailSlaBreaches = signal(0);
+  protected readonly unassignedTaskSlaBreaches = signal(0);
+  protected readonly totalEmailSlaBreaches = signal(0);
+  protected readonly totalTaskSlaBreaches = signal(0);
+
+  protected readonly breachedEmails = signal<unknown[]>([]);
+  protected readonly breachedTasks = signal<unknown[]>([]);
+  protected readonly emailPage = signal(1);
+  protected readonly taskPage = signal(1);
+  protected readonly hasMoreEmails = signal(false);
+  protected readonly hasMoreTasks = signal(false);
+  protected readonly isLoadingEmails = signal(false);
+  protected readonly isLoadingTasks = signal(false);
+
+  protected readonly emailSlaHours = signal(24);
+  protected readonly taskSlaHours = signal(24);
+  protected readonly emailSlaWarningThreshold = signal(1);
+  protected readonly emailSlaCriticalThreshold = signal(4);
+  protected readonly taskSlaWarningThreshold = signal(1);
+  protected readonly taskSlaCriticalThreshold = signal(4);
+  protected readonly showSlaDetails = signal(false);
+  protected readonly defaultSlaTab = signal<'emails' | 'tasks'>('emails');
+
+  protected readonly emailSlaStatus = computed(() => {
+    const breaches = this.totalEmailSlaBreaches();
+    const warning = this.emailSlaWarningThreshold();
+    const critical = this.emailSlaCriticalThreshold();
+    if (breaches === 0) return 'healthy';
+    if (breaches >= critical) return 'critical';
+    if (breaches >= warning) return 'warning';
+    return 'healthy';
+  });
+
+  /** One-word email-health phrase for the briefing paragraph. */
+  protected readonly emailHealthWord = computed(() => {
+    switch (this.emailSlaStatus()) {
+      case 'critical':
+        return 'breaching SLA';
+      case 'warning':
+        return 'under pressure';
+      default:
+        return 'healthy';
+    }
+  });
+
+  // SVG line chart data (contacts growth)
+  protected readonly linePath = signal('');
+  protected readonly areaPath = signal('');
+  protected readonly linePoints = signal<Array<{ x: number; y: number; date: string; count: number }>>([]);
+  /** True only on the very first load (no data yet) — drives stat-tile skeletons over a spinner. */
+  protected readonly isInitialLoading = computed(() => this.isLoading() && this.linePoints().length === 0);
+  protected readonly yAxisLabels = signal<{ y: number; value: number }[]>([]);
+  protected readonly xAxisLabels = signal<{ x: number; label: string }[]>([]);
+
+  protected readonly userStats = signal<
+    Array<{
+      user_id: string;
+      first_name: string;
+      last_name: string;
+      openCount: number;
+      closedCount: number;
+      resolutionRate: number;
+      avgFirstResponse: string;
+      avgTimeToClose: string;
+      emailSlaBreaches: number;
+      taskSlaBreaches: number;
+    }>
+  >([]);
+  protected readonly hoveredPoint = signal<{ x: number; y: number; date: string; count: number } | null>(null);
+
+  public ngOnInit() {
+    void this.loadStats();
+  }
+
+  protected async loadStats() {
+    if (this.isRefreshing()) return;
+    this.isRefreshing.set(true);
+    const start = Date.now();
+    const end = this._loading.begin();
+    try {
+      const stats = await this.dashboardSvc.getStats();
+
+      // Set KPIs
+      const totalAssigned = (stats.emailsAssigned || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.totalAssignedCount.set(totalAssigned);
+      this.unassignedOpenCount.set(stats.unassignedCount || 0);
+      this.totalOpenCount.set(stats.totalOpenCount || 0);
+
+      const respHours = stats.avgFirstResponseHours;
+      this.avgFirstResponse.set(respHours > 0 ? this.formatHours(respHours) : '—');
+
+      const closeHours = stats.avgTimeToCloseHours;
+      this.avgTimeToClose.set(closeHours > 0 ? this.formatHours(closeHours) : '—');
+
+      const totalNewContacts = (stats.contactsGrowth || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      this.activeContactsCount.set(totalNewContacts);
+
+      const totalClosed = (stats.emailsClosed || []).reduce(
+        (acc: number, cur: { count?: number }) => acc + Number(cur.count || 0),
+        0,
+      );
+      const totalEmails = totalAssigned + totalClosed;
+      const rate = totalEmails > 0 ? (totalClosed / totalEmails) * 100 : 0;
+      this.resolutionRate.set(Math.round(rate));
+
+      // Next-action context
+      this.oldestUnassignedAgeHours.set(stats.oldestUnassignedAgeHours ?? null);
+      this.firstResponseDueHours.set(stats.firstResponseDueHours ?? null);
+      this.draftNewsletter.set(stats.draftNewsletter ?? null);
+      this.upcomingEvents.set(stats.upcomingEvents ?? []);
+
+      // Set SLA breaches
+      const unassignedEmails = stats.unassignedEmailSlaBreaches || 0;
+      const unassignedTasks = stats.unassignedTaskSlaBreaches || 0;
+      this.unassignedEmailSlaBreaches.set(unassignedEmails);
+      this.unassignedTaskSlaBreaches.set(unassignedTasks);
+
+      const assignedEmailSla = (stats.userStats || []).reduce(
+        (acc: number, cur: { emailSlaBreaches?: number }) => acc + Number(cur.emailSlaBreaches || 0),
+        0,
+      );
+      const assignedTaskSla = (stats.userStats || []).reduce(
+        (acc: number, cur: { taskSlaBreaches?: number }) => acc + Number(cur.taskSlaBreaches || 0),
+        0,
+      );
+
+      this.totalEmailSlaBreaches.set(unassignedEmails + assignedEmailSla);
+      this.totalTaskSlaBreaches.set(unassignedTasks + assignedTaskSla);
+
+      // Reset breached lists (loaded on demand when the drill-down opens)
+      if (this.showSlaDetails()) {
+        if (this.defaultSlaTab() === 'emails') {
+          this.breachedEmails.set([]);
+          this.emailPage.set(1);
+        } else {
+          this.breachedTasks.set([]);
+          this.taskPage.set(1);
+        }
+      } else {
+        this.breachedEmails.set([]);
+        this.emailPage.set(1);
+        this.hasMoreEmails.set(false);
+
+        this.breachedTasks.set([]);
+        this.taskPage.set(1);
+        this.hasMoreTasks.set(false);
+      }
+
+      this.emailSlaHours.set(stats.emailSlaHours ?? 24);
+      this.taskSlaHours.set(stats.taskSlaHours ?? 24);
+      this.emailSlaWarningThreshold.set(stats.emailSlaWarningThreshold ?? 1);
+      this.emailSlaCriticalThreshold.set(stats.emailSlaCriticalThreshold ?? 4);
+      this.taskSlaWarningThreshold.set(stats.taskSlaWarningThreshold ?? 1);
+      this.taskSlaCriticalThreshold.set(stats.taskSlaCriticalThreshold ?? 4);
+
+      // Representative stats table
+      const formattedUserStats = (stats.userStats || []).map(
+        (u: {
+          user_id: string;
+          first_name: string;
+          last_name: string;
+          openCount: number;
+          closedCount: number;
+          resolutionRate: number;
+          avgFirstResponseHours: number;
+          avgTimeToCloseHours: number;
+          emailSlaBreaches?: number;
+          taskSlaBreaches?: number;
+        }) => ({
+          user_id: u.user_id,
+          first_name: u.first_name,
+          last_name: u.last_name,
+          openCount: u.openCount,
+          closedCount: u.closedCount,
+          resolutionRate: u.resolutionRate,
+          avgFirstResponse: u.avgFirstResponseHours > 0 ? this.formatHours(u.avgFirstResponseHours) : '—',
+          avgTimeToClose: u.avgTimeToCloseHours > 0 ? this.formatHours(u.avgTimeToCloseHours) : '—',
+          emailSlaBreaches: u.emailSlaBreaches || 0,
+          taskSlaBreaches: u.taskSlaBreaches || 0,
+        }),
+      );
+      this.userStats.set(formattedUserStats);
+
+      // Line chart: contacts growth (last 30 days)
+      const growth = stats.contactsGrowth || [];
+      const maxCount = Math.max(...growth.map((g: { count: number }) => g.count), 1);
+      const width = 600;
+      const height = 200;
+      const padding = 20;
+
+      const points: Array<{ x: number; y: number; date: string; count: number }> = growth.map(
+        (g: { date: string; count: number }, i: number) => {
+          const x = padding + (i / Math.max(growth.length - 1, 1)) * (width - padding * 2);
+          const y = height - padding - (g.count / maxCount) * (height - padding * 2);
+          return { x, y, date: g.date, count: g.count };
+        },
+      );
+      this.linePoints.set(points);
+
+      const firstPoint = points[0];
+      const lastPoint = points[points.length - 1];
+      if (firstPoint && lastPoint) {
+        const lPath = points.map((p, i: number) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+        this.linePath.set(lPath);
+        this.areaPath.set(`${lPath} L ${lastPoint.x} ${height - padding} L ${firstPoint.x} ${height - padding} Z`);
+      } else {
+        this.linePath.set('');
+        this.areaPath.set('');
+      }
+
+      const yLabels = [
+        { y: 20, value: maxCount },
+        { y: 60, value: Math.round(maxCount * 0.75) },
+        { y: 100, value: Math.round(maxCount * 0.5) },
+        { y: 140, value: Math.round(maxCount * 0.25) },
+        { y: 180, value: 0 },
+      ];
+      this.yAxisLabels.set(yLabels);
+
+      const xLabels: { x: number; label: string }[] = [];
+      if (points.length > 0) {
+        const indices = [
+          0,
+          Math.floor(points.length * 0.25),
+          Math.floor(points.length * 0.5),
+          Math.floor(points.length * 0.75),
+          points.length - 1,
+        ];
+        const uniqueIndices = Array.from(new Set(indices)).sort((a, b) => a - b);
+        for (const idx of uniqueIndices) {
+          const pt = points[idx];
+          if (!pt) continue;
+          let dateStr = pt.date;
+          try {
+            const dateObj = new Date(pt.date);
+            dateStr = dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+          } catch {
+            /* keep raw date string on parse failure */
+          }
+          xLabels.push({ x: pt.x, label: dateStr });
+        }
+      }
+      this.xAxisLabels.set(xLabels);
+    } catch {
+      this.alertSvc.showError('Failed to load dashboard metrics');
+    } finally {
+      end();
+      const elapsed = Date.now() - start;
+      const minSpin = 1000; // spin at least once (1 second minimum)
+      if (elapsed < minSpin) {
+        await new Promise((resolve) => setTimeout(resolve, minSpin - elapsed));
+      }
+      this.isRefreshing.set(false);
+    }
+  }
+
+  private formatHours(hours: number): string {
+    if (hours < 1) {
+      const minutes = Math.round(hours * 60);
+      return `${minutes}m`;
+    }
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24);
+      const remainingHours = Math.round(hours % 24);
+      return `${days}d ${remainingHours}h`;
+    }
+    return `${hours.toFixed(1)}h`;
+  }
+
+  /** Short "2h" / "3d" relative label for the next-action cards. */
+  protected roundedHours(hours: number | null): string {
+    if (hours == null) return '—';
+    if (hours < 1) return `${Math.round(hours * 60)}m`;
+    if (hours >= 24) return `${Math.round(hours / 24)}d`;
+    return `${Math.round(hours)}h`;
+  }
+
+  protected formatEventTime(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  protected formatDate(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    } catch {
+      return dateStr;
+    }
+  }
+
+  protected toggleSlaDetails(tab: 'emails' | 'tasks') {
+    if (this.showSlaDetails() && this.defaultSlaTab() === tab) {
+      this.showSlaDetails.set(false);
+    } else {
+      this.defaultSlaTab.set(tab);
+      this.showSlaDetails.set(true);
+    }
+  }
+
+  protected async loadMoreEmails() {
+    if (this.isLoadingEmails()) return;
+    this.isLoadingEmails.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedEmails(this.emailPage(), 10);
+      if (this.emailPage() === 1) {
+        this.breachedEmails.set(res.items);
+      } else {
+        this.breachedEmails.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreEmails.set(res.hasMore);
+      this.emailPage.update((p) => p + 1);
+    } catch {
+      this.alertSvc.showError('Failed to load breached emails');
+    } finally {
+      this.isLoadingEmails.set(false);
+    }
+  }
+
+  protected async loadMoreTasks() {
+    if (this.isLoadingTasks()) return;
+    this.isLoadingTasks.set(true);
+    try {
+      const res = await this.dashboardSvc.getBreachedTasks(this.taskPage(), 10);
+      if (this.taskPage() === 1) {
+        this.breachedTasks.set(res.items);
+      } else {
+        this.breachedTasks.update((prev) => [...prev, ...res.items]);
+      }
+      this.hasMoreTasks.set(res.hasMore);
+      this.taskPage.update((p) => p + 1);
+    } catch {
+      this.alertSvc.showError('Failed to load breached tasks');
+    } finally {
+      this.isLoadingTasks.set(false);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
 
 ```typescript
@@ -47676,308 +47994,433 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.ts
+## File: apps/frontend/src/styles.css
 
-```typescript
-import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Router, RouterLink } from '@angular/router';
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
 
-import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
-import { SearchService } from '../../services/api/search-service';
-import { FullScreenService } from '../../services/fullscreen.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
-import { UserService } from '@frontend/services/user.service';
-import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
-import { NotificationsService } from '../../services/api/notifications-service';
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
 
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: string | Date;
-};
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
 
-@Component({
-  selector: 'pc-navbar',
-  imports: [Icon, Swap, ReactiveFormsModule, AnimateIfDirective, RouterLink, FavouriteToggle, Breadcrumbs],
-  templateUrl: './navbar.html',
-  host: {
-    '(window:keydown)': 'handleKeyDown($event)',
-  },
-})
-export class Navbar implements OnDestroy {
-  protected readonly emailActions = inject(EmailActionsStore);
-  protected readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly fullscreen = inject(FullScreenService);
-  private readonly searchSvc = inject(SearchService);
-  private readonly sideBarSvc = inject(SidebarService);
-  private readonly notificationsSvc = inject(NotificationsService);
-  private readonly router = inject(Router);
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #0ea5e9;
+  --color-primary-content: #ffffff;
+  --color-secondary: #14e8a6;
+  --color-secondary-content: #1f2937;
+  --color-accent: #0c506e;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: #efeeeeff;
+  --color-base-content: #1f2937;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-success-content: #053a34;
+  --color-warning: #e5c963;
+  --color-warning-content: #4a3d0a;
+  --color-error: #f37373;
+  --color-error-content: #ffffff;
 
-  protected readonly currentUser = this.auth.getUserSignal();
-  protected readonly currentUserAvatar = computed(() => {
-    const user = this.currentUser();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
 
-  /** Initials shown in the avatar circle when the user has no picture. */
-  protected readonly userInitials = computed(() => {
-    const user = this.currentUser();
-    if (!user) return '';
-    const first = (user.first_name ?? '').trim();
-    const last = (user.last_name ?? '').trim();
-    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
-    return (initials || user.email?.charAt(0) || '?').toUpperCase();
-  });
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
 
-  private pollInterval?: ReturnType<typeof setInterval>;
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
 
-  public readonly notifications = signal<NotificationItem[]>([]);
-  public readonly unreadCount = signal<number>(0);
-  public readonly isLoadingMore = signal<boolean>(false);
-  public readonly hasMore = signal<boolean>(true);
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
 
-  protected isMobileOpen() {
-    return this.sideBarSvc.isMobileOpen();
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #0b1220; /* dark text on bright azure */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-success-content: #052e12;
+  --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
+  --color-error: #ef4444;
+  --color-error-content: #2b0505;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-base-300) var(--color-base-200);
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-base-200);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-base-300);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
   }
-  protected readonly searchBarVisible = signal(false);
 
-  protected readonly searchStr = signal('');
-  protected readonly themeSvc = inject(ThemeService);
-
-  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
-
-  constructor() {
-    // Move focus to the search bar whenever it becomes visible
-    effect(() => {
-      if (this.searchBarVisible())
-        queueMicrotask(() => {
-          this.searchInputRef()?.nativeElement?.focus();
-        });
-    });
-
-    void this.initNotifications();
-    this.pollInterval = setInterval(() => {
-      void this.refreshCount();
-    }, 60000);
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
   }
 
-  public ngOnDestroy() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
     }
   }
 
-  private async initNotifications() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      this.unreadCount.set(count || 0);
-      await this.fetchInitial();
-    } catch (err) {
-      console.error('Failed to initialize notifications', err);
+  /* Save-landed feedback for grids and forms — success tint fading to nothing.
+     Semantic token so it survives theme switch (design §5). Mirrors the
+     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
+  @keyframes savedFlash {
+    0% {
+      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+    }
+    60% {
+      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    }
+    100% {
+      background-color: transparent;
     }
   }
 
-  protected async fetchInitial() {
-    this.isLoadingMore.set(true);
-    try {
-      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
-      this.notifications.set(list || []);
-      this.hasMore.set((list || []).length === 5);
-    } catch (err) {
-      console.error('Failed to fetch initial notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
     }
   }
 
-  protected async refreshCount() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      const oldCount = this.unreadCount();
-      this.unreadCount.set(count || 0);
-      if (count > oldCount) {
-        // Notification count increased, fetch first 5 notifications in background
-        await this.fetchInitial();
-      }
-    } catch (err) {
-      console.error('Failed to poll notification count', err);
-    }
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
   }
-
-  protected onNotificationOpen() {
-    if (this.notifications().length === 0) {
-      void this.fetchInitial();
-    }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
   }
-
-  protected onScroll(event: Event) {
-    const target = event.target as HTMLElement;
-    const threshold = 20; // px from bottom
-    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
-    if (isNearBottom) {
-      void this.loadMore();
-    }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
   }
-
-  protected async loadMore() {
-    if (this.isLoadingMore() || !this.hasMore()) return;
-    this.isLoadingMore.set(true);
-    try {
-      const nextBatch = await this.notificationsSvc.getLatest({
-        limit: 5,
-        offset: this.notifications().length,
-      });
-      if (!nextBatch || nextBatch.length < 5) {
-        this.hasMore.set(false);
-      }
-      if (nextBatch && nextBatch.length > 0) {
-        const existingIds = new Set(this.notifications().map((n) => n.id));
-        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
-        if (uniqueNext.length > 0) {
-          this.notifications.set([...this.notifications(), ...uniqueNext]);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load more notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
   }
-
-  protected async clickNotification(notif: NotificationItem) {
-    if (!notif.read) {
-      try {
-        await this.notificationsSvc.markRead(notif.id);
-        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
-        this.unreadCount.update((c) => Math.max(0, c - 1));
-      } catch (err) {
-        console.error('Failed to mark notification read', err);
-      }
-    }
-    if (notif.link) {
-      void this.router.navigateByUrl(notif.link);
-    }
-    this.closeDropdown();
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
   }
-
-  protected async markAllAsRead(event: Event) {
-    event.stopPropagation();
-    try {
-      await this.notificationsSvc.markAllRead();
-      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
-      this.unreadCount.set(0);
-    } catch (err) {
-      console.error('Failed to mark all read', err);
-    }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
   }
-
-  protected formatTime(dateStr: string | Date | null | undefined): string {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
   }
-
-  public clearSearch(): void {
-    this.searchStr.set('');
-    this.searchSvc.clearSearch();
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
   }
-
-  public handleKeyDown(event: KeyboardEvent): void {
-    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-    const isK = event?.key?.toLowerCase() === 'k';
-
-    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
-    if (isCtrlOrCmd && isK && !event.shiftKey) {
-      event.preventDefault();
-
-      this.showSearchBar();
-    } else if (event.key === 'Escape' && this.searchBarVisible()) {
-      this.clearSearch();
-      this.hideSearchBar();
-    }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
   }
-
-  protected hideSearchBar(): void {
-    this.searchBarVisible.set(false);
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
   }
-
-  protected isFullScreenMode(): boolean {
-    return this.fullscreen.isFullScreenMode();
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
   }
-
-  protected onBlurSearchBar() {
-    if (!this.searchStr().length) {
-      this.hideSearchBar();
-    }
+  .animate-saved-flash {
+    animation: savedFlash 1.2s ease-out 1;
   }
+}
 
-  protected onSearchEnter(): void {
-    this.searchSvc.doSearchImmediate(this.searchStr());
-  }
+/* Hairline border helper — pairs with any border-width utility to paint the
+   app-wide line color (design §5). Use as `class="border-b border-line"`. */
+@utility border-line {
+  border-color: var(--color-line);
+}
 
-  protected onSearchInput(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.searchStr.set(input.value);
-    this.search();
-  }
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
 
-  protected search(): void {
-    this.searchSvc.doSearch(this.searchStr());
-  }
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
 
-  protected showSearchBar(): void {
-    this.searchBarVisible.set(true);
-  }
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
 
-  protected signOut(): void {
-    void this.auth.signOut();
-  }
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
 
-  protected closeDropdown(): void {
-    const activeEl = document.activeElement as HTMLElement | null;
-    if (activeEl) {
-      activeEl.blur();
-    }
-  }
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
 
-  protected toggleFullScreen(): void {
-    void this.fullscreen.toggleFullScreen();
-  }
+/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
+   Semantic primary token so it survives theme switch (design §5). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
+   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
 
-  protected toggleMobile(): void {
-    this.sideBarSvc.toggleMobile();
-  }
-
-  protected toggleSearch(): void {
-    this.searchBarVisible.set(!this.searchBarVisible());
-  }
-
-  protected toggleTheme(): void {
-    this.themeSvc.toggleTheme();
+/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 ```
@@ -51555,269 +51998,328 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.html
+## File: apps/frontend/src/app/layout/navbar/navbar.ts
 
-```html
-<!-- Navigation bar template with search, theme toggle, and user actions -->
-<div class="navbar bg-base-100 shadow-lg relative">
-  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
-    <pc-icon name="bars-4"></pc-icon>
-  </div>
+```typescript
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@icons/icon';
+import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { Router, RouterLink } from '@angular/router';
 
-  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
-    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
-    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
-    <pc-breadcrumbs
-      class="hidden min-w-0 flex-1"
-      [class.sm:block]="!searchBarVisible()"
-      [crumbs]="trail.crumbs"
-      [positionLabel]="trail.positionLabel"
-      [hasPrev]="trail.hasPrev"
-      [hasNext]="trail.hasNext"
-      [prevLabel]="trail.prevLabel"
-      [nextLabel]="trail.nextLabel"
-      (prev)="trail.onPrev()"
-      (next)="trail.onNext()"
-    ></pc-breadcrumbs>
-    } }
+import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
+import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
+import { SearchService } from '../../services/api/search-service';
+import { FullScreenService } from '../../services/fullscreen.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { UserService } from '@frontend/services/user.service';
+import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
+import { NotificationsService } from '../../services/api/notifications-service';
 
-    <!-- Search bar — the flex-shrinking element so the icon cluster never overflows -->
-    <div
-      *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'"
-      class="min-w-0 max-w-[360px] shrink grow basis-[120px]"
-    >
-      <label class="input input-primary w-full flex items-center gap-2">
-        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
-        <input
-          #searchInput
-          type="text"
-          placeholder="Search people, emails, campaigns"
-          i18n-placeholder="@@navbar.search.placeholder"
-          class="grow w-full"
-          (blur)="onBlurSearchBar()"
-          [value]="searchStr()"
-          (input)="onSearchInput($event)"
-          (keydown.enter)="onSearchEnter()"
-        />
-        <kbd class="kbd kbd-sm hidden sm:inline-flex border-line">⌘K</kbd>
-      </label>
-    </div>
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  created_at: string | Date;
+};
 
-    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
-    <span
-      class="tooltip tooltip-bottom"
-      [class.hidden]="searchBarVisible()"
-      data-tip="Search ⌘K · Command palette ⌘⇧K"
-      i18n-data-tip="@@navbar.search.tooltip"
-    >
-      <pc-icon
-        class="hover:text-primary text-base-400 cursor-pointer"
-        (click)="showSearchBar()"
-        name="magnifying-glass"
-      ></pc-icon>
-    </span>
+@Component({
+  selector: 'pc-navbar',
+  imports: [
+    Icon,
+    Swap,
+    ReactiveFormsModule,
+    AnimateIfDirective,
+    RouterLink,
+    FavouriteToggle,
+    Breadcrumbs,
+    PersonalSettingsDialog,
+  ],
+  templateUrl: './navbar.html',
+  host: {
+    '(window:keydown)': 'handleKeyDown($event)',
+  },
+})
+export class Navbar implements OnDestroy {
+  protected readonly emailActions = inject(EmailActionsStore);
+  protected readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly fullscreen = inject(FullScreenService);
+  private readonly searchSvc = inject(SearchService);
+  private readonly sideBarSvc = inject(SidebarService);
+  private readonly notificationsSvc = inject(NotificationsService);
+  private readonly router = inject(Router);
 
-    <pc-swap
-      class="hover:text-primary text-base-400 cursor-pointer"
-      swapOnIcon="arrows-pointing-out"
-      swapOffIcon="arrows-pointing-in"
-      [checked]="!isFullScreenMode()"
-      (click)="toggleFullScreen()"
-      aria-label="Toggle full screen"
-      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
-    ></pc-swap>
+  protected readonly currentUser = this.auth.getUserSignal();
+  protected readonly currentUserAvatar = computed(() => {
+    const user = this.currentUser();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
 
-    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
-    <pc-favourite-toggle></pc-favourite-toggle>
+  /** Initials shown in the avatar circle when the user has no picture. */
+  protected readonly userInitials = computed(() => {
+    const user = this.currentUser();
+    if (!user) return '';
+    const first = (user.first_name ?? '').trim();
+    const last = (user.last_name ?? '').trim();
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
+    return (initials || user.email?.charAt(0) || '?').toUpperCase();
+  });
 
-    <!-- light / dark theme switcher -->
-    <pc-swap
-      swapOnIcon="sun"
-      swapOffIcon="moon"
-      [checked]="themeSvc.getTheme() === 'light'"
-      (click)="toggleTheme()"
-      aria-label="Toggle theme"
-      i18n-aria-label="@@navbar.theme.ariaLabel"
-    ></pc-swap>
+  private pollInterval?: ReturnType<typeof setInterval>;
 
-    <!-- email sending status indicator -->
-    @if (emailActions.sendingCount() > 0) {
-    <div
-      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
-    >
-      <span class="loading loading-spinner loading-xs text-primary"></span>
-      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
-        >Sending ({{ emailActions.sendingCount() }})...</span
-      >
-    </div>
-    }
+  public readonly notifications = signal<NotificationItem[]>([]);
+  public readonly unreadCount = signal<number>(0);
+  public readonly isLoadingMore = signal<boolean>(false);
+  public readonly hasMore = signal<boolean>(true);
 
-    <!-- notifications drop down -->
-    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
-      <div
-        tabindex="0"
-        role="button"
-        class="btn btn-ghost btn-circle relative"
-        aria-label="Notifications"
-        i18n-aria-label="@@navbar.notifications.ariaLabel"
-      >
-        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
-        @if (unreadCount() > 0) {
-        <span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-base-100"></span>
-        }
-      </div>
-
-      <!-- Notifications list -->
-      <div
-        tabindex="0"
-        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
-      >
-        <div class="card-body p-0">
-          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
-            <h3
-              class="font-semibold text-sm"
-              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
-            >
-              Notifications
-            </h3>
-            @if (unreadCount() > 0) {
-            <button
-              class="text-xs text-primary hover:underline font-medium"
-              (click)="markAllAsRead($event)"
-              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
-            >
-              Mark all read
-            </button>
-            }
-          </div>
-
-          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
-            @if (notifications().length === 0) {
-            <div class="flex flex-col items-center justify-center py-8 text-base-400">
-              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
-              <p
-                class="text-xs font-light"
-                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
-              >
-                All caught up!
-              </p>
-            </div>
-            } @else { @for (notif of notifications(); track notif.id) {
-            <div
-              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
-              [class.bg-primary/5]="!notif.read"
-              (click)="clickNotification(notif)"
-            >
-              <!-- Icon Based on Type -->
-              <div class="flex-shrink-0">
-                <div
-                  class="w-8 h-8 rounded-lg flex items-center justify-center"
-                  [class.bg-info/10]="notif.type === 'info'"
-                  [class.text-info]="notif.type === 'info'"
-                  [class.bg-primary/10]="notif.type === 'email'"
-                  [class.text-primary]="notif.type === 'email'"
-                  [class.bg-warning/10]="notif.type === 'task'"
-                  [class.text-warning]="notif.type === 'task'"
-                >
-                  @if (notif.type === 'email') {
-                  <pc-icon name="envelope"></pc-icon>
-                  } @else if (notif.type === 'task') {
-                  <pc-icon name="clipboard-document-list"></pc-icon>
-                  } @else {
-                  <pc-icon name="information-circle"></pc-icon>
-                  }
-                </div>
-              </div>
-
-              <!-- Message Details -->
-              <div class="flex-1 min-w-0">
-                <div class="flex justify-between items-start gap-1">
-                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
-                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
-                </div>
-                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
-              </div>
-
-              <!-- Unread dot indicator (static — nothing loops but a working spinner, §7) -->
-              @if (!notif.read) {
-              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
-              }
-            </div>
-            } } @if (isLoadingMore()) {
-            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
-              <span class="loading loading-spinner loading-xs text-primary"></span>
-            </div>
-            }
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- profile drop down -->
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
-        <div
-          class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
-        >
-          @if (currentUserAvatar()) {
-          <img
-            [src]="currentUserAvatar()!"
-            alt="User Profile Picture"
-            i18n-alt="@@navbar.profile.avatarAlt"
-            class="w-full h-full object-cover"
-          />
-          } @else {
-          <span
-            class="flex h-full w-full items-center justify-center bg-primary/10 text-primary text-sm font-semibold select-none"
-            aria-hidden="true"
-            >{{ userInitials() }}</span
-          >
-          }
-        </div>
-      </div>
-
-      <!-- Menu -->
-      <ul
-        tabindex="0"
-        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
-        (click)="closeDropdown()"
-      >
-        <li class="hover:text-primary">
-          <a routerLink="/profile">
-            <pc-icon name="user-circle"></pc-icon>
-            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/settings">
-            <pc-icon name="cog-6-tooth"></pc-icon>
-            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
-          </a>
-        </li>
-        <li class="hover:text-primary">
-          <a routerLink="/help">
-            <pc-icon name="information-circle"></pc-icon>
-            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
-          </a>
-        </li>
-        <li class="base-neutral px-0 mx-0"></li>
-        <li class="hover:text-primary" (click)="signOut()">
-          <a>
-            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
-            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
-          </a>
-        </li>
-      </ul>
-    </div>
-  </div>
-
-  <!-- Background email sending progress bar -->
-  @if (emailActions.sendingCount() > 0) {
-  <progress
-    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
-  ></progress>
+  protected isMobileOpen() {
+    return this.sideBarSvc.isMobileOpen();
   }
-</div>
+  protected readonly searchBarVisible = signal(false);
+
+  /** Personal Settings popup (§5a) — opened from the avatar menu. */
+  protected readonly settingsOpen = signal(false);
+
+  protected openSettings(): void {
+    this.closeDropdown();
+    this.settingsOpen.set(true);
+  }
+
+  protected readonly searchStr = signal('');
+  protected readonly themeSvc = inject(ThemeService);
+
+  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+
+  constructor() {
+    // Move focus to the search bar whenever it becomes visible
+    effect(() => {
+      if (this.searchBarVisible())
+        queueMicrotask(() => {
+          this.searchInputRef()?.nativeElement?.focus();
+        });
+    });
+
+    void this.initNotifications();
+    this.pollInterval = setInterval(() => {
+      void this.refreshCount();
+    }, 60000);
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+  }
+
+  private async initNotifications() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      this.unreadCount.set(count || 0);
+      await this.fetchInitial();
+    } catch (err) {
+      console.error('Failed to initialize notifications', err);
+    }
+  }
+
+  protected async fetchInitial() {
+    this.isLoadingMore.set(true);
+    try {
+      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
+      this.notifications.set(list || []);
+      this.hasMore.set((list || []).length === 5);
+    } catch (err) {
+      console.error('Failed to fetch initial notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async refreshCount() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      const oldCount = this.unreadCount();
+      this.unreadCount.set(count || 0);
+      if (count > oldCount) {
+        // Notification count increased, fetch first 5 notifications in background
+        await this.fetchInitial();
+      }
+    } catch (err) {
+      console.error('Failed to poll notification count', err);
+    }
+  }
+
+  protected onNotificationOpen() {
+    if (this.notifications().length === 0) {
+      void this.fetchInitial();
+    }
+  }
+
+  protected onScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    const threshold = 20; // px from bottom
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
+    if (isNearBottom) {
+      void this.loadMore();
+    }
+  }
+
+  protected async loadMore() {
+    if (this.isLoadingMore() || !this.hasMore()) return;
+    this.isLoadingMore.set(true);
+    try {
+      const nextBatch = await this.notificationsSvc.getLatest({
+        limit: 5,
+        offset: this.notifications().length,
+      });
+      if (!nextBatch || nextBatch.length < 5) {
+        this.hasMore.set(false);
+      }
+      if (nextBatch && nextBatch.length > 0) {
+        const existingIds = new Set(this.notifications().map((n) => n.id));
+        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
+        if (uniqueNext.length > 0) {
+          this.notifications.set([...this.notifications(), ...uniqueNext]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load more notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async clickNotification(notif: NotificationItem) {
+    if (!notif.read) {
+      try {
+        await this.notificationsSvc.markRead(notif.id);
+        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
+        this.unreadCount.update((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error('Failed to mark notification read', err);
+      }
+    }
+    if (notif.link) {
+      void this.router.navigateByUrl(notif.link);
+    }
+    this.closeDropdown();
+  }
+
+  protected async markAllAsRead(event: Event) {
+    event.stopPropagation();
+    try {
+      await this.notificationsSvc.markAllRead();
+      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
+      this.unreadCount.set(0);
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  }
+
+  protected formatTime(dateStr: string | Date | null | undefined): string {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  public clearSearch(): void {
+    this.searchStr.set('');
+    this.searchSvc.clearSearch();
+  }
+
+  public handleKeyDown(event: KeyboardEvent): void {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+    const isK = event?.key?.toLowerCase() === 'k';
+
+    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
+    if (isCtrlOrCmd && isK && !event.shiftKey) {
+      event.preventDefault();
+
+      this.showSearchBar();
+    } else if (event.key === 'Escape' && this.searchBarVisible()) {
+      this.clearSearch();
+      this.hideSearchBar();
+    }
+  }
+
+  protected hideSearchBar(): void {
+    this.searchBarVisible.set(false);
+  }
+
+  protected isFullScreenMode(): boolean {
+    return this.fullscreen.isFullScreenMode();
+  }
+
+  protected onBlurSearchBar() {
+    if (!this.searchStr().length) {
+      this.hideSearchBar();
+    }
+  }
+
+  protected onSearchEnter(): void {
+    this.searchSvc.doSearchImmediate(this.searchStr());
+  }
+
+  protected onSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.searchStr.set(input.value);
+    this.search();
+  }
+
+  protected search(): void {
+    this.searchSvc.doSearch(this.searchStr());
+  }
+
+  protected showSearchBar(): void {
+    this.searchBarVisible.set(true);
+  }
+
+  protected signOut(): void {
+    void this.auth.signOut();
+  }
+
+  protected closeDropdown(): void {
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl) {
+      activeEl.blur();
+    }
+  }
+
+  protected toggleFullScreen(): void {
+    void this.fullscreen.toggleFullScreen();
+  }
+
+  protected toggleMobile(): void {
+    this.sideBarSvc.toggleMobile();
+  }
+
+  protected toggleSearch(): void {
+    this.searchBarVisible.set(!this.searchBarVisible());
+  }
+
+  protected toggleTheme(): void {
+    this.themeSvc.toggleTheme();
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
@@ -53098,6 +53600,274 @@ export class ListsGridComponent implements OnDestroy {
 }
 ```
 
+## File: apps/frontend/src/app/layout/navbar/navbar.html
+
+```html
+<!-- Navigation bar template with search, theme toggle, and user actions -->
+<div class="navbar bg-base-100 shadow-lg relative">
+  <div class="flex-1 sm:hidden" (click)="toggleMobile()">
+    <pc-icon name="bars-4"></pc-icon>
+  </div>
+
+  <div class="flex items-center gap-1 justify-end w-full" [class.hidden]="isMobileOpen()">
+    <!-- Breadcrumb trail + record pager for the current page (set by the page, hoisted here) -->
+    @if (breadcrumbs.trail(); as trail) { @if (trail.crumbs.length || trail.positionLabel) {
+    <pc-breadcrumbs
+      class="hidden min-w-0 flex-1"
+      [class.sm:block]="!searchBarVisible()"
+      [crumbs]="trail.crumbs"
+      [positionLabel]="trail.positionLabel"
+      [hasPrev]="trail.hasPrev"
+      [hasNext]="trail.hasNext"
+      [prevLabel]="trail.prevLabel"
+      [nextLabel]="trail.nextLabel"
+      (prev)="trail.onPrev()"
+      (next)="trail.onNext()"
+    ></pc-breadcrumbs>
+    } }
+
+    <!-- Search bar — the flex-shrinking element so the icon cluster never overflows -->
+    <div
+      *pcAnimateIf="searchBarVisible; enter: 'animate-left'; exit: 'animate-exit-right'"
+      class="min-w-0 max-w-[360px] shrink grow basis-[120px]"
+    >
+      <label class="input input-primary w-full flex items-center gap-2">
+        <pc-icon class="opacity-50 hidden sm:block" viewBox="0 0 24 24" name="magnifying-glass" />
+        <input
+          #searchInput
+          type="text"
+          placeholder="Search people, emails, campaigns"
+          i18n-placeholder="@@navbar.search.placeholder"
+          class="grow w-full"
+          (blur)="onBlurSearchBar()"
+          [value]="searchStr()"
+          (input)="onSearchInput($event)"
+          (keydown.enter)="onSearchEnter()"
+        />
+        <kbd class="kbd kbd-sm hidden sm:inline-flex border-line">⌘K</kbd>
+      </label>
+    </div>
+
+    <!-- Search icon (⌘K search · ⌘⇧K command palette) -->
+    <span
+      class="tooltip tooltip-bottom"
+      [class.hidden]="searchBarVisible()"
+      data-tip="Search ⌘K · Command palette ⌘⇧K"
+      i18n-data-tip="@@navbar.search.tooltip"
+    >
+      <pc-icon
+        class="hover:text-primary text-base-400 cursor-pointer"
+        (click)="showSearchBar()"
+        name="magnifying-glass"
+      ></pc-icon>
+    </span>
+
+    <pc-swap
+      class="hover:text-primary text-base-400 cursor-pointer"
+      swapOnIcon="arrows-pointing-out"
+      swapOffIcon="arrows-pointing-in"
+      [checked]="!isFullScreenMode()"
+      (click)="toggleFullScreen()"
+      aria-label="Toggle full screen"
+      i18n-aria-label="@@navbar.fullscreen.ariaLabel"
+    ></pc-swap>
+
+    <!-- Favourite/bookmark current page (moves it under Bookmarks in the sidebar) -->
+    <pc-favourite-toggle></pc-favourite-toggle>
+
+    <!-- light / dark theme switcher -->
+    <pc-swap
+      swapOnIcon="sun"
+      swapOffIcon="moon"
+      [checked]="themeSvc.getTheme() === 'light'"
+      (click)="toggleTheme()"
+      aria-label="Toggle theme"
+      i18n-aria-label="@@navbar.theme.ariaLabel"
+    ></pc-swap>
+
+    <!-- email sending status indicator -->
+    @if (emailActions.sendingCount() > 0) {
+    <div
+      class="flex items-center gap-1.5 px-3 py-1 text-xs text-primary font-medium bg-primary/10 rounded-full border border-primary/20 animate-pulse"
+    >
+      <span class="loading loading-spinner loading-xs text-primary"></span>
+      <span i18n="Navbar|Text indicating emails are sending@@navbar.emailSending"
+        >Sending ({{ emailActions.sendingCount() }})...</span
+      >
+    </div>
+    }
+
+    <!-- notifications drop down -->
+    <div class="dropdown dropdown-end" (focusin)="onNotificationOpen()">
+      <div
+        tabindex="0"
+        role="button"
+        class="btn btn-ghost btn-circle relative"
+        aria-label="Notifications"
+        i18n-aria-label="@@navbar.notifications.ariaLabel"
+      >
+        <pc-icon class="hover:text-primary text-base-400 cursor-pointer" name="bell" />
+        @if (unreadCount() > 0) {
+        <span class="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full ring-2 ring-base-100"></span>
+        }
+      </div>
+
+      <!-- Notifications list -->
+      <div
+        tabindex="0"
+        class="dropdown-content mt-3 z-[50] card card-compact w-80 bg-base-100/90 backdrop-blur-md border border-base-200/50 shadow-2xl rounded-xl"
+      >
+        <div class="card-body p-0">
+          <div class="flex items-center justify-between px-4 py-3 border-b border-base-200/50">
+            <h3
+              class="font-semibold text-sm"
+              i18n="Navbar|Heading for notifications list@@navbar.notifications.heading"
+            >
+              Notifications
+            </h3>
+            @if (unreadCount() > 0) {
+            <button
+              class="text-xs text-primary hover:underline font-medium"
+              (click)="markAllAsRead($event)"
+              i18n="Navbar|Button to mark all notifications as read@@navbar.notifications.markAllRead"
+            >
+              Mark all read
+            </button>
+            }
+          </div>
+
+          <div class="max-h-80 overflow-y-auto divide-y divide-base-200/30" (scroll)="onScroll($event)">
+            @if (notifications().length === 0) {
+            <div class="flex flex-col items-center justify-center py-8 text-base-400">
+              <pc-icon name="bell" [size]="6" class="opacity-20 mb-2"></pc-icon>
+              <p
+                class="text-xs font-light"
+                i18n="Navbar|Message when there are no notifications@@navbar.notifications.empty"
+              >
+                All caught up!
+              </p>
+            </div>
+            } @else { @for (notif of notifications(); track notif.id) {
+            <div
+              class="flex gap-3 p-4 hover:bg-base-200/30 cursor-pointer transition-colors duration-150 relative group"
+              [class.bg-primary/5]="!notif.read"
+              (click)="clickNotification(notif)"
+            >
+              <!-- Icon Based on Type -->
+              <div class="flex-shrink-0">
+                <div
+                  class="w-8 h-8 rounded-lg flex items-center justify-center"
+                  [class.bg-info/10]="notif.type === 'info'"
+                  [class.text-info]="notif.type === 'info'"
+                  [class.bg-primary/10]="notif.type === 'email'"
+                  [class.text-primary]="notif.type === 'email'"
+                  [class.bg-warning/10]="notif.type === 'task'"
+                  [class.text-warning]="notif.type === 'task'"
+                >
+                  @if (notif.type === 'email') {
+                  <pc-icon name="envelope"></pc-icon>
+                  } @else if (notif.type === 'task') {
+                  <pc-icon name="clipboard-document-list"></pc-icon>
+                  } @else {
+                  <pc-icon name="information-circle"></pc-icon>
+                  }
+                </div>
+              </div>
+
+              <!-- Message Details -->
+              <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start gap-1">
+                  <p class="text-xs font-semibold truncate" [class.text-primary]="!notif.read">{{ notif.title }}</p>
+                  <span class="text-[10px] text-base-400 whitespace-nowrap"> {{ formatTime(notif.created_at) }} </span>
+                </div>
+                <p class="text-xs text-base-400 font-light mt-0.5 line-clamp-2">{{ notif.message }}</p>
+              </div>
+
+              <!-- Unread dot indicator (static — nothing loops but a working spinner, §7) -->
+              @if (!notif.read) {
+              <span class="absolute right-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-primary"></span>
+              }
+            </div>
+            } } @if (isLoadingMore()) {
+            <div class="flex justify-center items-center py-3 border-t border-base-200/10">
+              <span class="loading loading-spinner loading-xs text-primary"></span>
+            </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- profile drop down -->
+    <div class="dropdown dropdown-end">
+      <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar ml-2">
+        <div
+          class="bg-base-100 border-primary hover:border-secondary w-10 rounded-full border-2 hover:border-2 overflow-hidden"
+        >
+          @if (currentUserAvatar()) {
+          <img
+            [src]="currentUserAvatar()!"
+            alt="User Profile Picture"
+            i18n-alt="@@navbar.profile.avatarAlt"
+            class="w-full h-full object-cover"
+          />
+          } @else {
+          <span
+            class="flex h-full w-full items-center justify-center bg-primary/10 text-primary text-sm font-semibold select-none"
+            aria-hidden="true"
+            >{{ userInitials() }}</span
+          >
+          }
+        </div>
+      </div>
+
+      <!-- Menu -->
+      <ul
+        tabindex="0"
+        class="menu menu-md dropdown-content bg-base-100 rounded-box z-[50] mt-3 w-44 cursor-pointer font-light shadow px-0 mx-0"
+        (click)="closeDropdown()"
+      >
+        <li class="hover:text-primary">
+          <a routerLink="/profile">
+            <pc-icon name="user-circle"></pc-icon>
+            <ng-container i18n="Navbar|User profile menu item@@navbar.profile.menu.profile">Profile</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a (click)="openSettings()">
+            <pc-icon name="cog-6-tooth"></pc-icon>
+            <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
+          </a>
+        </li>
+        <li class="hover:text-primary">
+          <a routerLink="/help">
+            <pc-icon name="information-circle"></pc-icon>
+            <ng-container i18n="Navbar|Help center menu item@@navbar.profile.menu.help">Help</ng-container>
+          </a>
+        </li>
+        <li class="base-neutral px-0 mx-0"></li>
+        <li class="hover:text-primary" (click)="signOut()">
+          <a>
+            <pc-icon name="arrow-left-start-on-rectangle"></pc-icon>
+            <ng-container i18n="Navbar|User sign out menu item@@navbar.profile.menu.signOut">Sign out</ng-container>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Background email sending progress bar -->
+  @if (emailActions.sendingCount() > 0) {
+  <progress
+    class="progress progress-primary absolute bottom-0 left-0 right-0 h-1 z-50 rounded-none bg-transparent"
+  ></progress>
+  }
+</div>
+
+<!-- Personal Settings popup (§5a) — instant apply -->
+<pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>
+```
+
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
 
 ```typescript
@@ -53329,124 +54099,6 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
 ];
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar.html
-
-```html
-<ng-template #navLink let-nav>
-  <a
-    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
-    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
-    [class.animate-up]="nav.justPinned"
-    [class.tooltip]="isEffectivelyNarrow()"
-    [class.tooltip-right]="isEffectivelyNarrow()"
-    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
-    (click)="this.closeMobile()"
-    [routerLink]="nav.route"
-    routerLinkActive="!font-semibold !text-primary"
-    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
-    [class.!font-semibold]="pendingRoute() === nav.route"
-    [class.!text-primary]="pendingRoute() === nav.route"
-  >
-    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
-    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
-      {{ nav.name }} @if (nav.indicator) {
-      <span class="indicator-item status status-primary"></span>
-      }
-    </span>
-    @if (nav.shortcut && !isEffectivelyNarrow()) {
-    <span
-      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
-      aria-hidden="true"
-    >
-      <kbd class="kbd kbd-xs">g</kbd>
-      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
-    </span>
-    }
-  </a>
-</ng-template>
-
-<div
-  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
-  [class.hidden]="!this.isMobileOpen()"
-  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
-  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
->
-  <a
-    [class.hidden]="isEffectivelyNarrow()"
-    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
-    (click)="this.closeMobile()"
-  >
-    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
-  </a>
-
-  <a
-    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
-    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
-    routerLink="/summary"
-    aria-label="Go to dashboard"
-    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
-    (click)="this.closeMobile()"
-  >
-    <span aria-hidden="true">pC</span>
-  </a>
-
-  @for (item of items(); track item.name) {
-  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
-    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
-    <div
-      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
-      (click)="toggleCollapse(item.name)"
-    >
-      <span class="flex-1 min-w-0">
-        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
-        <hr class="text-neutral w-6" />
-        } } @else { {{ item.name }} }
-      </span>
-      @if (item.children?.length) {
-      <pc-swap
-        class="rotate-90 invisible mr-2"
-        [class.visible]="!isEffectivelyNarrow()"
-        swapOnIcon="chevron-double-left"
-        swapOffIcon="chevron-double-right"
-        animation="rotate"
-        [size]="4"
-        [checked]="isCollapsed(item.name)"
-        (click)="toggleCollapse(item.name)"
-        aria-label="Toggle section"
-        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
-      ></pc-swap>
-      }
-    </div>
-
-    @if (item.children && !isCollapsed(item.name)) {
-    <div class="flex flex-col space-y-1">
-      @for (child of item.children; track child.name) {
-      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
-      }
-    </div>
-    } } @else {
-    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
-    }
-  </div>
-  }
-
-  <div class="hidden flex-auto grow items-start flex-col sm:flex">
-    <span class="min-h-full grow"></span>
-    <pc-swap
-      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
-      swapOffIcon="arrow-right-end-on-rectangle"
-      swapOnIcon="arrow-left-start-on-rectangle"
-      [checked]="isDrawerFull()"
-      animation="flip"
-      (click)="toggleDrawer()"
-      aria-label="Toggle drawer"
-      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
-    ></pc-swap>
-  </div>
-</div>
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
@@ -53863,6 +54515,124 @@ export class DataGridToolbarComponent {
     this.grid.toggleColPublic(colId, visible);
   }
 }
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.html
+
+```html
+<ng-template #navLink let-nav>
+  <a
+    *pcAnimateIf="getVisibilitySignal(nav); enter: 'animate-none'; exit: 'animate-exit-left'"
+    class="group/nav hover:text-primary flex flex-auto items-center pb-1 pl-2 pr-2 font-normal hover:rounded-lg !cursor-pointer"
+    [class.animate-up]="nav.justPinned"
+    [class.tooltip]="isEffectivelyNarrow()"
+    [class.tooltip-right]="isEffectivelyNarrow()"
+    [attr.data-tip]="isEffectivelyNarrow() ? nav.name : null"
+    (click)="this.closeMobile()"
+    [routerLink]="nav.route"
+    routerLinkActive="!font-semibold !text-primary"
+    [routerLinkActiveOptions]="{ exact: !!nav.pathMatchExact }"
+    [class.!font-semibold]="pendingRoute() === nav.route"
+    [class.!text-primary]="pendingRoute() === nav.route"
+  >
+    <pc-icon [size]="5" [name]="nav.icon!"></pc-icon>
+    <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
+      {{ nav.name }} @if (nav.indicator) {
+      <span class="indicator-item status status-primary"></span>
+      }
+    </span>
+    @if (nav.shortcut && !isEffectivelyNarrow()) {
+    <span
+      class="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover/nav:opacity-100"
+      aria-hidden="true"
+    >
+      <kbd class="kbd kbd-xs">g</kbd>
+      <kbd class="kbd kbd-xs">{{ nav.shortcut }}</kbd>
+    </span>
+    }
+  </a>
+</ng-template>
+
+<div
+  class="bg-base-100 border-line group min-h-full flex-col border-r text-sm font-normal sm:flex transition-all duration-50"
+  [class.hidden]="!this.isMobileOpen()"
+  [class.w-44]="!isEffectivelyNarrow() || this.isMobileOpen()"
+  [class.w-10]="isEffectivelyNarrow() && !this.isMobileOpen()"
+>
+  <a
+    [class.hidden]="isEffectivelyNarrow()"
+    class="mx-4 mb-5 mt-2.5 block flex-none cursor-pointer rounded-lg px-2 py-1"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabel"
+    (click)="this.closeMobile()"
+  >
+    <img src="../../assets/logo.png" alt="Logo" i18n-alt="@@sidebar.logoAlt" />
+  </a>
+
+  <a
+    [class.hidden]="!isEffectivelyNarrow() || this.isMobileOpen()"
+    class="bg-primary/12 text-primary mx-1 mb-5 mt-3 flex h-8 w-8 cursor-pointer items-center justify-center rounded-[9px] text-sm font-bold"
+    routerLink="/summary"
+    aria-label="Go to dashboard"
+    i18n-aria-label="@@sidebar.logoHomeAriaLabelCompact"
+    (click)="this.closeMobile()"
+  >
+    <span aria-hidden="true">pC</span>
+  </a>
+
+  @for (item of items(); track item.name) {
+  <div class="flex-none" [class.hidden]="!!item.hidden || !!item.hiddenByFavourite">
+    @if (item['type'] === 'subheading' || item['type'] === 'bookmark') {
+    <div
+      class="text-base-content/45 font-medium flex items-center justify-between pl-2 uppercase text-[10.5px] tracking-[0.09em] hover:cursor-pointer"
+      (click)="toggleCollapse(item.name)"
+    >
+      <span class="flex-1 min-w-0">
+        @if (isEffectivelyNarrow()) { @if (!isCollapsed(item.name)) {
+        <hr class="text-neutral w-6" />
+        } } @else { {{ item.name }} }
+      </span>
+      @if (item.children?.length) {
+      <pc-swap
+        class="rotate-90 invisible mr-2"
+        [class.visible]="!isEffectivelyNarrow()"
+        swapOnIcon="chevron-double-left"
+        swapOffIcon="chevron-double-right"
+        animation="rotate"
+        [size]="4"
+        [checked]="isCollapsed(item.name)"
+        (click)="toggleCollapse(item.name)"
+        aria-label="Toggle section"
+        i18n-aria-label="@@sidebar.toggleSection.ariaLabel"
+      ></pc-swap>
+      }
+    </div>
+
+    @if (item.children && !isCollapsed(item.name)) {
+    <div class="flex flex-col space-y-1">
+      @for (child of item.children; track child.name) {
+      <ng-container *ngTemplateOutlet="navLink; context: { $implicit: child }"></ng-container>
+      }
+    </div>
+    } } @else {
+    <ng-container *ngTemplateOutlet="navLink; context: { $implicit: item }"></ng-container>
+    }
+  </div>
+  }
+
+  <div class="hidden flex-auto grow items-start flex-col sm:flex">
+    <span class="min-h-full grow"></span>
+    <pc-swap
+      class="hover:text-primary text-gray-400 group-hover:visible hidden lg:inline-flex"
+      swapOffIcon="arrow-right-end-on-rectangle"
+      swapOnIcon="arrow-left-start-on-rectangle"
+      [checked]="isDrawerFull()"
+      animation="flip"
+      (click)="toggleDrawer()"
+      aria-label="Toggle drawer"
+      i18n-aria-label="@@sidebar.toggleDrawer.ariaLabel"
+    ></pc-swap>
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts

@@ -57,7 +57,10 @@
     </div>
   </div>
 
-  @if (isBodyExpanded() && selectedEmail()) {
+  <!-- Person context rail (§5) — desktop only; mobile keeps stacked panes -->
+  @if (showPersonRail()) {
+  <pc-email-person-rail class="hidden shrink-0 md:block" [email]="selectedEmail()"></pc-email-person-rail>
+  } @if (isBodyExpanded() && selectedEmail()) {
   <!-- Keep your existing BODY overlay when expanded -->
   <div class="absolute inset-0 z-40 bg-base-100/95 backdrop-blur-sm">
     <div class="h-full max-w-4xl mx-auto p-4 flex flex-col">

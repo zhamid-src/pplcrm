@@ -7,6 +7,24 @@
     (forward)="emitForward()"
   ></pc-email-header>
   <main class="flex-1 h-full overflow-hidden p-4 flex flex-col gap-3">
+    <!-- SLA pill (§5): honest, computed from received time + workspace SLA config -->
+    @if (slaPill(); as sla) {
+    <div>
+      <span
+        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums"
+        [class.bg-base-200]="sla.tone === 'neutral'"
+        [class.text-base-content]="sla.tone === 'neutral'"
+        [class.bg-warning/15]="sla.tone === 'warning'"
+        [class.text-warning]="sla.tone === 'warning'"
+        [class.bg-error/15]="sla.tone === 'error'"
+        [class.text-error]="sla.tone === 'error'"
+      >
+        <pc-icon name="clock" [size]="4"></pc-icon>
+        {{ sla.text }}
+      </span>
+    </div>
+    }
+
     <!-- Body owns the space (§5) -->
     <pc-email-body
       class="flex-1 min-h-0 border-double border-b-2 border-base-300 rounded-lg bg-base-100"

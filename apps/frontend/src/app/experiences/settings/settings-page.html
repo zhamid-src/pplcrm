@@ -34,6 +34,14 @@
             [size]="5"
           />
           {{ section.config.title }}
+          <!-- Per-section dirty dot (§5a): unsaved changes stay visible from other sections -->
+          @if (isSectionDirty(section)) {
+          <span
+            class="ml-auto inline-block h-2 w-2 shrink-0 rounded-full bg-warning"
+            title="Unsaved changes in this section"
+            aria-label="Unsaved changes in this section"
+          ></span>
+          }
         </button>
         } @if (currentMode === 'settings') {
         <!-- Passkeys custom section -->

@@ -229,7 +229,7 @@
           </a>
         </li>
         <li class="hover:text-primary">
-          <a routerLink="/settings">
+          <a (click)="openSettings()">
             <pc-icon name="cog-6-tooth"></pc-icon>
             <ng-container i18n="Navbar|User settings menu item@@navbar.profile.menu.settings">Settings</ng-container>
           </a>
@@ -258,3 +258,6 @@
   ></progress>
   }
 </div>
+
+<!-- Personal Settings popup (§5a) — instant apply -->
+<pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>

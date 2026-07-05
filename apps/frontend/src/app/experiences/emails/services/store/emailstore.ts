@@ -26,6 +26,10 @@ export class EmailsStore {
   private readonly _isSyncing = signal(false);
   public readonly isSyncing = this._isSyncing.asReadonly();
 
+  /** When the last successful sync completed — powers the "Synced …" evidence line (§2). */
+  private readonly _lastSyncedAt = signal<Date | null>(null);
+  public readonly lastSyncedAt = this._lastSyncedAt.asReadonly();
+
   /*
   private readonly ensureHasAttachmentOnOpen = effect(() => {
     const id = this.currentSelectedEmailId();
@@ -229,7 +233,13 @@ export class EmailsStore {
         await this.loadEmailsForFolder(currentFolderId);
       }
       await this.refreshFolderCounts();
-      this.alerts.showSuccess('Sync complete!');
+      this._lastSyncedAt.set(new Date());
+      const inserted = result?.inserted ?? 0;
+      this.alerts.showSuccess(
+        inserted > 0
+          ? `Inbox synced — ${inserted} new ${inserted === 1 ? 'email' : 'emails'}`
+          : 'Inbox synced — no new emails',
+      );
       return result;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

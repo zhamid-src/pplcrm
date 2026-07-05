@@ -9,13 +9,14 @@ import { ComposeEmailComponent, ComposeInitial } from '../email-compose/email-co
 import { EmailDetails } from '../email-details/email-details';
 import { EmailFolderList } from '../email-folder-list/email-folder-list';
 import { EmailList } from '../email-list/email-list';
+import { EmailPersonRail } from '../email-person-rail/email-person-rail';
 import { ALL_FOLDERS } from '../../../../../../../../libs/common/src/lib/emails';
 import type { EmailFolderType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { AuthService } from '@frontend/auth/auth-service';
 
 @Component({
   selector: 'pc-email-client',
-  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, Icon],
+  imports: [EmailFolderList, EmailList, EmailDetails, EmailBody, ComposeEmailComponent, EmailPersonRail, Icon],
   host: {
     class: 'block h-full',
     '(document:keydown)': 'handleDocumentKeydown($event)',
@@ -48,19 +49,23 @@ export class EmailClient {
   protected detailPanelClass = computed(() =>
     this.mobileView() === 'detail'
       ? 'flex flex-col flex-1 h-full p-4 pt-2 relative z-10'
-      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:p-4 md:pt-2 md:relative md:z-10',
+      : 'hidden md:flex md:flex-col md:flex-1 md:h-full md:min-w-[340px] md:p-4 md:pt-2 md:relative md:z-10',
   );
+
+  /** The person context rail (§5) shows only for a real selection on desktop. */
+  protected showPersonRail = computed(() => !!this.selectedEmail() && !this.isComposing() && !this.isBodyExpanded());
 
   constructor() {
     effect(() => {
-      const id = this.emailId();
+      const id = this.email();
       if (id) {
         void untracked(() => this.loadEmailData(id));
       }
     });
   }
 
-  readonly emailId = input<string | undefined>(undefined, { alias: 'email' });
+  /** Router query-param input (`?email=<id>`); name matches the binding, no alias. */
+  readonly email = input<string | undefined>(undefined);
 
   private async loadEmailData(emailId: string): Promise<void> {
     try {
