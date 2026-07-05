@@ -527,6 +527,23 @@ describe('WebFormsController lifecycle', () => {
     expect(person.last_name).toBe('Poll');
   });
 
+  it('serves a published form by slug and shows unpublished ones as closed', async () => {
+    const form = await controller.createForm({ name: 'Public slug demo', type: 'signup' }, auth() as any);
+
+    const asDraft = await controller.getPublicFormBySlug(form.slug!);
+    expect(asDraft.status).toBe('closed');
+
+    await controller.publishForm(form.id, auth() as any);
+    const asPublished = await controller.getPublicFormBySlug(form.slug!);
+    expect(asPublished.status).toBe('open');
+    if (asPublished.status === 'open') {
+      expect(asPublished.form.fields.every((f) => f.on)).toBe(true);
+      expect(asPublished.form.fields.some((f) => f.key === 'email')).toBe(true);
+    }
+
+    await expect(controller.getPublicFormBySlug('no-such-slug-xyz')).rejects.toThrow();
+  });
+
   it('excludes donation forms from listForms', async () => {
     await controller.createForm({ name: 'Signup A', type: 'signup' }, auth() as any);
     await db
