@@ -13,35 +13,42 @@
 
       <div class="border-t border-base-300 my-1 h-0"></div>
       <div class="hidden md:block">
-        <!-- Reply -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="reply"
-          aria-label="Reply"
-          (click)="handleReply()"
-        >
-          <pc-icon name="reply" [size]="4"></pc-icon>
-        </button>
-
-        <!-- Reply All -->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Reply All"
-          aria-label="Reply All"
-          (click)="handleReplyAll()"
-        >
-          <pc-icon name="reply-all" [size]="4"></pc-icon>
-        </button>
-
-        <!-- Forward-->
-        <button
-          class="tooltip btn btn-ghost btn-circle btn-sm"
-          data-tip="Forward"
-          aria-label="Forward"
-          (click)="handleForward()"
-        >
-          <pc-icon name="forward" [size]="4"></pc-icon>
-        </button>
+        <!-- Reply menu: ONE button opening Reply / Reply all / Forward (§5) -->
+        <div class="dropdown dropdown-end inline-block align-middle">
+          <button tabindex="0" class="tooltip btn btn-ghost btn-sm gap-1" data-tip="Reply" aria-label="Reply">
+            <pc-icon name="reply" [size]="4"></pc-icon>
+            <pc-icon name="chevron-down" [size]="3"></pc-icon>
+          </button>
+          <ul
+            tabindex="0"
+            class="menu dropdown-content z-[1] w-44 select-none rounded-[16px] border border-base-200 bg-base-100 p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+          >
+            <li>
+              <a
+                (click)="handleReply()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply" [size]="4" class="text-base-content/60"></pc-icon> Reply
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleReplyAll()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="reply-all" [size]="4" class="text-base-content/60"></pc-icon> Reply all
+              </a>
+            </li>
+            <li>
+              <a
+                (click)="handleForward()"
+                class="flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-base-content/80 transition-colors hover:cursor-pointer hover:bg-base-300"
+              >
+                <pc-icon name="forward" [size]="4" class="text-base-content/60 scale-x-[-1]"></pc-icon> Forward
+              </a>
+            </li>
+          </ul>
+        </div>
 
         @if (!isFolderTrash()) {
         <!-- Star/Favorite -->
