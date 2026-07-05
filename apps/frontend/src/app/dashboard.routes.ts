@@ -459,4 +459,17 @@ export const dashboardRoutes: Routes = [
     path: 'activities',
     loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
   },
+  {
+    path: 'help',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
+      },
+    ],
+  },
 ];
