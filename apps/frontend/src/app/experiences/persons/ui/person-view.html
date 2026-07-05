@@ -79,7 +79,13 @@
             icon="home"
             [copyable]="true"
           ></pc-detail-item>
-          <pc-detail-item label="Address" [value]="addressString()" icon="map-pin"></pc-detail-item>
+          <pc-detail-item
+            label="Address"
+            [value]="addressString()"
+            icon="map-pin"
+            [link]="!!householdId() && !isPlaceholderHousehold()"
+            (linkClicked)="navigateToHousehold()"
+          ></pc-detail-item>
         </div>
 
         <!-- Notes Section -->
@@ -120,7 +126,14 @@
             @if (issues().length > 0) {
             <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
             } @else {
-            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+            <button
+              type="button"
+              class="text-left text-xs text-primary hover:underline"
+              (click)="editPerson()"
+              i18n="PersonView|Issues empty-state guided link@@person.issues.emptyLink"
+            >
+              No issues yet — add what they care about
+            </button>
             }
           </div>
         </div>
@@ -169,8 +182,8 @@
           [value]="activityData().emails.length"
           [description]="'Total emails sent'"
           [icon]="'paper-airplane'"
-          [valueColorClass]="'text-indigo-500'"
-          [iconColorClass]="'text-indigo-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
 
         <!-- Stats: Emails Opened -->
@@ -179,8 +192,8 @@
           [value]="openedNewslettersCount()"
           [description]="'Opens & clicks'"
           [icon]="'eye'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
 
         <!-- Stats: Active Lists -->
@@ -189,8 +202,8 @@
           [value]="0"
           [description]="'List subscriptions'"
           [icon]="'queue-list'"
-          [valueColorClass]="'text-amber-500'"
-          [iconColorClass]="'text-amber-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
 
         <!-- Stats: Volunteer Shifts -->
@@ -199,8 +212,8 @@
           [value]="volunteerStats()?.shifts_count || 0"
           [description]="'Shifts completed'"
           [icon]="'volunteer'"
-          [valueColorClass]="'text-purple-500'"
-          [iconColorClass]="'text-purple-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
 
         <!-- Stats: Volunteer Hours -->
@@ -209,8 +222,8 @@
           [value]="volunteerStats()?.total_hours || 0.0"
           [description]="'Hours logged'"
           [icon]="'clock'"
-          [valueColorClass]="'text-pink-500'"
-          [iconColorClass]="'text-pink-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
 
         <!-- Stats: Donations -->
@@ -219,8 +232,8 @@
           [value]="donationStats() ? '$' + donationStats()!.cumulativeAmount.toLocaleString() : '$0'"
           [description]="'Financial support'"
           [icon]="'currency-dollar'"
-          [valueColorClass]="'text-emerald-500'"
-          [iconColorClass]="'text-emerald-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
 
         <!-- Stats: Connections -->
@@ -229,8 +242,8 @@
           [value]="connectionCount()"
           [description]="'Network connections'"
           [icon]="'user-group'"
-          [valueColorClass]="'text-violet-500'"
-          [iconColorClass]="'text-violet-500'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
         ></pc-stat-card>
       </div>
 
@@ -522,7 +535,27 @@
             } @placeholder {
             <div class="skeleton w-full h-32"></div>
             } } @else {
-            <div class="text-center py-10 text-base-content/40 italic">Contact does not belong to a household</div>
+            <div class="flex flex-col items-center gap-3 py-10 text-center">
+              <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
+              <div class="flex flex-col gap-1">
+                <span
+                  class="font-medium text-base-content"
+                  i18n="PersonView|Household empty heading@@person.household.emptyHeading"
+                  >Not part of a household yet</span
+                >
+                <span
+                  class="max-w-sm text-sm text-base-content/50"
+                  i18n="PersonView|Household empty cause@@person.household.emptyCause"
+                  >Households group people who share an address, so everyone at the same address stays in sync.</span
+                >
+              </div>
+              <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
+                <pc-icon name="home" [size]="4"></pc-icon>
+                <ng-container i18n="PersonView|Assign household action@@person.household.assign"
+                  >Assign household</ng-container
+                >
+              </button>
+            </div>
             }
           </div>
         </pc-tab-panel>

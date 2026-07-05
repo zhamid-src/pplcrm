@@ -6,10 +6,11 @@
     <!-- Back to profile or list -->
     <pc-detail-header
       [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Editing' : 'New'"
+      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
       [crumbs]="crumbs()"
       [form]="form"
       [isLoading]="isLoading()"
+      [saveAlwaysEnabled]="true"
       [buttonsToShow]="buttonsToShow()"
       [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
       [showDelete]="!!person()?.id"
@@ -152,6 +153,12 @@
               </button>
             </div>
             }
+            <p
+              class="pl-1 text-xs text-base-content/50"
+              i18n="PersonForm|Explains why address is edited via the household@@person.address.reason"
+            >
+              Addresses belong to households, so everyone at the same address stays in sync.
+            </p>
 
             <!-- Social Media Profile Links -->
             <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">

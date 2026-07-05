@@ -51,6 +51,7 @@ import { FormActions } from '../form-actions/form-actions';
               [isLoading]="isLoading()"
               [signalForm]="form()"
               [disabled]="disabled()"
+              [saveAlwaysEnabled]="saveAlwaysEnabled()"
               [buttonsToShow]="formActionsButtons()"
               [btn1Text]="btn1Text()"
               [btn1Icon]="btn1Icon()"
@@ -94,6 +95,8 @@ export class DetailHeader {
   public crumbs = input<PcBreadcrumb[]>([]);
   public deleteText = input<string>('Delete');
   public disabled = input<boolean>(false);
+  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
+  public saveAlwaysEnabled = input<boolean>(false);
   public eyebrow = input<string>('');
   public form = input<any>();
   public icon = input<PcIconNameType | null | undefined>();
