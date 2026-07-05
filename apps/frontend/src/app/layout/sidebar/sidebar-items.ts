@@ -187,12 +187,6 @@ export const SidebarItems: ISidebarItem[] = [
       },
     ],
   },
-
-  {
-    name: 'Help',
-    route: '/help',
-    icon: 'information-circle',
-  },
   {
     name: `SYSTEM`,
     type: 'subheading',
@@ -223,6 +217,11 @@ export const SidebarItems: ISidebarItem[] = [
         name: 'Workspace',
         route: '/configuration',
         icon: 'wrench-screwdriver',
+      },
+      {
+        name: 'Help',
+        route: '/help',
+        icon: 'information-circle',
       },
     ],
   },
