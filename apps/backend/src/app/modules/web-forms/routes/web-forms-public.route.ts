@@ -529,8 +529,9 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   fastify.post('/submit/:formId', async (req: any, reply) => {
     const { formId } = req.params;
-    // Standard reverse-proxy header check, fallback to req.ip
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
     const isJsonExpected =
       req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
 

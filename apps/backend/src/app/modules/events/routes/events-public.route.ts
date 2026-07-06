@@ -481,7 +481,9 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     const { slug } = req.params;
     const isJson =
       req.headers.accept?.includes('application/json') || req.headers['content-type']?.includes('application/json');
-    const clientIp = (req.headers['x-forwarded-for'] as string) || req.ip;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
 
     try {
       await ctrl.rsvpPublic(slug, req.body || {}, clientIp);

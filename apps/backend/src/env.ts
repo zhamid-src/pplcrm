@@ -38,7 +38,22 @@ const envSchema = z.object({
   // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public form pages resolve
   // the tenant from the Host header against this. Dev default is 'localhost' so `<slug>.localhost` works.
   PUBLIC_FORMS_BASE_DOMAIN: z.string().optional().default('localhost'),
+  // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
+  // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
+  //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
+  //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
+  //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
+  TRUST_PROXY: z.string().optional().default('false'),
 });
+
+/** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
+function parseTrustProxy(raw: string): boolean | number | string {
+  const value = raw.trim();
+  if (value === '' || value.toLowerCase() === 'false') return false;
+  if (value.toLowerCase() === 'true') return true;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
+}
 
 const parsedEnv = envSchema.parse(process.env);
 
@@ -56,6 +71,7 @@ export const env = {
   apiUrl: parsedEnv.API_URL,
   appUrl: parsedEnv.APP_URL,
   publicFormsBaseDomain: parsedEnv.PUBLIC_FORMS_BASE_DOMAIN,
+  trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,
   msClientSecret: parsedEnv.MS_CLIENT_SECRET,

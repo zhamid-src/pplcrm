@@ -32,7 +32,13 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
 - [x] **1.2** Shared REST auth helper (`lib/rest-auth.ts`) — session revocation + viewer-write guard applied
       to `emails-api.route.ts` (`/send` write-gated; attachment reads session-gated), `exports-download.route.ts`,
       and the bearer path of `files.route.ts`.
-- [ ] 1.3 – 5.4 — pending.
+- [ ] **1.3** — pending (next).
+- [x] **1.4** Trust-proxy — added `TRUST_PROXY` env (default `false`), wired to Fastify `trustProxy`; the three
+      public routes (web-forms submit, volunteer-events signup, events RSVP) now rate-limit on `req.ip` instead of
+      the spoofable raw `X-Forwarded-For` header.
+- [x] **1.5** CSV formula-injection guard — shared `escapeCsvCell` in `lib/csv.ts` (used by `csv.ts` and
+      `csv-stream.ts`) prefixes `'` on string cells starting with `= + - @ \t \r`; numbers/dates untouched.
+- [ ] 2.1 – 5.4 — pending.
 
 ---
 
