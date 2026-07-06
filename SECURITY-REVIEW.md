@@ -56,7 +56,10 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
   hook, throttling key brute-force/abuse. **Still pending:** hashing the API keys / webhook tokens and
   moving them off `settings` — deferred because the product currently displays the key to the user, so
   it needs a show-once + regenerate UX decision (see 2.4 notes).
-- [ ] 2.1, 3.x – 5.4 — pending.
+- [x] **3.6** Frontend IDB response cache keys on the full serialized `apiName+options` (namespaced `trpc:`)
+      instead of a lossy 32-bit hash, so one query can no longer serve another's cached rows. Test asserts
+      distinct keys per options.
+- [ ] 2.1, 3.1–3.5, 4.x, 5.x — pending.
 
 **Note:** the full `nx build backend && nx build frontend` passes as of the 2.5 commit (a type error in the
 1.3 email-attachment change was fixed in a follow-up build commit).

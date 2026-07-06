@@ -55,14 +55,16 @@ export class TRPCService<T> {
     options: getAllOptionsType,
     refresh: boolean,
   ) {
-    const keyToHash = JSON.stringify({ apiName, ...options });
-    const hashedKey = this.hash(keyToHash);
-    const payload = await get(hashedKey);
+    // Use the full serialized (apiName + options) as the IndexedDB key. IDB string
+    // keys can be arbitrarily long, so there's no need to fold it into a 32-bit hash
+    // — that hash collided, letting one query serve another query's cached rows.
+    const cacheKey = `trpc:${JSON.stringify({ apiName, ...options })}`;
+    const payload = await get(cacheKey);
     let data = payload?.expires > Date.now() ? payload.data : null;
 
     if (refresh || !data || data.length === 0) {
       data = await apiCall;
-      await set(hashedKey, { expires: this.addDays(1), data });
+      await set(cacheKey, { expires: this.addDays(1), data });
     }
 
     return data;
@@ -72,15 +74,6 @@ export class TRPCService<T> {
     const date = new Date(Date.now());
     date.setDate(date.getDate() + days);
     return date;
-  }
-
-  private hash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return (hash >>> 0).toString(36);
   }
 }
 
