@@ -71,7 +71,8 @@ export class EmailBody {
   }
 
   protected getAttachmentUrl(att: any): string {
-    const id = this.emailId();
-    return id ? `${environment.apiUrl}/api/emails/${id}/attachments/${att.id}` : '';
+    // The backend returns a short-lived, email-scoped signed URL (download_url).
+    // We never build a URL with a session token in it (SECURITY-REVIEW.md 1.3).
+    return att?.download_url ? `${environment.apiUrl}${att.download_url}` : '';
   }
 }

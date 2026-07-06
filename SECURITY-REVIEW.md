@@ -32,7 +32,10 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
 - [x] **1.2** Shared REST auth helper (`lib/rest-auth.ts`) — session revocation + viewer-write guard applied
       to `emails-api.route.ts` (`/send` write-gated; attachment reads session-gated), `exports-download.route.ts`,
       and the bearer path of `files.route.ts`.
-- [ ] **1.3** — pending (next).
+- [x] **1.3** Scoped email-attachment tokens — `signed-download.ts` now mints email-scoped `?st=` tokens;
+      attachment/inline routes accept only a scoped token or a bearer header (no session JWT in the URL);
+      `getEmailHeader` returns a signed `download_url` per attachment and the frontend email body uses it.
+      Removed `allowQueryToken` from the REST helper so no route reads a raw token from the query.
 - [x] **1.4** Trust-proxy — added `TRUST_PROXY` env (default `false`), wired to Fastify `trustProxy`; the three
       public routes (web-forms submit, volunteer-events signup, events RSVP) now rate-limit on `req.ip` instead of
       the spoofable raw `X-Forwarded-For` header.

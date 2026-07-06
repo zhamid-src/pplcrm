@@ -31,22 +31,19 @@ export type RestAuthResult = { ok: true; auth: RestAuthContext } | { ok: false; 
 export interface AuthenticateRestOptions {
   /** Reject read-only `viewer` accounts. Set on mutating endpoints. */
   requireWrite?: boolean;
-  /**
-   * Also accept the token from `?token=`. Only for the legacy email attachment
-   * links; those should migrate to short-lived scoped tokens (SECURITY-REVIEW.md 1.3).
-   */
-  allowQueryToken?: boolean;
 }
 
-function extractToken(req: FastifyRequest, allowQueryToken: boolean): string | null {
+/**
+ * Bearer token from the Authorization header only. Session tokens are never read
+ * from the query string — URLs leak into history/proxies/logs (SECURITY-REVIEW.md 1.3).
+ * File/attachment links that need to live in a URL use short-lived *scoped* tokens
+ * instead (see `signed-download.ts`).
+ */
+function extractToken(req: FastifyRequest): string | null {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
     const headerToken = authHeader.slice(7).trim();
     if (headerToken) return headerToken;
-  }
-  if (allowQueryToken) {
-    const queryToken = (req.query as { token?: unknown } | undefined)?.token;
-    if (typeof queryToken === 'string' && queryToken) return queryToken;
   }
   return null;
 }
@@ -55,7 +52,7 @@ export async function authenticateRest(
   req: FastifyRequest,
   options: AuthenticateRestOptions = {},
 ): Promise<RestAuthResult> {
-  const token = extractToken(req, options.allowQueryToken ?? false);
+  const token = extractToken(req);
   if (!token) {
     return { ok: false, status: 401, error: 'Unauthorized: Missing token' };
   }
