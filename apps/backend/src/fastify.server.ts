@@ -1,4 +1,5 @@
 import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import multipart from '@fastify/multipart';
 import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
@@ -6,6 +7,7 @@ import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
 import fastify from 'fastify';
 
 import jsendPlugin from './app/plugins/jsend-error-handler.plugin';
+import { helmetOptions } from './app/plugins/security-headers';
 import { routes } from './app/routes';
 import { trpcRouter } from './app/modules/trpc';
 import { createContext } from './context';
@@ -43,6 +45,9 @@ export class FastifyServer {
     // override via opts). A wildcard origin would let any site drive the API on
     // behalf of a user whose bearer token it has obtained.
     this.server.register(cors, { origin: env.appUrl, ...opts });
+    // Security headers (CSP, HSTS, nosniff, frame-ancestors, referrer-policy). See
+    // security-headers.ts for why each directive is set the way it is.
+    this.server.register(helmet, helmetOptions);
     this.server.register(sensible);
     this.server.register(multipart, {
       limits: {
