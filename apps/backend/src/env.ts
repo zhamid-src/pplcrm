@@ -44,6 +44,11 @@ const envSchema = z.object({
   //   '<n>'             — trust n proxy hops closest to the server (e.g. '1' behind a single LB).
   //   '<ip,cidr,…>'     — trust these proxy addresses/subnets.
   TRUST_PROXY: z.string().optional().default('false'),
+  // How many background jobs the worker may process concurrently. One slow job (a large sync or
+  // import) must not block latency-sensitive mail behind it, so we run a small bounded pool of
+  // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
+  // this comfortably below the Postgres pool size. Default 4.
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
 });
 
 /** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
@@ -72,6 +77,7 @@ export const env = {
   appUrl: parsedEnv.APP_URL,
   publicFormsBaseDomain: parsedEnv.PUBLIC_FORMS_BASE_DOMAIN,
   trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
+  workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,
   msClientSecret: parsedEnv.MS_CLIENT_SECRET,
