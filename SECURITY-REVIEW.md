@@ -52,7 +52,11 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
 - [x] **2.5** 2FA brute-force cap — new `two_factor_attempts` column (migration + schema baseline + model);
       `verify2FA` increments it on a wrong code and invalidates the OTP after 5 failures; `signIn` resets it
       when issuing a fresh code, and success clears it. Unit test covers increment + cap.
-- [ ] 2.1, 2.4, 3.x – 5.4 — pending.
+- [~] **2.4** (partial) — Zapier inbound routes now rate-limit by source IP (120/min) via an `onRequest`
+  hook, throttling key brute-force/abuse. **Still pending:** hashing the API keys / webhook tokens and
+  moving them off `settings` — deferred because the product currently displays the key to the user, so
+  it needs a show-once + regenerate UX decision (see 2.4 notes).
+- [ ] 2.1, 3.x – 5.4 — pending.
 
 **Note:** the full `nx build backend && nx build frontend` passes as of the 2.5 commit (a type error in the
 1.3 email-attachment change was fixed in a follow-up build commit).
