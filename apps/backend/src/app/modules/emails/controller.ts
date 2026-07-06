@@ -16,6 +16,7 @@ import { UserActivityRepo } from '../../lib/user-activity.repo';
 import { processMentions } from '../../lib/mail/mentions-util';
 import { sanitizeHtml } from '../../lib/mail/sanitize-util';
 import { StorageService } from '../../lib/storage.service';
+import { signedEmailAttachmentUrl } from '../../lib/signed-download';
 import { sql } from 'kysely';
 import { logger } from '../../logger';
 
@@ -290,11 +291,17 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 
   public async getEmailHeader(tenant_id: string, id: string, user_id?: string) {
     try {
-      const [emailWithHeaders, comments, attachments] = await Promise.all([
+      const [emailWithHeaders, comments, rawAttachments] = await Promise.all([
         this.getRepo().getEmailWithHeadersAndRecipients(tenant_id, id, user_id),
         this.commentsRepo.getForEmail(tenant_id, id),
         this.attachmentsRepo.getByEmailId(tenant_id, id),
       ]);
+      // Attach a short-lived, email-scoped download URL so the client can link to
+      // attachments without putting a session token in the URL (SECURITY-REVIEW.md 1.3).
+      const attachments = (rawAttachments ?? []).map((a) => ({
+        ...a,
+        download_url: signedEmailAttachmentUrl(String(id), String(a.id), tenant_id),
+      }));
       if (emailWithHeaders) {
         let person: any = null;
         if (emailWithHeaders.from_email) {

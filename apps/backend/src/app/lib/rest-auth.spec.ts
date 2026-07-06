@@ -84,13 +84,9 @@ describe('authenticateRest', () => {
     expect(result).toMatchObject({ ok: false, status: 401 });
   });
 
-  it('reads the token from the query string only when allowed', async () => {
+  it('never reads the token from the query string', async () => {
     mockDb({ user: { role: 'owner', verified: true }, session: ACTIVE_SESSION });
-
-    const denied = await authenticateRest(req({ query: { token: 'x' } }));
-    expect(denied).toMatchObject({ ok: false, status: 401 });
-
-    const allowed = await authenticateRest(req({ query: { token: 'x' } }), { allowQueryToken: true });
-    expect(allowed).toMatchObject({ ok: true });
+    const result = await authenticateRest(req({ query: { token: 'x' } }));
+    expect(result).toMatchObject({ ok: false, status: 401 });
   });
 });

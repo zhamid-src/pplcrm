@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import type { FastifyPluginCallback } from 'fastify';
 import { env } from '../../../../env';
 import { authenticateRest } from '../../../lib/rest-auth';
+import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
 import { BaseRepository } from '../../../lib/base.repo';
 import { attachmentDisposition } from '../../../lib/download-headers';
 import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
@@ -633,14 +634,24 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   // Download attachment by ID
   fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    // Read endpoint; still session-gated. Query-token support is legacy (see 1.3).
-    const authResult = await authenticateRest(req, { allowQueryToken: true });
-    if (!authResult.ok) {
-      return reply.status(authResult.status).send({ error: authResult.error });
-    }
-
-    const tenantId = authResult.auth.tenant_id;
     const { id, attachmentId } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (embeddable link, no
+    // session JWT in the URL) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
     const db = (BaseRepository as any)['_db'];
 
     const attachment = await db
@@ -679,14 +690,24 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   // Serve inline attachment by CID
   fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    // Read endpoint; still session-gated. Query-token support is legacy (see 1.3).
-    const authResult = await authenticateRest(req, { allowQueryToken: true });
-    if (!authResult.ok) {
-      return reply.status(authResult.status).send({ error: authResult.error });
-    }
-
-    const tenantId = authResult.auth.tenant_id;
     const { id, cid } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (for inline <img> in the
+    // rendered body) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
     const db = (BaseRepository as any)['_db'];
 
     const attachment = await db
