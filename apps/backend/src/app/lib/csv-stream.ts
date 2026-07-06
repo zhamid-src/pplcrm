@@ -1,5 +1,7 @@
 import { Transform } from 'stream';
 
+import { escapeCsvCell } from './csv';
+
 export class CsvTransformStream extends Transform {
   private isFirst = true;
   private columns: string[];
@@ -26,14 +28,7 @@ export class CsvTransformStream extends Transform {
       this.isFirst = false;
     }
 
-    const escape = (value: unknown) => {
-      if (value === null || value === undefined) return '';
-      if (value instanceof Date) return value.toISOString();
-      const str = typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value);
-      return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str.replace(/"/g, '""') + '"' : str;
-    };
-
-    chunk += this.columns.map((col) => escape(row[col])).join(',') + '\n';
+    chunk += this.columns.map((col) => escapeCsvCell(row[col])).join(',') + '\n';
     callback(null, chunk);
   }
 
