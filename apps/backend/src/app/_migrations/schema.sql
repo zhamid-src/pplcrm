@@ -165,6 +165,7 @@ CREATE TABLE public.authusers (
     two_factor_enabled boolean DEFAULT false NOT NULL,
     two_factor_code text,
     two_factor_expires_at timestamp with time zone,
+    two_factor_attempts integer DEFAULT 0 NOT NULL,
     deletion_scheduled_at timestamp with time zone,
     previous_email text,
     previous_role text,

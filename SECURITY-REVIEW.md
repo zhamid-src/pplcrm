@@ -49,7 +49,13 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
       size — fixes server-side grid pagination for base-crud entities. Real-DB test added.
 - [x] **2.6** `formId` is now `escapeHtml`-escaped where interpolated into the rendered form's `action`
       attribute (defense-in-depth; matches the existing formName/description escaping).
-- [ ] 2.1, 2.4, 2.5, 3.x – 5.4 — pending.
+- [x] **2.5** 2FA brute-force cap — new `two_factor_attempts` column (migration + schema baseline + model);
+      `verify2FA` increments it on a wrong code and invalidates the OTP after 5 failures; `signIn` resets it
+      when issuing a fresh code, and success clears it. Unit test covers increment + cap.
+- [ ] 2.1, 2.4, 3.x – 5.4 — pending.
+
+**Note:** the full `nx build backend && nx build frontend` passes as of the 2.5 commit (a type error in the
+1.3 email-attachment change was fixed in a follow-up build commit).
 
 ---
 
