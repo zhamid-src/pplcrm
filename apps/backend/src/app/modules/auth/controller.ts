@@ -1021,6 +1021,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           // Store only the hash; the plaintext OTP is emailed to the user.
           two_factor_code: hashToken(otpCode),
           two_factor_expires_at: new Date(Date.now() + 5 * 60 * 1000),
+          // Reset the failed-attempt counter for this fresh challenge.
+          two_factor_attempts: 0,
         })
         .where('id', '=', user.id)
         .execute();
@@ -1462,6 +1464,25 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       storedCode.length === inputHash.length &&
       timingSafeEqual(Buffer.from(storedCode), Buffer.from(inputHash));
     if (!codeMatch) {
+      // Per-account brute-force cap: after too many wrong guesses, invalidate the
+      // OTP entirely so it can't be ground down within its validity window — the
+      // user must sign in again to receive a fresh code.
+      const attempts = Number(user.two_factor_attempts ?? 0) + 1;
+      if (attempts >= MAX_2FA_ATTEMPTS) {
+        await this.getRepo()
+          .db.updateTable('authusers')
+          .set({ two_factor_code: null, two_factor_expires_at: null, two_factor_attempts: 0 })
+          .where('id', '=', user.id)
+          .where('tenant_id', '=', user.tenant_id)
+          .execute();
+        throw new BadRequestError('Too many incorrect codes. Please sign in again to get a new code.');
+      }
+      await this.getRepo()
+        .db.updateTable('authusers')
+        .set({ two_factor_attempts: attempts })
+        .where('id', '=', user.id)
+        .where('tenant_id', '=', user.tenant_id)
+        .execute();
       throw new BadRequestError('Invalid verification code.');
     }
 
@@ -1480,6 +1501,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       .set({
         two_factor_code: null,
         two_factor_expires_at: null,
+        two_factor_attempts: 0,
       })
       .where('id', '=', user.id)
       .execute();
@@ -1961,6 +1983,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
 const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
 const renewalVerifier = createVerifier({
   algorithms: ['HS256'],
   key: env.sharedSecret,
