@@ -23,6 +23,10 @@ export class FastifyServer {
           target: 'pino-pretty', // Prettified logging output
         },
       },
+      // Derive req.ip from X-Forwarded-For only for the proxy hops we actually trust
+      // (configurable via TRUST_PROXY). Security decisions must use req.ip, never the
+      // raw header, which any client can spoof.
+      trustProxy: env.trustProxy,
       routerOptions: {
         ignoreTrailingSlash: true,
       },
