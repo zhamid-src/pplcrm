@@ -110,4 +110,14 @@ export class DonationsService extends TRPCService<'donations'> {
   public deleteDonationPeriod(id: string) {
     return this.api.donations.deleteDonationPeriod.mutate({ id });
   }
+
+  // ── Webhook token (stored hashed, shown once) ────────────────────────────────
+
+  public getWebhookTokenStatus() {
+    return this.api.donations.getWebhookTokenStatus.query();
+  }
+
+  public regenerateWebhookToken() {
+    return this.api.donations.regenerateWebhookToken.mutate();
+  }
 }
