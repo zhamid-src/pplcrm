@@ -107,4 +107,32 @@ describe('BaseController', () => {
       row: updateRow,
     });
   });
+
+  // SECURITY-REVIEW.md 3.2 — the inline export must be bounded so a huge tenant can't OOM the backend.
+  describe('exportCsv row cap', () => {
+    it('bounds the fetch to one past the cap and returns a normal export under it', async () => {
+      const getAllSpy = vi.spyOn(repo, 'getAll').mockResolvedValue([
+        { id: '1', name: 'A' },
+        { id: '2', name: 'B' },
+      ] as any);
+
+      const response = await controller.exportCsv({ tenant_id: 'tenant-1' } as any);
+
+      expect(response.rowCount).toBe(2);
+      // getAll is asked for at most MAX_INLINE_EXPORT_ROWS + 1 rows so oversized sets are detectable.
+      expect(getAllSpy).toHaveBeenCalledWith({
+        tenant_id: 'tenant-1',
+        options: expect.objectContaining({ limit: 50001 }),
+      });
+    });
+
+    it('refuses an export that exceeds the cap with PAYLOAD_TOO_LARGE', async () => {
+      // One row past the cap — the assert fires before any CSV is built.
+      vi.spyOn(repo, 'getAll').mockResolvedValue(Array.from({ length: 50001 }, () => ({})) as any);
+
+      await expect(controller.exportCsv({ tenant_id: 'tenant-1' } as any)).rejects.toMatchObject({
+        code: 'PAYLOAD_TOO_LARGE',
+      });
+    });
+  });
 });
