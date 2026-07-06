@@ -52,10 +52,12 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
 - [x] **2.5** 2FA brute-force cap — new `two_factor_attempts` column (migration + schema baseline + model);
       `verify2FA` increments it on a wrong code and invalidates the OTP after 5 failures; `signIn` resets it
       when issuing a fresh code, and success clears it. Unit test covers increment + cap.
-- [~] **2.4** (partial) — Zapier inbound routes now rate-limit by source IP (120/min) via an `onRequest`
-  hook, throttling key brute-force/abuse. **Still pending:** hashing the API keys / webhook tokens and
-  moving them off `settings` — deferred because the product currently displays the key to the user, so
-  it needs a show-once + regenerate UX decision (see 2.4 notes).
+- [~] **2.4** — Zapier inbound routes rate-limit by source IP (120/min); the **Zapier API key is now
+  stored hashed** and looked up by hash (`regenerateApiKey` returns the plaintext once, `getApiKeyStatus`
+  reports configured/not; migration `2026-07-08-invalidate-zapier-keys` clears stale plaintext →
+  force-regenerate, per your call). **Still pending:** the same hashing for the **donation webhook token**
+  (client-generated + stored plaintext today; also Stripe-signature-protected, so lower priority) — needs
+  its generation moved server-side for show-once.
 - [x] **3.6** Frontend IDB response cache keys on the full serialized `apiName+options` (namespaced `trpc:`)
       instead of a lossy 32-bit hash, so one query can no longer serve another's cached rows. Test asserts
       distinct keys per options.
