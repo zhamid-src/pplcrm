@@ -298,9 +298,9 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
       ]);
       // Attach a short-lived, email-scoped download URL so the client can link to
       // attachments without putting a session token in the URL (SECURITY-REVIEW.md 1.3).
-      const attachments = (rawAttachments ?? []).map((a) => ({
+      const attachments = ((rawAttachments ?? []) as Array<Record<string, unknown>>).map((a) => ({
         ...a,
-        download_url: signedEmailAttachmentUrl(String(id), String(a.id), tenant_id),
+        download_url: signedEmailAttachmentUrl(String(id), String(a['id']), tenant_id),
       }));
       if (emailWithHeaders) {
         let person: any = null;
