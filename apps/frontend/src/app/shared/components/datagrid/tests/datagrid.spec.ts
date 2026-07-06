@@ -68,6 +68,26 @@ describe('DataGrid', () => {
     fixture.detectChanges();
   }
 
+  describe('callCellRenderer memoization (SECURITY-REVIEW 3.1)', () => {
+    it('runs the renderer once per (row, value) and re-runs only when the value changes', () => {
+      const renderer = vi.fn((p: { value: unknown }) => `<span>${String(p.value)}</span>`);
+      const col = { field: 'name', headerName: 'Name', cellRenderer: renderer } as unknown as ColumnDef;
+      const row: Record<string, unknown> = { name: 'Alice' };
+
+      const call = () =>
+        (component as unknown as { callCellRenderer: (r: unknown, c: unknown) => unknown }).callCellRenderer(row, col);
+
+      const first = call();
+      const second = call();
+      expect(renderer).toHaveBeenCalledTimes(1); // second call served from cache
+      expect(second).toBe(first); // same SafeHtml reference
+
+      row['name'] = 'Bob'; // value changed -> cache invalidated
+      call();
+      expect(renderer).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('initial load', () => {
     it('prepends the selection column to the configured column defs', async () => {
       mockGridSvc.getAll.mockResolvedValue({ rows: [], count: 0 });

@@ -59,7 +59,10 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
 - [x] **3.6** Frontend IDB response cache keys on the full serialized `apiName+options` (namespaced `trpc:`)
       instead of a lossy 32-bit hash, so one query can no longer serve another's cached rows. Test asserts
       distinct keys per options.
-- [ ] 2.1, 3.1–3.5, 4.x, 5.x — pending.
+- [x] **3.1** Grid cell HTML is memoized — `callCellRenderer` caches the sanitized `SafeHtml` per
+      (ColDef, row) via nested `WeakMap`s, invalidated on value change, so the renderer + DOMPurify no
+      longer run on every change-detection pass for every cell. Test asserts once-per-value + re-run on change.
+- [ ] 2.1, 3.2–3.5, 4.x, 5.x — pending.
 
 **Note:** the full `nx build backend && nx build frontend` passes as of the 2.5 commit (a type error in the
 1.3 email-attachment change was fixed in a follow-up build commit).
