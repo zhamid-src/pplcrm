@@ -4,9 +4,17 @@ import { ZapierService } from './zapier.service';
 import { PersonsService } from '../persons/services/persons.service';
 import type { IAuthKeyPayload } from '@common';
 import { logger } from '../../logger';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { TooManyRequestsError } from '../../errors/app-errors';
 
 const zapierService = new ZapierService();
 const personsService = new PersonsService();
+
+// The API key is the sole authenticator for these unauthenticated-by-default write
+// routes, so cap requests per source IP: throttles key brute-forcing and abuse of a
+// leaked key (SECURITY-REVIEW.md 2.4). Generous enough for legitimate Zapier bursts.
+const ZAPIER_RATE_LIMIT = 120;
+const ZAPIER_RATE_WINDOW_MS = 60 * 1000;
 
 const upsertPersonSchema = z.object({
   email: z.string().email('Valid email required for person matching').max(255),
@@ -59,6 +67,18 @@ async function extractTenantId(req: any): Promise<string | null> {
 }
 
 const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  // Rate-limit every inbound Zapier route by source IP before the handler runs.
+  fastify.addHook('onRequest', async (req, reply) => {
+    try {
+      checkRateLimit(`zapier:${req.ip}`, ZAPIER_RATE_LIMIT, ZAPIER_RATE_WINDOW_MS);
+    } catch (err) {
+      if (err instanceof TooManyRequestsError) {
+        return reply.code(429).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
+
   fastify.post('/persons/upsert', async (req, reply) => {
     const tenantId = await extractTenantId(req);
     if (!tenantId) {
