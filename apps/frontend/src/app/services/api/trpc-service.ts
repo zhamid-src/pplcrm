@@ -136,10 +136,12 @@ function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSi
     transformer: superjson,
     // Combine the per-request signal tRPC provides with the service-level
     // controller so TRPCService.abort() actually cancels in-flight requests.
+    // `credentials: 'include'` is required so the browser honors Set-Cookie on the
+    // sign-in/out responses and attaches the HttpOnly refresh cookie (SECURITY-REVIEW 2.1).
     fetch(input, init) {
       const signals: AbortSignal[] = [getAbortSignal()];
       if (init?.signal) signals.push(init.signal);
-      return globalThis.fetch(input, { ...init, signal: AbortSignal.any(signals) });
+      return globalThis.fetch(input, { ...init, credentials: 'include', signal: AbortSignal.any(signals) });
     },
     headers() {
       const authToken = tokenSvc.getAuthToken();

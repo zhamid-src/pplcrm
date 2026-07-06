@@ -1,3 +1,4 @@
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
@@ -41,10 +42,15 @@ export class FastifyServer {
     );
 
     // Register core Fastify plugins.
-    // Restrict cross-origin requests to the SPA origin by default (callers may
-    // override via opts). A wildcard origin would let any site drive the API on
-    // behalf of a user whose bearer token it has obtained.
-    this.server.register(cors, { origin: env.appUrl, ...opts });
+    // Restrict cross-origin requests to the SPA origin and allow credentials so the browser sends
+    // the HttpOnly refresh cookie on same-site XHR (SECURITY-REVIEW 2.1). `origin`/`credentials`
+    // are forced AFTER the opts spread so a caller can't accidentally widen them to a wildcard —
+    // credentialed CORS with `*` is rejected by browsers anyway, and a wildcard origin would let any
+    // site drive the API on behalf of a user whose bearer token it has (SECURITY-REVIEW 4.4).
+    this.server.register(cors, { ...opts, origin: env.appUrl, credentials: true });
+    // Parse/serialize cookies (refresh-token cookie). Registered before routes/tRPC so req.cookies
+    // and reply.setCookie are available in handlers and the tRPC context.
+    this.server.register(cookie);
     // Security headers (CSP, HSTS, nosniff, frame-ancestors, referrer-policy). See
     // security-headers.ts for why each directive is set the way it is.
     this.server.register(helmet, helmetOptions);

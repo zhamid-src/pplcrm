@@ -268,13 +268,14 @@ describe('AuthController', () => {
     const tokens = await controller.signIn({ email: owner.email, password: 'StrongPassword123!' });
     if (!('auth_token' in tokens)) throw new Error('expected tokens');
 
-    const renewed = await controller.renewAuthToken(tokens);
+    // Renew is now driven by the refresh token alone (delivered via the HttpOnly cookie).
+    const renewed = await controller.renewAuthToken(tokens.refresh_token);
     expect(renewed.auth_token).toBeTypeOf('string');
     expect(renewed.refresh_token).toBeTypeOf('string');
+    // Rotation: the old refresh token must no longer renew after it's been used.
+    await expect(controller.renewAuthToken(tokens.refresh_token)).rejects.toThrow(UnauthorizedError);
 
-    await expect(
-      controller.renewAuthToken({ auth_token: tokens.auth_token, refresh_token: 'bogus-refresh-token' }),
-    ).rejects.toThrow(UnauthorizedError);
+    await expect(controller.renewAuthToken('bogus-refresh-token')).rejects.toThrow(UnauthorizedError);
 
     await cleanup(db, owner.id, owner.tenant_id);
   });

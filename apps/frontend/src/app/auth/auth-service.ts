@@ -1,6 +1,7 @@
 import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { IAuthUser, signInInputType, signUpInputType } from '../../../../../libs/common/src';
 import { TRPCService } from '../services/api/trpc-service';
+import { silentRefresh } from '../services/api/trpc-refreshlink';
 import { TRPCError } from '@trpc/server';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
@@ -22,7 +23,10 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.user;
   }
 
-  public init() {
+  public async init() {
+    // Cold load: the in-memory access token is gone. Re-mint one from the HttpOnly refresh cookie
+    // before asking who the user is, so a page reload doesn't look like a sign-out (SECURITY-REVIEW 2.1).
+    await silentRefresh(this.tokenService);
     return this.getCurrentUser();
   }
 
@@ -208,10 +212,12 @@ export class AuthService extends TRPCService<'authusers'> {
     return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
   }
 
-  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
+  private async updateTokensAndGetCurrentUser(token: { auth_token?: string | null } | TRPCError) {
     if (!token || token instanceof TRPCError) {
       throw token;
     }
+    // Only the access token comes back in the body now; the refresh token is set as an HttpOnly
+    // cookie by the server (SECURITY-REVIEW 2.1).
     this.tokenService.set(token);
     return this.getCurrentUser();
   }
