@@ -835,7 +835,7 @@ const renderFormHtml = (
       <p class="description">${escapeHtml(formDescription)}</p>
     </div>
 
-    <form action="/api/forms/submit/${formId}" method="POST">
+    <form action="/api/forms/submit/${escapeHtml(formId)}" method="POST">
       <!-- Honeypot Bot Field (leave empty!) -->
       <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
 
