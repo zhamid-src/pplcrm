@@ -47,7 +47,9 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
       script-src would break (native Back button is the same action). Config in `plugins/security-headers.ts`.
 - [x] **2.3** `getAllWithCounts` now returns the tenant-wide total (via `count()`), not the current page
       size — fixes server-side grid pagination for base-crud entities. Real-DB test added.
-- [ ] 2.1, 2.4 – 5.4 — pending.
+- [x] **2.6** `formId` is now `escapeHtml`-escaped where interpolated into the rendered form's `action`
+      attribute (defense-in-depth; matches the existing formName/description escaping).
+- [ ] 2.1, 2.4, 2.5, 3.x – 5.4 — pending.
 
 ---
 
