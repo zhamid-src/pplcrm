@@ -1138,25 +1138,44 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected readonly sanitizer = inject(DomSanitizer);
 
+  // Memoized sanitized cell HTML. callCellRenderer runs inside a template binding, so
+  // it re-fires on every change-detection pass for every visible cell; without this it
+  // would re-run the renderer AND DOMPurify O(rows × cols) times per CD cycle. Keyed by
+  // the (stable) ColDef then the row data object — both WeakMap keys, so entries are
+  // evicted automatically when a column or row is garbage-collected — and invalidated
+  // when the cell's value changes.
+  private readonly cellHtmlCache = new WeakMap<object, WeakMap<object, { value: unknown; html: SafeHtml }>>();
+  private readonly emptyCellHtml: SafeHtml = this.sanitizer.bypassSecurityTrustHtml('');
+
   protected callCellRenderer(row: GridRow, col: ColDef): SafeHtml {
     const fn = col.cellRenderer;
-    if (typeof fn === 'function') {
-      const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
-
-      const raw = fn({ data: row, value, colDef: col });
-
-      // Renderer strings may interpolate row data, so they are never trusted
-      // as-is: DOMPurify strips script/event-handler payloads while keeping
-      // the markup (class/style/img) renderers legitimately produce.
-      if (typeof raw === 'string') {
-        return this.sanitizer.bypassSecurityTrustHtml(DOMPurify.sanitize(raw));
-      }
-
-      // If you later allow SafeHtml from some renderers, just return it.
-      return raw as SafeHtml;
+    if (typeof fn !== 'function') {
+      // Empty string is still valid SafeHtml
+      return this.emptyCellHtml;
     }
-    // Empty string is still valid SafeHtml
-    return this.sanitizer.bypassSecurityTrustHtml('');
+
+    const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
+
+    let byRow = this.cellHtmlCache.get(col);
+    if (!byRow) {
+      byRow = new WeakMap<object, { value: unknown; html: SafeHtml }>();
+      this.cellHtmlCache.set(col, byRow);
+    }
+    const cached = byRow.get(row);
+    if (cached && Object.is(cached.value, value)) {
+      return cached.html;
+    }
+
+    const raw = fn({ data: row, value, colDef: col });
+
+    // Renderer strings may interpolate row data, so they are never trusted as-is:
+    // DOMPurify strips script/event-handler payloads while keeping the markup
+    // (class/style/img) renderers legitimately produce. SafeHtml is returned as-is.
+    const html: SafeHtml =
+      typeof raw === 'string' ? this.sanitizer.bypassSecurityTrustHtml(DOMPurify.sanitize(raw)) : (raw as SafeHtml);
+
+    byRow.set(row, { value, html });
+    return html;
   }
 
   protected callValueFormatter(row: GridRow, col: ColDef): unknown {
