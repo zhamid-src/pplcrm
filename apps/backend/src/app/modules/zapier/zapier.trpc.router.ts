@@ -14,7 +14,8 @@ const eventTypeSchema = z.enum([
 ]);
 
 export const ZapierRouter = router({
-  getApiKey: authProcedure.query(({ ctx }) => zapierService.getOrCreateApiKey(ctx.auth.tenant_id)),
+  // Reports whether a key exists; the key is shown only once, at regeneration.
+  getApiKeyStatus: authProcedure.query(({ ctx }) => zapierService.getApiKeyStatus(ctx.auth.tenant_id)),
 
   regenerateApiKey: authProcedure.mutation(({ ctx }) => zapierService.regenerateApiKey(ctx.auth.tenant_id)),
 
