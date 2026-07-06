@@ -56,11 +56,10 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
       const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
 
-      // Mock mode (unsigned payload parsing) is ONLY permitted outside production.
-      // In production we must never accept an unauthenticated webhook body, or an
-      // attacker who knows the tenant's webhook token could forge payment events.
-      const isProduction = process.env['NODE_ENV'] === 'production';
-      const isMock = !isProduction && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
+      // Mock mode (unsigned payload parsing) requires an EXPLICIT opt-in (ALLOW_MOCK_PAYMENTS=true),
+      // never merely "not production" — an unset NODE_ENV must not fail open and accept an
+      // unauthenticated webhook body an attacker could forge (SECURITY-REVIEW 4.2).
+      const isMock = env.allowMockPayments && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
 
       let event: Stripe.Event;
 

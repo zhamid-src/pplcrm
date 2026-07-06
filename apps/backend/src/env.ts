@@ -49,6 +49,13 @@ const envSchema = z.object({
   // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
   // this comfortably below the Postgres pool size. Default 4.
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+  // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
+  // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
+  // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
+  ALLOW_MOCK_PAYMENTS: z
+    .string()
+    .optional()
+    .transform((val) => val === 'true'),
 });
 
 /** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
@@ -78,6 +85,7 @@ export const env = {
   publicFormsBaseDomain: parsedEnv.PUBLIC_FORMS_BASE_DOMAIN,
   trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
   workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
+  allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,
   msClientSecret: parsedEnv.MS_CLIENT_SECRET,
