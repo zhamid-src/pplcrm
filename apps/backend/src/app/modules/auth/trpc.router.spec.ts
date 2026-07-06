@@ -12,6 +12,15 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+// Minimal tRPC context carrying a Fastify-like req/res so procedures that read the refresh cookie
+// and set it on the reply (SECURITY-REVIEW 2.1) can run under createCaller.
+function cookieCtx(opts: { setCookie?: (...args: unknown[]) => unknown; cookies?: Record<string, string> } = {}): any {
+  return {
+    req: { ip: '127.0.0.1', headers: {}, cookies: opts.cookies ?? {} },
+    res: { setCookie: opts.setCookie ?? vi.fn(), clearCookie: vi.fn() },
+  };
+}
+
 function mockAuthDb() {
   const mockQB: any = {
     select: vi.fn().mockReturnThis(),
@@ -87,22 +96,30 @@ describe('AuthRouter', () => {
     expect(result).toEqual(mockUser);
   });
 
-  it('should call signIn on the controller', async () => {
-    const mockTokens = { auth_token: 'abc', refresh_token: 'def' };
+  it('should call signIn on the controller and move the refresh token to the cookie', async () => {
+    const mockTokens = { auth_token: 'abc', refresh_token: 'def', refresh_expires_at: null };
     const spy = vi.spyOn(AuthController.prototype, 'signIn').mockResolvedValue(mockTokens as any);
+    const setCookie = vi.fn();
 
-    const caller = AuthRouter.createCaller({} as any);
+    const caller = AuthRouter.createCaller(cookieCtx({ setCookie }));
     const result = await caller.signIn({ email: 'test@example.com', password: 'password123' });
 
     expect(spy).toHaveBeenCalled();
-    expect(result).toEqual(mockTokens);
+    // Only the access token is returned in the body; the refresh token becomes an HttpOnly cookie.
+    expect(result).toEqual({ auth_token: 'abc' });
+    expect(setCookie).toHaveBeenCalledWith('pc_refresh', 'def', expect.objectContaining({ httpOnly: true }));
   });
 
-  it('should call signUp on the controller', async () => {
-    const mockTokens = { auth_token: 'signup-auth-token', refresh_token: 'signup-refresh-token' };
+  it('should call signUp on the controller and move the refresh token to the cookie', async () => {
+    const mockTokens = {
+      auth_token: 'signup-auth-token',
+      refresh_token: 'signup-refresh-token',
+      refresh_expires_at: null,
+    };
     const spy = vi.spyOn(AuthController.prototype, 'signUp').mockResolvedValue(mockTokens as any);
+    const setCookie = vi.fn();
 
-    const caller = AuthRouter.createCaller({} as any);
+    const caller = AuthRouter.createCaller(cookieCtx({ setCookie }));
     const signUpData = {
       email: 'newuser@example.com',
       password: 'StrongPassword123!',
@@ -112,7 +129,12 @@ describe('AuthRouter', () => {
     const result = await caller.signUp(signUpData);
 
     expect(spy).toHaveBeenCalledWith(signUpData);
-    expect(result).toEqual(mockTokens);
+    expect(result).toEqual({ auth_token: 'signup-auth-token' });
+    expect(setCookie).toHaveBeenCalledWith(
+      'pc_refresh',
+      'signup-refresh-token',
+      expect.objectContaining({ httpOnly: true }),
+    );
   });
 });
 

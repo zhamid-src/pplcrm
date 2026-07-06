@@ -1,104 +1,53 @@
 import { Service } from '@angular/core';
-import { IToken } from '../../../../../../libs/common/src';
 
+/**
+ * Holds the short-lived access token IN MEMORY only (SECURITY-REVIEW.md 2.1). The long-lived refresh
+ * token is never seen by JS — it lives in an HttpOnly cookie set by the backend — so an XSS payload
+ * can't exfiltrate a durable credential. On a cold page load the access token is gone; the app
+ * silently re-mints one from the refresh cookie (see trpc-refreshlink `silentRefresh`).
+ *
+ * `persistence` is the remember-me preference only (which drives the cookie lifetime server-side);
+ * it no longer controls token storage because tokens are never persisted client-side.
+ */
 @Service()
 export class TokenService {
   private persistence = false;
+  private authToken: string | null = null;
 
   constructor() {
-    this.persistence = !!localStorage.getItem('pc-persistence');
+    this.persistence = localStorage.getItem(PERSISTENCE_KEY) === '1';
   }
 
   public clearAll(): void {
-    this.clearPersistentStorage();
-    this.clearSessionStorage();
-  }
-
-  public get(): IToken {
-    return {
-      auth_token: this.getAuthToken(),
-      refresh_token: this.getRefreshToken(),
-    };
+    this.authToken = null;
   }
 
   public getAuthToken(): string | null {
-    return this.persistence ? localStorage.getItem(AUTHTOKEN) : sessionStorage.getItem(AUTHTOKEN);
+    return this.authToken;
   }
 
   public getPersistence(): boolean {
     return this.persistence;
   }
 
-  public getRefreshToken(): string | null {
-    return this.persistence ? localStorage.getItem(REFRESHTOKEN) : sessionStorage.getItem(REFRESHTOKEN);
-  }
-
   public removeAuthToken(): void {
-    this.removeToken(AUTHTOKEN);
+    this.authToken = null;
   }
 
-  public removeRefreshToken(): void {
-    this.removeToken(REFRESHTOKEN);
+  /** Accepts the token-issuing response shape ({ auth_token }); the refresh token is not returned
+   * to JS anymore (it's in the HttpOnly cookie). */
+  public set(token: { auth_token?: string | null }): void {
+    this.authToken = token.auth_token ?? null;
   }
 
-  public set(token: IToken): void {
-    if (token.auth_token) {
-      this.setAuthToken(token.auth_token);
-    } else {
-      this.removeAuthToken();
-    }
-
-    if (token.refresh_token) {
-      this.setRefreshToken(token.refresh_token);
-    } else {
-      this.removeRefreshToken();
-    }
+  public setAuthToken(token: string | null): void {
+    this.authToken = token;
   }
 
-  public setAuthToken(token: string): void {
-    this.setToken(AUTHTOKEN, token);
-  }
-
-  public setPersistence(persistence: boolean) {
-    if (this.getPersistence() && !persistence) {
-      this.clearPersistentStorage();
-    } else if (!this.getPersistence() && persistence) {
-      this.clearSessionStorage();
-    }
+  public setPersistence(persistence: boolean): void {
     this.persistence = persistence;
-    localStorage.setItem('pc-persistence', persistence ? '1' : '0');
-  }
-
-  public setRefreshToken(token: string): void {
-    this.setToken(REFRESHTOKEN, token);
-  }
-
-  private clearPersistentStorage(): void {
-    localStorage.removeItem(AUTHTOKEN);
-    localStorage.removeItem(REFRESHTOKEN);
-  }
-
-  private clearSessionStorage(): void {
-    sessionStorage.removeItem(AUTHTOKEN);
-    sessionStorage.removeItem(REFRESHTOKEN);
-  }
-
-  private removeToken(item: string): void {
-    if (this.persistence) {
-      localStorage.removeItem(item);
-    } else {
-      sessionStorage.removeItem(item);
-    }
-  }
-
-  private setToken(item: string, token: string): void {
-    if (this.persistence) {
-      localStorage.setItem(item, token);
-    } else {
-      sessionStorage.setItem(item, token);
-    }
+    localStorage.setItem(PERSISTENCE_KEY, persistence ? '1' : '0');
   }
 }
 
-const AUTHTOKEN = 'ppl-crm-auth-token';
-const REFRESHTOKEN = 'ppl-crm-refresh-token';
+const PERSISTENCE_KEY = 'pc-persistence';

@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
-import { createSigner, createVerifier } from 'fast-jwt';
+import { createSigner } from 'fast-jwt';
 import { signedFileDownloadUrl } from '../../lib/signed-download';
 import { RESERVED_SUBDOMAINS, slugifyHandle } from '../../../../../../libs/common/src';
 import type { QueryResult, Transaction } from 'kysely';
@@ -7,7 +7,6 @@ import type { QueryResult, Transaction } from 'kysely';
 import type {
   IAuthKeyPayload,
   INow,
-  IToken,
   InviteAuthUserType,
   UpdateAuthUserType,
   getAllOptionsType,
@@ -679,31 +678,26 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return { success: true };
   }
 
-  public async renewAuthToken(input: IToken) {
-    if (!input?.auth_token || !input?.refresh_token) {
+  /**
+   * Issue a fresh access token from the refresh token alone (delivered via the HttpOnly cookie,
+   * SECURITY-REVIEW.md 2.1). It deliberately does NOT require the (possibly gone) access token, so
+   * the client can silently re-auth on a cold page load using only the cookie. The refresh token is
+   * the sole authenticator here, and it's rotated on every use.
+   */
+  public async renewAuthToken(refreshToken: string | undefined) {
+    if (!refreshToken) {
       throw new UnauthorizedError();
     }
     try {
-      // 1. Verify the signature of the expired auth token (ignoring expiration)
-      const payload = (await renewalVerifier(input.auth_token)) as Record<string, unknown>;
+      const refreshHash = hashToken(refreshToken);
 
-      // Basic payload validation
-      if (!payload?.['user_id'] || !payload?.['tenant_id'] || !payload?.['name'] || !payload?.['session_id']) {
-        throw new UnauthorizedError();
-      }
-
-      // 2. Hash the session ID and incoming refresh token
-      const sessionHash = hashToken(payload['session_id'] as string);
-      const refreshHash = hashToken(input.refresh_token);
-
-      // 3. Verify that the session is active and matches in the database
+      // Resolve the session by the refresh token hash. Cross-tenant by design — the refresh token
+      // itself identifies which session (and therefore tenant) this is.
+      // eslint-disable-next-line local/no-unscoped-db-query
       const session = await this.sessions.db
         .selectFrom('sessions')
-        .select(['id', 'expires_at', 'last_used_at'])
-        .where('session_id', '=', sessionHash)
+        .select(['id', 'user_id', 'tenant_id', 'session_id', 'expires_at', 'last_used_at'])
         .where('refresh_token', '=', refreshHash)
-        .where('user_id', '=', payload['user_id'] as string)
-        .where('tenant_id', '=', payload['tenant_id'] as string)
         .where('status', '=', 'active')
         .executeTakeFirst();
 
@@ -724,14 +718,29 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         }
       }
 
-      // 4. Generate a new set of tokens and delete the old session
-      return this.createTokens({
-        user_id: payload['user_id'] as string,
-        tenant_id: payload['tenant_id'] as string,
-        name: payload['name'] as string,
-        oldSession: payload['session_id'] as string,
+      // The JWT carries the user's display name; pull it from the account (scoped to the session's
+      // tenant) since we no longer have the old token to read it from.
+      const user = await this.getRepo()
+        .db.selectFrom('authusers')
+        .select(['first_name'])
+        .where('id', '=', session.user_id)
+        .where('tenant_id', '=', session.tenant_id)
+        .executeTakeFirst();
+
+      if (!user) {
+        throw new UnauthorizedError();
+      }
+
+      // Rotate: mint a new session/refresh pair (preserving the original absolute expiry) and drop
+      // the old session so a stolen or replayed refresh token can't be reused.
+      const tokens = await this.createTokens({
+        user_id: String(session.user_id),
+        tenant_id: String(session.tenant_id),
+        name: user.first_name ?? '',
         existingExpiresAt: session.expires_at ?? null,
       });
+      await this.sessions.deleteBySessionHash(session.session_id);
+      return tokens;
     } catch (err) {
       if (err instanceof AppError) throw err;
       throw new UnauthorizedError();
@@ -1092,9 +1101,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return this.sessions.deleteBySessionId(auth.session_id);
   }
 
-  public async signUp(input: signUpInputType): Promise<IToken> {
+  public async signUp(input: signUpInputType) {
     const email = input.email.toLowerCase();
-    let token = { auth_token: '', refresh_token: '' };
+    let token: { auth_token: string; refresh_token: string; refresh_expires_at: Date | null } = {
+      auth_token: '',
+      refresh_token: '',
+      refresh_expires_at: null,
+    };
 
     try {
       await this.verifyUserDoesNotExist(email);
@@ -1745,7 +1758,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         name: input.name,
         session_id: plainSessionId, // plaintext in JWT; hash is in DB
       });
-      return { auth_token, refresh_token: plainRefreshToken }; // plaintext to client
+      // refresh_token goes to the client as an HttpOnly cookie (set by the router), never the body.
+      return { auth_token, refresh_token: plainRefreshToken, refresh_expires_at: expiresAt };
     } catch (err) {
       throw new InternalError('Token creation failed', undefined, { cause: err });
     }
@@ -1984,8 +1998,3 @@ const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
-const renewalVerifier = createVerifier({
-  algorithms: ['HS256'],
-  key: env.sharedSecret,
-  ignoreExpiration: true,
-});

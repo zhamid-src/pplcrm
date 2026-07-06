@@ -27,6 +27,7 @@
     "@angular/router": "22.0.2",
     "@azure/msal-node": "^5.2.2",
     "@azure/storage-blob": "^12.31.0",
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
     "@fastify/formbody": "^8.0.2",
     "@fastify/helmet": "^13.0.2",

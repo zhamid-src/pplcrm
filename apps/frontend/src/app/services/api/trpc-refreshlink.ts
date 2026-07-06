@@ -35,40 +35,51 @@ function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, un
   });
 }
 
-let activeRefreshPromise: Promise<string | null> | null = null;
+let activeRefreshPromise: Promise<string> | null = null;
+
+/**
+ * Mint a fresh access token from the HttpOnly refresh cookie (SECURITY-REVIEW.md 2.1). No token is
+ * read from JS/storage — the browser attaches the cookie because the refresh client sends
+ * credentials. Concurrent callers share one in-flight request. Rejects if the cookie is missing or
+ * the session is gone.
+ */
+function performRefresh(tokenSvc: TokenService): Promise<string> {
+  if (activeRefreshPromise) return activeRefreshPromise;
+
+  activeRefreshPromise = (async () => {
+    try {
+      const payload = await trpcRetryClient.auth.renewAuthToken.mutate();
+      tokenSvc.setAuthToken(payload.auth_token);
+      return payload.auth_token;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  })();
+
+  return activeRefreshPromise;
+}
+
+/**
+ * Attempt a silent re-auth on a cold page load: the in-memory access token is gone but the refresh
+ * cookie may still be valid. Returns the new token, or null for a genuine guest. Never throws.
+ */
+export async function silentRefresh(tokenSvc: TokenService): Promise<string | null> {
+  try {
+    return await performRefresh(tokenSvc);
+  } catch {
+    tokenSvc.clearAll();
+    return null;
+  }
+}
 
 async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
   const authToken = tokenSvc.getAuthToken();
+  // No in-memory token → treat as guest. Startup already ran silentRefresh, so we don't re-probe the
+  // refresh endpoint on every guest request.
   if (!authToken) return null;
 
-  if (isTokenExpired(authToken)) {
-    if (activeRefreshPromise) {
-      return activeRefreshPromise;
-    }
-
-    const refreshToken = tokenSvc.getRefreshToken();
-    if (!refreshToken) throw new TRPCClientError('No refresh token available');
-
-    activeRefreshPromise = (async () => {
-      try {
-        const payload = await trpcRetryClient.auth.renewAuthToken.mutate({
-          auth_token: authToken,
-          refresh_token: refreshToken,
-        });
-
-        tokenSvc.set({
-          auth_token: payload.auth_token,
-          refresh_token: payload.refresh_token,
-        });
-        return payload.auth_token;
-      } finally {
-        activeRefreshPromise = null;
-      }
-    })();
-
-    return activeRefreshPromise;
-  }
-  return authToken;
+  // Still valid → use it. Expired → swap it for a fresh one via the refresh cookie.
+  return isTokenExpired(authToken) ? performRefresh(tokenSvc) : authToken;
 }
 
 function handleRefreshFailure(
@@ -144,6 +155,8 @@ const trpcRetryClient = createTRPCClient<TRPCRouter>({
     httpLink({
       url: environment.apiUrl,
       transformer: superjson,
+      // Send the HttpOnly refresh cookie with the renew call.
+      fetch: (input, init) => globalThis.fetch(input, { ...init, credentials: 'include' }),
     }),
   ],
 });
