@@ -28,8 +28,11 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
 
 ### Progress
 
-- [x] **1.1** Access-token session revocation — implemented (see branch `security/phase1-session-revocation`).
-- [ ] 1.2 – 5.4 — pending.
+- [x] **1.1** Access-token session revocation — implemented (branch `security/phase1-session-revocation`).
+- [x] **1.2** Shared REST auth helper (`lib/rest-auth.ts`) — session revocation + viewer-write guard applied
+      to `emails-api.route.ts` (`/send` write-gated; attachment reads session-gated), `exports-download.route.ts`,
+      and the bearer path of `files.route.ts`.
+- [ ] 1.3 – 5.4 — pending.
 
 ---
 

@@ -2,7 +2,7 @@ import { Client } from '@microsoft/microsoft-graph-client';
 import crypto from 'crypto';
 import type { FastifyPluginCallback } from 'fastify';
 import { env } from '../../../../env';
-import { verifyAuthToken } from '../../../lib/auth-util';
+import { authenticateRest } from '../../../lib/rest-auth';
 import { BaseRepository } from '../../../lib/base.repo';
 import { attachmentDisposition } from '../../../lib/download-headers';
 import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
@@ -276,28 +276,14 @@ export async function saveLocalEmail(
 const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
   // Send composed email
   fastify.post('/send', async (req: any, reply) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing Authorization header' });
-    }
-    const token = authHeader.split(' ')[1];
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token format' });
+    // Mutating endpoint: enforce session revocation and block read-only viewers.
+    const authResult = await authenticateRest(req, { requireWrite: true });
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
     }
 
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid or expired token' });
-    }
-
-    if (!payload?.tenant_id || !payload?.user_id) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token payload' });
-    }
-
-    const tenantId = payload.tenant_id;
-    const userId = payload.user_id;
+    const tenantId = authResult.auth.tenant_id;
+    const userId = authResult.auth.user_id;
     const db = (BaseRepository as any)['_db'];
 
     // Retrieve sender user details
@@ -647,24 +633,13 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   // Download attachment by ID
   fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
+    // Read endpoint; still session-gated. Query-token support is legacy (see 1.3).
+    const authResult = await authenticateRest(req, { allowQueryToken: true });
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
     }
 
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
+    const tenantId = authResult.auth.tenant_id;
     const { id, attachmentId } = req.params;
     const db = (BaseRepository as any)['_db'];
 
@@ -704,24 +679,13 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
   // Serve inline attachment by CID
   fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    // Authenticate token via header or query string (for direct link downloading)
-    let token = req.query.token;
-    if (!token && req.headers.authorization) {
-      token = req.headers.authorization.split(' ')[1];
+    // Read endpoint; still session-gated. Query-token support is legacy (see 1.3).
+    const authResult = await authenticateRest(req, { allowQueryToken: true });
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
     }
 
-    if (!token) {
-      return reply.status(401).send({ error: 'Unauthorized: Missing token' });
-    }
-
-    let payload: any = null;
-    try {
-      payload = await verifyAuthToken(token);
-    } catch (_err) {
-      return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-    }
-
-    const tenantId = payload.tenant_id;
+    const tenantId = authResult.auth.tenant_id;
     const { id, cid } = req.params;
     const db = (BaseRepository as any)['_db'];
 
