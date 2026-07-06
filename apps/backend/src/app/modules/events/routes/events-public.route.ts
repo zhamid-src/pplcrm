@@ -505,7 +505,6 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
         <div class="card" style="max-width:440px;margin:40px auto;text-align:center;">
           <h1 style="color:var(--error);">Error</h1>
           <p class="subtitle" style="margin-top:10px;">${esc(message)}</p>
-          <div style="margin-top:20px;"><a href="javascript:history.back()" style="color:var(--accent);font-size:14px;">← Go back</a></div>
         </div>`,
         ),
       );

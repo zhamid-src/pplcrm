@@ -239,7 +239,6 @@ const SUCCESS_HTML = `
     </div>
     <h1>Submission Successful</h1>
     <p>Thank you! Your information has been successfully received and processed.</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
   </div>
 </body>
 </html>
@@ -439,7 +438,6 @@ const errorHtml = (message: string) => `
     </div>
     <h1>Submission Failed</h1>
     <p>${escapeHtml(message)}</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
   </div>
 </body>
 </html>

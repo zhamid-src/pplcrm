@@ -41,9 +41,13 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
       the spoofable raw `X-Forwarded-For` header.
 - [x] **1.5** CSV formula-injection guard — shared `escapeCsvCell` in `lib/csv.ts` (used by `csv.ts` and
       `csv-stream.ts`) prefixes `'` on string cells starting with `= + - @ \t \r`; numbers/dates untouched.
+- [x] **2.2** Security headers — `@fastify/helmet` registered with a CSP tuned for the server-rendered pages
+      (inline styles + Google Fonts; `script-src 'self'`; `frame-ancestors 'none'`), HSTS, nosniff,
+      `Referrer-Policy: no-referrer`, cross-origin CORP. Removed 4 `javascript:history.back()` links the strict
+      script-src would break (native Back button is the same action). Config in `plugins/security-headers.ts`.
 - [x] **2.3** `getAllWithCounts` now returns the tenant-wide total (via `count()`), not the current page
       size — fixes server-side grid pagination for base-crud entities. Real-DB test added.
-- [ ] 2.1, 2.2, 2.4 – 5.4 — pending.
+- [ ] 2.1, 2.4 – 5.4 — pending.
 
 ---
 

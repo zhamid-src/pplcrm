@@ -264,7 +264,6 @@ const renderErrorHtml = (message: string) => `
     </div>
     <h1>Operation Failed</h1>
     <p class="subtitle" style="margin-top: 12px;">${message}</p>
-    <a href="javascript:history.back()" class="btn">Go Back</a>
   </div>
 </body>
 </html>
