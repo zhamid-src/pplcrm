@@ -161,4 +161,12 @@ export const DonationsRouter = router({
   deleteDonationPeriod: authProcedure
     .input(z.object({ id: z.string() }))
     .mutation(({ ctx, input }) => controller.deleteDonationPeriod(ctx.auth.tenant_id, input.id)),
+
+  // ── Webhook token (stored hashed, shown once — SECURITY-REVIEW 2.4) ──────────
+
+  getWebhookTokenStatus: authProcedure.query(({ ctx }) => controller.getWebhookTokenStatus(ctx.auth.tenant_id)),
+
+  regenerateWebhookToken: authProcedure.mutation(({ ctx }) =>
+    controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
+  ),
 });

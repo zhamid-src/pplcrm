@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BaseRepository } from '../../lib/base.repo';
+import { hashToken } from '../../lib/token-hash';
 import { DonationsController } from './controller';
 
 async function cleanTenant(db: any, tenantId: string, _personId: string) {
@@ -215,6 +216,39 @@ describe('DonationsController Unit & Integration', () => {
       // Matching state: ON
       const check2 = await controller.checkEligibility(tenantId, personId, 10000, { country: 'CA', state: 'ON' });
       expect(check2.eligible).toBe(true);
+    });
+  });
+
+  // The webhook token must be stored hashed and shown only once (SECURITY-REVIEW.md 2.4).
+  describe('Webhook token', () => {
+    it('persists only the hash and reports configured status', async () => {
+      expect(await controller.getWebhookTokenStatus(tenantId)).toEqual({ configured: false });
+
+      const { token } = await controller.regenerateWebhookToken(tenantId, userId);
+      expect(token).toMatch(/^wt_/);
+
+      const row = await db
+        .selectFrom('settings')
+        .select('value')
+        .where('tenant_id', '=', tenantId)
+        .where('key', '=', 'donations.webhook_token')
+        .executeTakeFirst();
+
+      // Stored at rest as the hash, never the plaintext token (jsonb, so it comes back parsed).
+      expect(row?.value).toBe(hashToken(token));
+      expect(String(row?.value)).not.toContain(token);
+
+      // The webhook route resolves the tenant by looking up value = JSON.stringify(hashToken(token)).
+      // Replicate that exact query to prove hashing-at-rest stays compatible with resolution.
+      const matched = await db
+        .selectFrom('settings')
+        .select('tenant_id')
+        .where('key', '=', 'donations.webhook_token')
+        .where('value', '=', JSON.stringify(hashToken(token)))
+        .executeTakeFirst();
+      expect(String(matched?.tenant_id)).toBe(tenantId);
+
+      expect(await controller.getWebhookTokenStatus(tenantId)).toEqual({ configured: true });
     });
   });
 });

@@ -2,6 +2,7 @@ import type { FastifyPluginCallback } from 'fastify';
 import Stripe from 'stripe';
 import { env } from '../../../../env';
 import { BaseRepository } from '../../../lib/base.repo';
+import { hashToken } from '../../../lib/token-hash';
 import { logger } from '../../../logger';
 
 const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
@@ -15,17 +16,19 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 
     let tenantId = 'unknown';
     try {
-      // Look up tenant setting donations.webhook_token with matching value
+      // Resolve the tenant by the HASH of the token, never the plaintext (SECURITY-REVIEW.md 2.4).
+      // Cross-tenant by design — this decides which tenant owns the token.
       // eslint-disable-next-line local/no-unscoped-db-query
       const tokenRow = await BaseRepository.dbInstance
         .selectFrom('settings')
         .select('tenant_id')
         .where('key', '=', 'donations.webhook_token')
-        .where('value', '=', JSON.stringify(token))
+        .where('value', '=', JSON.stringify(hashToken(token)))
         .executeTakeFirst();
 
       if (!tokenRow) {
-        logger.error(`Webhook error: Invalid webhook token: ${token}`);
+        // Do not log the token value — it's a secret. The tenant is unknown at this point.
+        logger.error('Webhook error: Invalid webhook token');
         return reply.code(400).send({ error: 'Invalid webhook token' });
       }
 

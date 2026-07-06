@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import Stripe from 'stripe';
 import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
@@ -6,10 +7,16 @@ import { DonationsRepo } from './repositories/donations.repo';
 import { DonationPeriodsRepo } from './repositories/periods.repo';
 import { DonationPledgesRepo } from './repositories/pledges.repo';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
+import { hashToken } from '../../lib/token-hash';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { WorkflowsController } from '../workflows/controller';
 import type { Selectable } from 'kysely';
 import { logger } from '../../logger';
+
+// The webhook token routes an inbound Stripe webhook to the right tenant. It is stored hashed and
+// shown to the user only once, at generation (SECURITY-REVIEW.md 2.4) — same posture as the Zapier
+// API key. (Stripe's signature is the primary authenticator; this token is the tenant selector.)
+const WEBHOOK_TOKEN_KEY = 'donations.webhook_token';
 
 export class DonationsController extends BaseController<'donations', DonationsRepo> {
   private settingsRepo = new SettingsRepo();
@@ -18,6 +25,27 @@ export class DonationsController extends BaseController<'donations', DonationsRe
 
   constructor() {
     super(new DonationsRepo());
+  }
+
+  /** Whether a webhook token has been generated for this tenant. The token itself is never
+   * returned after creation — only its hash is stored (SECURITY-REVIEW.md 2.4). */
+  public async getWebhookTokenStatus(tenantId: string): Promise<{ configured: boolean }> {
+    const row = await this.settingsRepo.getByKey({ tenant_id: tenantId, key: WEBHOOK_TOKEN_KEY });
+    return { configured: !!row?.value };
+  }
+
+  /** Generate a new webhook token, persist ONLY its hash, and return the plaintext once so the
+   * caller can show the user the webhook URL to paste into Stripe. Any previous token is invalidated. */
+  public async regenerateWebhookToken(tenantId: string, userId: string): Promise<{ token: string }> {
+    const token = 'wt_' + crypto.randomBytes(24).toString('hex');
+    // upsertMany JSON.stringifies the value, so the stored column becomes JSON.stringify(hash) —
+    // exactly what the webhook route below looks up by.
+    await this.settingsRepo.upsertMany({
+      tenant_id: tenantId,
+      user_id: userId,
+      entries: [{ key: WEBHOOK_TOKEN_KEY, value: hashToken(token) }],
+    });
+    return { token };
   }
 
   public async getPersonDonationsList(tenantId: string, personId: string) {
