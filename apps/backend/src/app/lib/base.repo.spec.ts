@@ -176,6 +176,27 @@ describe('BaseRepository', () => {
     expect(withCounts.rows).toHaveLength(2);
   });
 
+  it('getAllWithCounts returns the total count, not the current page size (SECURITY-REVIEW 2.3)', async () => {
+    await repo.addMany(
+      {
+        rows: [1, 2, 3].map((n) => ({
+          tenant_id: tenantId,
+          name: `PageTag${n}`,
+          deletable: true,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })),
+      },
+      ctx.trx,
+    );
+
+    // Request a single page of 2 out of 3 total rows.
+    const page = await repo.getAllWithCounts({ tenant_id: tenantId, options: { startRow: 0, endRow: 2 } }, ctx.trx);
+
+    expect(page.rows).toHaveLength(2); // page is limited...
+    expect(page.count).toBe(3); // ...but count is the true total
+  });
+
   it('should handle addOrGet conflict scenarios', async () => {
     const row1 = await repo.addOrGet(
       {

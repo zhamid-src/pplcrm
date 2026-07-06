@@ -41,7 +41,9 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
       the spoofable raw `X-Forwarded-For` header.
 - [x] **1.5** CSV formula-injection guard — shared `escapeCsvCell` in `lib/csv.ts` (used by `csv.ts` and
       `csv-stream.ts`) prefixes `'` on string cells starting with `= + - @ \t \r`; numbers/dates untouched.
-- [ ] 2.1 – 5.4 — pending.
+- [x] **2.3** `getAllWithCounts` now returns the tenant-wide total (via `count()`), not the current page
+      size — fixes server-side grid pagination for base-crud entities. Real-DB test added.
+- [ ] 2.1, 2.2, 2.4 – 5.4 — pending.
 
 ---
 

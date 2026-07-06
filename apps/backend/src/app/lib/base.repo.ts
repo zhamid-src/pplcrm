@@ -193,8 +193,17 @@ export class BaseRepository<T extends keyof Models> {
     },
     trx?: Transaction<Models>,
   ): Promise<{ rows: Record<string, any>[]; count: number }> {
-    const rows = await this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx);
-    return { rows: rows as Record<string, any>[], count: rows.length };
+    // `count` must be the total matching-rows count, NOT rows.length — getAll applies
+    // limit/offset (via startRow/endRow), so rows.length is just the current page size
+    // and would break server-side grid pagination. The base getAll filters only by
+    // tenant_id, so the tenant-wide count() is the correct total here. (Entities that
+    // add server-side filters, e.g. persons/households/companies, override this method
+    // with a count query that mirrors their WHERE clause.)
+    const [rows, count] = await Promise.all([
+      this.getAll({ tenant_id: input.tenant_id, options: input.options as QueryParams<T> }, trx),
+      this.count(input.tenant_id, trx),
+    ]);
+    return { rows: rows as Record<string, any>[], count };
   }
 
   protected selectBy<C extends ColName<T>>(
