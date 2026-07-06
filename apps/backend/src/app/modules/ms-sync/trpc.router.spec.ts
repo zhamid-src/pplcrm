@@ -39,6 +39,8 @@ function installMockDb(options: { activeJob?: unknown } = {}) {
     execute: vi.fn().mockResolvedValue(undefined),
     executeTakeFirst: vi.fn().mockImplementation(() => {
       if (lastTable === 'authusers') return Promise.resolve({ role: 'owner', verified: true });
+      // isAuthed also checks the session is still active (SECURITY-REVIEW.md 1.1).
+      if (lastTable === 'sessions') return Promise.resolve({ id: 'sess', expires_at: null });
       if (lastTable === 'background_jobs') return Promise.resolve(options.activeJob);
       return Promise.resolve(undefined);
     }),
