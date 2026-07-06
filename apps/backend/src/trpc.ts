@@ -78,6 +78,7 @@ export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
 export const router = trpc.router;
 
 import { BaseRepository } from './app/lib/base.repo';
+import { hashToken } from './app/lib/token-hash';
 
 const isAuthed = middleware(async (opts) => {
   const { ctx } = opts;
@@ -103,6 +104,27 @@ const isAuthed = middleware(async (opts) => {
   }
 
   if (!user) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+
+  // Enforce session revocation. The access token embeds the plaintext session_id;
+  // its hash must still map to an active, unexpired row in `sessions`. Deleting the
+  // session (sign-out, tenant pause/deletion, password reset, email-change confirm)
+  // therefore invalidates the access token immediately instead of leaving it usable
+  // until the ~30-minute JWT expiry.
+  const session = await BaseRepository.dbInstance
+    .selectFrom('sessions')
+    .select(['id', 'expires_at'])
+    .where('session_id', '=', hashToken(ctx.auth.session_id))
+    .where('user_id', '=', ctx.auth.user_id)
+    .where('tenant_id', '=', ctx.auth.tenant_id)
+    .where('status', '=', 'active')
+    .executeTakeFirst();
+
+  if (!session) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+  if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
   }
 
