@@ -114,6 +114,13 @@ psql -d pplcrm -v ON_ERROR_STOP=1 \
 
 echo "✅ Database created and roles provisioned (pplcrm_owner / pplcrm_app)"
 
+# Provision the dedicated, disposable test database (pplcrm_test) used by the
+# backend Vitest suite, so specs never touch the dev DB. Schema is built by the
+# Vitest globalSetup on first run; this just creates the DB + grants.
+echo "🧪 Provisioning the test database (pplcrm_test)..."
+apps/backend/scripts/setup-test-db.sh
+echo "✅ Test database provisioned (pplcrm_test) — set DB_NAME=pplcrm_test in .env.test"
+
 # Install project dependencies
 if [ -f "package.json" ]; then
   echo "📦 Installing npm dependencies..."

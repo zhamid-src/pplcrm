@@ -25,6 +25,10 @@ export default defineConfig(() => ({
     globals: true,
     passWithNoTests: true,
     environment: 'node',
+    // Runs once before any worker: guardrails the target DB, migrates it to
+    // latest, and truncates it to a clean slate. Keeps the whole suite on the
+    // disposable pplcrm_test database so specs can never touch real data.
+    globalSetup: ['./src/test-setup/global-setup.ts'],
     env: {
       DB_USER: process.env['DB_USER'] ?? '',
       DB_NAME: process.env['DB_NAME'] ?? '',
