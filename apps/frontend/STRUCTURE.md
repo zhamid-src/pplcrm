@@ -182,6 +182,7 @@ apps/
               event-view.html
               event-view.ts
               events-grid.ts
+              public-event.ts
           exports/
             ui/
               exports-page.html
@@ -322,6 +323,7 @@ apps/
             services/
               shifts-service.ts
             ui/
+              public-volunteer-list.ts
               shift-form.html
               shift-form.ts
               shift-view.html
@@ -497,6 +499,7 @@ apps/
             resolve-avatar.pipe.ts
           services/
             date-format.service.ts
+          public-pages.ts
         app.config.ts
         app.routes.ts
         app.ts
@@ -4659,6 +4662,430 @@ export class EventsGridComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/events/ui/public-event.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+
+import { apiBase, tenantQuery } from '../../../shared/public-pages';
+
+/**
+ * Which public surface this page instance serves. Event RSVPs (/e/:slug, events table) and
+ * volunteer signups (/v/:slug, volunteer_events table) share one page — same layout, same states —
+ * differing only in API paths, copy, and the tickets section. The route provides the kind via
+ * `data.kind`.
+ */
+type PublicEventKind = 'event' | 'volunteer';
+
+interface PublicEventInfo {
+  name: string;
+  description: string | null;
+  location_address: string | null;
+  start_time: string;
+  end_time: string;
+  capacity: number | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  is_private?: boolean;
+  fields: string[];
+}
+
+interface PublicTicket {
+  name: string;
+  description: string | null;
+  price_cents: number | null;
+  capacity: number | null;
+}
+
+interface FormFieldDef {
+  key: string;
+  label: string;
+  required: boolean;
+  kind: 'text' | 'email' | 'area' | 'country';
+}
+
+type PageState = 'loading' | 'open' | 'notfound' | 'thanks';
+
+const FIELD_LABELS: Record<string, string> = {
+  first_name: 'First name',
+  last_name: 'Last name',
+  mobile: 'Mobile / phone',
+  street1: 'Street address',
+  city: 'City',
+  state: 'State / province',
+  zip: 'Zip / postal code',
+  country: 'Country',
+  notes: 'Notes / message',
+};
+
+const COUNTRY_OPTIONS = [
+  { value: 'CA', label: 'Canada' },
+  { value: 'US', label: 'United States' },
+  { value: 'GB', label: 'United Kingdom' },
+  { value: 'AU', label: 'Australia' },
+] as const;
+
+/**
+ * Unauthenticated public event page served at /e/:slug (event RSVP) and /v/:slug (volunteer
+ * signup), outside the app shell — the event/volunteer sibling of the /f/:slug public form page.
+ * The tenant comes from the page's own subdomain and is passed to the API as `?t=`.
+ */
+@Component({
+  selector: 'pc-public-event',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [DatePipe, RouterLink],
+  template: `
+    <div class="flex min-h-screen items-start justify-center bg-base-200 px-4 py-10">
+      @switch (state()) {
+        @case ('loading') {
+          <span class="loading loading-spinner loading-lg mt-20 text-primary"></span>
+        }
+        @case ('open') {
+          <div class="w-full max-w-[760px]">
+            @if (kind === 'volunteer' && !event()!.is_private) {
+              <a class="link-hover link mb-4 inline-block text-sm text-primary" routerLink="/volunteer">
+                ← All volunteer events
+              </a>
+            }
+
+            <div class="rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm">
+              <div class="mb-4 flex items-center gap-2">
+                <div
+                  class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
+                >
+                  {{ orgInitials() }}
+                </div>
+                <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
+              </div>
+
+              <p class="mb-1 text-[11px] font-semibold uppercase tracking-wider text-base-content/50">
+                {{ kind === 'volunteer' ? 'Volunteer event' : 'Event' }}
+              </p>
+              <h1 class="mb-1 text-xl font-semibold text-base-content">{{ event()!.name }}</h1>
+              @if (event()!.description) {
+                <p class="mb-4 text-sm leading-relaxed text-base-content/60">{{ event()!.description }}</p>
+              }
+
+              <div class="mb-6 flex flex-col gap-2 text-sm text-base-content">
+                <div class="flex items-baseline gap-2">
+                  <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
+                    >When</span
+                  >
+                  <span>
+                    {{ event()!.start_time | date: 'EEEE, MMMM d, y' }} ·
+                    {{ event()!.start_time | date: 'shortTime' }} – {{ event()!.end_time | date: 'shortTime' }}
+                  </span>
+                </div>
+                @if (event()!.location_address) {
+                  <div class="flex items-baseline gap-2">
+                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
+                      >Where</span
+                    >
+                    <span>{{ event()!.location_address }}</span>
+                  </div>
+                }
+                @if (event()!.capacity !== null) {
+                  <div class="flex items-baseline gap-2">
+                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
+                      >Spots</span
+                    >
+                    <span class="tabular-nums">{{ remaining() }} of {{ event()!.capacity }} left</span>
+                  </div>
+                }
+                @if (event()!.contact_email || event()!.contact_phone) {
+                  <div class="flex items-baseline gap-2">
+                    <span class="w-24 shrink-0 text-xs font-medium uppercase tracking-wide text-base-content/50"
+                      >Questions</span
+                    >
+                    <span>
+                      @if (event()!.contact_email) {
+                        <a class="link-hover link text-primary" [href]="'mailto:' + event()!.contact_email">{{
+                          event()!.contact_email
+                        }}</a>
+                      }
+                      @if (event()!.contact_email && event()!.contact_phone) {
+                        ·
+                      }
+                      {{ event()!.contact_phone }}
+                    </span>
+                  </div>
+                }
+              </div>
+
+              @if (tickets().length > 0) {
+                <div class="mb-6">
+                  <h2 class="mb-2 text-sm font-semibold text-base-content">Tickets</h2>
+                  <div class="flex flex-col gap-2">
+                    @for (ticket of tickets(); track ticket.name) {
+                      <div
+                        class="flex items-center justify-between rounded-xl border border-base-300 bg-base-100 px-4 py-3"
+                      >
+                        <div>
+                          <p class="text-sm font-medium text-base-content">{{ ticket.name }}</p>
+                          @if (ticket.description) {
+                            <p class="text-xs text-base-content/60">{{ ticket.description }}</p>
+                          }
+                        </div>
+                        <span class="text-sm font-semibold tabular-nums text-primary">
+                          {{ ticket.price_cents ? '$' + (ticket.price_cents / 100).toFixed(2) : 'Free' }}
+                        </span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+
+              <div class="divider my-2"></div>
+
+              <h2 class="mb-3 text-sm font-semibold text-base-content">
+                {{ kind === 'volunteer' ? 'Sign up to volunteer' : 'RSVP for this event' }}
+              </h2>
+
+              @if (isPast()) {
+                <div class="rounded-xl border border-base-300 bg-base-200 p-4 text-sm text-base-content/70">
+                  This event has passed and registration is closed.
+                </div>
+              } @else if (isFull()) {
+                <div class="rounded-xl border border-base-300 bg-base-200 p-4 text-sm text-base-content/70">
+                  This event is at full capacity — no spots are left.
+                </div>
+              } @else {
+                <form class="flex flex-col gap-5" (submit)="$event.preventDefault(); submit()" novalidate>
+                  @for (field of formFields(); track field.key) {
+                    <div class="flex flex-col gap-2" [class.md:max-w-[380px]]="field.kind !== 'area'">
+                      <label class="text-sm font-medium text-base-content" [for]="field.key">
+                        {{ field.label }}
+                        @if (field.required) {
+                          <span class="text-base-content/50"> *</span>
+                        }
+                      </label>
+                      @switch (field.kind) {
+                        @case ('area') {
+                          <textarea
+                            [id]="field.key"
+                            class="textarea textarea-bordered min-h-[76px] w-full resize-none text-sm"
+                            [class.textarea-error]="!!errors()[field.key]"
+                            (input)="setValue(field.key, $any($event.target).value)"
+                          ></textarea>
+                        }
+                        @case ('country') {
+                          <select
+                            [id]="field.key"
+                            class="select select-bordered w-full text-sm"
+                            [class.select-error]="!!errors()[field.key]"
+                            (change)="setValue(field.key, $any($event.target).value)"
+                          >
+                            <option value="">Choose…</option>
+                            @for (opt of countryOptions; track opt.value) {
+                              <option [value]="opt.value">{{ opt.label }}</option>
+                            }
+                          </select>
+                        }
+                        @default {
+                          <input
+                            [id]="field.key"
+                            class="input input-bordered w-full text-sm"
+                            [class.input-error]="!!errors()[field.key]"
+                            [type]="field.kind === 'email' ? 'email' : 'text'"
+                            (input)="setValue(field.key, $any($event.target).value)"
+                          />
+                        }
+                      }
+                      @if (errors()[field.key]) {
+                        <span class="text-xs text-error">{{ errors()[field.key] }}</span>
+                      }
+                    </div>
+                  }
+
+                  @if (submitError()) {
+                    <p class="text-sm text-error">{{ submitError() }}</p>
+                  }
+
+                  <button class="btn btn-primary mt-1 w-full md:max-w-[380px]" [disabled]="submitting()" type="submit">
+                    @if (submitting()) {
+                      <span class="loading loading-spinner loading-sm"></span>
+                    }
+                    {{ kind === 'volunteer' ? 'Sign up to volunteer' : 'Confirm RSVP' }}
+                  </button>
+                </form>
+              }
+
+              <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+            </div>
+          </div>
+        }
+        @case ('thanks') {
+          <div
+            class="mt-20 w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm"
+          >
+            <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
+              ✓
+            </div>
+            <h1 class="mb-2 text-xl font-semibold text-base-content">
+              {{ kind === 'volunteer' ? 'You’re signed up!' : 'You’re registered!' }}
+            </h1>
+            <p class="text-sm text-base-content/60">A confirmation email with the event details is on its way.</p>
+          </div>
+        }
+        @default {
+          <div
+            class="mt-20 w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm"
+          >
+            <h1 class="mb-2 text-xl font-semibold text-base-content">Event not found</h1>
+            <p class="text-sm text-base-content/60">This event doesn’t exist or hasn’t been published yet.</p>
+          </div>
+        }
+      }
+    </div>
+  `,
+})
+export class PublicEventComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+
+  protected readonly kind: PublicEventKind = this.route.snapshot.data['kind'] === 'volunteer' ? 'volunteer' : 'event';
+  protected readonly countryOptions = COUNTRY_OPTIONS;
+
+  protected readonly state = signal<PageState>('loading');
+  protected readonly orgName = signal('Our organization');
+  protected readonly event = signal<PublicEventInfo | null>(null);
+  protected readonly tickets = signal<PublicTicket[]>([]);
+  protected readonly isPast = signal(false);
+  protected readonly isFull = signal(false);
+  protected readonly remaining = signal<number | null>(null);
+  protected readonly errors = signal<Record<string, string>>({});
+  protected readonly submitError = signal<string | null>(null);
+  protected readonly submitting = signal(false);
+
+  private readonly values = new Map<string, string>();
+
+  protected readonly orgInitials = computed(() => {
+    const parts = this.orgName().trim().split(/\s+/).slice(0, 2);
+    return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
+  });
+
+  /**
+   * The signup form's fields, from the event's legacy string[] config ("mobile:required").
+   * Email is always present and required — it is the identity key server-side.
+   */
+  protected readonly formFields = computed<FormFieldDef[]>(() => {
+    const raw = this.event()?.fields ?? [];
+    const enabled = new Map<string, boolean>();
+    for (const entry of raw) {
+      if (typeof entry !== 'string') continue;
+      const required = entry.endsWith(':required');
+      const key = required ? entry.slice(0, -':required'.length) : entry;
+      if (key && key !== 'email') enabled.set(key, required);
+    }
+
+    const fields: FormFieldDef[] = [];
+    const push = (key: string): void => {
+      if (!enabled.has(key)) return;
+      const kind: FormFieldDef['kind'] = key === 'notes' ? 'area' : key === 'country' ? 'country' : 'text';
+      fields.push({ key, label: FIELD_LABELS[key] ?? key, required: enabled.get(key) === true, kind });
+    };
+
+    push('first_name');
+    push('last_name');
+    fields.push({ key: 'email', label: 'Email address', required: true, kind: 'email' });
+    for (const key of ['mobile', 'street1', 'city', 'state', 'zip', 'country', 'notes']) {
+      push(key);
+    }
+    return fields;
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected setValue(key: string, value: string): void {
+    this.values.set(key, value);
+    if (this.errors()[key]) {
+      this.errors.update((e) => {
+        const next = { ...e };
+        delete next[key];
+        return next;
+      });
+    }
+  }
+
+  protected async submit(): Promise<void> {
+    if (this.submitting()) return;
+
+    const errors: Record<string, string> = {};
+    for (const field of this.formFields()) {
+      if (field.required && !(this.values.get(field.key) ?? '').trim()) {
+        errors[field.key] = `${field.label} is required.`;
+      }
+    }
+    if (Object.keys(errors).length > 0) {
+      this.errors.set(errors);
+      return;
+    }
+
+    this.submitting.set(true);
+    this.submitError.set(null);
+    try {
+      const payload: Record<string, string> = {};
+      for (const [key, value] of this.values.entries()) payload[key] = value;
+
+      const res = await fetch(this.submitUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        this.submitError.set(data?.error || 'Something went wrong. Please try again.');
+        return;
+      }
+      this.state.set('thanks');
+    } catch {
+      this.submitError.set('Couldn’t reach the server. Check your connection and try again.');
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  private async load(): Promise<void> {
+    const slug = this.route.snapshot.paramMap.get('slug');
+    if (!slug) {
+      this.state.set('notfound');
+      return;
+    }
+    try {
+      const res = await fetch(this.configUrl(slug));
+      if (!res.ok) {
+        this.state.set('notfound');
+        return;
+      }
+      const data = await res.json();
+      if (data?.orgName) this.orgName.set(String(data.orgName));
+      this.event.set(data.event as PublicEventInfo);
+      this.tickets.set(Array.isArray(data.tickets) ? (data.tickets as PublicTicket[]) : []);
+      this.isPast.set(!!data.isPast);
+      this.isFull.set(!!data.isFull);
+      this.remaining.set(typeof data.remaining === 'number' ? data.remaining : null);
+      this.state.set('open');
+    } catch {
+      this.state.set('notfound');
+    }
+  }
+
+  private configUrl(slug: string): string {
+    const path = this.kind === 'volunteer' ? 'api/events/v' : 'api/event-pages/e';
+    return `${apiBase()}/${path}/${encodeURIComponent(slug)}${tenantQuery()}`;
+  }
+
+  private submitUrl(): string {
+    const slug = this.route.snapshot.paramMap.get('slug') ?? '';
+    const path = this.kind === 'volunteer' ? 'api/events/signup' : 'api/event-pages/rsvp';
+    return `${apiBase()}/${path}/${encodeURIComponent(slug)}${tenantQuery()}`;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/exports/ui/exports-page.html
 
 ```html
@@ -4786,6 +5213,109 @@ export class EventsGridComponent {
     30 days.
   </div>
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/exports/ui/exports-page.ts
+
+```typescript
+import { Component, inject, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
+import { TokenService } from '../../../services/api/token-service';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import type { DataExportRecordType } from '../../../../../../../libs/common/src';
+import { environment } from '../../../../environments/environment';
+
+@Component({
+  selector: 'pc-exports-page',
+  imports: [Icon, SpinOnClickDirective],
+  templateUrl: './exports-page.html',
+})
+export class ExportsPage extends TRPCService<any> {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly jobs = signal<DataExportRecordType[]>([]);
+  protected readonly _loading = createLoadingGate();
+
+  constructor() {
+    super();
+    void this.load();
+  }
+
+  protected refresh() {
+    void this.load();
+  }
+
+  protected formatDate(dateStr: string) {
+    try {
+      return new Date(dateStr).toLocaleString();
+    } catch {
+      return '';
+    }
+  }
+
+  protected isExpired(job: DataExportRecordType): boolean {
+    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
+  }
+
+  protected async downloadJob(job: DataExportRecordType) {
+    if (this.isExpired(job)) {
+      this.alertSvc.showError('This export has expired (30+ days old).');
+      return;
+    }
+    if (job.status !== 'completed') {
+      this.alertSvc.showError('Export is not ready yet.');
+      return;
+    }
+    // Stream download via the protected REST endpoint
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
+    } catch {
+      this.alertSvc.showError('Failed to download export');
+    }
+  }
+
+  protected async deleteJob(job: DataExportRecordType) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Export',
+      message: `Are you sure you want to delete "${job.file_name}"? This will permanently delete the file from the server.`,
+      variant: 'danger',
+    });
+
+    if (!confirmed) return;
+
+    const end = this._loading.begin();
+    try {
+      await (this.api as any).exports.delete.mutate({ id: job.id });
+      this.alertSvc.showSuccess('Export deleted successfully.');
+      await this.load();
+    } catch {
+      this.alertSvc.showError('Failed to delete export. Please try again.');
+    } finally {
+      end();
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const list = await (this.api as any).exports.list.query();
+      this.jobs.set(list ?? []);
+    } catch {
+      this.alertSvc.showError('Failed to load exports. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/files/services/files.service.ts
@@ -5020,6 +5550,154 @@ export class FilesService extends AbstractAPIService<'files', any> {
   </div>
   }
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { environment } from '../../../../environments/environment';
+import { downloadWithAuthHeader } from '../../../services/api/http-download';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { FilesService } from '../services/files.service';
+
+@Component({
+  selector: 'pc-files-grid',
+  imports: [DatePipe, Icon],
+  templateUrl: './files-grid.html',
+  styles: [
+    `
+      :host {
+        display: block;
+        min-height: 100%;
+      }
+    `,
+  ],
+})
+export class FilesGrid implements OnInit {
+  private readonly filesSvc = inject(FilesService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly files = signal<any[]>([]);
+  protected readonly filteredFiles = signal<any[]>([]);
+  protected readonly isLoading = signal(false);
+  protected readonly isUploading = signal(false);
+  protected readonly searchQuery = signal('');
+
+  public ngOnInit() {
+    void this.loadFiles();
+  }
+
+  protected async onFileSelectedForUpload(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input?.files?.[0];
+    if (!file) return;
+
+    this.isUploading.set(true);
+    try {
+      await this.filesSvc.uploadFileDirectly(file);
+      this.alertSvc.showSuccess('File uploaded successfully via SAS URL');
+      await this.loadFiles();
+    } catch (err) {
+      console.error(err);
+      this.alertSvc.showError('Failed to upload file');
+    } finally {
+      this.isUploading.set(false);
+      input.value = '';
+    }
+  }
+
+  protected async loadFiles() {
+    this.isLoading.set(true);
+    try {
+      const res = await this.filesSvc.getAll();
+      this.files.set(res.rows || []);
+      this.applyFilter();
+    } catch (_err) {
+      this.alertSvc.showError('Failed to load files');
+    } finally {
+      this.isLoading.set(false);
+    }
+  }
+
+  protected onSearch(event: Event) {
+    const val = (event.target as HTMLInputElement).value;
+    this.searchQuery.set(val);
+    this.applyFilter();
+  }
+
+  private applyFilter() {
+    const q = this.searchQuery().toLowerCase().trim();
+    if (!q) {
+      this.filteredFiles.set(this.files());
+      return;
+    }
+
+    const filtered = this.files().filter(
+      (f) => f.filename?.toLowerCase().includes(q) || f.mime_type?.toLowerCase().includes(q),
+    );
+    this.filteredFiles.set(filtered);
+  }
+
+  protected formatBytes(bytes: number | null | undefined): string {
+    if (bytes == null) return '—';
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  protected getFileIcon(mime: string | null | undefined): PcIconNameType {
+    if (!mime) return 'document';
+    if (mime.includes('image')) return 'file-image';
+    if (mime.includes('pdf')) return 'file-pdf';
+    if (mime.includes('audio')) return 'file-audio';
+    if (mime.includes('video')) return 'file-video';
+    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return 'file-archive';
+    return 'document';
+  }
+
+  protected async downloadFile(file: any) {
+    try {
+      const token = this.tokenSvc.getAuthToken();
+      await downloadWithAuthHeader(
+        `${environment.apiUrl}/api/files/download/${file.id}`,
+        token,
+        file.filename || 'download',
+      );
+    } catch {
+      this.alertSvc.showError('Failed to download file');
+    }
+  }
+
+  protected async deleteFile(file: any) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Confirm Delete',
+      message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
+      variant: 'danger',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await this.filesSvc.delete(file.id);
+      this.alertSvc.showSuccess('File deleted successfully');
+      await this.loadFiles();
+    } catch (_err) {
+      this.alertSvc.showError('Failed to delete file');
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/services/donation-pages-service.ts
@@ -11613,6 +12291,158 @@ export class ShiftsService extends AbstractAPIService<'volunteer_events', Update
 }
 ```
 
+## File: apps/frontend/src/app/experiences/shifts/ui/public-volunteer-list.ts
+
+```typescript
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+
+import { apiBase, tenantQuery } from '../../../shared/public-pages';
+
+interface PublicVolunteerEvent {
+  slug: string;
+  name: string;
+  description: string | null;
+  location_address: string | null;
+  start_time: string;
+  end_time: string;
+  capacity: number | null;
+  isFull: boolean;
+  remaining: number | null;
+}
+
+type PageState = 'loading' | 'open' | 'notfound';
+
+/**
+ * Unauthenticated volunteer-events listing served at /volunteer on a tenant subdomain, outside the
+ * app shell — replaces the old server-rendered /api/events/org/<hmac> page. Each card links to the
+ * /v/:slug signup page.
+ */
+@Component({
+  selector: 'pc-public-volunteer-list',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [DatePipe],
+  template: `
+    <div class="flex min-h-screen items-start justify-center bg-base-200 px-4 py-10">
+      @switch (state()) {
+        @case ('loading') {
+          <span class="loading loading-spinner loading-lg mt-20 text-primary"></span>
+        }
+        @case ('open') {
+          <div class="w-full max-w-[760px]">
+            <div class="mb-6 flex items-center gap-2">
+              <div
+                class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
+              >
+                {{ orgInitials() }}
+              </div>
+              <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
+            </div>
+
+            <h1 class="mb-1 text-xl font-semibold text-base-content">Volunteer events</h1>
+            <p class="mb-6 text-sm text-base-content/60">
+              Join us and make a difference — pick an upcoming event below.
+            </p>
+
+            @if (events().length === 0) {
+              <div class="rounded-2xl border border-dashed border-base-300 bg-base-100 p-10 text-center">
+                <p class="text-sm text-base-content/70">No upcoming volunteer events are scheduled right now.</p>
+                <p class="mt-1 text-xs text-base-content/50">Please check back later.</p>
+              </div>
+            } @else {
+              <div class="flex flex-col gap-4">
+                @for (ev of events(); track ev.slug) {
+                  <div class="rounded-2xl border border-base-300 bg-base-100 p-6 shadow-sm">
+                    <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <div class="min-w-0">
+                        <h2 class="text-base font-semibold text-base-content">{{ ev.name }}</h2>
+                        @if (ev.description) {
+                          <p class="mt-1 line-clamp-2 text-sm text-base-content/60">{{ ev.description }}</p>
+                        }
+                        <p class="mt-2 text-sm text-base-content/70">
+                          {{ ev.start_time | date: 'EEEE, MMMM d, y' }} · {{ ev.start_time | date: 'shortTime' }} –
+                          {{ ev.end_time | date: 'shortTime' }}
+                          @if (ev.location_address) {
+                            · {{ ev.location_address }}
+                          }
+                        </p>
+                      </div>
+                      <div class="flex shrink-0 flex-col items-start gap-2 md:items-end">
+                        @if (ev.capacity === null) {
+                          <span class="badge badge-success badge-outline text-xs">Unlimited spots</span>
+                        } @else if (ev.isFull) {
+                          <span class="badge badge-outline text-xs text-base-content/60">Event full</span>
+                        } @else {
+                          <span class="badge badge-outline badge-primary text-xs tabular-nums">
+                            {{ ev.remaining }} {{ ev.remaining === 1 ? 'spot' : 'spots' }} left
+                          </span>
+                        }
+                        @if (!ev.isFull) {
+                          <button class="btn btn-primary btn-sm" type="button" (click)="open(ev.slug)">
+                            View details and sign up
+                          </button>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+
+            <p class="mt-8 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+          </div>
+        }
+        @default {
+          <div
+            class="mt-20 w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm"
+          >
+            <h1 class="mb-2 text-xl font-semibold text-base-content">Organization not found</h1>
+            <p class="text-sm text-base-content/60">Check the address and try again.</p>
+          </div>
+        }
+      }
+    </div>
+  `,
+})
+export class PublicVolunteerListComponent implements OnInit {
+  private readonly router = inject(Router);
+
+  protected readonly state = signal<PageState>('loading');
+  protected readonly orgName = signal('Our organization');
+  protected readonly events = signal<PublicVolunteerEvent[]>([]);
+
+  protected readonly orgInitials = computed(() => {
+    const parts = this.orgName().trim().split(/\s+/).slice(0, 2);
+    return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
+  });
+
+  public ngOnInit(): void {
+    void this.load();
+  }
+
+  protected open(slug: string): void {
+    void this.router.navigate(['/v', slug]);
+  }
+
+  private async load(): Promise<void> {
+    try {
+      const res = await fetch(`${apiBase()}/api/events/org${tenantQuery()}`);
+      if (!res.ok) {
+        this.state.set('notfound');
+        return;
+      }
+      const data = await res.json();
+      if (data?.orgName) this.orgName.set(String(data.orgName));
+      this.events.set(Array.isArray(data.events) ? (data.events as PublicVolunteerEvent[]) : []);
+      this.state.set('open');
+    } catch {
+      this.state.set('notfound');
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/shifts/ui/shifts-grid.ts
 
 ```typescript
@@ -14907,6 +15737,37 @@ export class EventsService extends TRPCService<'events'> {
 }
 ```
 
+## File: apps/frontend/src/app/services/api/http-download.ts
+
+```typescript
+/**
+ * Download a protected file by fetching it with an Authorization header and
+ * saving the resulting blob via a temporary object URL. Keeps the auth token
+ * out of the URL, where it would leak into browser history, proxy/server
+ * logs, and Referer headers.
+ */
+export async function downloadWithAuthHeader(url: string, token: string | null, filename: string): Promise<void> {
+  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new Error(`Download failed with status ${res.status}`);
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  // Revoke on a delay: Safari can still be streaming the blob into the
+  // download when click() returns, and revoking immediately truncates it.
+  setTimeout(() => URL.revokeObjectURL(objectUrl), OBJECT_URL_REVOKE_DELAY_MS);
+}
+
+const OBJECT_URL_REVOKE_DELAY_MS = 10_000;
+```
+
 ## File: apps/frontend/src/app/services/api/notifications-service.ts
 
 ```typescript
@@ -15165,6 +16026,53 @@ export const jsendInterceptor: HttpInterceptorFn = (req, next) => {
 
 ```typescript
 export * from '@uxcommon/components/confirm-dialog.service';
+```
+
+## File: apps/frontend/src/app/services/user.service.ts
+
+```typescript
+import { inject, Service } from '@angular/core';
+import { IAuthUser, UpdateAuthUserType } from '../../../../../libs/common/src';
+import { environment } from '../../environments/environment';
+import { AuthService } from '../auth/auth-service';
+import { TRPCService } from './api/trpc-service';
+
+@Service()
+export class UserService extends TRPCService<any> {
+  private readonly authService = inject(AuthService);
+
+  public getUsers() {
+    return this.api.users.getUsers.query() as unknown as Promise<IAuthUser[]>;
+  }
+
+  public getProfileById(id: string) {
+    return this.api.users.getProfileById.query(id);
+  }
+
+  public async updateUserProfile(id: string, data: UpdateAuthUserType) {
+    const updated = await this.api.users.updateUserProfile.mutate({ id, data });
+    // If the updated user is the current user, update our local signal
+    const current = this.authService.getUser();
+    if (current && current.id === id) {
+      this.authService.getUserSignal().set({
+        ...current,
+        ...updated,
+        first_name: (updated.first_name as string | undefined) ?? current.first_name,
+      });
+    }
+    return updated;
+  }
+
+  public resolveAvatarUrl(url: string | null | undefined): string | null {
+    if (!url) return null;
+    // Backend avatar URLs arrive pre-signed (short-lived, single-file scope),
+    // so no session token is appended — tokens in URLs leak into history/logs.
+    if (url.startsWith('/') && !url.startsWith('//')) {
+      return environment.apiUrl + url;
+    }
+    return url;
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/resize-handle.directive.ts
@@ -16458,6 +17366,59 @@ export class DateFormatService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/public-pages.ts
+
+```typescript
+import { environment } from '../../environments/environment';
+
+/**
+ * Helpers for the tenant-subdomain public page model. Every public surface (forms /f/:slug,
+ * event RSVP /e/:slug, volunteer /volunteer + /v/:slug, donations) lives on
+ * `https://<tenantSlug>.<publicBaseDomain>/<path>`; the SPA passes its own subdomain to the API as
+ * `?t=` so tenant resolution works on any host (including dev, where the Host header is enough in
+ * Chrome via `<slug>.localhost` but not guaranteed elsewhere).
+ */
+
+/** API origin without a trailing slash. */
+export function apiBase(): string {
+  return environment.apiUrl.replace(/\/$/, '');
+}
+
+/**
+ * The tenant subdomain the current page is being served on
+ * (`riverton.mydomain.com` → `riverton`), or null on the bare app host.
+ */
+export function tenantFromHost(): string | null {
+  const host = window.location.hostname.toLowerCase();
+  const base = environment.publicBaseDomain.toLowerCase();
+  if (!host || host === base) return null;
+  const suffix = `.${base}`;
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  if (!label || label.includes('.')) return null;
+  return label;
+}
+
+/** `?t=<tenant>` query suffix for public API calls made from a public page. */
+export function tenantQuery(): string {
+  const tenant = tenantFromHost();
+  return tenant ? `?t=${encodeURIComponent(tenant)}` : '';
+}
+
+/**
+ * Shareable public URL for authenticated admin UI: `https://<tenantSlug>.<base>/<path>`, falling
+ * back to the current origin when no tenant subdomain is configured (dev without wildcard DNS).
+ * `path` must not start with a slash.
+ */
+export function publicPageUrl(tenantSlug: string | null | undefined, path: string): string {
+  const base = environment.publicBaseDomain;
+  if (tenantSlug && base) {
+    return `https://${tenantSlug}.${base}/${path}`;
+  }
+  return `${window.location.origin}/${path}`;
+}
+```
+
 ## File: apps/frontend/src/app/app.ts
 
 ```typescript
@@ -16663,7 +17624,7 @@ module.exports = {
         "index": "apps/frontend/src/index.html",
         "browser": "apps/frontend/src/main.ts",
         "tsConfig": "apps/frontend/tsconfig.app.json",
-        "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/assets"],
+        "assets": ["apps/frontend/src/favicon.ico", "apps/frontend/src/favicon.svg", "apps/frontend/src/assets"],
         "styles": ["apps/frontend/src/styles.css"],
         "scripts": [],
         "polyfills": ["@angular/localize/init"]
@@ -16927,7 +17888,7 @@ export const environment = {
   production: false,
   apiUrl: 'http://localhost:3000',
   googleMapsApiKey: '',
-  publicFormsBaseDomain: 'localhost',
+  publicBaseDomain: 'localhost',
 };
 ```
 
@@ -16938,7 +17899,7 @@ export const environment = {
   production: true,
   apiUrl: 'https://example.com',
   googleMapsApiKey: '',
-  publicFormsBaseDomain: 'example.com',
+  publicBaseDomain: 'example.com',
 };
 ```
 
@@ -20662,257 +21623,6 @@ export class EmailPersonRail {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/exports/ui/exports-page.ts
-
-```typescript
-import { Component, inject, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { downloadWithAuthHeader } from '../../../services/api/http-download';
-import { TokenService } from '../../../services/api/token-service';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import type { DataExportRecordType } from '../../../../../../../libs/common/src';
-import { environment } from '../../../../environments/environment';
-
-@Component({
-  selector: 'pc-exports-page',
-  imports: [Icon, SpinOnClickDirective],
-  templateUrl: './exports-page.html',
-})
-export class ExportsPage extends TRPCService<any> {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly jobs = signal<DataExportRecordType[]>([]);
-  protected readonly _loading = createLoadingGate();
-
-  constructor() {
-    super();
-    void this.load();
-  }
-
-  protected refresh() {
-    void this.load();
-  }
-
-  protected formatDate(dateStr: string) {
-    try {
-      return new Date(dateStr).toLocaleString();
-    } catch {
-      return '';
-    }
-  }
-
-  protected isExpired(job: DataExportRecordType): boolean {
-    const EXPIRE_MS = 30 * 24 * 60 * 60 * 1000;
-    return Date.now() - new Date(job.created_at).getTime() > EXPIRE_MS;
-  }
-
-  protected async downloadJob(job: DataExportRecordType) {
-    if (this.isExpired(job)) {
-      this.alertSvc.showError('This export has expired (30+ days old).');
-      return;
-    }
-    if (job.status !== 'completed') {
-      this.alertSvc.showError('Export is not ready yet.');
-      return;
-    }
-    // Stream download via the protected REST endpoint
-    try {
-      const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(`${environment.apiUrl}/api/exports/download/${job.id}`, token, job.file_name);
-    } catch {
-      this.alertSvc.showError('Failed to download export');
-    }
-  }
-
-  protected async deleteJob(job: DataExportRecordType) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Export',
-      message: `Are you sure you want to delete "${job.file_name}"? This will permanently delete the file from the server.`,
-      variant: 'danger',
-    });
-
-    if (!confirmed) return;
-
-    const end = this._loading.begin();
-    try {
-      await (this.api as any).exports.delete.mutate({ id: job.id });
-      this.alertSvc.showSuccess('Export deleted successfully.');
-      await this.load();
-    } catch {
-      this.alertSvc.showError('Failed to delete export. Please try again.');
-    } finally {
-      end();
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const list = await (this.api as any).exports.list.query();
-      this.jobs.set(list ?? []);
-    } catch {
-      this.alertSvc.showError('Failed to load exports. Please try again.');
-    } finally {
-      end();
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, inject, OnInit, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { environment } from '../../../../environments/environment';
-import { downloadWithAuthHeader } from '../../../services/api/http-download';
-import { TokenService } from '../../../services/api/token-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FilesService } from '../services/files.service';
-
-@Component({
-  selector: 'pc-files-grid',
-  imports: [DatePipe, Icon],
-  templateUrl: './files-grid.html',
-  styles: [
-    `
-      :host {
-        display: block;
-        min-height: 100%;
-      }
-    `,
-  ],
-})
-export class FilesGrid implements OnInit {
-  private readonly filesSvc = inject(FilesService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly files = signal<any[]>([]);
-  protected readonly filteredFiles = signal<any[]>([]);
-  protected readonly isLoading = signal(false);
-  protected readonly isUploading = signal(false);
-  protected readonly searchQuery = signal('');
-
-  public ngOnInit() {
-    void this.loadFiles();
-  }
-
-  protected async onFileSelectedForUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) return;
-
-    this.isUploading.set(true);
-    try {
-      await this.filesSvc.uploadFileDirectly(file);
-      this.alertSvc.showSuccess('File uploaded successfully via SAS URL');
-      await this.loadFiles();
-    } catch (err) {
-      console.error(err);
-      this.alertSvc.showError('Failed to upload file');
-    } finally {
-      this.isUploading.set(false);
-      input.value = '';
-    }
-  }
-
-  protected async loadFiles() {
-    this.isLoading.set(true);
-    try {
-      const res = await this.filesSvc.getAll();
-      this.files.set(res.rows || []);
-      this.applyFilter();
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load files');
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  protected onSearch(event: Event) {
-    const val = (event.target as HTMLInputElement).value;
-    this.searchQuery.set(val);
-    this.applyFilter();
-  }
-
-  private applyFilter() {
-    const q = this.searchQuery().toLowerCase().trim();
-    if (!q) {
-      this.filteredFiles.set(this.files());
-      return;
-    }
-
-    const filtered = this.files().filter(
-      (f) => f.filename?.toLowerCase().includes(q) || f.mime_type?.toLowerCase().includes(q),
-    );
-    this.filteredFiles.set(filtered);
-  }
-
-  protected formatBytes(bytes: number | null | undefined): string {
-    if (bytes == null) return '—';
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  }
-
-  protected getFileIcon(mime: string | null | undefined): PcIconNameType {
-    if (!mime) return 'document';
-    if (mime.includes('image')) return 'file-image';
-    if (mime.includes('pdf')) return 'file-pdf';
-    if (mime.includes('audio')) return 'file-audio';
-    if (mime.includes('video')) return 'file-video';
-    if (mime.includes('zip') || mime.includes('tar') || mime.includes('gz')) return 'file-archive';
-    return 'document';
-  }
-
-  protected async downloadFile(file: any) {
-    try {
-      const token = this.tokenSvc.getAuthToken();
-      await downloadWithAuthHeader(
-        `${environment.apiUrl}/api/files/download/${file.id}`,
-        token,
-        file.filename || 'download',
-      );
-    } catch {
-      this.alertSvc.showError('Failed to download file');
-    }
-  }
-
-  protected async deleteFile(file: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Confirm Delete',
-      message: `Are you sure you want to permanently delete "${file.filename}"? This will clean up the database record and delete the file from cloud storage.`,
-      variant: 'danger',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-    });
-
-    if (!confirmed) return;
-
-    try {
-      await this.filesSvc.delete(file.id);
-      this.alertSvc.showSuccess('File deleted successfully');
-      await this.loadFiles();
-    } catch (_err) {
-      this.alertSvc.showError('Failed to delete file');
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/forms/services/forms-service.ts
 
 ```typescript
@@ -21652,6 +22362,7 @@ import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
 
 @Component({
   selector: 'pc-fundraising-form',
@@ -21659,6 +22370,7 @@ import { environment } from '../../../../environments/environment';
   templateUrl: './fundraising-form.html',
 })
 export class FundraisingFormComponent implements OnInit {
+  private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly formsSvc = inject(FormsService);
@@ -21674,6 +22386,8 @@ export class FundraisingFormComponent implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly isNew = signal(true);
   protected readonly formId = signal<string | null>(null);
+  // Public lookups are keyed (tenant, slug) — the UUID is internal only.
+  protected readonly formSlug = signal<string | null>(null);
 
   protected setType(type: 'donation' | 'recurring_donation') {
     this.payload.update((p) => ({ ...p, form_type: type }));
@@ -21706,9 +22420,10 @@ export class FundraisingFormComponent implements OnInit {
   protected readonly isRecurring = computed(() => this.payload().form_type === 'recurring_donation');
 
   protected readonly embedSnippet = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
+    const slug = this.formSlug();
+    if (!slug) return '';
     const apiOrigin = environment.apiUrl.replace(/\/$/, '');
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
     const recurring = this.isRecurring();
 
     const amountField = recurring
@@ -21727,7 +22442,7 @@ export class FundraisingFormComponent implements OnInit {
     const submitLabel = recurring ? 'Start Monthly Pledge' : 'Donate Now';
 
     return `<!-- PeopleCRM Embeddable Donation Form -->
-<form action="${apiOrigin}/api/forms/submit/${id}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+<form action="${apiOrigin}/api/forms/submit/${slug}?t=${encodeURIComponent(tenantSlug)}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 
   <div style="margin-bottom: 12px;">
@@ -21780,9 +22495,10 @@ export class FundraisingFormComponent implements OnInit {
   });
 
   protected readonly formUrl = computed(() => {
-    const id = this.formId();
-    if (!id) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${id}`;
+    const slug = this.formSlug();
+    if (!slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
+    return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${slug}?t=${encodeURIComponent(tenantSlug)}`;
   });
 
   public ngOnInit(): void {
@@ -21968,6 +22684,7 @@ export class FundraisingFormComponent implements OnInit {
     try {
       const record = (await this.formsSvc.getById(id)) as any;
       if (record) {
+        this.formSlug.set(record.slug ?? null);
         this.payload.set({
           name: record.name ?? '',
           description: record.description ?? '',
@@ -29015,6 +29732,192 @@ export class UserAddComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { escapeHtml } from '../../../../../../../libs/common/src';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { UserAdminService } from '../services/useradmin-service';
+
+@Component({
+  selector: 'pc-users-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Users"
+        i18n-title
+        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="true"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-users"
+        i18n-plusIcon
+        [isCellEditableOverride]="isCellEditableBind"
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: UserAdminService },
+    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
+  ],
+})
+export class UsersGridComponent {
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col: ColDef[] = [
+    {
+      field: 'email',
+      headerName: 'Email',
+      editable: true,
+      cellRenderer: (p: CellParams) => {
+        let avatarUrl = (p.data?.['avatar_url'] as string | null | undefined) ?? null;
+        const firstName = (p.data?.['first_name'] as string | undefined) ?? '';
+        const lastName = (p.data?.['last_name'] as string | undefined) ?? '';
+        const name = [firstName, lastName].filter(Boolean).join(' ') || String(p.value ?? '') || '?';
+        const emailVal = String(p.value ?? '');
+
+        let avatarHtml = '';
+        if (avatarUrl) {
+          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
+          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
+        } else {
+          const PALETTES = [
+            'bg-indigo-500/20 text-indigo-700',
+            'bg-teal-500/20 text-teal-700',
+            'bg-purple-500/20 text-purple-700',
+            'bg-rose-500/20 text-rose-700',
+            'bg-amber-500/20 text-amber-700',
+            'bg-emerald-500/20 text-emerald-700',
+            'bg-blue-500/20 text-blue-700',
+            'bg-orange-500/20 text-orange-700',
+            'bg-pink-500/20 text-pink-700',
+            'bg-cyan-500/20 text-cyan-700',
+          ];
+          let sum = 0;
+          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+          const colorClass = PALETTES[sum % PALETTES.length];
+          const parts = name.split(/\s+/);
+          const first = parts[0];
+          const last = parts[parts.length - 1];
+          const initials =
+            parts.length >= 2 && first && last
+              ? (first.charAt(0) + last.charAt(0)).toUpperCase()
+              : name.charAt(0).toUpperCase();
+          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
+            <span>${escapeHtml(initials)}</span>
+          </div>`;
+        }
+
+        return `<div class="flex items-center gap-2 py-0.5 h-full">
+          ${avatarHtml}
+          <span>${escapeHtml(emailVal)}</span>
+        </div>`;
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true },
+    {
+      field: 'role',
+      headerName: 'Role',
+      editable: true,
+      cellEditorParams: () => {
+        const currentUserRole = this.auth.getUser()?.role;
+        const values = [];
+        if (currentUserRole !== 'admin') {
+          values.push({ value: 'owner', label: 'Owner' });
+        }
+        values.push({ value: 'admin', label: 'Admin' });
+        values.push({ value: 'user', label: 'User' });
+        values.push({ value: 'viewer', label: 'Viewer' });
+        return { values };
+      },
+      valueFormatter: (p: CellParams) => {
+        const val = p.value ?? p.data?.['role'];
+        if (val === 'owner') return 'Owner';
+        if (val === 'admin') return 'Admin';
+        if (val === 'user') return 'User';
+        if (val === 'viewer') return 'Viewer';
+        return (val as string | undefined) || '';
+      },
+    },
+    {
+      field: 'verified',
+      headerName: 'Verified',
+      editable: false,
+      valueFormatter: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
+      cellRenderer: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Updated',
+      hide: true,
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
+    },
+    {
+      field: 'created_at',
+      headerName: 'Created',
+      hide: true,
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['created_at']),
+    },
+  ];
+
+  public readonly isCellEditableBind = (row: GridRow, col: ColDef): boolean => {
+    if (!col.editable) return false;
+
+    const currentUserRole = this.auth.getUser()?.role;
+
+    if (currentUserRole === 'admin') {
+      if (row['role'] === 'owner') {
+        if (col.field === 'role' || col.field === 'verified') {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+
+  private coerceBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['yes', 'true', '1'].includes(normalized)) return true;
+      if (['no', 'false', '0'].includes(normalized)) return false;
+    }
+    return false;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/layout/command-palette/command-palette.html
 
 ```html
@@ -30086,37 +30989,6 @@ export class DonationsService extends TRPCService<'donations'> {
 }
 ```
 
-## File: apps/frontend/src/app/services/api/http-download.ts
-
-```typescript
-/**
- * Download a protected file by fetching it with an Authorization header and
- * saving the resulting blob via a temporary object URL. Keeps the auth token
- * out of the URL, where it would leak into browser history, proxy/server
- * logs, and Referer headers.
- */
-export async function downloadWithAuthHeader(url: string, token: string | null, filename: string): Promise<void> {
-  const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-  const res = await fetch(url, { headers });
-  if (!res.ok) {
-    throw new Error(`Download failed with status ${res.status}`);
-  }
-  const blob = await res.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = filename;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  // Revoke on a delay: Safari can still be streaming the blob into the
-  // download when click() returns, and revoking immediately truncates it.
-  setTimeout(() => URL.revokeObjectURL(objectUrl), OBJECT_URL_REVOKE_DELAY_MS);
-}
-
-const OBJECT_URL_REVOKE_DELAY_MS = 10_000;
-```
-
 ## File: apps/frontend/src/app/services/api/token-service.ts
 
 ```typescript
@@ -30173,6 +31045,173 @@ export class TokenService {
 }
 
 const PERSISTENCE_KEY = 'pc-persistence';
+```
+
+## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
+
+```typescript
+import type { Router } from '@angular/router';
+import type { TRPCLink } from '@trpc/client';
+import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
+import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
+import superjson from 'superjson';
+
+import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { environment } from '../../../environments/environment';
+import type { TokenService } from './token-service';
+
+interface JwtPayload {
+  exp?: number;
+
+  [key: string]: unknown;
+}
+
+type NextLink = (op: Operation) => ObservableLike;
+
+/* ------------------------------------------------------------------ */
+/* Local helper types                                                 */
+/* ------------------------------------------------------------------ */
+type ObservableLike<T = unknown, E = unknown> = {
+  subscribe(args: Observer<T, E>): Unsubscribable;
+};
+
+/* ------------------------------------------------------------------ */
+/* Core helpers                                                       */
+/* ------------------------------------------------------------------ */
+
+function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
+  next(op).subscribe({
+    next: (value) => observer.next(value),
+    error: (err) => observer.error(err),
+    complete: () => observer.complete(),
+  });
+}
+
+let activeRefreshPromise: Promise<string> | null = null;
+
+/**
+ * Mint a fresh access token from the HttpOnly refresh cookie (SECURITY-REVIEW.md 2.1). No token is
+ * read from JS/storage — the browser attaches the cookie because the refresh client sends
+ * credentials. Concurrent callers share one in-flight request. Rejects if the cookie is missing or
+ * the session is gone.
+ */
+function performRefresh(tokenSvc: TokenService): Promise<string> {
+  if (activeRefreshPromise) return activeRefreshPromise;
+
+  activeRefreshPromise = (async () => {
+    try {
+      const payload = await trpcRetryClient.auth.renewAuthToken.mutate();
+      tokenSvc.setAuthToken(payload.auth_token);
+      return payload.auth_token;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  })();
+
+  return activeRefreshPromise;
+}
+
+/**
+ * Attempt a silent re-auth on a cold page load: the in-memory access token is gone but the refresh
+ * cookie may still be valid. Returns the new token, or null for a genuine guest. Never throws.
+ */
+export async function silentRefresh(tokenSvc: TokenService): Promise<string | null> {
+  try {
+    return await performRefresh(tokenSvc);
+  } catch {
+    tokenSvc.clearAll();
+    return null;
+  }
+}
+
+async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
+  const authToken = tokenSvc.getAuthToken();
+  // No in-memory token → treat as guest. Startup already ran silentRefresh, so we don't re-probe the
+  // refresh endpoint on every guest request.
+  if (!authToken) return null;
+
+  // Still valid → use it. Expired → swap it for a fresh one via the refresh cookie.
+  return isTokenExpired(authToken) ? performRefresh(tokenSvc) : authToken;
+}
+
+function handleRefreshFailure(
+  err: unknown,
+  tokenSvc: TokenService,
+  router: Router,
+  observer: Observer<unknown, unknown>,
+): void {
+  tokenSvc.clearAll();
+  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
+  observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
+}
+
+function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
+  if (!token) return true;
+
+  const payload = parseJwt(token);
+  if (!payload?.exp) return true;
+
+  const now = Math.floor(Date.now() / 1000);
+  return payload.exp < now + leewaySeconds;
+}
+
+function parseJwt(token: string): JwtPayload | null {
+  try {
+    const [, payload = ''] = token.split('.');
+    // JWT payloads are base64url-encoded and unpadded; atob only accepts
+    // standard base64, so convert the alphabet and restore padding first.
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    return JSON.parse(atob(padded)) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Public TRPC link                                                   */
+/* ------------------------------------------------------------------ */
+
+export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
+  return () => {
+    return ({ op, next }: { op: Operation; next: NextLink }) =>
+      observable<unknown, unknown>((observer) => {
+        void (async () => {
+          try {
+            const authToken = await getValidAuthToken(tokenSvc);
+
+            // Guest user — just forward.
+            if (!authToken) {
+              forwardOp(op, next, observer);
+              return;
+            }
+
+            // Authenticated user — forward with (possibly refreshed) token.
+            forwardOp(op, next, observer);
+          } catch (err) {
+            handleRefreshFailure(err, tokenSvc, router, observer);
+          }
+        })();
+
+        // No teardown logic needed.
+        return;
+      });
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Dedicated client for token refreshes only                          */
+/* ------------------------------------------------------------------ */
+const trpcRetryClient = createTRPCClient<TRPCRouter>({
+  links: [
+    httpLink({
+      url: environment.apiUrl,
+      transformer: superjson,
+      // Send the HttpOnly refresh cookie with the renew call.
+      fetch: (input, init) => globalThis.fetch(input, { ...init, credentials: 'include' }),
+    }),
+  ],
+});
 ```
 
 ## File: apps/frontend/src/app/services/api/user-message.ts
@@ -30908,53 +31947,6 @@ function joinWithAnd(items: string[]): string {
   if (items.length <= 1) return items[0] ?? '';
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
-}
-```
-
-## File: apps/frontend/src/app/services/user.service.ts
-
-```typescript
-import { inject, Service } from '@angular/core';
-import { IAuthUser, UpdateAuthUserType } from '../../../../../libs/common/src';
-import { environment } from '../../environments/environment';
-import { AuthService } from '../auth/auth-service';
-import { TRPCService } from './api/trpc-service';
-
-@Service()
-export class UserService extends TRPCService<any> {
-  private readonly authService = inject(AuthService);
-
-  public getUsers() {
-    return this.api.users.getUsers.query() as unknown as Promise<IAuthUser[]>;
-  }
-
-  public getProfileById(id: string) {
-    return this.api.users.getProfileById.query(id);
-  }
-
-  public async updateUserProfile(id: string, data: UpdateAuthUserType) {
-    const updated = await this.api.users.updateUserProfile.mutate({ id, data });
-    // If the updated user is the current user, update our local signal
-    const current = this.authService.getUser();
-    if (current && current.id === id) {
-      this.authService.getUserSignal().set({
-        ...current,
-        ...updated,
-        first_name: (updated.first_name as string | undefined) ?? current.first_name,
-      });
-    }
-    return updated;
-  }
-
-  public resolveAvatarUrl(url: string | null | undefined): string | null {
-    if (!url) return null;
-    // Backend avatar URLs arrive pre-signed (short-lived, single-file scope),
-    // so no session token is appended — tokens in URLs leak into history/logs.
-    if (url.startsWith('/') && !url.startsWith('//')) {
-      return environment.apiUrl + url;
-    }
-    return url;
-  }
 }
 ```
 
@@ -32993,6 +33985,70 @@ export class UndoManager {
 }
 ```
 
+## File: apps/frontend/src/app/app.config.ts
+
+```typescript
+import type { ApplicationConfig } from '@angular/core';
+import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
+import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
+import { ENVIRONMENT } from './environment-token';
+import { RouteReuseStrategy, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { Loader } from '@googlemaps/js-api-loader';
+import { environment } from '../environments/environment';
+
+import { appRoutes } from './app.routes';
+import { AppTitleStrategy } from './services/tab-title.service';
+import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { jsendInterceptor } from './services/jsend.interceptor';
+import { GlobalErrorHandler } from './services/global-error-handler';
+
+export function initSession(authService: AuthService) {
+  return async () => {
+    await authService.init();
+  };
+}
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    { provide: ENVIRONMENT, useValue: environment },
+    provideTanStackQuery(new QueryClient()),
+    {
+      provide: Loader,
+      useFactory: () => {
+        const env = inject(ENVIRONMENT);
+        return new Loader({
+          apiKey: env.googleMapsApiKey,
+          libraries: ['places'],
+        });
+      },
+    },
+
+    {
+      provide: RouteReuseStrategy,
+      useClass: CustomRouteReuseStrategy,
+    },
+    {
+      provide: TitleStrategy,
+      useClass: AppTitleStrategy,
+    },
+    provideRouter(appRoutes, withComponentInputBinding()),
+
+    provideZonelessChangeDetection(),
+
+    provideAppInitializer(() => {
+      const initializerFn = initSession(inject(AuthService));
+      return initializerFn();
+    }),
+
+    provideHttpClient(withInterceptors([jsendInterceptor])),
+
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
+  ],
+};
+```
+
 ## File: apps/frontend/src/app/app.routes.ts
 
 ```typescript
@@ -33038,6 +34094,21 @@ export const appRoutes = [
     loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
   },
   {
+    path: 'e/:slug',
+    data: { kind: 'event' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'v/:slug',
+    data: { kind: 'volunteer' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'volunteer',
+    loadComponent: () =>
+      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
+  },
+  {
     path: 'verify-email',
     loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
   },
@@ -33074,8 +34145,9 @@ export const environment = {
   production: true,
   apiUrl: 'https://pplcrm.example.com',
   googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  // Set to your real base domain in production, e.g. 'mydomain.com' → forms at '<tenant>.mydomain.com'.
-  publicFormsBaseDomain: 'example.com',
+  // Set to your real base domain in production, e.g. 'mydomain.com' → public pages (forms, events,
+  // volunteer signups, donations) at '<tenant>.mydomain.com'.
+  publicBaseDomain: 'example.com',
 };
 ```
 
@@ -33086,8 +34158,9 @@ export const environment = {
   production: false,
   apiUrl: 'http://localhost:3000',
   googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  // Base domain tenant subdomains hang off of, for building public form URLs (`<slug>.<baseDomain>`).
-  publicFormsBaseDomain: 'localhost',
+  // Base domain tenant subdomains hang off of, for building public page URLs (`<slug>.<baseDomain>`):
+  // forms, event RSVPs, volunteer signups, donations.
+  publicBaseDomain: 'localhost',
 };
 ```
 
@@ -33101,7 +34174,8 @@ export const environment = {
     <title>People CRM for your campaigns</title>
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico?v=2" />
   </head>
 
   <body class="min-h-full grid">
@@ -35284,7 +36358,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { ActivatedRoute } from '@angular/router';
 import { FormField } from '../../../../../../../libs/common/src';
 
-import { environment } from '../../../../environments/environment';
+import { apiBase, tenantQuery } from '../../../shared/public-pages';
 
 interface PublicForm {
   id: string;
@@ -35458,9 +36532,7 @@ export class PublicFormComponent implements OnInit {
       return;
     }
     try {
-      const tenant = this.tenantFromHost();
-      const query = tenant ? `?t=${encodeURIComponent(tenant)}` : '';
-      const res = await fetch(`${this.apiBase()}/api/forms/f/${encodeURIComponent(slug)}${query}`);
+      const res = await fetch(`${apiBase()}/api/forms/f/${encodeURIComponent(slug)}${tenantQuery()}`);
       if (res.status === 404) {
         this.state.set('notfound');
         return;
@@ -35525,7 +36597,8 @@ export class PublicFormComponent implements OnInit {
       const payload: Record<string, string> = {};
       for (const [key, value] of this.values.entries()) payload[key] = value;
 
-      const res = await fetch(`${this.apiBase()}/api/forms/submit/${form.id}`, {
+      const slug = this.route.snapshot.paramMap.get('slug') ?? '';
+      const res = await fetch(`${apiBase()}/api/forms/submit/${encodeURIComponent(slug)}${tenantQuery()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(payload),
@@ -35545,22 +36618,6 @@ export class PublicFormComponent implements OnInit {
     } finally {
       this.submitting.set(false);
     }
-  }
-
-  private apiBase(): string {
-    return environment.apiUrl.replace(/\/$/, '');
-  }
-
-  /** The tenant subdomain the public page is being served on (`riverton.mydomain.com` → `riverton`). */
-  private tenantFromHost(): string | null {
-    const host = window.location.hostname.toLowerCase();
-    const base = environment.publicFormsBaseDomain.toLowerCase();
-    if (!host || host === base) return null;
-    const suffix = `.${base}`;
-    if (!host.endsWith(suffix)) return null;
-    const label = host.slice(0, -suffix.length);
-    if (!label || label.includes('.')) return null;
-    return label;
   }
 }
 ```
@@ -35829,7 +36886,11 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
             title: 'Open [Events](/events/pages) and click +',
             detail: 'Set the what, when, and where, and publish the event page.',
           },
-          { title: 'Share the page', detail: 'Registrations flow straight into the CRM as people sign up.' },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address — copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
           {
             title: 'Review turnout',
             detail: 'Registrations and attendance appear on the event — and on each person’s **Events** tab.',
@@ -35839,7 +36900,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
       {
         kind: 'p',
-        text: 'Create shifts under [Shifts](/events/shifts) with a time and a place. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
+        text: 'Create shifts under [Shifts](/events/shifts) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift — the link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
       },
       {
         kind: 'callout',
@@ -38668,6 +39729,457 @@ export class GettingStartedCard {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
+
+```typescript
+import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Component({
+  selector: 'pc-tasks-grid',
+  imports: [DataGrid, CsvImportComponent, FormsModule],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Tasks"
+        i18n-title
+        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [showArchiveIcon]="true"
+        (importCSV)="openImportDialog()"
+        plusIcon="add-task"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+    </div>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Tasks from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: TasksService },
+    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
+  ],
+})
+export class TasksGrid implements OnInit {
+  private readonly userService = inject(UserService);
+  private readonly tasksService = inject(TasksService);
+  public readonly _loading = createLoadingGate();
+  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
+
+  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
+  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
+  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
+  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  private readonly unassignedLabel = 'Not Assigned';
+
+  // Users for Assigned To (populated via AuthService on init)
+  private userIds: string[] = [];
+  private userLabels: string[] = [];
+  private usersById = new Map<string, string>();
+  private usersAvatarById = new Map<string, string | null>();
+
+  // Fields we will accept from CSV for future import support
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+
+  protected col: ColDef[] = [
+    { field: 'id', headerName: 'ID' },
+    {
+      field: 'assigned_to',
+      headerName: 'Assigned To',
+      editable: true,
+      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
+      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
+      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
+      cellEditorParams: () => ({
+        values: [null, ...this.userIds],
+        labels: [this.unassignedLabel, ...this.userLabels],
+      }),
+      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
+    },
+    { field: 'name', headerName: 'Task', editable: true },
+    {
+      field: 'status',
+      headerName: 'Status',
+      editable: true,
+      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
+      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
+      valueSetter: (p: CellParams) => this.statusValueSetter(p),
+    },
+    {
+      field: 'priority',
+      headerName: 'Priority',
+      editable: true,
+      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
+      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
+      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
+    },
+    {
+      field: 'due_at',
+      headerName: 'Due',
+      editable: true,
+      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
+      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value),
+      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
+    },
+    {
+      field: 'createdby_id',
+      headerName: 'Created By',
+      editable: false,
+      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
+      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
+      // Provide filter options using known user labels
+      cellEditorParams: () => ({ values: this.userLabels }),
+    },
+  ];
+  protected importSummary = signal<CsvImportSummary | null>(null);
+  protected importerOpen = signal(false);
+  protected isArchiveMode = signal(false);
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
+    // Load users to drive Assigned To options and name mapping
+    try {
+      const users = await this.userService.getUsers();
+      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
+      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
+      this.userIds = users.map((u) => String(u.id));
+      this.userLabels = users.map((u) => `${u.first_name}`);
+    } catch {
+      /* no op */
+    }
+  }
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      task: 'name',
+      title: 'name',
+      subject: 'name',
+      status: 'status',
+      priority: 'priority',
+      due: 'due_at',
+      duedate: 'due_at',
+      dueat: 'due_at',
+      assignedto: 'assigned_to',
+      assignee: 'assigned_to',
+      owner: 'assigned_to',
+    };
+    return map[key] || '';
+  };
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  private assignToValueSetter(p: CellParams) {
+    const val =
+      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
+        ? null
+        : String(p.newValue);
+    const data = p.data;
+    if (!data) return false;
+    if (data['assigned_to'] !== val) {
+      data['assigned_to'] = val;
+      return true;
+    }
+    return false;
+  }
+
+  private assignedToValueFormatter(p: CellParams) {
+    const v = p.value;
+    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
+    return this.usersById.get(String(v)) ?? String(v ?? '');
+  }
+
+  private assignedToValueGetter(p: CellParams) {
+    const id = p.data?.['assigned_to'] ?? p.value;
+    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
+    return String(id);
+  }
+
+  private dueAtValueSetter(p: CellParams) {
+    const val = String(p.newValue || p.value || '');
+    // ensure only YYYY-MM-DD is stored
+    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
+    const data = p.data;
+    if (!data) return false;
+    if (data['due_at'] !== dateOnly) {
+      data['due_at'] = dateOnly;
+      return true;
+    }
+    return false;
+  }
+
+  private formatDate(value: unknown) {
+    if (!value) return '';
+    const d = new Date(this.toDateOnly(value));
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString();
+  }
+
+  private isOverdue(row: GridRow | undefined): boolean {
+    if (!row) return false;
+
+    const status = String(row['status'] ?? '').toLowerCase();
+    if (status === 'done' || status === 'canceled') return false;
+
+    const due = this.toDateOnly(row['due_at']);
+    if (!due) return false;
+
+    const today = this.toDateOnly(new Date());
+    // Simple lexical compare works for YYYY-MM-DD
+    return due < today;
+  }
+
+  private normalizeChoice(value: string) {
+    return value.replace(/[_\s-]+/g, '').toLowerCase();
+  }
+
+  private parsePriorityLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.priorityOptions[idx];
+    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
+  }
+
+  private parseStatusLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.statusOptions[idx];
+    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
+  }
+
+  private priorityValueSetter(p: CellParams) {
+    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['priority'] !== v) {
+      data['priority'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private renderAssignedCell(value: unknown) {
+    const v = value == null ? '' : String(value);
+    const isUnassigned = !v || v === this.unassignedLabel;
+    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeLabel = escapeHtml(label);
+    if (isUnassigned) {
+      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
+    }
+    let avatarUrl = this.usersAvatarById.get(v);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeLabel}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
+      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
+      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
+      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeLabel}</span>
+      </div>
+    `;
+  }
+
+  private renderCreatedByCell(value: unknown) {
+    const label = value == null ? '' : String(value);
+    if (!label) {
+      return `<span class="text-base-content/30">—</span>`;
+    }
+    const resolvedName = this.usersById.get(label) ?? label;
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeName = escapeHtml(resolvedName);
+    let avatarUrl = this.usersAvatarById.get(label);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeName}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
+      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
+      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeName}</span>
+      </div>
+    `;
+  }
+
+  private renderPriorityBadge(value: unknown) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private renderStatusBadge(value: unknown) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'done'
+        ? 'badge-success'
+        : v === 'in_progress'
+          ? 'badge-info'
+          : v === 'blocked'
+            ? 'badge-error'
+            : v === 'canceled'
+              ? 'badge-neutral'
+              : 'badge-ghost';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private statusValueSetter(p: CellParams) {
+    const v = this.parseStatusLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['status'] !== v) {
+      data['status'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private toDateOnly(v: unknown): string {
+    if (!v) return '';
+    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
+    return str.length > 10 ? str.slice(0, 10) : str;
+  }
+
+  private toTitle(v: string) {
+    return v
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
+      .join(' ');
+  }
+
+  private userNameForId(id: unknown) {
+    if (id === null || id === undefined || id === '') return '';
+    const key = String(id);
+    return this.usersById.get(key) ?? '';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/users/ui/user-view.html
 
 ```html
@@ -38766,192 +40278,6 @@ export class GettingStartedCard {
   </div>
   }
 </pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { escapeHtml } from '../../../../../../../libs/common/src';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { GridRow } from '@frontend/shared/components/datagrid/types';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { UserAdminService } from '../services/useradmin-service';
-
-@Component({
-  selector: 'pc-users-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Users"
-        i18n-title
-        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="true"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-users"
-        i18n-plusIcon
-        [isCellEditableOverride]="isCellEditableBind"
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: UserAdminService },
-    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
-  ],
-})
-export class UsersGridComponent {
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col: ColDef[] = [
-    {
-      field: 'email',
-      headerName: 'Email',
-      editable: true,
-      cellRenderer: (p: CellParams) => {
-        let avatarUrl = (p.data?.['avatar_url'] as string | null | undefined) ?? null;
-        const firstName = (p.data?.['first_name'] as string | undefined) ?? '';
-        const lastName = (p.data?.['last_name'] as string | undefined) ?? '';
-        const name = [firstName, lastName].filter(Boolean).join(' ') || String(p.value ?? '') || '?';
-        const emailVal = String(p.value ?? '');
-
-        let avatarHtml = '';
-        if (avatarUrl) {
-          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
-          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
-        } else {
-          const PALETTES = [
-            'bg-indigo-500/20 text-indigo-700',
-            'bg-teal-500/20 text-teal-700',
-            'bg-purple-500/20 text-purple-700',
-            'bg-rose-500/20 text-rose-700',
-            'bg-amber-500/20 text-amber-700',
-            'bg-emerald-500/20 text-emerald-700',
-            'bg-blue-500/20 text-blue-700',
-            'bg-orange-500/20 text-orange-700',
-            'bg-pink-500/20 text-pink-700',
-            'bg-cyan-500/20 text-cyan-700',
-          ];
-          let sum = 0;
-          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-          const colorClass = PALETTES[sum % PALETTES.length];
-          const parts = name.split(/\s+/);
-          const first = parts[0];
-          const last = parts[parts.length - 1];
-          const initials =
-            parts.length >= 2 && first && last
-              ? (first.charAt(0) + last.charAt(0)).toUpperCase()
-              : name.charAt(0).toUpperCase();
-          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
-            <span>${escapeHtml(initials)}</span>
-          </div>`;
-        }
-
-        return `<div class="flex items-center gap-2 py-0.5 h-full">
-          ${avatarHtml}
-          <span>${escapeHtml(emailVal)}</span>
-        </div>`;
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    {
-      field: 'role',
-      headerName: 'Role',
-      editable: true,
-      cellEditorParams: () => {
-        const currentUserRole = this.auth.getUser()?.role;
-        const values = [];
-        if (currentUserRole !== 'admin') {
-          values.push({ value: 'owner', label: 'Owner' });
-        }
-        values.push({ value: 'admin', label: 'Admin' });
-        values.push({ value: 'user', label: 'User' });
-        values.push({ value: 'viewer', label: 'Viewer' });
-        return { values };
-      },
-      valueFormatter: (p: CellParams) => {
-        const val = p.value ?? p.data?.['role'];
-        if (val === 'owner') return 'Owner';
-        if (val === 'admin') return 'Admin';
-        if (val === 'user') return 'User';
-        if (val === 'viewer') return 'Viewer';
-        return (val as string | undefined) || '';
-      },
-    },
-    {
-      field: 'verified',
-      headerName: 'Verified',
-      editable: false,
-      valueFormatter: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
-      cellRenderer: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Updated',
-      hide: true,
-      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
-    },
-    {
-      field: 'created_at',
-      headerName: 'Created',
-      hide: true,
-      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['created_at']),
-    },
-  ];
-
-  public readonly isCellEditableBind = (row: GridRow, col: ColDef): boolean => {
-    if (!col.editable) return false;
-
-    const currentUserRole = this.auth.getUser()?.role;
-
-    if (currentUserRole === 'admin') {
-      if (row['role'] === 'owner') {
-        if (col.field === 'role' || col.field === 'verified') {
-          return false;
-        }
-      }
-    }
-
-    return true;
-  };
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-
-  private coerceBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['yes', 'true', '1'].includes(normalized)) return true;
-      if (['no', 'false', '0'].includes(normalized)) return false;
-    }
-    return false;
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.ts
@@ -39658,173 +40984,6 @@ export class Dashboard {
     this.shortcuts.handleKeydown(event);
   }
 }
-```
-
-## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
-
-```typescript
-import type { Router } from '@angular/router';
-import type { TRPCLink } from '@trpc/client';
-import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
-import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
-import superjson from 'superjson';
-
-import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-import { environment } from '../../../environments/environment';
-import type { TokenService } from './token-service';
-
-interface JwtPayload {
-  exp?: number;
-
-  [key: string]: unknown;
-}
-
-type NextLink = (op: Operation) => ObservableLike;
-
-/* ------------------------------------------------------------------ */
-/* Local helper types                                                 */
-/* ------------------------------------------------------------------ */
-type ObservableLike<T = unknown, E = unknown> = {
-  subscribe(args: Observer<T, E>): Unsubscribable;
-};
-
-/* ------------------------------------------------------------------ */
-/* Core helpers                                                       */
-/* ------------------------------------------------------------------ */
-
-function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
-  next(op).subscribe({
-    next: (value) => observer.next(value),
-    error: (err) => observer.error(err),
-    complete: () => observer.complete(),
-  });
-}
-
-let activeRefreshPromise: Promise<string> | null = null;
-
-/**
- * Mint a fresh access token from the HttpOnly refresh cookie (SECURITY-REVIEW.md 2.1). No token is
- * read from JS/storage — the browser attaches the cookie because the refresh client sends
- * credentials. Concurrent callers share one in-flight request. Rejects if the cookie is missing or
- * the session is gone.
- */
-function performRefresh(tokenSvc: TokenService): Promise<string> {
-  if (activeRefreshPromise) return activeRefreshPromise;
-
-  activeRefreshPromise = (async () => {
-    try {
-      const payload = await trpcRetryClient.auth.renewAuthToken.mutate();
-      tokenSvc.setAuthToken(payload.auth_token);
-      return payload.auth_token;
-    } finally {
-      activeRefreshPromise = null;
-    }
-  })();
-
-  return activeRefreshPromise;
-}
-
-/**
- * Attempt a silent re-auth on a cold page load: the in-memory access token is gone but the refresh
- * cookie may still be valid. Returns the new token, or null for a genuine guest. Never throws.
- */
-export async function silentRefresh(tokenSvc: TokenService): Promise<string | null> {
-  try {
-    return await performRefresh(tokenSvc);
-  } catch {
-    tokenSvc.clearAll();
-    return null;
-  }
-}
-
-async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
-  const authToken = tokenSvc.getAuthToken();
-  // No in-memory token → treat as guest. Startup already ran silentRefresh, so we don't re-probe the
-  // refresh endpoint on every guest request.
-  if (!authToken) return null;
-
-  // Still valid → use it. Expired → swap it for a fresh one via the refresh cookie.
-  return isTokenExpired(authToken) ? performRefresh(tokenSvc) : authToken;
-}
-
-function handleRefreshFailure(
-  err: unknown,
-  tokenSvc: TokenService,
-  router: Router,
-  observer: Observer<unknown, unknown>,
-): void {
-  tokenSvc.clearAll();
-  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
-  observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
-}
-
-function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
-  if (!token) return true;
-
-  const payload = parseJwt(token);
-  if (!payload?.exp) return true;
-
-  const now = Math.floor(Date.now() / 1000);
-  return payload.exp < now + leewaySeconds;
-}
-
-function parseJwt(token: string): JwtPayload | null {
-  try {
-    const [, payload = ''] = token.split('.');
-    // JWT payloads are base64url-encoded and unpadded; atob only accepts
-    // standard base64, so convert the alphabet and restore padding first.
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-    return JSON.parse(atob(padded)) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Public TRPC link                                                   */
-/* ------------------------------------------------------------------ */
-
-export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
-  return () => {
-    return ({ op, next }: { op: Operation; next: NextLink }) =>
-      observable<unknown, unknown>((observer) => {
-        void (async () => {
-          try {
-            const authToken = await getValidAuthToken(tokenSvc);
-
-            // Guest user — just forward.
-            if (!authToken) {
-              forwardOp(op, next, observer);
-              return;
-            }
-
-            // Authenticated user — forward with (possibly refreshed) token.
-            forwardOp(op, next, observer);
-          } catch (err) {
-            handleRefreshFailure(err, tokenSvc, router, observer);
-          }
-        })();
-
-        // No teardown logic needed.
-        return;
-      });
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* Dedicated client for token refreshes only                          */
-/* ------------------------------------------------------------------ */
-const trpcRetryClient = createTRPCClient<TRPCRouter>({
-  links: [
-    httpLink({
-      url: environment.apiUrl,
-      transformer: superjson,
-      // Send the HttpOnly refresh cookie with the renew call.
-      fetch: (input, init) => globalThis.fetch(input, { ...init, credentials: 'include' }),
-    }),
-  ],
-});
 ```
 
 ## File: apps/frontend/src/app/services/command-palette.service.ts
@@ -40777,70 +41936,6 @@ export interface ColumnDef {
 type CellRendererResult = string | HTMLElement;
 
 export const SELECTION_COLUMN: ColumnDef = {};
-```
-
-## File: apps/frontend/src/app/app.config.ts
-
-```typescript
-import type { ApplicationConfig } from '@angular/core';
-import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
-import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
-import { ENVIRONMENT } from './environment-token';
-import { RouteReuseStrategy, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { Loader } from '@googlemaps/js-api-loader';
-import { environment } from '../environments/environment';
-
-import { appRoutes } from './app.routes';
-import { AppTitleStrategy } from './services/tab-title.service';
-import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { jsendInterceptor } from './services/jsend.interceptor';
-import { GlobalErrorHandler } from './services/global-error-handler';
-
-export function initSession(authService: AuthService) {
-  return async () => {
-    await authService.init();
-  };
-}
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    { provide: ENVIRONMENT, useValue: environment },
-    provideTanStackQuery(new QueryClient()),
-    {
-      provide: Loader,
-      useFactory: () => {
-        const env = inject(ENVIRONMENT);
-        return new Loader({
-          apiKey: env.googleMapsApiKey,
-          libraries: ['places'],
-        });
-      },
-    },
-
-    {
-      provide: RouteReuseStrategy,
-      useClass: CustomRouteReuseStrategy,
-    },
-    {
-      provide: TitleStrategy,
-      useClass: AppTitleStrategy,
-    },
-    provideRouter(appRoutes, withComponentInputBinding()),
-
-    provideZonelessChangeDetection(),
-
-    provideAppInitializer(() => {
-      const initializerFn = initSession(inject(AuthService));
-      return initializerFn();
-    }),
-
-    provideHttpClient(withInterceptors([jsendInterceptor])),
-
-    { provide: ErrorHandler, useClass: GlobalErrorHandler },
-  ],
-};
 ```
 
 ## File: apps/frontend/src/app/auth/auth-service.ts
@@ -42495,7 +43590,8 @@ import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
 import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 
 import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
 import { EventsService } from '../../../services/api/events-service';
@@ -42525,6 +43621,7 @@ export class EventFormComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
   private readonly eventsSvc = inject(EventsService);
   private readonly router = inject(Router);
@@ -42536,7 +43633,7 @@ export class EventFormComponent implements OnInit {
   protected readonly publicUrl = computed(() => {
     const slug = this.payload().slug;
     if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `e/${slug}`);
   });
   protected readonly detail = signal<any>(null);
 
@@ -42875,6 +43972,7 @@ import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-s
 import { FormRenderComponent } from './form-render';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
+import { publicPageUrl } from '../../../shared/public-pages';
 
 interface TemplateOption {
   type: FormType;
@@ -42948,13 +44046,7 @@ export class FormsPageComponent implements OnInit {
   protected readonly publicUrl = computed(() => {
     const form = this.selected();
     if (!form?.slug) return '';
-    const tenantSlug = this.auth.getUser()?.tenant_slug;
-    const base = environment.publicFormsBaseDomain;
-    if (tenantSlug && base) {
-      return `https://${tenantSlug}.${base}/f/${form.slug}`;
-    }
-    // Dev fallback when no tenant subdomain is configured — current origin.
-    return `${this.appOrigin()}/f/${form.slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `f/${form.slug}`);
   });
 
   private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
@@ -43305,7 +44397,8 @@ export class FormsPageComponent implements OnInit {
   private rawHtmlSnippet(): string {
     const form = this.selected();
     if (!form) return '';
-    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.id}`;
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
+    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.slug}?t=${encodeURIComponent(tenantSlug)}`;
     const lines: string[] = [`<form action="${action}" method="POST">`];
     for (const field of form.fields.filter((f) => f.on)) {
       const req = field.required ? ' required' : '';
@@ -43398,11 +44491,6 @@ export class FormsPageComponent implements OnInit {
 
   private replaceForm(updated: FormDetail): void {
     this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
-  }
-
-  private appOrigin(): string {
-    if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
-    return environment.apiUrl.replace(/\/$/, '');
   }
 
   private templateLabel(type: FormType): string {
@@ -45604,7 +46692,7 @@ export class ListsGridComponent implements OnDestroy {
               [hasError]="slugUnique() === false"
               (input)="onSlugInput()"
             >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/api/events/view/</span>
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/v/</span>
             </pc-input>
             @if (slugChecking()) {
             <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
@@ -45830,7 +46918,7 @@ export class ListsGridComponent implements OnDestroy {
 
       <!-- Right 1 col: Timing, Capacity, Actions -->
       <div class="space-y-6">
-        @if (!isNew() && detail()?.public_url) {
+        @if (!isNew() && publicUrl()) {
         <pc-card
           title="Public Signup Link"
           subtitle="Constituents can use this URL to view the event and sign up for this shift."
@@ -45842,13 +46930,13 @@ export class ListsGridComponent implements OnDestroy {
               readonly
               type="text"
               class="input input-bordered input-sm flex-1 font-mono text-xs"
-              [value]="environment.apiUrl + detail()?.public_url"
+              [value]="publicUrl()"
             />
             <button
               type="button"
               class="btn btn-primary btn-sm btn-square"
               title="Copy Link"
-              (click)="copyToClipboard(environment.apiUrl + detail()?.public_url)"
+              (click)="copyToClipboard(publicUrl())"
             >
               <pc-icon name="document-duplicate" [size]="5"></pc-icon>
             </button>
@@ -45861,13 +46949,9 @@ export class ListsGridComponent implements OnDestroy {
           </div>
           } @else {
           <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
-            <span>Public Dashboard Link:</span>
-            <a
-              [href]="environment.apiUrl + detail()?.tenant_public_url"
-              target="_blank"
-              class="link link-primary font-mono text-[10px] break-all"
-            >
-              {{ environment.apiUrl + detail()?.tenant_public_url }}
+            <span>All volunteer events page:</span>
+            <a [href]="volunteerListUrl()" target="_blank" class="link link-primary font-mono text-[10px] break-all">
+              {{ volunteerListUrl() }}
             </a>
           </div>
           }
@@ -46025,7 +47109,8 @@ import {
   AddVolunteerEventType,
   UpdateVolunteerEventType,
 } from '../../../../../../../libs/common/src';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
@@ -46054,6 +47139,7 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 export class ShiftFormComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly personsSvc = inject(PersonsService);
   private readonly router = inject(Router);
@@ -46066,7 +47152,7 @@ export class ShiftFormComponent implements OnInit {
   protected readonly publicUrl = computed(() => {
     const slug = this.payload().slug;
     if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/events/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `v/${slug}`);
   });
 
   protected readonly allVolunteers = signal<any[]>([]);
@@ -46105,7 +47191,7 @@ export class ShiftFormComponent implements OnInit {
     if (!start_time || !end_time) return false;
     return new Date(end_time) <= new Date(start_time);
   });
-  protected readonly environment = environment;
+  protected readonly volunteerListUrl = computed(() => publicPageUrl(this.auth.getUser()?.tenant_slug, 'volunteer'));
   protected readonly error = signal<string | null>(null);
   protected readonly eventPassed = computed(() => {
     const end = this.payload().end_time;
@@ -46273,7 +47359,7 @@ export class ShiftFormComponent implements OnInit {
     }
 
     try {
-      const event = await this.volunteerEventsSvc.getById(this.id()!);
+      const event = (await this.volunteerEventsSvc.getById(this.id()!)) as any;
       this.detail.set(event);
       this.payload.set({
         name: event.name ?? '',
@@ -46545,7 +47631,7 @@ export class ShiftFormComponent implements OnInit {
       </pc-profile-card>
 
       <!-- Public Signup Link Card -->
-      @if (event().public_url) {
+      @if (publicUrl()) {
       <pc-card title="Public Signup Link" icon="globe-americas">
         <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
           <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy
@@ -47520,457 +48606,6 @@ export class Summary implements OnInit {
       this.isLoadingTasks.set(false);
     }
   }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
-
-```typescript
-import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { GridRow } from '@frontend/shared/components/datagrid/types';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Component({
-  selector: 'pc-tasks-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Tasks"
-        i18n-title
-        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [showArchiveIcon]="true"
-        (importCSV)="openImportDialog()"
-        plusIcon="add-task"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Tasks from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    />
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: TasksService },
-    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
-  ],
-})
-export class TasksGrid implements OnInit {
-  private readonly userService = inject(UserService);
-  private readonly tasksService = inject(TasksService);
-  public readonly _loading = createLoadingGate();
-  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
-
-  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
-  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
-  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
-  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-
-  private readonly unassignedLabel = 'Not Assigned';
-
-  // Users for Assigned To (populated via AuthService on init)
-  private userIds: string[] = [];
-  private userLabels: string[] = [];
-  private usersById = new Map<string, string>();
-  private usersAvatarById = new Map<string, string | null>();
-
-  // Fields we will accept from CSV for future import support
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
-
-  protected col: ColDef[] = [
-    { field: 'id', headerName: 'ID' },
-    {
-      field: 'assigned_to',
-      headerName: 'Assigned To',
-      editable: true,
-      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
-      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
-      cellEditorParams: () => ({
-        values: [null, ...this.userIds],
-        labels: [this.unassignedLabel, ...this.userLabels],
-      }),
-      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
-    },
-    { field: 'name', headerName: 'Task', editable: true },
-    {
-      field: 'status',
-      headerName: 'Status',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
-      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
-      valueSetter: (p: CellParams) => this.statusValueSetter(p),
-    },
-    {
-      field: 'priority',
-      headerName: 'Priority',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
-      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
-      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
-    },
-    {
-      field: 'due_at',
-      headerName: 'Due',
-      editable: true,
-      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
-      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
-      valueFormatter: (p: CellParams) => this.formatDate(p.value),
-      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
-    },
-    {
-      field: 'createdby_id',
-      headerName: 'Created By',
-      editable: false,
-      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
-      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
-      // Provide filter options using known user labels
-      cellEditorParams: () => ({ values: this.userLabels }),
-    },
-  ];
-  protected importSummary = signal<CsvImportSummary | null>(null);
-  protected importerOpen = signal(false);
-  protected isArchiveMode = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    // Load users to drive Assigned To options and name mapping
-    try {
-      const users = await this.userService.getUsers();
-      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
-      this.userIds = users.map((u) => String(u.id));
-      this.userLabels = users.map((u) => `${u.first_name}`);
-    } catch {
-      /* no op */
-    }
-  }
-
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      task: 'name',
-      title: 'name',
-      subject: 'name',
-      status: 'status',
-      priority: 'priority',
-      due: 'due_at',
-      duedate: 'due_at',
-      dueat: 'due_at',
-      assignedto: 'assigned_to',
-      assignee: 'assigned_to',
-      owner: 'assigned_to',
-    };
-    return map[key] || '';
-  };
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  private assignToValueSetter(p: CellParams) {
-    const val =
-      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
-        ? null
-        : String(p.newValue);
-    const data = p.data;
-    if (!data) return false;
-    if (data['assigned_to'] !== val) {
-      data['assigned_to'] = val;
-      return true;
-    }
-    return false;
-  }
-
-  private assignedToValueFormatter(p: CellParams) {
-    const v = p.value;
-    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
-    return this.usersById.get(String(v)) ?? String(v ?? '');
-  }
-
-  private assignedToValueGetter(p: CellParams) {
-    const id = p.data?.['assigned_to'] ?? p.value;
-    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
-    return String(id);
-  }
-
-  private dueAtValueSetter(p: CellParams) {
-    const val = String(p.newValue || p.value || '');
-    // ensure only YYYY-MM-DD is stored
-    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    const data = p.data;
-    if (!data) return false;
-    if (data['due_at'] !== dateOnly) {
-      data['due_at'] = dateOnly;
-      return true;
-    }
-    return false;
-  }
-
-  private formatDate(value: unknown) {
-    if (!value) return '';
-    const d = new Date(this.toDateOnly(value));
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString();
-  }
-
-  private isOverdue(row: GridRow | undefined): boolean {
-    if (!row) return false;
-
-    const status = String(row['status'] ?? '').toLowerCase();
-    if (status === 'done' || status === 'canceled') return false;
-
-    const due = this.toDateOnly(row['due_at']);
-    if (!due) return false;
-
-    const today = this.toDateOnly(new Date());
-    // Simple lexical compare works for YYYY-MM-DD
-    return due < today;
-  }
-
-  private normalizeChoice(value: string) {
-    return value.replace(/[_\s-]+/g, '').toLowerCase();
-  }
-
-  private parsePriorityLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.priorityOptions[idx];
-    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
-  }
-
-  private parseStatusLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.statusOptions[idx];
-    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
-  }
-
-  private priorityValueSetter(p: CellParams) {
-    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['priority'] !== v) {
-      data['priority'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private renderAssignedCell(value: unknown) {
-    const v = value == null ? '' : String(value);
-    const isUnassigned = !v || v === this.unassignedLabel;
-    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeLabel = escapeHtml(label);
-    if (isUnassigned) {
-      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
-    }
-    let avatarUrl = this.usersAvatarById.get(v);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeLabel}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeLabel}</span>
-      </div>
-    `;
-  }
-
-  private renderCreatedByCell(value: unknown) {
-    const label = value == null ? '' : String(value);
-    if (!label) {
-      return `<span class="text-base-content/30">—</span>`;
-    }
-    const resolvedName = this.usersById.get(label) ?? label;
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeName = escapeHtml(resolvedName);
-    let avatarUrl = this.usersAvatarById.get(label);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeName}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeName}</span>
-      </div>
-    `;
-  }
-
-  private renderPriorityBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private renderStatusBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'done'
-        ? 'badge-success'
-        : v === 'in_progress'
-          ? 'badge-info'
-          : v === 'blocked'
-            ? 'badge-error'
-            : v === 'canceled'
-              ? 'badge-neutral'
-              : 'badge-ghost';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private statusValueSetter(p: CellParams) {
-    const v = this.parseStatusLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['status'] !== v) {
-      data['status'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private toDateOnly(v: unknown): string {
-    if (!v) return '';
-    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
-    return str.length > 10 ? str.slice(0, 10) : str;
-  }
-
-  private toTitle(v: string) {
-    return v
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
-      .join(' ');
-  }
-
-  private userNameForId(id: unknown) {
-    if (id === null || id === undefined || id === '') return '';
-    const key = String(id);
-    return this.usersById.get(key) ?? '';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -49507,6 +50142,162 @@ export class FavouriteToggle {
 }
 ```
 
+## File: apps/frontend/src/app/services/api/trpc-service.ts
+
+```typescript
+import { inject, Service } from '@angular/core';
+import { Router } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
+import { ErrorService } from '../error.service';
+import {
+  TRPCClient,
+  TRPCClientError,
+  TRPCLink,
+  createTRPCClient,
+  httpLink as trpcHttpLink,
+  loggerLink,
+} from '@trpc/client';
+import { observable } from '@trpc/server/observable';
+import superjson from 'superjson';
+
+import { get, set } from 'idb-keyval';
+
+import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { environment } from '../../../environments/environment';
+import { TokenService } from './token-service';
+import { refreshLink } from './trpc-refreshlink';
+import { ApiError } from './api-error';
+
+@Service()
+export class TRPCService<T> {
+  protected readonly errorSvc = inject(ErrorService);
+
+  protected readonly router = inject(Router);
+
+  protected readonly tokenService = inject(TokenService);
+
+  protected ac = new AbortController();
+
+  public readonly api: TRPCClient<TRPCRouter>;
+
+  constructor() {
+    this.api = createTRPCClient<TRPCRouter>({
+      links: [
+        loggerLink(),
+        refreshLink(this.tokenService, this.router),
+        errorLink(this.errorSvc),
+        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
+      ],
+    });
+  }
+
+  public abort() {
+    this.ac.abort();
+    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
+  }
+
+  protected async runCachedCall(
+    apiCall: Promise<Partial<T>[]>,
+    apiName: string,
+    options: getAllOptionsType,
+    refresh: boolean,
+  ) {
+    // Use the full serialized (apiName + options) as the IndexedDB key. IDB string
+    // keys can be arbitrarily long, so there's no need to fold it into a 32-bit hash
+    // — that hash collided, letting one query serve another query's cached rows.
+    const cacheKey = `trpc:${JSON.stringify({ apiName, ...options })}`;
+    const payload = await get(cacheKey);
+    let data = payload?.expires > Date.now() ? payload.data : null;
+
+    if (refresh || !data || data.length === 0) {
+      data = await apiCall;
+      await set(cacheKey, { expires: this.addDays(1), data });
+    }
+
+    return data;
+  }
+
+  private addDays(days: number) {
+    const date = new Date(Date.now());
+    date.setDate(date.getDate() + days);
+    return date;
+  }
+}
+
+function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
+  const GENERIC_INPUT_MSG = 'Please check your input and try again';
+
+  return () =>
+    ({ next, op }) =>
+      observable((observer) => {
+        const unsubscribe = next(op).subscribe({
+          next: (value) => observer.next(value),
+          error: (err) => {
+            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
+            let finalErr: any = err;
+
+            if (err instanceof TRPCClientError) {
+              const code = err.data?.code as string | undefined;
+              const path = op.path ?? '';
+              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
+
+              let msg = err.message;
+              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+                // Server formatter should already do this; this is just a client fallback
+                msg = GENERIC_SIGNIN_ERROR;
+              } else if (code === 'BAD_REQUEST') {
+                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
+                if (isValidationError) {
+                  msg = GENERIC_INPUT_MSG;
+                }
+              }
+              finalErr = new ApiError(msg, err);
+            }
+
+            // Aborted requests (component teardown, superseded loads) are not
+            // user-facing failures — never toast them.
+            if (!meta?.skipErrorHandler && !isAbortError(err)) {
+              errorSvc.handle(finalErr);
+            }
+
+            observer.error(finalErr);
+          },
+          complete: () => observer.complete(),
+        });
+        return unsubscribe;
+      });
+}
+
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof TRPCClientError) {
+    const cause: unknown = err.cause;
+    return cause instanceof DOMException && cause.name === 'AbortError';
+  }
+  return false;
+}
+
+function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
+  return trpcHttpLink({
+    url: environment.apiUrl,
+    transformer: superjson,
+    // Combine the per-request signal tRPC provides with the service-level
+    // controller so TRPCService.abort() actually cancels in-flight requests.
+    // `credentials: 'include'` is required so the browser honors Set-Cookie on the
+    // sign-in/out responses and attaches the HttpOnly refresh cookie (SECURITY-REVIEW 2.1).
+    fetch(input, init) {
+      const signals: AbortSignal[] = [getAbortSignal()];
+      if (init?.signal) signals.push(init.signal);
+      return globalThis.fetch(input, { ...init, credentials: 'include', signal: AbortSignal.any(signals) });
+    },
+    headers() {
+      const authToken = tokenSvc.getAuthToken();
+      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+    },
+  });
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/types.ts
 
 ```typescript
@@ -49562,192 +50353,6 @@ export interface GridHost {
   startIndex(): number;
   endIndex(): number;
   triggerCellFlash(rowId: string, field: string): void;
-}
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
-
-```typescript
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInCompany } from './people-in-company';
-import { CompaniesService } from '../services/companies-service';
-import { UserService } from '../../../services/user.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-@Component({
-  selector: 'pc-company-view',
-  imports: [
-    RouterModule,
-    PeopleInCompany,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-  ],
-  templateUrl: './company-view.html',
-})
-export class CompanyView {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('company', this.id);
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly company = signal<any | null>(null);
-  protected readonly employeeCount = signal(0);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Companies', route: '/companies' },
-    { label: this.company()?.name || 'Company' },
-  ]);
-
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly companyTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
-  ]);
-
-  protected readonly initials = computed(() => {
-    const name = this.company()?.name || '';
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w: string) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly isEnriched = computed(() => {
-    const rawEnrichment = this.company()?.enrichment;
-    if (!rawEnrichment) return false;
-
-    let enrichment = null;
-
-    try {
-      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
-    } catch {
-      return false;
-    }
-    return !!enrichment.google_enriched;
-  });
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load company details (triggers Google enrichment job on backend)
-      const data = await this.companiesSvc.getById(id);
-      this.company.set(data);
-
-      // 2. Load employee count via dedicated count endpoint (no row data fetched)
-      const count = await this.personsSvc.countByCompanyId(id);
-      this.employeeCount.set(count);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editCompany() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id());
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -50361,7 +50966,8 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { EventsFrontendService } from '../services/events-frontend-service';
 import { EventsService } from '../../../services/api/events-service';
 import { PersonsService } from '../../persons/services/persons-service';
@@ -50393,6 +50999,7 @@ export class EventViewComponent {
   protected readonly recordNav = injectRecordNavigation('event', this.id);
 
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
   private readonly eventsSvc = inject(EventsService);
   private readonly personsSvc = inject(PersonsService);
@@ -50445,7 +51052,7 @@ export class EventViewComponent {
   protected readonly publicUrl = computed(() => {
     const slug = this.event()?.slug;
     if (!slug) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `e/${slug}`);
   });
 
   protected readonly remainingCapacity = computed(() => {
@@ -50891,6 +51498,8 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
@@ -50913,6 +51522,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
 })
 export class FormViewComponent {
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
@@ -51026,7 +51636,7 @@ export class FormViewComponent {
     const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
 
     return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+<form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 ${
   fields.includes('first_name') || isAnyDonation
@@ -51066,8 +51676,15 @@ ${
   });
 
   protected readonly formUrl = computed(() => {
-    if (!this.id()) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
+    const record = this.formRecord();
+    if (!record?.slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug;
+    // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
+    // /f/:slug SPA page on the tenant subdomain.
+    if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
+      return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${record.slug}?t=${encodeURIComponent(tenantSlug ?? '')}`;
+    }
+    return publicPageUrl(tenantSlug, `f/${record.slug}`);
   });
 
   constructor() {
@@ -52017,7 +52634,8 @@ import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { ShiftsService } from '../services/shifts-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
@@ -52056,6 +52674,7 @@ export class ShiftViewComponent {
   protected readonly recordNav = injectRecordNavigation('shift', this.id);
 
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
@@ -52096,9 +52715,9 @@ export class ShiftViewComponent {
   });
 
   protected readonly publicUrl = computed(() => {
-    const detail = this.event();
-    if (!detail || !detail.public_url) return '';
-    return environment.apiUrl + detail.public_url;
+    const slug = this.event()?.slug;
+    if (!slug) return '';
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `v/${slug}`);
   });
 
   constructor() {
@@ -52406,162 +53025,6 @@ export class TeamViewComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/services/api/trpc-service.ts
-
-```typescript
-import { inject, Service } from '@angular/core';
-import { Router } from '@angular/router';
-import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
-import { ErrorService } from '../error.service';
-import {
-  TRPCClient,
-  TRPCClientError,
-  TRPCLink,
-  createTRPCClient,
-  httpLink as trpcHttpLink,
-  loggerLink,
-} from '@trpc/client';
-import { observable } from '@trpc/server/observable';
-import superjson from 'superjson';
-
-import { get, set } from 'idb-keyval';
-
-import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-import { environment } from '../../../environments/environment';
-import { TokenService } from './token-service';
-import { refreshLink } from './trpc-refreshlink';
-import { ApiError } from './api-error';
-
-@Service()
-export class TRPCService<T> {
-  protected readonly errorSvc = inject(ErrorService);
-
-  protected readonly router = inject(Router);
-
-  protected readonly tokenService = inject(TokenService);
-
-  protected ac = new AbortController();
-
-  public readonly api: TRPCClient<TRPCRouter>;
-
-  constructor() {
-    this.api = createTRPCClient<TRPCRouter>({
-      links: [
-        loggerLink(),
-        refreshLink(this.tokenService, this.router),
-        errorLink(this.errorSvc),
-        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
-      ],
-    });
-  }
-
-  public abort() {
-    this.ac.abort();
-    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
-  }
-
-  protected async runCachedCall(
-    apiCall: Promise<Partial<T>[]>,
-    apiName: string,
-    options: getAllOptionsType,
-    refresh: boolean,
-  ) {
-    // Use the full serialized (apiName + options) as the IndexedDB key. IDB string
-    // keys can be arbitrarily long, so there's no need to fold it into a 32-bit hash
-    // — that hash collided, letting one query serve another query's cached rows.
-    const cacheKey = `trpc:${JSON.stringify({ apiName, ...options })}`;
-    const payload = await get(cacheKey);
-    let data = payload?.expires > Date.now() ? payload.data : null;
-
-    if (refresh || !data || data.length === 0) {
-      data = await apiCall;
-      await set(cacheKey, { expires: this.addDays(1), data });
-    }
-
-    return data;
-  }
-
-  private addDays(days: number) {
-    const date = new Date(Date.now());
-    date.setDate(date.getDate() + days);
-    return date;
-  }
-}
-
-function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
-  const GENERIC_INPUT_MSG = 'Please check your input and try again';
-
-  return () =>
-    ({ next, op }) =>
-      observable((observer) => {
-        const unsubscribe = next(op).subscribe({
-          next: (value) => observer.next(value),
-          error: (err) => {
-            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
-            let finalErr: any = err;
-
-            if (err instanceof TRPCClientError) {
-              const code = err.data?.code as string | undefined;
-              const path = op.path ?? '';
-              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
-
-              let msg = err.message;
-              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-                // Server formatter should already do this; this is just a client fallback
-                msg = GENERIC_SIGNIN_ERROR;
-              } else if (code === 'BAD_REQUEST') {
-                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
-                if (isValidationError) {
-                  msg = GENERIC_INPUT_MSG;
-                }
-              }
-              finalErr = new ApiError(msg, err);
-            }
-
-            // Aborted requests (component teardown, superseded loads) are not
-            // user-facing failures — never toast them.
-            if (!meta?.skipErrorHandler && !isAbortError(err)) {
-              errorSvc.handle(finalErr);
-            }
-
-            observer.error(finalErr);
-          },
-          complete: () => observer.complete(),
-        });
-        return unsubscribe;
-      });
-}
-
-function isAbortError(err: unknown): boolean {
-  if (err instanceof DOMException && err.name === 'AbortError') return true;
-  if (err instanceof TRPCClientError) {
-    const cause: unknown = err.cause;
-    return cause instanceof DOMException && cause.name === 'AbortError';
-  }
-  return false;
-}
-
-function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
-  return trpcHttpLink({
-    url: environment.apiUrl,
-    transformer: superjson,
-    // Combine the per-request signal tRPC provides with the service-level
-    // controller so TRPCService.abort() actually cancels in-flight requests.
-    // `credentials: 'include'` is required so the browser honors Set-Cookie on the
-    // sign-in/out responses and attaches the HttpOnly refresh cookie (SECURITY-REVIEW 2.1).
-    fetch(input, init) {
-      const signals: AbortSignal[] = [getAbortSignal()];
-      if (init?.signal) signals.push(init.signal);
-      return globalThis.fetch(input, { ...init, credentials: 'include', signal: AbortSignal.any(signals) });
-    },
-    headers() {
-      const authToken = tokenSvc.getAuthToken();
-      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
-    },
-  });
 }
 ```
 
@@ -53460,6 +53923,192 @@ body {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
+
+```typescript
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInCompany } from './people-in-company';
+import { CompaniesService } from '../services/companies-service';
+import { UserService } from '../../../services/user.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+@Component({
+  selector: 'pc-company-view',
+  imports: [
+    RouterModule,
+    PeopleInCompany,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+  ],
+  templateUrl: './company-view.html',
+})
+export class CompanyView {
+  readonly id = input.required<string>();
+
+  protected readonly recordNav = injectRecordNavigation('company', this.id);
+
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+
+  protected readonly company = signal<any | null>(null);
+  protected readonly employeeCount = signal(0);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Companies', route: '/companies' },
+    { label: this.company()?.name || 'Company' },
+  ]);
+
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly companyTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
+
+  protected readonly initials = computed(() => {
+    const name = this.company()?.name || '';
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w: string) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+  protected readonly isEnriched = computed(() => {
+    const rawEnrichment = this.company()?.enrichment;
+    if (!rawEnrichment) return false;
+
+    let enrichment = null;
+
+    try {
+      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
+    } catch {
+      return false;
+    }
+    return !!enrichment.google_enriched;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load company details (triggers Google enrichment job on backend)
+      const data = await this.companiesSvc.getById(id);
+      this.company.set(data);
+
+      // 2. Load employee count via dedicated count endpoint (no row data fetched)
+      const count = await this.personsSvc.countByCompanyId(id);
+      this.employeeCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editCompany() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id());
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
+
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
