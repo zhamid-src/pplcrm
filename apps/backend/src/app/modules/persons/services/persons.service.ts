@@ -560,6 +560,8 @@ export class PersonsService {
       list_name?: string;
       /** Raw uploaded CSV text, kept 90 days so the History page can offer a re-download (spec §17). */
       source_csv?: string;
+      /** Rows the wizard already excluded/cleaned client-side (bad-email "Skip"), recorded for History's skip-reasons export. */
+      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
     },
     auth: IAuthKeyPayload,
   ) {
@@ -686,6 +688,7 @@ export class PersonsService {
           file_name: baseFileName,
           duplicate_decision: input.duplicate_decision ?? 'skip',
           list_name: input.list_name ?? null,
+          client_skip_reasons: input.client_skip_reasons ?? [],
         }),
         run_at: new Date(),
       })
@@ -712,7 +715,11 @@ export class PersonsService {
     tags: string[],
     skipped: number,
     rows: Record<string, string>[],
-    options?: { duplicateDecision?: 'merge' | 'skip' | 'import_new'; listName?: string },
+    options?: {
+      duplicateDecision?: 'merge' | 'skip' | 'import_new';
+      listName?: string;
+      clientSkipReasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
   ) {
     const households = new HouseholdRepo();
     const duplicateDecision = options?.duplicateDecision ?? 'skip';
@@ -730,8 +737,9 @@ export class PersonsService {
       merged: 0,
     };
     const importedPersonIds: string[] = [];
-    // Rows kept downloadable with the reason each was skipped (History page, spec §17).
-    const skipReasons: Array<{ row: number; email?: string; reason: string }> = [];
+    // Rows kept downloadable with the reason each was skipped (History page, spec §17) —
+    // seeded with the wizard's own client-side skips (bad-email "Skip"), then appended to below.
+    const skipReasons: Array<{ row: number; email?: string; reason: string }> = [...(options?.clientSkipReasons ?? [])];
 
     const errorMessages: string[] = [];
     let cachedBlankHouseholdId: string | null = null;
