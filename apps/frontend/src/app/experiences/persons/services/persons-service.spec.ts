@@ -29,6 +29,7 @@ describe('PersonsService', () => {
         getPotentialDuplicates: { query: vi.fn() },
         getDuplicateCounts: { query: vi.fn() },
         mergePersons: { mutate: vi.fn() },
+        checkDuplicateEmails: { query: vi.fn() },
       },
     };
 
@@ -143,16 +144,52 @@ describe('PersonsService', () => {
   });
 
   describe('import', () => {
-    it('opts out of the global error handler and forwards rows/tags/skipped/fileName', async () => {
+    it('forwards rows/tags/skipped/fileName and defaults the duplicate decision to skip', async () => {
       const response = { imported: 2, skipped: 0 };
       mockApi.persons.import.mutate.mockResolvedValue(response);
 
-      const result = await service.import([{ first_name: 'A' }] as any, ['tag1'], 1, 'people.csv');
+      const result = await service.import({
+        rows: [{ first_name: 'A' }] as any,
+        tags: ['tag1'],
+        skipped: 1,
+        file_name: 'people.csv',
+      });
 
       expect(mockApi.persons.import.mutate).toHaveBeenCalledWith(
-        { rows: [{ first_name: 'A' }], tags: ['tag1'], skipped: 1, file_name: 'people.csv' },
-        { context: { skipErrorHandler: true } },
+        {
+          rows: [{ first_name: 'A' }],
+          tags: ['tag1'],
+          skipped: 1,
+          file_name: 'people.csv',
+          duplicate_decision: 'skip',
+          list_name: undefined,
+          source_csv: undefined,
+          client_skip_reasons: undefined,
+        },
+        undefined,
       );
+      expect(result).toEqual(response);
+    });
+
+    it('opts out of the global error handler when asked', async () => {
+      mockApi.persons.import.mutate.mockResolvedValue({ imported: 0, skipped: 0 });
+
+      await service.import({ rows: [] }, { skipErrorHandler: true });
+
+      expect(mockApi.persons.import.mutate).toHaveBeenCalledWith(expect.anything(), {
+        context: { skipErrorHandler: true },
+      });
+    });
+  });
+
+  describe('checkDuplicateEmails', () => {
+    it('queries the email-identity duplicate check', async () => {
+      const response = [{ email: 'a@example.com', person_id: '1', name: 'A', slug: 'a' }];
+      mockApi.persons.checkDuplicateEmails.query.mockResolvedValue(response);
+
+      const result = await service.checkDuplicateEmails(['a@example.com']);
+
+      expect(mockApi.persons.checkDuplicateEmails.query).toHaveBeenCalledWith({ emails: ['a@example.com'] });
       expect(result).toEqual(response);
     });
   });

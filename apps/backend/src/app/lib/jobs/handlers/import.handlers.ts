@@ -59,6 +59,11 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
       payload.tags ?? [],
       Number(payload.skipped || 0),
       rows,
+      {
+        duplicateDecision: payload.duplicate_decision ?? 'skip',
+        listName: payload.list_name ?? undefined,
+        clientSkipReasons: payload.client_skip_reasons ?? undefined,
+      },
     );
   }
 

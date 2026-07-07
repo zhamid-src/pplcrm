@@ -1,9 +1,18 @@
 import type { ComponentFixture } from '@angular/core/testing';
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ImportsPage } from './imports-page';
 import { ImportsService } from '../services/imports-service';
+import { ExportsService } from '../../exports/services/exports-service';
+import { TokenService } from '../../../services/api/token-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import * as httpDownload from '../../../services/api/http-download';
+
+vi.mock('../../../services/api/http-download', () => ({
+  downloadWithAuthHeader: vi.fn(),
+}));
 
 const baseItem = {
   id: '1',
@@ -17,6 +26,8 @@ const baseItem = {
   insertedCount: 10,
   errorCount: 0,
   skippedCount: 0,
+  mergedCount: 0,
+  tagsApplied: ['Imported-20260101-0000'],
   rowCount: 10,
   householdsCreated: 3,
   contactCount: 10,
@@ -24,30 +35,67 @@ const baseItem = {
   companyCount: 0,
   taskCount: 0,
   status: 'completed' as const,
+  errorMessage: null,
+  canDeleteContacts: true,
+  sourceFileSize: 2048,
+  canDownloadSource: true,
+  canDownloadSkipped: false,
+};
+
+const baseExportJob = {
+  id: 'job-1',
+  entity: 'people',
+  file_name: 'people-export.csv',
+  status: 'completed' as const,
+  row_count: 42,
+  created_at: new Date().toISOString(),
+  createdBy: { name: 'Admin', email: 'admin@example.com' },
 };
 
 describe('ImportsPage', () => {
   let component: ImportsPage;
   let fixture: ComponentFixture<ImportsPage>;
   let mockImportsSvc: any;
+  let mockExportsSvc: any;
   let mockAlertSvc: any;
+  let mockTokenSvc: any;
+  let mockDialogSvc: any;
+  let mockRouter: any;
 
   beforeEach(async () => {
+    vi.mocked(httpDownload.downloadWithAuthHeader).mockReset().mockResolvedValue(undefined);
     mockImportsSvc = {
       list: vi.fn().mockResolvedValue([baseItem]),
       delete: vi.fn().mockResolvedValue(true),
       abort: vi.fn(),
     };
+    mockExportsSvc = {
+      list: vi.fn().mockResolvedValue([baseExportJob]),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
     mockAlertSvc = {
       showSuccess: vi.fn(),
       showError: vi.fn(),
+    };
+    mockTokenSvc = {
+      getAuthToken: vi.fn().mockReturnValue('token-123'),
+    };
+    mockDialogSvc = {
+      confirm: vi.fn().mockResolvedValue(true),
+    };
+    mockRouter = {
+      navigate: vi.fn().mockResolvedValue(true),
     };
 
     await TestBed.configureTestingModule({
       imports: [ImportsPage],
       providers: [
         { provide: ImportsService, useValue: mockImportsSvc },
+        { provide: ExportsService, useValue: mockExportsSvc },
         { provide: AlertService, useValue: mockAlertSvc },
+        { provide: TokenService, useValue: mockTokenSvc },
+        { provide: ConfirmDialogService, useValue: mockDialogSvc },
+        { provide: Router, useValue: mockRouter },
       ],
     }).compileComponents();
 
@@ -98,6 +146,14 @@ describe('ImportsPage', () => {
     const formatted = component['formatDate'](new Date('2026-01-01T00:05:00Z'));
     expect(formatted).toEqual(expect.any(String));
     expect(formatted.length).toBeGreaterThan(0);
+  });
+
+  it('should compute the this-year summary sentence counts', async () => {
+    await fixture.whenStable();
+
+    expect(component['importsThisYear']()).toBe(
+      baseItem.processedAt.getFullYear() === new Date().getFullYear() ? 1 : 0,
+    );
   });
 
   it('should open the delete dialog and populate pendingDelete', async () => {
@@ -202,5 +258,85 @@ describe('ImportsPage', () => {
 
     expect(mockImportsSvc.abort).toHaveBeenCalled();
     expect(clearIntervalSpy).toHaveBeenCalled();
+  });
+
+  it('should navigate to the CSV import wizard', async () => {
+    await fixture.whenStable();
+
+    component['startNewImport']();
+
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['/imports/new']);
+  });
+
+  describe('Exports tab', () => {
+    it('should load export jobs the first time the Exports tab is opened', async () => {
+      await fixture.whenStable();
+
+      component['switchTab']('exports');
+      await Promise.resolve();
+
+      expect(mockExportsSvc.list).toHaveBeenCalled();
+      expect(component['exportJobs']()).toEqual([baseExportJob]);
+      expect(component['tab']()).toBe('exports');
+    });
+
+    it('should identify jobs older than 30 days as expired', () => {
+      const oldJob = { ...baseExportJob, created_at: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString() };
+      const recentJob = { ...baseExportJob, created_at: new Date().toISOString() };
+
+      expect(component['isExpired'](oldJob as never)).toBe(true);
+      expect(component['isExpired'](recentJob as never)).toBe(false);
+    });
+
+    it('should download a completed, non-expired export job', async () => {
+      await component['downloadExportJob'](baseExportJob as never);
+
+      expect(mockTokenSvc.getAuthToken).toHaveBeenCalled();
+      expect(mockAlertSvc.showError).not.toHaveBeenCalled();
+    });
+
+    it('should refuse to download an expired export job', async () => {
+      const expiredJob = {
+        ...baseExportJob,
+        created_at: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+
+      await component['downloadExportJob'](expiredJob as never);
+
+      expect(mockAlertSvc.showError).toHaveBeenCalledWith('This export has expired (30+ days old).');
+    });
+
+    it('should not delete an export job when the confirmation dialog is dismissed', async () => {
+      mockDialogSvc.confirm.mockResolvedValue(false);
+
+      await component['deleteExportJob'](baseExportJob as never);
+
+      expect(mockExportsSvc.delete).not.toHaveBeenCalled();
+    });
+
+    it('should delete an export job and reload the list after confirmation', async () => {
+      await component['deleteExportJob'](baseExportJob as never);
+
+      expect(mockExportsSvc.delete).toHaveBeenCalledWith(baseExportJob.id);
+      expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Export deleted successfully.');
+    });
+
+    it('should show an error alert when deleting an export job fails', async () => {
+      mockExportsSvc.delete.mockRejectedValue(new Error('cannot delete'));
+
+      await component['deleteExportJob'](baseExportJob as never);
+
+      expect(mockAlertSvc.showError).toHaveBeenCalledWith('Failed to delete export. Please try again.');
+    });
+
+    it('should toggle the "New export" guidance panel instead of opening a wizard', () => {
+      expect(component['showNewExportInfo']()).toBe(false);
+
+      component['toggleNewExportInfo']();
+      expect(component['showNewExportInfo']()).toBe(true);
+
+      component['goToPeopleGrid']();
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/people']);
+    });
   });
 });
