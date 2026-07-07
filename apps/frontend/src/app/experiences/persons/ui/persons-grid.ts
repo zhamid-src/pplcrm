@@ -1,5 +1,4 @@
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
@@ -7,7 +6,6 @@ import { TagOptionsService } from '@frontend/shared/components/datagrid/services
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
 import { Icon } from '@icons/icon';
 import { PcIconNameType } from '@icons/icons.index';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
 
 import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
@@ -25,7 +23,7 @@ import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, GrainTabs, Icon, FormsModule, CsvImportComponent],
+  imports: [DataGrid, GrainTabs, Icon],
   templateUrl: './persons-grid.html',
   providers: [
     { provide: AbstractAPIService, useExisting: PersonsService },
@@ -56,28 +54,8 @@ export class PersonsGrid implements OnInit {
   public inline = input<boolean>(false);
 
   private addressChangeModalId: string | null = null;
-  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
   private tagOptionValues: string[] = [];
   private issueOptionValues: string[] = [];
-
-  protected readonly mappableFields = [
-    'first_name',
-    'middle_names',
-    'last_name',
-    'email',
-    'email2',
-    'mobile',
-    'home_phone',
-    'street_num',
-    'street1',
-    'street2',
-    'apt',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'notes',
-  ];
 
   protected col: ColDef[] = [
     {
@@ -238,10 +216,6 @@ export class PersonsGrid implements OnInit {
     },
   ];
 
-  // Generic CSV importer integration
-  protected importerOpen = signal(false);
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
   public listId = input<string | null>(null);
 
   protected readonly narrowTypeOptions = signal<
@@ -251,8 +225,6 @@ export class PersonsGrid implements OnInit {
     { label: 'Donors', value: 'donor', tags: ['donor'] },
     { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
   ]);
-
-  protected tagsInput = '';
 
   /** Grain total sentence for the header (spec §5): "{n} people total". */
   protected readonly totalSentence = signal<string | null>(null);
@@ -336,13 +308,11 @@ export class PersonsGrid implements OnInit {
     return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
   }
 
-  // --- Import CSV Flow ---
+  // The CSV import wizard (spec §17) replaced the old in-grid import modal —
+  // one idiom for the job instead of two. See libs/uxcommon/csv-import for
+  // the shared header-mapping heuristic this grid used to own inline.
   protected openImportDialog() {
-    // Clear any prior summary to avoid stale dialogs
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importerOpen.set(true);
+    void this.router.navigate(['/imports/new']);
   }
 
   protected routeToHouseholds() {
@@ -352,110 +322,6 @@ export class PersonsGrid implements OnInit {
     if (this.addressChangeModalId !== null) {
       void this.router.navigate(['households', this.addressChangeModalId]);
     }
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-    const inputTags = this.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => !!t);
-    const tags = inputTags;
-
-    try {
-      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        tag: res?.tag ?? undefined,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  public autoMapHeader(h: string): string {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      firstname: 'first_name',
-      fname: 'first_name',
-      middlename: 'middle_names',
-      lastname: 'last_name',
-      lname: 'last_name',
-      name: 'first_name',
-      email: 'email',
-      emailaddress: 'email',
-      email1address: 'email',
-      email2: 'email2',
-      email2address: 'email2',
-      mobile: 'mobile',
-      mobilephone: 'mobile',
-      cellphone: 'mobile',
-      primaryphone: 'mobile',
-      businessphone: 'mobile',
-      homephone: 'home_phone',
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      homecity: 'city',
-      homestate: 'state',
-      homepostalcode: 'zip',
-      homecountry: 'country',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      businesscity: 'city',
-      businessstate: 'state',
-      businesspostalcode: 'zip',
-      businesscountry: 'country',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
   }
 
   private confirmAddressChange(): void {
