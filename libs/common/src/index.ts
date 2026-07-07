@@ -158,6 +158,10 @@ export {
   AddWorkflowStepObj,
   UpdateWorkflowStepObj,
   WorkflowEnrollmentObj,
+  WorkflowRunObj,
+  WorkflowStepConfigObj,
+  WORKFLOW_TRIGGER_TYPES,
+  WORKFLOW_STEP_KINDS,
   CompanyInputObj,
   CompanyEnrichmentObj,
   AddEventObj,
@@ -177,6 +181,12 @@ export {
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
 export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
+export type {
+  WorkflowTriggerType,
+  WorkflowStepKind,
+  WorkflowStepConfigType,
+  WorkflowRunType,
+} from './lib/schemas/workflows.schema';
 
 export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
 export { calculateWorkingTimeMs } from './lib/sla';

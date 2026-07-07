@@ -122,13 +122,13 @@ describe('WorkflowsRouter', () => {
     const spy = vi.spyOn(WorkflowsController.prototype, 'saveSteps').mockResolvedValue({ success: true } as any);
 
     const caller = WorkflowsRouter.createCaller({ auth } as any);
-    const steps = [{ delay_days: 1, subject: 'Step 1' }];
+    const steps = [{ kind: 'send_email' as const, delay_days: 1, subject: 'Step 1' }];
     const result = await caller.saveSteps({ workflowId: '2', steps });
 
     expect(spy).toHaveBeenCalledWith(
       '1',
       '2',
-      [expect.objectContaining({ delay_days: 1, delay_unit: 'days', subject: 'Step 1' })],
+      [expect.objectContaining({ kind: 'send_email', delay_days: 1, delay_unit: 'days', subject: 'Step 1' })],
       '1',
     );
     expect(result).toEqual({ success: true });
@@ -137,7 +137,7 @@ describe('WorkflowsRouter', () => {
   it('should reject saveSteps when a step has a negative delay', async () => {
     const caller = WorkflowsRouter.createCaller({ auth } as any);
     await expect(
-      caller.saveSteps({ workflowId: '2', steps: [{ delay_days: -1, subject: 'Bad Step' }] }),
+      caller.saveSteps({ workflowId: '2', steps: [{ kind: 'wait' as const, delay_days: -1 }] }),
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
   });
 
