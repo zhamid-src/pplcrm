@@ -52,19 +52,44 @@ existing tenant-scoping or error-sanitization patterns while fixing these. Run t
 - [x] **2.5** 2FA brute-force cap — new `two_factor_attempts` column (migration + schema baseline + model);
       `verify2FA` increments it on a wrong code and invalidates the OTP after 5 failures; `signIn` resets it
       when issuing a fresh code, and success clears it. Unit test covers increment + cap.
-- [~] **2.4** — Zapier inbound routes rate-limit by source IP (120/min); the **Zapier API key is now
-  stored hashed** and looked up by hash (`regenerateApiKey` returns the plaintext once, `getApiKeyStatus`
-  reports configured/not; migration `2026-07-08-invalidate-zapier-keys` clears stale plaintext →
-  force-regenerate, per your call). **Still pending:** the same hashing for the **donation webhook token**
-  (client-generated + stored plaintext today; also Stripe-signature-protected, so lower priority) — needs
-  its generation moved server-side for show-once.
+- [x] **2.4** — Zapier inbound routes rate-limit by source IP (120/min); the **Zapier API key** and the
+      **donation webhook token** are both **stored hashed** and looked up by hash. Each is generated
+      server-side and shown once (`regenerate*` returns plaintext once, `get*Status` reports configured/not);
+      migrations `2026-07-08-invalidate-zapier-keys` and `2026-07-09-invalidate-donation-webhook-tokens` clear
+      stale plaintext → force-regenerate. The donation-settings page now has a generate/rotate flow instead of a
+      persisted URL. (Stripe signature remains the webhook's primary authenticator.)
 - [x] **3.6** Frontend IDB response cache keys on the full serialized `apiName+options` (namespaced `trpc:`)
       instead of a lossy 32-bit hash, so one query can no longer serve another's cached rows. Test asserts
       distinct keys per options.
 - [x] **3.1** Grid cell HTML is memoized — `callCellRenderer` caches the sanitized `SafeHtml` per
       (ColDef, row) via nested `WeakMap`s, invalidated on value change, so the renderer + DOMPurify no
       longer run on every change-detection pass for every cell. Test asserts once-per-value + re-run on change.
-- [ ] 2.1, 3.2–3.5, 4.x, 5.x — pending.
+- [x] **2.1** Refresh token moved to a Secure/HttpOnly/SameSite=Lax **cookie** the JS never sees; the
+      access token now lives **in memory only**. `renewAuthToken` authenticates by the cookie alone (rotated
+      on each use) so a cold page load silently re-mints an access token (`AuthService.init` → `silentRefresh`).
+      Token-issuing procedures set the cookie and return only `{ auth_token }`; `signOut` clears it.
+      `@fastify/cookie` registered; CORS allows credentials with a forced (non-wildcardable) origin (**4.4**).
+- [x] **3.2** Inline `exportCsv` is capped at 50k rows (fetch bounded to cap+1); larger exports are refused
+      with `PAYLOAD_TOO_LARGE` and directed to the queued/streamed background export. Guard also runs in the
+      shared `buildCsvResponse` so override paths (persons/households/etc.) are covered. Tests added.
+- [x] **3.5** Background worker runs a bounded **concurrency pool** (`WORKER_CONCURRENCY`, default 4) using
+      the existing `FOR UPDATE SKIP LOCKED` claim, so a slow sync/import no longer serializes transactional
+      mail behind it. Graceful-shutdown drain preserved. Pool-invariant test added.
+- [x] **4.2** Money-touching mock paths (unsigned donation-webhook parse, mock-donation writer) now require an
+      explicit `ALLOW_MOCK_PAYMENTS=true` opt-in instead of `NODE_ENV !== production` (no fail-open).
+- [x] **4.4** CORS `origin`/`credentials` forced after the opts spread so they can't be widened (done in 2.1).
+- [x] **4.6** `pino-pretty` only outside production; JSON logs in prod.
+- [x] **4.1 / 4.7** Documented: the rate limiter's single-instance (per-process) assumption; and that
+      `authusers.email` is globally unique by design (one email = one tenant).
+- [x] **5.1** Removed scratch scripts shipped in `src` (`test-kysely`, `test-assign3/4`, `scratch/test-tasks`).
+- [x] **5.2** Public form load/submit no longer echo raw internal error detail (log it, show generic copy;
+      4xx client errors keep their user-actionable message).
+- [ ] **Deferred / not done:** **4.3** (merge the two `isAuthed` queries into one join — optional
+      micro-optimization; rewrites the shared auth DB mock across ~20 router specs for one fewer indexed
+      round-trip, so the correct two-query version was kept). **3.3** (person-search trigram indexing — needs
+      `EXPLAIN ANALYZE` on a seeded large tenant to validate; unverifiable from here). **3.4** (settings
+      value-lookup index — superseded in practice by hashing keys in 2.4; still worth a covering index).
+      **4.5** (scope the global BigInt reply serializer). **5.3/5.4** (documentation-only / `as any` cleanup).
 
 **Note:** the full `nx build backend && nx build frontend` passes as of the 2.5 commit (a type error in the
 1.3 email-attachment change was fixed in a follow-up build commit).
