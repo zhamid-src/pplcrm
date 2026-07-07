@@ -101,31 +101,20 @@ export class ListsRepo extends BaseRepository<'lists'> {
         sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
         sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)`.as('created_by'),
         // "LAST USED IN": the most recently created consumer that references
-        // this list. Newsletters and forms link via a `target_lists` JSONB
-        // column (id stored as string or number, bare array or {include:[...]});
-        // teams link via the map_teams_lists junction. Each arm is tenant-scoped
-        // to lists.tenant_id; the outer query is already filtered to this tenant.
+        // this list. Newsletters, forms and teams each link through their own
+        // FK-backed junction table. Each arm is tenant-scoped to lists.tenant_id;
+        // the outer query is already filtered to this tenant.
         sql<string | null>`(
           SELECT c.label FROM (
             SELECT nl.name AS label, nl.created_at AS ts
-              FROM public.newsletters nl
-              WHERE nl.tenant_id = lists.tenant_id
-                AND (
-                  nl.target_lists @> to_jsonb(lists.id::text)
-                  OR nl.target_lists @> to_jsonb(lists.id)
-                  OR (nl.target_lists -> 'include') @> to_jsonb(lists.id::text)
-                  OR (nl.target_lists -> 'include') @> to_jsonb(lists.id)
-                )
+              FROM public.map_newsletters_lists mnl
+              JOIN public.newsletters nl ON nl.id = mnl.newsletter_id
+              WHERE mnl.list_id = lists.id AND mnl.tenant_id = lists.tenant_id
             UNION ALL
             SELECT wf.name AS label, wf.created_at AS ts
-              FROM public.web_forms wf
-              WHERE wf.tenant_id = lists.tenant_id
-                AND (
-                  wf.target_lists @> to_jsonb(lists.id::text)
-                  OR wf.target_lists @> to_jsonb(lists.id)
-                  OR (wf.target_lists -> 'include') @> to_jsonb(lists.id::text)
-                  OR (wf.target_lists -> 'include') @> to_jsonb(lists.id)
-                )
+              FROM public.map_web_forms_lists mwl
+              JOIN public.web_forms wf ON wf.id = mwl.web_form_id
+              WHERE mwl.list_id = lists.id AND mwl.tenant_id = lists.tenant_id
             UNION ALL
             SELECT t.name AS label, t.created_at AS ts
               FROM public.map_teams_lists mtl

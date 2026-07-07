@@ -63,31 +63,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Does a `target_lists` JSONB value reference the given list id? Tolerates the
- * shapes seen in the wild: an id array, an `{ include: [...] }` object, a
- * comma-separated string, or a JSON string of any of those.
- */
-function targetListsIncludes(target: unknown, id: string): boolean {
-  let parsed: unknown = target;
-  if (typeof target === 'string') {
-    try {
-      parsed = JSON.parse(target);
-    } catch {
-      return target
-        .split(',')
-        .map((s: string) => s.trim())
-        .includes(id);
-    }
-  }
-  if (Array.isArray(parsed)) return parsed.map((v) => String(v)).includes(id);
-  if (isRecord(parsed)) {
-    const include = Array.isArray(parsed['include']) ? parsed['include'] : [];
-    return include.map((v) => String(v)).includes(id);
-  }
-  return false;
-}
-
-/**
  * Narrow a raw list row (or the resolved controller shape) to the fields this
  * module needs, parsing the stored JSONB `definition` through its Zod schema
  * rather than casting it — so a malformed definition surfaces as `null`, not a
@@ -528,35 +503,39 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
   public async getConsumers(auth: IAuthKeyPayload, id: string): Promise<ListConsumers> {
     const tenant_id = auth.tenant_id;
 
-    // Newsletters and forms link to lists via a `target_lists` JSONB column;
-    // teams link via the map_teams_lists junction. Newsletter/form membership
-    // is resolved in JS (same shape-tolerant parse getListStats uses).
+    // Newsletters, forms and teams each link to lists through their own
+    // FK-backed junction table (the source of truth after the schema
+    // remediation). Every arm is tenant-scoped on the junction row.
     const newsletterRows = await this.getRepo()
       .db.selectFrom('newsletters')
-      .select(['id', 'name', 'target_lists'])
-      .where('tenant_id', '=', tenant_id)
+      .innerJoin('map_newsletters_lists', 'map_newsletters_lists.newsletter_id', 'newsletters.id')
+      .select(['newsletters.id as id', 'newsletters.name as name'])
+      .where('map_newsletters_lists.tenant_id', '=', tenant_id)
+      .where('map_newsletters_lists.list_id', '=', id)
       .execute();
 
     const formRows = await this.getRepo()
       .db.selectFrom('web_forms')
-      .select(['id', 'name', 'target_lists'])
-      .where('tenant_id', '=', tenant_id)
+      .innerJoin('map_web_forms_lists', 'map_web_forms_lists.web_form_id', 'web_forms.id')
+      .select(['web_forms.id as id', 'web_forms.name as name'])
+      .where('map_web_forms_lists.tenant_id', '=', tenant_id)
+      .where('map_web_forms_lists.list_id', '=', id)
       .execute();
 
     const teamRows = await this.getRepo()
       .db.selectFrom('teams')
       .innerJoin('map_teams_lists', 'map_teams_lists.team_id', 'teams.id')
       .select(['teams.id as id', 'teams.name as name'])
-      .where('teams.tenant_id', '=', tenant_id)
+      .where('map_teams_lists.tenant_id', '=', tenant_id)
       .where('map_teams_lists.list_id', '=', id)
       .execute();
 
-    const newsletters: ListConsumer[] = newsletterRows
-      .filter((r) => targetListsIncludes(r.target_lists, id))
-      .map((r) => ({ id: String(r.id), name: r.name, kind: 'newsletter' as const }));
-    const forms: ListConsumer[] = formRows
-      .filter((r) => targetListsIncludes(r.target_lists, id))
-      .map((r) => ({ id: String(r.id), name: r.name, kind: 'form' as const }));
+    const newsletters: ListConsumer[] = newsletterRows.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      kind: 'newsletter' as const,
+    }));
+    const forms: ListConsumer[] = formRows.map((r) => ({ id: String(r.id), name: r.name, kind: 'form' as const }));
     const teams: ListConsumer[] = teamRows.map((r) => ({ id: String(r.id), name: r.name, kind: 'team' as const }));
 
     return {
