@@ -66,7 +66,7 @@ House vocabulary only: `animate-up/down/left/right/drop` (0.3s ease-in-out), `an
 
 ## 9. Security is a surface property
 
-URLs, titles, and copy never leak tenant IDs, internal keys, or template names. Routes use record slugs (`/people/amira-hassan`). Raw backend errors never reach the UI — translate to "what should I do now".
+URLs, titles, and copy never leak tenant IDs, internal keys, or template names. Routes use record slugs — households/companies by name, and persons by an opaque public_id (`/people/joseph-4t9k-2xpm`, no count-leaking name slug). Raw backend errors never reach the UI — translate to "what should I do now".
 
 ## 10. Ten-second litmus (§10)
 

@@ -124,9 +124,11 @@ Real example: the `people` and `tags` blocks in `dashboard.routes.ts`. (Top-leve
 `app.routes.ts` only lazy-loads the dashboard shell and auth pages — experiences live in
 `dashboard.routes.ts`.)
 
-If the entity's URLs should carry record slugs instead of numeric ids (spec §1 — persons,
-households, and companies already do), follow the checklist in `docs/RECORD-SLUGS.md`
-(migration + `slugExists`/`getOneBySlug` repo methods + `record-slug.resolver.ts` entry).
+If the entity's URLs should carry record slugs instead of numeric ids (spec §1 — households
+and companies use name slugs; **persons use an opaque `public_id`** instead), follow the
+checklist in `docs/RECORD-SLUGS.md` (migration + `slugExists`/`getOneBySlug` repo methods +
+`record-slug.resolver.ts` entry for the name-slug flow; for anything people/identity-sensitive
+prefer the person `public_id` flow documented there).
 
 ### 10. Breadcrumbs (in the detail view component)
 
