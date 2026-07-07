@@ -34,6 +34,7 @@ const KNOWN_APP_ROUTES = new Set([
   '/board',
   '/files',
   '/imports',
+  '/imports/new',
   '/exports',
   '/activity',
   '/tags',

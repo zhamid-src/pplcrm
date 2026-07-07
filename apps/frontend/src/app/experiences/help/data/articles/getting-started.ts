@@ -21,7 +21,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/board](/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
           '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, public-facing [Forms](/forms), [Donations](/donations), and [Fundraising](/donation-pages) pages.',
           '**Field** — [Events](/events/pages), [Teams](/teams), and volunteer [Shifts](/events/shifts).',
-          '**Data** — [Import / export](/imports) (with [Exports](/exports)), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), [Automations](/automations), and [Files](/files).',
+          '**Data** — [Import / export](/imports) (Imports and Exports tabs, plus the CSV import wizard), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), [Automations](/automations), and [Files](/files).',
           '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
         ],
       },
