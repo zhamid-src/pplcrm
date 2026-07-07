@@ -588,6 +588,7 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     const existing = await this.pledgesRepo.db
       .selectFrom('donation_pledges')
       .selectAll()
+      .where('tenant_id', '=', tenantId)
       .where('stripe_subscription_id', '=', stripeSubscriptionId)
       .executeTakeFirst();
 
