@@ -1,4 +1,10 @@
-import { AddWorkflowObj, UpdateWorkflowObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
+import {
+  AddWorkflowObj,
+  AddWorkflowStepObj,
+  UpdateWorkflowObj,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { WorkflowsController } from './controller';
@@ -11,27 +17,26 @@ const crud = createCrudRouter(workflows, AddWorkflowObj, UpdateWorkflowObj);
 export const WorkflowsRouter = router({
   ...crud,
 
+  // Spec §16 list (/automations) — enriched rows (recipe data + RUNS 30D + LAST RUN) and summary.
+  list: authProcedure.query(({ ctx }) => workflows.getWorkflowsList(ctx.auth.tenant_id)),
+
   getSteps: authProcedure.input(idSchema).query(({ input, ctx }) => workflows.getSteps(ctx.auth.tenant_id, input)),
 
   saveSteps: authProcedure
-    .input(
-      z.object({
-        workflowId: idSchema,
-        steps: z.array(
-          z.object({
-            delay_days: z.number().int().nonnegative(),
-            delay_unit: z.enum(['days', 'hours']).default('days'),
-            subject: z.string(),
-            preview_text: z.string().nullable().optional(),
-            html_content: z.string().nullable().optional(),
-            plain_text_content: z.string().nullable().optional(),
-          }),
-        ),
-      }),
-    )
+    .input(z.object({ workflowId: idSchema, steps: z.array(AddWorkflowStepObj) }))
     .mutation(async ({ input, ctx }) =>
       workflows.saveSteps(ctx.auth.tenant_id, input.workflowId, input.steps, ctx.auth.user_id),
     ),
+
+  setStatus: authProcedure
+    .input(z.object({ id: idSchema, status: z.enum(['active', 'paused']) }))
+    .mutation(async ({ input, ctx }) =>
+      workflows.setStatus(ctx.auth.tenant_id, input.id, input.status, ctx.auth.user_id),
+    ),
+
+  getRuns: authProcedure
+    .input(z.object({ workflowId: idSchema, limit: z.number().int().positive().max(100).optional() }))
+    .query(({ input, ctx }) => workflows.getRuns(ctx.auth.tenant_id, input.workflowId, input.limit)),
 
   getEnrollments: authProcedure
     .input(z.object({ workflowId: idSchema, options: getAllOptions.optional() }))
