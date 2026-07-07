@@ -47,7 +47,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'User management lives under [Users](/users) in the System section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
+        text: 'User management lives under [Users](/users) in the Admin section — visible to administrators only. Every teammate gets their own account; shared logins defeat both security and the activity log.',
       },
       { kind: 'h2', id: 'roles', text: 'The three roles' },
       {
@@ -55,7 +55,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
         items: [
           '**Viewer** — read-only: sees the data, changes nothing. Right for stakeholders and observers.',
           '**Editor** — the working role: manages contacts, sends newsletters, runs the daily work.',
-          '**Admin** — everything, plus the System area: users, tags, issues, configuration, and the activity log.',
+          '**Admin** — everything, plus the Admin area: users, workspace configuration, and the workspace-wide activity log.',
         ],
       },
       {
@@ -96,7 +96,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **System** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
+        text: 'PeopleCRM separates what affects **you** from what affects **everyone**. **Settings** (avatar menu → Settings) opens a compact popup for your personal preferences and applies every change instantly — there is nothing to save. The [Workspace](/workspace) settings — administrators only, under **Admin** in the sidebar — set policy for everyone and use a deliberate **Save** with a leave-guard.',
       },
       { kind: 'h2', id: 'personal', text: 'What lives in your Settings popup' },
       {
@@ -156,7 +156,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'workspace', text: 'The workspace-wide view' },
       {
         kind: 'p',
-        text: 'Administrators also get [Activity log](/activities) under System: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
+        text: 'Administrators also get [Activity](/activity) under Admin: the same trail across the entire workspace, useful for auditing a busy day, tracing an import’s effects, or reviewing what an account did before it was deactivated.',
       },
       {
         kind: 'callout',

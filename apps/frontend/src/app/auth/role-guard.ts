@@ -15,7 +15,7 @@ export const roleGuard: CanActivateFn = async (_route, _state) => {
   }
 
   if (user.role === 'user') {
-    return router.parseUrl('/summary');
+    return router.parseUrl('/dashboard');
   }
 
   return true;

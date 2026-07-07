@@ -6,8 +6,12 @@
     [description]="description() || ''"
     [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
     [filtered]="anyFilterActive()"
+    [totalSentence]="totalSentence()"
   ></pc-grid-header>
-  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
+  }
+  <!-- Below-header slot: the People grain tabs (spec §5) project here. -->
+  <ng-content select="[pcGridBelowHeader]"></ng-content>
+  @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
   <!-- System views: segmented control with per-view counts (composes AND with filters) -->
   <div class="mb-2 flex flex-wrap items-center gap-2">
     <div class="join border border-base-300 rounded-lg">

@@ -20,7 +20,7 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
   }
 
   public count(): Promise<number> {
-    return Promise.resolve(0);
+    return this.api.companies.count.query();
   }
 
   public detachTag(_id: string, _tag_name: string) {
@@ -39,6 +39,11 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
 
   public getById(id: string): Promise<any> {
     return this.api.companies.getById.query(id);
+  }
+
+  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.companies.getBySlug.query(slug);
   }
 
   public getTags(_id: string) {

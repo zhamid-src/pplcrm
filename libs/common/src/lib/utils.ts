@@ -87,6 +87,29 @@ export function slugifyHandle(name: string): string {
 }
 
 /**
+ * Slugify a record's display name for slug-based record routing
+ * (`/people/amira-hassan` \u2014 spec \u00a71: URLs carry slugs, never internal IDs).
+ * Lowercase, accent-stripped, non-alphanumerics collapsed to single hyphens,
+ * capped at 80 chars. Falls back to `fallback` (e.g. "person") when nothing
+ * usable remains, and prefixes the fallback when the result is all digits so a
+ * slug can never be mistaken for a numeric record-ID URL. Per-tenant
+ * uniqueness is the caller's job \u2014 see `apps/backend/src/app/lib/slug.ts`.
+ */
+export function slugifyRecordName(value: string, fallback: string): string {
+  const base = value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/gu, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+    .replace(/-+$/g, '');
+  if (!base) return fallback;
+  if (/^\d+$/.test(base)) return `${fallback}-${base}`;
+  return base;
+}
+
+/**
  * Escape a string for safe interpolation into HTML markup (element text or
  * double/single-quoted attribute values).
  */

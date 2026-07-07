@@ -36,6 +36,13 @@ failure messages) and `pageSize` over `DEFAULT_DATA_GRID_CONFIG` (`datagrid.toke
 Simple grid: `teams-grid.ts`. Full-featured grid (CSV import, tag options, custom delete
 confirm, loading gate): `persons-grid.ts`.
 
+Two Wave-0 additions: `totalSentence` (string input, e.g. "5,012 people total") replaces the
+header's default "{n} total" wording and composes with the filtered count ("43 match your
+filters · 5,012 people total"); and a `[pcGridBelowHeader]` content-projection slot renders
+between the header and the toolbar — the People grain tabs (`pc-grain-tabs` in
+`shared/components/grain-tabs/`, switching /people ↔ /households ↔ /companies) project there
+on all three People-grain grids.
+
 ## Columns: `ColumnDef` in `grid-defaults.ts`
 
 `{ field, headerName, editable }` is the common case. Also supported: `valueFormatter`

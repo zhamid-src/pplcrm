@@ -1,14 +1,21 @@
 import type { Routes } from '@angular/router';
 import { roleGuard } from './auth/role-guard';
+import {
+  companyRecordIdResolver,
+  householdRecordIdResolver,
+  personRecordIdResolver,
+} from './services/record-slug.resolver';
 import { unsavedChangesGuard } from './services/unsaved-changes-guard';
 
 export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 
   {
-    path: 'summary',
+    path: 'dashboard',
     loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
   },
+  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
+  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
 
   {
     path: 'people',
@@ -26,11 +33,15 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id',
         loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+        // Slug-aware: the URL may carry /people/amira-hassan; the component's
+        // `id` input always receives the numeric id (route data wins over params).
+        resolve: { id: personRecordIdResolver },
       },
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
         canDeactivate: [unsavedChangesGuard],
+        resolve: { id: personRecordIdResolver },
       },
     ],
   },
@@ -51,11 +62,13 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id',
         loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+        resolve: { id: householdRecordIdResolver },
       },
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
         canDeactivate: [unsavedChangesGuard],
+        resolve: { id: householdRecordIdResolver },
       },
     ],
   },
@@ -164,7 +177,7 @@ export const dashboardRoutes: Routes = [
   },
 
   {
-    path: 'workflows',
+    path: 'automations',
     children: [
       {
         path: '',
@@ -182,6 +195,8 @@ export const dashboardRoutes: Routes = [
       },
     ],
   },
+  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
+  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
 
   {
     path: 'events',
@@ -430,11 +445,13 @@ export const dashboardRoutes: Routes = [
       {
         path: ':id',
         loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+        resolve: { id: companyRecordIdResolver },
       },
       {
         path: ':id/edit',
         loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
         canDeactivate: [unsavedChangesGuard],
+        resolve: { id: companyRecordIdResolver },
       },
     ],
   },
@@ -443,9 +460,11 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
   },
   {
-    path: 'activities',
+    path: 'activity',
     loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
   },
+  // Back-compat: old /activities links redirect to /activity.
+  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
   {
     path: 'help',
     children: [

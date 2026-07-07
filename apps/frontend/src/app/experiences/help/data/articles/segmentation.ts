@@ -31,7 +31,7 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'manage', text: 'Manage the vocabulary (administrators)' },
       {
         kind: 'p',
-        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the System section — rename strays, delete stale labels, and keep the set small enough that everyone uses the same words.',
+        text: 'Administrators curate the shared vocabulary under [Tags](/tags) and [Issues](/issues) in the Data section — rename strays, delete stale labels, and keep the set small enough that everyone uses the same words.',
       },
       {
         kind: 'callout',

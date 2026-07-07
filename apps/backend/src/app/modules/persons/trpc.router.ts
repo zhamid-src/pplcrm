@@ -111,10 +111,21 @@ function countByCompanyId() {
     .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
 }
 
+function countWithCompany() {
+  return authProcedure.query(({ ctx }) => persons.countWithCompany(ctx.auth));
+}
+
 function getById() {
   return authProcedure
     .input(idSchema)
     .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+}
+
+/** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
+function getBySlug() {
+  return authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => persons.getOneBySlug(input, ctx.auth));
 }
 
 function getActivity() {
@@ -228,6 +239,7 @@ export const PersonsRouter = router({
   import: importMany(),
   getTags: getTags(),
   getById: getById(),
+  getBySlug: getBySlug(),
   getActivity: getActivity(),
   attachTag: attachTag(),
   detachTag: detachTag(),
@@ -237,6 +249,7 @@ export const PersonsRouter = router({
   getByHouseholdId: getByHouseholdId(),
   getByCompanyId: getByCompanyId(),
   countByCompanyId: countByCompanyId(),
+  countWithCompany: countWithCompany(),
   getAllWithAddress: getAllWithAddress(),
   exportCsv: exportCsv(),
   getPotentialDuplicates: getPotentialDuplicates(),

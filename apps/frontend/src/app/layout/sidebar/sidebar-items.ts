@@ -24,6 +24,8 @@ export interface ISidebarItem {
   type?: 'item' | 'subheading' | 'bookmark';
 }
 
+// Sidebar IA follows the North Star module map (spec §0). Section order and
+// membership are load-bearing; do not reshuffle without checking the spec.
 export const SidebarItems: ISidebarItem[] = [
   {
     name: 'App',
@@ -32,7 +34,7 @@ export const SidebarItems: ISidebarItem[] = [
   },
   {
     name: `Dashboard`,
-    route: '/summary',
+    route: '/dashboard',
     icon: 'presentation-chart-line',
     pathMatchExact: true,
     shortcut: 'h',
@@ -43,7 +45,7 @@ export const SidebarItems: ISidebarItem[] = [
     hidden: true,
   },
   {
-    name: `ENGAGE`,
+    name: `WORK`,
     type: 'subheading',
     children: [
       {
@@ -51,14 +53,61 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/inbox',
         icon: 'envelope',
         shortcut: 'i',
+        // TODO(badge): show open-conversation count (spec §3). Needs a cheap
+        // tenant-scoped `emails.countOpen` tRPC query; no such endpoint yet.
       },
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+        shortcut: 'k',
+        // TODO(badge): show SLA-breach count (spec §4). Needs a tenant-scoped
+        // `tasks.countSlaBreaches` query; no such endpoint yet.
+      },
+      // Hidden: the board lives behind the Tasks page (swap button is Wave 1B),
+      // but the `g b` chord, the pin button and the help overlay keep working.
+      {
+        name: `Task board`,
+        route: '/board',
+        icon: 'view-kanban',
+        shortcut: 'b',
+        hidden: true,
+      },
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+        shortcut: 'p',
+      },
+      // Hidden: Households and Companies are grains of the People grid (spec §5)
+      // reached via the grain tabs; kept here so the `g u` / `g c` chords, the
+      // pin button and the help overlay keep working.
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+        shortcut: 'u',
+        hidden: true,
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+        shortcut: 'c',
+        hidden: true,
+      },
+    ],
+  },
+  {
+    name: `OUTREACH`,
+    type: 'subheading',
+    children: [
       {
         name: 'Newsletters',
         route: '/newsletters',
         icon: 'megaphone',
         shortcut: 'n',
       },
-
       {
         name: 'Lists',
         route: '/lists',
@@ -66,52 +115,10 @@ export const SidebarItems: ISidebarItem[] = [
         shortcut: 'l',
       },
       {
-        name: `Automations`,
-        route: '/workflows',
-        icon: 'cog',
-        shortcut: 'a',
-      },
-    ],
-  },
-  {
-    name: `CONTACTS`,
-    type: 'subheading',
-    children: [
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-        shortcut: 'p',
-      },
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-        shortcut: 'u',
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-        shortcut: 'c',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-        shortcut: 'd',
-      },
-    ],
-  },
-  {
-    name: `CAMPAIGN`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-        shortcut: 't',
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+        shortcut: 'f',
       },
       {
         name: 'Donations',
@@ -119,31 +126,8 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'currency-dollar',
         shortcut: 'o',
       },
-    ],
-  },
-  {
-    name: 'FORMS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-        shortcut: 'f',
-      },
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-        shortcut: 's',
-      },
-      {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-        shortcut: 'e',
-      },
+      // Wave 3J: Fundraising (donation pages, §12) folds under Donations. Kept
+      // here so the feature stays reachable until the Donations page links to it.
       {
         name: 'Fundraising',
         route: '/donation-pages',
@@ -153,50 +137,57 @@ export const SidebarItems: ISidebarItem[] = [
     ],
   },
   {
-    name: 'TOOLS',
+    name: `FIELD`,
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      // Wave 2: Canvassing (§13), Deliveries (§14) — surfaces do not exist yet.
+      {
+        name: 'Events',
+        route: '/events/pages',
+        icon: 'ticket',
+        shortcut: 'e',
+      },
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+        shortcut: 't',
+      },
+      // Wave 3K: Shifts (§15) folds into Teams. Kept here so the feature stays
+      // reachable until the Teams page surfaces shifts.
+      {
+        name: 'Shifts',
+        route: '/events/shifts',
+        icon: 'add-schedule',
+        shortcut: 's',
+      },
+    ],
+  },
+  {
+    name: `DATA`,
     type: 'subheading',
     collapsed: true,
     children: [
       {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-        shortcut: 'k',
-      },
-      {
-        name: `Task Board`,
-        route: '/board',
-        icon: 'view-kanban',
-        shortcut: 'b',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-        shortcut: 'm',
-      },
-      {
-        name: 'Imports',
+        name: 'Import / export',
         route: '/imports',
         icon: 'arrow-up-tray',
       },
+      // Wave 1E: the Exports page folds into the Import / export wizard (§17).
+      // Kept as its own entry until then so exports stay reachable.
       {
         name: 'Exports',
         route: '/exports',
         icon: 'arrow-down-tray',
       },
-    ],
-  },
-  {
-    name: `SYSTEM`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
       {
-        name: 'Activity Log',
-        route: '/activities',
-        icon: 'clipboard-document-list',
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+        shortcut: 'd',
+        // TODO(badge): show merge-queue count (spec §9). Needs a tenant-scoped
+        // `duplicates.countQueue` query; no such endpoint yet.
       },
       {
         name: 'Tags',
@@ -209,9 +200,34 @@ export const SidebarItems: ISidebarItem[] = [
         icon: 'shield-exclamation',
       },
       {
+        name: `Automations`,
+        route: '/automations',
+        icon: 'cog',
+        shortcut: 'a',
+      },
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+        shortcut: 'm',
+      },
+    ],
+  },
+  {
+    name: `ADMIN`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
         name: 'Users',
         route: '/users',
         icon: 'users',
+      },
+      {
+        name: 'Activity',
+        route: '/activity',
+        icon: 'clipboard-document-list',
       },
       {
         name: 'Workspace',

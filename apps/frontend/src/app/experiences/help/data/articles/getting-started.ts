@@ -18,19 +18,18 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Engage** — [Inbox](/inbox) for incoming email, [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, and [Automations](/workflows).',
-          '**Contacts** — [People](/people), [Households](/households), [Companies](/companies), and the [Duplicates](/duplicates) finder.',
-          '**Campaign** — [Teams](/teams) and [Donations](/donations).',
-          '**Forms** — public-facing [Forms](/forms), volunteer [Shifts](/events/shifts), [Events](/events/pages), and [Fundraising](/donation-pages) pages.',
-          '**Tools** — [Tasks](/tasks), the [Task board](/board), [Files](/files), [Imports](/imports), and [Exports](/exports).',
-          '**System** (administrators only) — [Activity log](/activities), [Tags](/tags), [Issues](/issues), [Users](/users), and the [Workspace](/workspace) settings.',
+          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/board](/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
+          '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, public-facing [Forms](/forms), [Donations](/donations), and [Fundraising](/donation-pages) pages.',
+          '**Field** — [Events](/events/pages), [Teams](/teams), and volunteer [Shifts](/events/shifts).',
+          '**Data** — [Import / export](/imports) (with [Exports](/exports)), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), [Automations](/automations), and [Files](/files).',
+          '**Admin** (administrators only) — [Users](/users), the [Activity log](/activity), the [Workspace](/workspace) settings, and this [Help center](/help).',
         ],
       },
       {
         kind: 'callout',
         tone: 'info',
         title: 'Not seeing a section?',
-        text: 'The System section only appears for administrators. If you need access to tags, users, or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
+        text: 'The Admin section only appears for administrators. If you need access to users or configuration, ask a workspace admin — see [Users and roles](/help/users-roles).',
       },
       { kind: 'h2', id: 'first-steps', text: 'A good first session' },
       {
@@ -112,7 +111,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         items: [
           'Collapse any section by clicking its heading — useful for areas you rarely use.',
           'The sidebar narrows to icons on small screens; hover to expand it temporarily.',
-          'The logo takes you back to the [Dashboard](/summary) from anywhere.',
+          'The logo takes you back to the [Dashboard](/dashboard) from anywhere.',
           'Jump without the mouse: press `g` then a section letter (the hints appear beside the items). Press `?` anytime for the full list — see [Keyboard shortcuts](/help/shortcuts).',
         ],
       },
@@ -173,7 +172,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'The [Dashboard](/summary) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
+        text: 'The [Dashboard](/dashboard) is your daily starting point. A one-line **briefing** at the top names what needs you right now — unassigned conversations, tasks past SLA, new contacts this month, and any newsletter draft — and every number in it is a link straight to that work.',
       },
       {
         kind: 'list',
@@ -259,7 +258,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           { keys: ['g', 'i'], action: '[Inbox](/inbox)' },
           { keys: ['g', 'n'], action: '[Newsletters](/newsletters)' },
           { keys: ['g', 'l'], action: '[Lists](/lists)' },
-          { keys: ['g', 'a'], action: '[Automations](/workflows)' },
+          { keys: ['g', 'a'], action: '[Automations](/automations)' },
           { keys: ['g', 'p'], action: '[People](/people)' },
           { keys: ['g', 'u'], action: '[Households](/households)' },
           { keys: ['g', 'c'], action: '[Companies](/companies)' },

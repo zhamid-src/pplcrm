@@ -1,13 +1,15 @@
 import { Component, signal, inject, viewChild } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { PersonsService } from '../../persons/services/persons-service';
 import { CompaniesService } from '../services/companies-service';
 
 @Component({
   selector: 'pc-companies-grid',
-  imports: [DataGrid, CsvImportComponent],
+  imports: [DataGrid, GrainTabs, CsvImportComponent],
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
@@ -24,10 +26,15 @@ import { CompaniesService } from '../services/companies-service';
         [disableImport]="false"
         [allowFilter]="false"
         [addRoute]="'add'"
+        [totalSentence]="totalSentence()"
         (importCSV)="openImportDialog()"
         plusIcon="add-company"
         i18n-plusIcon
-      ></pc-datagrid>
+      >
+        <div pcGridBelowHeader>
+          <pc-grain-tabs />
+        </div>
+      </pc-datagrid>
     </div>
 
     <pc-csv-importer
@@ -48,6 +55,7 @@ import { CompaniesService } from '../services/companies-service';
 })
 export class CompaniesGrid {
   private readonly companiesService = inject(CompaniesService);
+  private readonly personsService = inject(PersonsService);
   private readonly grid = viewChild<DataGrid<'companies', any>>('grid');
 
   private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -58,6 +66,28 @@ export class CompaniesGrid {
   protected readonly mappableFields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'];
   protected readonly importerOpen = signal(false);
   protected readonly importSummary = signal<CsvImportSummary | null>(null);
+
+  /** Grain total sentence for the header (spec §5): "{n} people in {m} companies". */
+  protected readonly totalSentence = signal<string | null>(null);
+
+  constructor() {
+    void this.loadGrainSentence();
+  }
+
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [people, companies] = await Promise.all([
+        this.personsService.countWithCompany(),
+        this.companiesService.count(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const peopleText = people === 1 ? '1 person' : `${fmt.format(people)} people`;
+      const companiesText = companies === 1 ? '1 company' : `${fmt.format(companies)} companies`;
+      this.totalSentence.set(`${peopleText} in ${companiesText}`);
+    } catch (err) {
+      console.error('Failed to load company grain counts', err);
+    }
+  }
 
   protected col = [
     { field: 'name', headerName: 'Company Name', editable: true },
