@@ -143,7 +143,6 @@ export const SidebarItems: ISidebarItem[] = [
   {
     name: `FIELD`,
     type: 'subheading',
-    collapsed: true,
     children: [
       // Wave 2: Canvassing (§13), Deliveries (§14) — surfaces do not exist yet.
       {
