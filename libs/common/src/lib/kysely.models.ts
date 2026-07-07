@@ -424,9 +424,9 @@ interface Tenants extends RecordType, AddressType {
 interface Emails extends RecordType {
   folder_id: string;
   from_email: string | null;
+  /** Display-only cache of the To list; email_recipients is the source of truth (D-10). */
   to_email: string | null;
   subject: string | null;
-  body: string | null;
   preview: string | null;
   assigned_to: string | null;
   is_favourite: boolean;
@@ -600,6 +600,11 @@ interface UserActivity extends RecordType {
 interface DataImports extends RecordType {
   file_name: string;
   source: string;
+  /**
+   * Tag name requested at import time; label of record once the tag is deleted
+   * (tag deletion nulls tag_id). While the tag exists, tags.name via tag_id is
+   * the source of truth (D-10).
+   */
   tag_name: string | null;
   tag_id: string | null;
   row_count: number;
