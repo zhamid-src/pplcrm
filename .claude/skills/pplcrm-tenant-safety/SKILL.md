@@ -3,12 +3,61 @@ name: pplcrm-tenant-safety
 description: "Explains the custom no-unscoped-db-query ESLint rule that is the multi-tenant safety net — what trips it, the ignoreTables allow-list and why each table is on it, the query shapes it silently cannot catch, and how to add a table to the allow-list as a reviewed security decision. USE WHEN a lint error says 'no-unscoped-db-query' or 'has no .where(tenant_id) filter', when writing/reviewing any backend Kysely query that could leak across tenants, when tempted to add an eslint-disable for this rule, or when changing the ignoreTables list. EXAMPLES: 'can I add ms_graph_tokens to the ignore list?', 'why does the rule not catch my query built in two steps?', 'the rule flagged my subquery but tenant_id is filtered inside'."
 ---
 
-# Multi-tenant query safety (`no-unscoped-db-query`)
+# Multi-tenant query safety (`no-unscoped-db-query` + RLS)
 
 The rule is a **tripwire, not a proof.** It catches the common mistake (a Kysely chain with no
 tenant scope) but has real blind spots. A green lint does not mean a query is tenant-safe — you
 still owe the manual checks below. A cross-tenant leak here is a real data breach, so treat every
 `eslint-disable` of this rule as a security decision that needs a reviewer, not a lint annoyance.
+
+## Two layers, not one: the lint rule AND Postgres RLS (S-1)
+
+Since the S-1 rollout (migration `2026-07-26-s1-row-level-security.ts`) the lint rule is **no
+longer the only tenant wall.** Every base table with a `tenant_id` column (61 of them) has
+`ENABLE + FORCE ROW LEVEL SECURITY` and a `tenant_isolation` policy:
+
+```sql
+USING / WITH CHECK (
+  NULLIF(current_setting('app.tenant_id', true), '') IS NULL
+  OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::bigint
+)
+```
+
+How the GUC gets set:
+
+- `apps/backend/src/app/lib/tenant-context.ts` holds the current tenant in an `AsyncLocalStorage`
+  (`runWithTenant(tenantId, fn)` / `currentTenantId()`).
+- The runtime pool's `onReserveConnection` hook (`base.repo.ts`) issues
+  `select set_config('app.tenant_id', $1, false)` on **every** connection checkout, reading that
+  ALS value (validated `^\d+$` or empty).
+- The tRPC `isAuthed` middleware (`trpc.ts`) wraps the whole authenticated request in
+  `runWithTenant(ctx.auth.tenant_id, …)`, so every downstream query is RLS-scoped.
+
+**"Empty GUC = allow all" is deliberate.** Pre-auth "identify the tenant" queries (login/passkey,
+refresh-token, webhook/api-key resolution, public event pages) and the background-job worker (some
+jobs are intentionally cross-tenant, e.g. `prune_retention`) run with **no** tenant context — the
+policy must not restrict them, and they stay protected by their app-level scoping. So RLS adds a
+hard backstop **only on the authenticated tRPC path**, which is exactly where untrusted input
+drives queries. Fastify REST routes and the worker are _not_ RLS-scoped today (GUC empty) — they
+rely on app-level `.where('tenant_id', …)`. If you want RLS to also bind a REST handler, wrap its
+body in `runWithTenant(tenantId, …)` _after_ the tenant is resolved (never before — that would
+break the pre-auth identify query).
+
+Two gotchas worth internalizing:
+
+1. **This is why FORCE RLS didn't break the 528-test suite:** specs run as `pplcrm_app` with no ALS
+   context, so the GUC is empty and the policy allows all. A test that wants to _prove_ isolation
+   must use `runWithTenant` on a **non-transactional** `dbInstance` query — inside a
+   `useTestTransaction()` the connection is reserved (and the GUC set) once at `BEGIN`, before any
+   `runWithTenant`, so RLS won't re-scope mid-transaction. See `rls-tenant-isolation.spec.ts`.
+2. **Cast the `NULLIF` result, not `current_setting` directly.** Postgres does not short-circuit the
+   `OR`, and the GUC is set to `''` (not NULL) on unscoped checkouts, so a bare
+   `current_setting(...)::bigint` throws `invalid input syntax for type bigint: ""`. `NULLIF(…, '')`
+   turns empty into NULL and `NULL::bigint` is a safe no-op.
+
+The lint rule still matters: RLS is a backstop, not a license to drop `.where('tenant_id')`. Keep
+scoping in app code (clearer intent, better plans, and it's the _only_ protection on the REST/worker
+paths). The rest of this doc is about that lint rule.
 
 ## Where it lives and where it actually runs
 
