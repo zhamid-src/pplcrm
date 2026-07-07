@@ -3,25 +3,21 @@ This file is a merged representation of a subset of the codebase, containing spe
 # File Summary
 
 ## Purpose
-
 This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes.
 
 ## File Format
-
 The content is organized as follows:
-
 1. This summary section
 2. Repository information
 3. Directory structure
 4. Repository files (if enabled)
 5. Multiple file entries, each consisting of:
-   a. A header with the file path (## File: path/to/file)
-   b. The full contents of the file in a code block
+  a. A header with the file path (## File: path/to/file)
+  b. The full contents of the file in a code block
 
 ## Usage Guidelines
-
 - This file should be treated as read-only. Any changes should be made to the
   original repository files, not this packed version.
 - When processing this file, use the file path to distinguish
@@ -30,17 +26,15 @@ The content is organized as follows:
   the same level of security as you would the original repository.
 
 ## Notes
-
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: libs/**/\*, apps/**/_, scriptis/\*\*/_, apps/frontend/src/\*_/_
-- Files matching these patterns are excluded: **/\*.test.ts, **/_.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, \*\*/_.picture, **/\*.png, **/_.jpg, \*\*/_.jpeg, **/\*.svg, **/_.ico, apps/backend/**, apps/libs/**, libs/**, **/STRUCTURE.md, \*\*/_.spec.ts
+- Only files matching these patterns are included: libs/**/*, apps/**/*, scriptis/**/*, apps/frontend/src/**/*
+- Files matching these patterns are excluded: **/*.test.ts, **/*.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, **/*.picture, **/*.png, **/*.jpg, **/*.jpeg, **/*.svg, **/*.ico, apps/backend/**, apps/libs/**, libs/**, **/STRUCTURE.md, **/*.spec.ts
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
 
 # Directory Structure
-
 ```
 apps/
   frontend/
@@ -351,6 +345,7 @@ apps/
               tags.ts
           tasks/
             services/
+              task-sla.ts
               tasks-service.ts
             ui/
               task-add.html
@@ -359,7 +354,8 @@ apps/
               task-view.ts
               tasks-board.html
               tasks-board.ts
-              tasks-grid.ts
+              tasks-list.html
+              tasks-list.ts
           teams/
             services/
               teams-service.ts
@@ -538,7 +534,6 @@ apps/
 # Files
 
 ## File: apps/frontend/archive/old-tailwind.config.ts
-
 ```typescript
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -549,7 +544,10 @@ import themes from 'daisyui/src/theming/themes/index.js'; // 👈 critical: add 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default {
-  content: [join(__dirname, 'src/**/!(*.stories|*.spec).{html,ts}'), ...createGlobPatternsForDependencies(__dirname)],
+  content: [
+    join(__dirname, 'src/**/!(*.stories|*.spec).{html,ts}'),
+    ...createGlobPatternsForDependencies(__dirname),
+  ],
   plugins: [daisyui],
   daisyui: {
     themes: [
@@ -626,20 +624,17 @@ export default {
 };
 ```
 
-## File: apps/frontend/src/**mocks**/html.mock.ts
-
+## File: apps/frontend/src/__mocks__/html.mock.ts
 ```typescript
 export default '';
 ```
 
-## File: apps/frontend/src/**mocks**/svg.mock.ts
-
+## File: apps/frontend/src/__mocks__/svg.mock.ts
 ```typescript
 export default '';
 ```
 
 ## File: apps/frontend/src/app/auth/cancel-deletion-page/cancel-deletion-page.html
-
 ```html
 <pc-auth-layout>
   @if (isLoading()) {
@@ -727,7 +722,6 @@ export default '';
 ```
 
 ## File: apps/frontend/src/app/auth/cancel-deletion-page/cancel-deletion-page.ts
-
 ```typescript
 import { Component, OnInit, OnDestroy, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -840,7 +834,6 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
 ```
 
 ## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.ts
-
 ```typescript
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
@@ -902,7 +895,6 @@ export class ConfirmSubscriptionPage implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 
@@ -917,7 +909,6 @@ export class ConfirmSubscriptionService extends TRPCService<unknown> {
 ```
 
 ## File: apps/frontend/src/app/auth/resume-account-page/resume-account-page.html
-
 ```html
 <pc-auth-layout>
   <div class="space-y-6 py-4">
@@ -944,7 +935,12 @@ export class ConfirmSubscriptionService extends TRPCService<unknown> {
 
     <div class="flex flex-col gap-3 pt-2">
       @if (canResume) {
-      <button type="button" class="btn btn-primary w-full" (click)="resumeAccount()" [disabled]="actionPending()">
+      <button
+        type="button"
+        class="btn btn-primary w-full"
+        (click)="resumeAccount()"
+        [disabled]="actionPending()"
+      >
         @if (actionPending()) {
         <span class="loading loading-spinner loading-xs"></span>
         } Reactivate Account
@@ -968,7 +964,6 @@ export class ConfirmSubscriptionService extends TRPCService<unknown> {
 ```
 
 ## File: apps/frontend/src/app/auth/resume-account-page/resume-account-page.ts
-
 ```typescript
 import { Component, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -1019,7 +1014,6 @@ export class ResumeAccountPage extends TRPCService<any> {
 ```
 
 ## File: apps/frontend/src/app/auth/signup-page/signup-page.html
-
 ```html
 <!-- Template for user sign-up, capturing account and organization details. -->
 <pc-auth-layout>
@@ -1117,7 +1111,6 @@ export class ResumeAccountPage extends TRPCService<any> {
 ```
 
 ## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.ts
-
 ```typescript
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -1179,7 +1172,6 @@ export class VerifyEmailPage implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/auth/verify-sender-email-page/verify-sender-email-page.ts
-
 ```typescript
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -1243,10 +1235,9 @@ export class VerifySenderEmailPage implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/auth/auth-guard.ts
-
 ```typescript
 import { inject } from '@angular/core';
-import type { CanActivateFn } from '@angular/router';
+import type { CanActivateFn} from '@angular/router';
 import { Router } from '@angular/router';
 
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
@@ -1276,7 +1267,6 @@ export const authGuard: CanActivateFn = () => {
 ```
 
 ## File: apps/frontend/src/app/auth/auth-layout.ts
-
 ```typescript
 import { Component } from '@angular/core';
 import { Alerts } from '@uxcommon/components/alerts/alerts';
@@ -1302,7 +1292,6 @@ export class AuthLayoutComponent {}
 ```
 
 ## File: apps/frontend/src/app/auth/auth-utils.ts
-
 ```typescript
 import type { FormBuilder, NonNullableFormBuilder } from '@angular/forms';
 import { Validators } from '@angular/forms';
@@ -1343,7 +1332,6 @@ export function passwordInBreach(control: unknown) {
 ```
 
 ## File: apps/frontend/src/app/experiences/activity/services/activity.service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { TRPCService } from '../../../services/api/trpc-service';
@@ -1365,7 +1353,6 @@ export class ActivityService extends TRPCService<any> {
 ```
 
 ## File: apps/frontend/src/app/experiences/activity/ui/record-activities/record-activities.html
-
 ```html
 <div class="flex flex-col flex-1 h-full rounded-lg bg-base-100 text-base-content">
   <div id="activities-panel" class="flex-1 min-h-0 overflow-auto email-scrollbar">
@@ -1421,7 +1408,6 @@ export class ActivityService extends TRPCService<any> {
 ```
 
 ## File: apps/frontend/src/app/experiences/activity/ui/record-activities/record-activities.ts
-
 ```typescript
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, signal, effect, linkedSignal, resource, untracked } from '@angular/core';
@@ -1701,7 +1687,6 @@ export class RecordActivities {
 ```
 
 ## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.html
-
 ```html
 <div class="p-6 max-w-4xl mx-auto">
   <!-- Header -->
@@ -1953,7 +1938,6 @@ export class RecordActivities {
 ```
 
 ## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.ts
-
 ```typescript
 import { Component, inject, signal, OnInit, linkedSignal, resource, computed, effect } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -2459,318 +2443,141 @@ export class ActivityFeed implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
-
-```html
-<div class="p-6 max-w-4xl">
-  <!-- Loading State -->
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading company details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
-      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
-      [form]="form"
-      [isLoading]="isLoading()"
-      buttonsToShow="two"
-      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
-      [showDelete]="!isNewMode()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete company"
-      (save)="save($event)"
-      (delete)="deleteCompany()"
-    ></pc-detail-header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- Form Section -->
-      <pc-card class="lg:col-span-2">
-        <!-- Name -->
-        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Website -->
-          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
-
-          <!-- Industry -->
-          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
-        </div>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Email -->
-          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
-
-          <!-- Phone -->
-          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
-        </div>
-
-        <!-- Description -->
-        <pc-textarea
-          label="Description"
-          placeholder="Company description..."
-          [formField]="form.description"
-          [rows]="3"
-        ></pc-textarea>
-
-        <!-- Notes -->
-        <pc-textarea
-          label="Internal Notes"
-          placeholder="Any additional notes..."
-          [formField]="form.notes"
-          [rows]="4"
-        ></pc-textarea>
-      </pc-card>
-
-      <!-- Members & Info Panel -->
-      <div class="space-y-6">
-        <!-- Employee List (Only when edit mode) -->
-        @if (!isNewMode() && id()) {
-        <pc-card title="Associated Employees" icon="user-group">
-          @defer (on viewport) {
-          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
-          } @placeholder {
-          <div class="skeleton w-full h-32"></div>
-          }
-        </pc-card>
-        }
-
-        <!-- Metadata Card -->
-        @if (!isNewMode()) {
-        <pc-entity-overview
-          [createdAt]="company()?.created_at"
-          [updatedAt]="company()?.updated_at"
-        ></pc-entity-overview>
-        }
-      </div>
-    </div>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
-
+## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
 ```typescript
-import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
-import { Router, RouterModule } from '@angular/router';
-import { form, validateStandardSchema } from '@angular/forms/signals';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { CompanyInputObj } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { CompaniesService } from '../services/companies-service';
-import { PeopleInCompany } from './people-in-company';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+import { Component, effect, inject, input, signal } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { PersonsService } from '../../persons/services/persons-service';
+import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
 
 @Component({
-  selector: 'pc-company-form',
-  imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
-  templateUrl: './company-form.html',
+  selector: 'pc-people-in-company',
+  imports: [RouterModule],
+  template: `<div>
+    <ul class="space-y-1.5">
+      @if (!peopleInCompany().length && !isLoading()) {
+        <span i18n class="text-sm text-base-content/50 italic">No employees found.</span>
+      }
+      @for (person of peopleInCompany(); track person.id) {
+        <li class="flex items-center gap-2">
+          <a routerLink="/people/{{ person.id }}" class="link hover:no-underline font-medium text-primary">
+            {{ person.full_name }}
+          </a>
+          @if (person.email) {
+            <span class="text-xs text-base-content/40">({{ person.email }})</span>
+          }
+        </li>
+      }
+    </ul>
+    @if (hasMore()) {
+      <div class="mt-2">
+        <button
+          i18n
+          type="button"
+          class="btn btn-xs btn-ghost text-primary"
+          (click)="loadMore()"
+          [disabled]="isLoading()"
+        >
+          - More -
+        </button>
+      </div>
+    }
+  </div>`,
 })
-export class CompanyForm implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
+export class PeopleInCompany {
+  private personsSvc = inject(PersonsService);
 
-  private readonly _loading = createLoadingGate();
-  protected readonly company = signal<any | null>(null);
+  protected peopleInCompany = signal<Array<Persons & { full_name: string }>>([]);
+  protected isLoading = signal(false);
+  protected hasMore = signal(false);
 
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const companies: PcBreadcrumb = { label: 'Companies', route: '/companies' };
-    const id = this.company()?.id;
-    if (id) {
-      return [
-        companies,
-        { label: this.company()?.name || 'Company', route: ['/companies', String(id)] },
-        { label: 'Edit' },
-      ];
-    }
-    return [companies, { label: 'New company' }];
-  });
+  private readonly pageSize = 25;
+  private currentOffset = signal(0);
+  private requestSequence = 0;
+  private lastParams: { id: string } | null = null;
 
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    website: '',
-    industry: '',
-    email: '',
-    phone: '',
-    notes: '',
-  });
+  public companyId = input.required<string>();
 
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, CompanyInputObj);
-  });
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-  protected id = input<string>();
-  protected isLoading = this._loading.visible;
+  constructor() {
+    effect(() => {
+      const id = this.companyId();
 
-  public mode = input<'new' | 'edit'>('edit');
-  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadCompany();
-    if (this.isNewMode()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const data = state.cloneData;
-        this.payload.set({
-          name: data.name ? `${data.name} (Copy)` : '',
-          description: data.description ?? '',
-          website: data.website ?? '',
-          industry: data.industry ?? '',
-          email: data.email ?? '',
-          phone: data.phone ?? '',
-          notes: data.notes ?? '',
-        });
+      if (!id) {
+        this.resetState();
+        this.lastParams = null;
+        return;
       }
-    }
-  }
 
-  private async loadCompany() {
-    if (!this.id()) return;
-    const end = this._loading.begin();
-    try {
-      const data = await this.companiesSvc.getById(this.id()!);
-      this.company.set(data);
-      if (data) {
-        this.payload.set({
-          name: data.name ?? '',
-          description: data.description ?? '',
-          website: data.website ?? '',
-          industry: data.industry ?? '',
-          email: data.email ?? '',
-          phone: data.phone ?? '',
-          notes: data.notes ?? '',
-        });
-        this.form().reset();
+      if (this.lastParams && this.lastParams.id === id) {
+        return;
       }
-    } catch (err) {
-      console.error('Failed to load company details:', err);
-    } finally {
-      end();
-    }
-  }
 
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
+      this.lastParams = { id };
+      this.resetState();
+      void this.fetchPage({ id, offset: 0, replace: true });
     });
-    if (!confirmed) return;
-    const end = this._loading.begin();
+  }
+
+  protected async loadMore() {
+    if (this.isLoading() || !this.hasMore()) {
+      return;
+    }
+
+    const id = this.companyId();
+    if (!id) {
+      return;
+    }
+
+    const offset = this.currentOffset();
+    await this.fetchPage({ id, offset, replace: false });
+  }
+
+  private resetState() {
+    this.peopleInCompany.set([]);
+    this.currentOffset.set(0);
+    this.hasMore.set(false);
+    this.isLoading.set(false);
+    this.requestSequence++;
+  }
+
+  private async fetchPage(params: { id: string; offset: number; replace: boolean }) {
+    const { id, offset, replace } = params;
+    const requestId = ++this.requestSequence;
+    this.isLoading.set(true);
+
     try {
-      await this.companiesSvc.delete(this.id()!);
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
+      const people = (await this.personsSvc.getByCompanyId(id, {
+        limit: this.pageSize,
+        offset,
+      })) as Persons[];
+
+      if (requestId !== this.requestSequence) {
+        return;
+      }
+
+      const mapped = people.map((person) => ({
+        ...person,
+        full_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
+      }));
+
+      if (replace) {
+        this.peopleInCompany.set(mapped);
+      } else {
+        this.peopleInCompany.update((current) => [...current, ...mapped]);
+      }
+
+      this.currentOffset.set(offset + people.length);
+      this.hasMore.set(people.length === this.pageSize);
     } finally {
-      end();
+      if (requestId === this.requestSequence) {
+        this.isLoading.set(false);
+      }
     }
   }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.company()?.name || 'this company');
-  }
-
-  protected save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-    const raw = this.payload();
-    if (this.id()) {
-      const end = this._loading.begin();
-      this.companiesSvc
-        .update(this.id()!, raw)
-        .then(() => {
-          this.companiesSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Company updated successfully');
-          if (typeof done === 'function') {
-            done();
-          } else {
-            void this.router.navigate(['/companies', this.id()]);
-          }
-        })
-        .catch((err: any) => {
-          const message =
-            err instanceof Error && err.message
-              ? err.message
-              : isRecord(err) &&
-                  isRecord(err['data']) &&
-                  typeof err['data']['message'] === 'string' &&
-                  err['data']['message']
-                ? err['data']['message']
-                : 'Unable to save company';
-          this.alertSvc.showError(message);
-        })
-        .finally(() => end());
-    } else {
-      const end = this._loading.begin();
-      this.companiesSvc
-        .add(raw)
-        .then(() => {
-          this.companiesSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Company added successfully');
-          if (typeof done === 'function') {
-            done();
-          } else {
-            void this.router.navigate(['/companies']);
-          }
-        })
-        .catch((err: any) => {
-          const message =
-            err instanceof Error && err.message
-              ? err.message
-              : isRecord(err) &&
-                  isRecord(err['data']) &&
-                  typeof err['data']['message'] === 'string' &&
-                  err['data']['message']
-                ? err['data']['message']
-                : 'Unable to save company';
-          this.alertSvc.showError(message);
-        })
-        .finally(() => end());
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
-
 ```html
 <div class="p-6 max-w-7xl mx-auto">
   <!-- Header -->
@@ -2908,7 +2715,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
-
 ```typescript
 import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
@@ -2994,7 +2800,6 @@ export class DonationsGridComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
-
 ```html
 <div class="p-6 max-w-7xl mx-auto">
   <!-- Header -->
@@ -3004,9 +2809,16 @@ export class DonationsGridComponent implements OnInit {
         <pc-icon name="arrow-path" class="text-primary" [size]="7"></pc-icon>
         Monthly Pledges
       </h1>
-      <p class="text-sm text-base-content/60 mt-1">Recurring monthly donation subscriptions from your supporters.</p>
+      <p class="text-sm text-base-content/60 mt-1">
+        Recurring monthly donation subscriptions from your supporters.
+      </p>
     </div>
-    <button class="btn btn-outline btn-sm gap-2" pcSpinOnClick [disabled]="_loading.visible()" (click)="refresh()">
+    <button
+      class="btn btn-outline btn-sm gap-2"
+      pcSpinOnClick
+      [disabled]="_loading.visible()"
+      (click)="refresh()"
+    >
       <pc-icon name="arrow-path" [size]="4"></pc-icon>
       Refresh
     </button>
@@ -3014,13 +2826,7 @@ export class DonationsGridComponent implements OnInit {
 
   <!-- Tabs -->
   <div role="tablist" class="tabs tabs-box mb-6 w-fit">
-    <a
-      routerLink="/donations"
-      routerLinkActive="tab-active"
-      [routerLinkActiveOptions]="{exact:true}"
-      role="tab"
-      class="tab font-semibold gap-1.5"
-    >
+    <a routerLink="/donations" routerLinkActive="tab-active" [routerLinkActiveOptions]="{exact:true}" role="tab" class="tab font-semibold gap-1.5">
       <pc-icon name="currency-dollar" [size]="4"></pc-icon>
       One-time
     </a>
@@ -3095,8 +2901,9 @@ export class DonationsGridComponent implements OnInit {
           <td class="text-base-content/70">{{ formatDate(pledge.started_at) }}</td>
           <td class="text-base-content/70">{{ formatDate(pledge.next_billing_date) }}</td>
           <td class="text-base-content/60">
-            @if (pledge.state || pledge.country) { {{ pledge.state }}{{ pledge.state && pledge.country ? ', ' : '' }}{{
-            pledge.country }} } @else { — }
+            @if (pledge.state || pledge.country) {
+            {{ pledge.state }}{{ pledge.state && pledge.country ? ', ' : '' }}{{ pledge.country }}
+            } @else { — }
           </td>
           <td class="text-right">
             @if (pledge.status === 'active' || pledge.status === 'past_due') {
@@ -3108,7 +2915,9 @@ export class DonationsGridComponent implements OnInit {
             >
               @if (cancelling() === toStr(pledge.id)) {
               <span class="loading loading-spinner loading-xs"></span>
-              } @else { Cancel }
+              } @else {
+              Cancel
+              }
             </button>
             }
           </td>
@@ -3122,7 +2931,6 @@ export class DonationsGridComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.ts
-
 ```typescript
 import { Component, inject, signal, computed, OnInit } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
@@ -3238,7 +3046,6 @@ export class PledgesGridComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
-
 ```typescript
 import { inject, signal, computed, Directive } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -3405,7 +3212,6 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicate-selection.html
-
 ```html
 <div class="p-6 max-w-7xl mx-auto">
   <div class="max-w-4xl mx-auto">
@@ -3520,7 +3326,6 @@ export abstract class BaseDuplicateManager<T extends { id: string; created_at: s
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicate-selection.ts
-
 ```typescript
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -3555,8 +3360,11 @@ export class DuplicateSelectionComponent implements OnInit {
   public counts = signal<DuplicateCounts>({ people: 0, households: 0, companies: 0 });
 
   ngOnInit(): void {
+
     void this.loadOnInit();
+
   }
+
 
   private async loadOnInit(): Promise<void> {
     const end = this._loading.begin();
@@ -3575,7 +3383,6 @@ export class DuplicateSelectionComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-companies.html
-
 ```html
 <pc-duplicate-page-shell
   title="Companies"
@@ -3672,7 +3479,6 @@ export class DuplicateSelectionComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-companies.ts
-
 ```typescript
 import { Component, inject, OnInit } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -3719,7 +3525,6 @@ export class CompanyDuplicatesComponent extends BaseDuplicateManager<any> implem
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-households.html
-
 ```html
 <pc-duplicate-page-shell
   title="Households"
@@ -3822,7 +3627,6 @@ export class CompanyDuplicatesComponent extends BaseDuplicateManager<any> implem
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-households.ts
-
 ```typescript
 import { Component, inject, OnInit } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -3878,7 +3682,6 @@ export class HouseholdDuplicatesComponent extends BaseDuplicateManager<any> impl
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-people.html
-
 ```html
 <pc-duplicate-page-shell
   title="People"
@@ -3975,7 +3778,6 @@ export class HouseholdDuplicatesComponent extends BaseDuplicateManager<any> impl
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/duplicates-people.ts
-
 ```typescript
 import { Component, inject, OnInit } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -4027,7 +3829,6 @@ export class PeopleDuplicatesComponent extends BaseDuplicateManager<any> impleme
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/merge-summary.html
-
 ```html
 <div class="p-6 max-w-7xl mx-auto">
   <div class="mb-4">
@@ -4100,7 +3901,6 @@ export class PeopleDuplicatesComponent extends BaseDuplicateManager<any> impleme
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/merge-summary.ts
-
 ```typescript
 import { Component, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -4183,7 +3983,6 @@ export class MergeSummaryComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/store/email-cache.store.ts
-
 ```typescript
 import { computed, inject, Service } from '@angular/core';
 import { injectQuery, QueryClient } from '@tanstack/angular-query-experimental';
@@ -4356,7 +4155,6 @@ export class EmailCacheStore {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/store/email-folders.store.ts
-
 ```typescript
 import { computed, inject, signal, Service } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -4504,7 +4302,6 @@ function toNum(n: unknown): number | undefined {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
-
 ```typescript
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -4588,7 +4385,6 @@ export class EmailAssign {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-comments/email-comments.ts
-
 ```typescript
 import { DatePipe, SlicePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
@@ -4788,7 +4584,6 @@ export class EmailComments {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.css
-
 ```css
 ::ng-deep .ql-tooltip {
   left: unset !important;
@@ -4802,7 +4597,6 @@ export class EmailComments {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.html
-
 ```html
 <form class="flex flex-col gap-3 h-full overflow-y-auto pr-3" (submit)="$event.preventDefault(); onSend()">
   <!-- Header -->
@@ -4962,7 +4756,6 @@ export class EmailComments {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-compose/email-compose.ts
-
 ```typescript
 // pc-compose-email.component.ts
 import { DecimalPipe } from '@angular/common';
@@ -5231,7 +5024,6 @@ export type DraftPayload = {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.html
-
 ```html
 <dialog #dlg class="modal">
   <div class="modal-box max-w-2xl">
@@ -5260,12 +5052,13 @@ export type DraftPayload = {
           [class.input-error]="form.name().invalid() && (form.name().dirty() || form.name().touched())"
           autofocus
         />
-        @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) { @for (err of
-        form.name().errors(); track err) {
-        <p class="text-xs text-error mt-1 flex items-center gap-1">
-          <pc-icon name="x-mark" [size]="3"></pc-icon>{{ err.message }}
-        </p>
-        } }
+        @if (form.name().invalid() && (form.name().dirty() || form.name().touched())) {
+          @for (err of form.name().errors(); track err) {
+            <p class="text-xs text-error mt-1 flex items-center gap-1">
+              <pc-icon name="x-mark" [size]="3"></pc-icon>{{ err.message }}
+            </p>
+          }
+        }
       </div>
 
       <!-- Details (pre-filled with email thread) -->
@@ -5288,7 +5081,7 @@ export type DraftPayload = {
           </label>
           <select id="ct-status" class="select select-bordered w-full focus:select-primary" [formField]="form.status">
             @for (s of statuses; track s) {
-            <option [value]="s">{{ toTitleCase(s) }}</option>
+              <option [value]="s">{{ statusLabels[s] }}</option>
             }
           </select>
         </div>
@@ -5298,13 +5091,9 @@ export type DraftPayload = {
           <label class="label font-semibold text-sm" for="ct-priority">
             <span class="label-text">Priority</span>
           </label>
-          <select
-            id="ct-priority"
-            class="select select-bordered w-full focus:select-primary"
-            [formField]="form.priority"
-          >
+          <select id="ct-priority" class="select select-bordered w-full focus:select-primary" [formField]="form.priority">
             @for (p of priorities; track p) {
-            <option [value]="p">{{ toTitleCase(p) }}</option>
+              <option [value]="p">{{ toTitleCase(p) }}</option>
             }
           </select>
         </div>
@@ -5329,14 +5118,10 @@ export type DraftPayload = {
           <label class="label font-semibold text-sm" for="ct-assigned">
             <span class="label-text">Assignee</span>
           </label>
-          <select
-            id="ct-assigned"
-            class="select select-bordered w-full focus:select-primary"
-            [formField]="form.assigned_to"
-          >
+          <select id="ct-assigned" class="select select-bordered w-full focus:select-primary" [formField]="form.assigned_to">
             <option value="">Unassigned</option>
             @for (u of users(); track u.id) {
-            <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
             }
           </select>
         </div>
@@ -5350,26 +5135,27 @@ export type DraftPayload = {
         <select id="ct-team" class="select select-bordered w-full focus:select-primary" [formField]="form.team_id">
           <option value="">No Team</option>
           @for (t of teamsList(); track t.id) {
-          <option [value]="t.id">{{ t.name }}</option>
+            <option [value]="t.id">{{ t.name }}</option>
           }
         </select>
       </div>
 
       @if (error()) {
-      <div class="alert alert-error py-2 text-sm rounded-xl flex items-center gap-2">
-        <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
-        <span>{{ error() }}</span>
-      </div>
+        <div class="alert alert-error py-2 text-sm rounded-xl flex items-center gap-2">
+          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+          <span>{{ error() }}</span>
+        </div>
       }
 
       <div class="flex justify-end gap-2 pt-2">
         <button type="button" class="btn btn-ghost" (click)="close()">Cancel</button>
         <button type="submit" class="btn btn-primary" [disabled]="submitting()">
           @if (submitting()) {
-          <span class="loading loading-spinner loading-sm"></span>
+            <span class="loading loading-spinner loading-sm"></span>
           } @else {
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          } Create Task
+            <pc-icon name="plus" [size]="4"></pc-icon>
+          }
+          Create Task
         </button>
       </div>
     </form>
@@ -5382,7 +5168,6 @@ export type DraftPayload = {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-create-task-dialog/email-create-task-dialog.ts
-
 ```typescript
 import { Component, ElementRef, inject, input, signal, viewChild } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
@@ -5390,7 +5175,7 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
-import { AddTaskObj } from '../../../../../../../../libs/common/src';
+import { AddTaskObj, TASK_BOARD_STATUSES, TASK_STATUS_LABELS, TaskBoardStatus } from '../../../../../../../../libs/common/src';
 import type { IAuthUser } from '../../../../../../../../libs/common/src/lib/auth';
 import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { UserService } from '../../../../services/user.service';
@@ -5420,12 +5205,13 @@ export class EmailCreateTaskDialog {
   protected readonly isLoading = this._loading.visible;
 
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
 
   protected readonly payload = signal({
     name: '',
     details: '',
-    status: 'todo' as 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived',
+    status: 'todo' as TaskBoardStatus,
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     due_at: '',
     assigned_to: '',
@@ -5455,15 +5241,7 @@ export class EmailCreateTaskDialog {
       `<p><a href="${url}">View email thread: ${subject}</a></p>` +
       `<p>From: ${fromPart}<br>Date: ${datePart}<br>Subject: ${subject}</p>`;
 
-    this.payload.set({
-      name: '',
-      details,
-      status: 'todo',
-      priority: 'medium',
-      due_at: '',
-      assigned_to: '',
-      team_id: '',
-    });
+    this.payload.set({ name: '', details, status: 'todo', priority: 'medium', due_at: '', assigned_to: '', team_id: '' });
     this.error.set(null);
 
     if (!this.users().length || !this.teamsList().length) {
@@ -5530,7 +5308,6 @@ export class EmailCreateTaskDialog {
 ```
 
 ## File: apps/frontend/src/app/experiences/events/services/events-frontend-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import type {
@@ -5596,338 +5373,7 @@ export class EventsFrontendService extends AbstractAPIService<'events', UpdateEv
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-form.html
-
-```html
-<div class="p-6 max-w-5xl space-y-6">
-  @if (error() && !detail() && !isNew()) {
-  <div class="alert alert-error m-4">
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!isNew() && !detail()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading event details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
-      [eyebrow]="isNew() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
-      [form]="form"
-      [isLoading]="saving()"
-      [disabled]="slugChecking() || slugUnique() === false"
-      buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
-      [showDelete]="!isNew()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete event"
-      (save)="save($event)"
-      (delete)="deleteEvent()"
-    ></pc-detail-header>
-
-    @if (error()) {
-    <div class="alert alert-error shadow-sm py-3 text-sm">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
-      <!-- Left 2 cols: Main details -->
-      <div class="md:col-span-2 space-y-6">
-        <pc-card title="Event Details">
-          <pc-input
-            id="event-name"
-            label="Event Name *"
-            [formField]="form.name"
-            placeholder="E.g., Annual Fundraising Dinner"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="event-slug"
-              label="URL Slug *"
-              [formField]="form.slug"
-              placeholder="e.g. annual-fundraising-dinner"
-              [hasError]="slugUnique() === false"
-              (input)="onSlugInput()"
-            >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
-            </pc-input>
-            @if (slugChecking()) {
-            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-            </p>
-            } @else if (slugUnique() === true) {
-            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-            } @else if (slugUnique() === false) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
-            }
-          </div>
-
-          <pc-textarea
-            id="event-desc"
-            label="Description"
-            [formField]="form.description"
-            placeholder="Describe the event, agenda, and what attendees can expect..."
-            [rows]="4"
-          ></pc-textarea>
-
-          <pc-input
-            id="event-location"
-            label="Location Address"
-            [formField]="form.location_address"
-            placeholder="E.g., 123 Main St, City Hall Ballroom"
-          ></pc-input>
-
-          <div class="divider mt-4"></div>
-          <div>
-            <h4 class="font-bold text-md">Collected Fields</h4>
-            <h5>Choose which fields appear on the public RSVP form.</h5>
-            <pc-fields-selector
-              [selectedFields]="selectedFields()"
-              (fieldsChange)="selectedFields.set($event)"
-            ></pc-fields-selector>
-          </div>
-
-          <div class="divider"></div>
-
-          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-            Organizer Contact
-          </h4>
-          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <pc-input
-              id="contact-email"
-              label="Contact Email"
-              type="email"
-              [formField]="form.contact_email"
-              placeholder="organizer@example.com"
-            ></pc-input>
-            <pc-input
-              id="contact-phone"
-              label="Contact Phone"
-              [formField]="form.contact_phone"
-              placeholder="E.g., 555-0199"
-            ></pc-input>
-          </div>
-        </pc-card>
-
-        <!-- Ticket Types (only for existing events) -->
-        @if (!isNew()) {
-        <pc-card
-          title="Ticket Types"
-          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
-          icon="tag"
-        >
-          <button
-            pc-card-actions
-            type="button"
-            class="btn btn-xs btn-primary gap-1"
-            (click)="startAddTicket()"
-            [disabled]="addingTicket()"
-          >
-            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
-          </button>
-
-          @if (ticketTypes().length === 0 && !addingTicket()) {
-          <p class="text-sm text-base-content/40 italic">
-            No ticket types defined — this event uses a simple free RSVP.
-          </p>
-          } @else {
-          <div class="overflow-x-auto border border-base-300 rounded-lg">
-            <table class="table table-sm w-full text-xs">
-              <thead>
-                <tr class="bg-base-200 text-base-content/70">
-                  <th>Name</th>
-                  <th>Price</th>
-                  <th>Capacity</th>
-                  <th class="w-16 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-base-200">
-                @for (ticket of ticketTypes(); track ticket.id) {
-                <tr class="hover:bg-base-200/40">
-                  <td>
-                    <div class="font-semibold">{{ ticket.name }}</div>
-                    @if (ticket.description) {
-                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
-                    }
-                  </td>
-                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
-                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
-                  <td>
-                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
-                      <pc-icon name="trash" [size]="4"></pc-icon>
-                    </button>
-                  </td>
-                </tr>
-                } @if (addingTicket()) {
-                <tr class="bg-base-200/30">
-                  <td>
-                    <input
-                      type="text"
-                      class="input input-bordered input-xs w-full"
-                      placeholder="Ticket name *"
-                      [ngModel]="newTicket().name"
-                      (ngModelChange)="setNewTicketName($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="0"
-                      min="0"
-                      step="1"
-                      title="Price in cents (e.g. 2500 = $25.00)"
-                      [ngModel]="newTicket().price_cents"
-                      (ngModelChange)="setNewTicketPrice($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="∞"
-                      min="1"
-                      [ngModel]="newTicket().capacity"
-                      (ngModelChange)="setNewTicketCapacity($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <td>
-                    <div class="flex items-center gap-1">
-                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
-                        <pc-icon name="check-circle" [size]="4"></pc-icon>
-                      </button>
-                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
-                        <pc-icon name="x-mark" [size]="4"></pc-icon>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-          }
-        </pc-card>
-        }
-      </div>
-
-      <!-- Right col: Scheduling, toggles -->
-      <div class="space-y-6">
-        <pc-card title="Scheduling">
-          <pc-input
-            id="start-time"
-            label="Start Date & Time *"
-            type="datetime-local"
-            [formField]="form.start_time"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-              [hasError]="endBeforeStartError()"
-            ></pc-input>
-            @if (endBeforeStartError()) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
-            }
-          </div>
-
-          <pc-input
-            id="capacity"
-            label="Total Capacity"
-            type="number"
-            [formField]="form.capacity"
-            placeholder="Unlimited"
-          ></pc-input>
-        </pc-card>
-
-        <pc-card title="Publishing & Notifications">
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  When enabled, this event page is visible to the public.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send a confirmation email when someone RSVPs for this event.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_registration_confirmation"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send automated reminder emails to registered attendees 24 hours before the event.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-            </label>
-          </div>
-        </pc-card>
-
-        @if (!isNew()) {
-        <pc-entity-overview
-          title="Event Overview"
-          [createdAt]="detail()?.created_at"
-          createdBy="Representative"
-        ></pc-entity-overview>
-        }
-      </div>
-
-      <!-- Right col: Fields & Public Link -->
-
-      @if (!isNew() && publicUrl()) {
-      <pc-public-link-panel
-        [url]="publicUrl()"
-        label="Public RSVP Link"
-        subtitle="Share this link so people can RSVP for the event."
-      ></pc-public-link-panel>
-      }
-    </form>
-  </div>
-  }
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
-
 ```typescript
 import { Component } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
@@ -6019,7 +5465,6 @@ export class EventsGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/exports/ui/exports-page.html
-
 ```html
 <div class="p-6 max-w-7xl mx-auto">
   <!-- Header -->
@@ -6110,17 +5555,15 @@ export class EventsGridComponent {
           </td>
           <td class="text-right">
             <div class="flex justify-end gap-1">
-              @if (j.status === 'completed') { @if (isExpired(j)) {
-              <span class="text-xs text-base-content/40 italic flex items-center mr-2">Expired (30d)</span>
-              } @else {
-              <button
-                class="btn btn-sm btn-circle btn-ghost text-primary"
-                title="Download CSV"
-                (click)="downloadJob(j)"
-              >
-                <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-              </button>
-              } }
+              @if (j.status === 'completed') {
+                @if (isExpired(j)) {
+                  <span class="text-xs text-base-content/40 italic flex items-center mr-2">Expired (30d)</span>
+                } @else {
+                  <button class="btn btn-sm btn-circle btn-ghost text-primary" title="Download CSV" (click)="downloadJob(j)">
+                    <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+                  </button>
+                }
+              }
               <button class="btn btn-sm btn-circle btn-ghost text-error" title="Delete Export" (click)="deleteJob(j)">
                 <pc-icon name="trash" [size]="4"></pc-icon>
               </button>
@@ -6148,7 +5591,6 @@ export class EventsGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/exports/ui/exports-page.ts
-
 ```typescript
 import { Component, inject, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
@@ -6251,7 +5693,6 @@ export class ExportsPage extends TRPCService<any> {
 ```
 
 ## File: apps/frontend/src/app/experiences/files/services/files.service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
@@ -6364,7 +5805,6 @@ export class FilesService extends AbstractAPIService<'files', any> {
 ```
 
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.html
-
 ```html
 <div class="p-6 max-w-7xl mx-auto">
   <!-- Header -->
@@ -6485,7 +5925,6 @@ export class FilesService extends AbstractAPIService<'files', any> {
 ```
 
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
-
 ```typescript
 import { DatePipe } from '@angular/common';
 import { Component, inject, OnInit, signal } from '@angular/core';
@@ -6633,7 +6072,6 @@ export class FilesGrid implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/services/donation-pages-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { getAllOptionsType } from '../../../../../../../libs/common/src';
@@ -6643,14 +6081,15 @@ import { FormsService } from './forms-service';
 export class DonationPagesService extends FormsService {
   public override async getAll(options?: getAllOptionsType) {
     const result = await super.getAll(options);
-    const filtered = result.rows.filter((r: any) => r.form_type === 'donation' || r.form_type === 'recurring_donation');
+    const filtered = result.rows.filter(
+      (r: any) => r.form_type === 'donation' || r.form_type === 'recurring_donation',
+    );
     return { rows: filtered, count: filtered.length };
   }
 }
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/services/standard-forms-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { getAllOptionsType } from '../../../../../../../libs/common/src';
@@ -6667,7 +6106,6 @@ export class StandardFormsService extends FormsService {
 ```
 
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
-
 ```typescript
 import { Component } from '@angular/core';
 import { DonationPagesService } from '@experiences/forms/services/donation-pages-service';
@@ -6724,7 +6162,6 @@ export class FundraisingGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/services/imports-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 
@@ -6757,7 +6194,6 @@ export class ImportsService extends TRPCService<unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.html
-
 ```html
 <div class="p-6 max-w-7xl mx-auto">
   <!-- Header -->
@@ -6984,7 +6420,6 @@ export class ImportsService extends TRPCService<unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/imports/ui/imports-page.ts
-
 ```typescript
 import { Component, DestroyRef, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -7158,7 +6593,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/services/lists-refresh.service.ts
-
 ```typescript
 import { signal, Service } from '@angular/core';
 
@@ -7173,7 +6607,6 @@ export class ListsRefreshService {
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/services/lists-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -7264,7 +6697,6 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/ui/list-form.html
-
 ```html
 <div class="flex min-h-full flex-col bg-base-100">
   @if (!isNew()) {
@@ -7513,7 +6945,6 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/ui/list-form.ts
-
 ```typescript
 import { Component, OnInit, computed, inject, input, resource, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -8136,7 +7567,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/ui/list-view.html
-
 ```html
 <div class="flex min-h-full flex-col bg-base-200/50 p-4 sm:p-6 lg:p-8">
   <!-- Top Navigation & Title -->
@@ -8326,7 +7756,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.html
-
 ```html
 @if (email()) {
 <div class="flex flex-col gap-6">
@@ -8836,7 +8265,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-detail.ts
-
 ```typescript
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 
@@ -9130,7 +8558,6 @@ export class NewsletterDetailComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-templates.ts
-
 ```typescript
 export interface EmailBlock {
   id: string;
@@ -9679,7 +9106,6 @@ export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.html
-
 ```html
 <div class="mb-6 rounded-xl border border-base-300 bg-base-100/50 p-6 shadow-sm backdrop-blur-md">
   <div class="flex flex-col gap-3 border-b border-base-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -9910,7 +9336,6 @@ export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.ts
-
 ```typescript
 import { Component, input, computed, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -10037,7 +9462,6 @@ export class NewslettersDashboardComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-grid.ts
-
 ```typescript
 import { Component, viewChild } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
@@ -10158,7 +9582,6 @@ export class NewslettersGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.html
-
 ```html
 <div
   class="flex flex-col lg:flex-row gap-6 h-[calc(100vh-270px)] min-h-[600px] border border-base-300 rounded-lg overflow-hidden bg-base-100 shadow-inner"
@@ -11178,7 +10601,6 @@ export class NewslettersGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.ts
-
 ```typescript
 import { Component, OnInit, computed, model, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -11495,7 +10917,6 @@ export class VisualNewsletterEditorComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/add-connection-drawer.ts
-
 ```typescript
 import { Component, inject, input, output, signal, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -11771,7 +11192,6 @@ export class AddConnectionDrawer {
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/connection-card.ts
-
 ```typescript
 import { Component, computed, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
@@ -11885,7 +11305,6 @@ export class ConnectionCard {
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/people-in-household.ts
-
 ```typescript
 import { Component, effect, inject, input, signal } from '@angular/core';
 import { RouterModule } from '@angular/router';
@@ -12010,7 +11429,6 @@ export class PeopleInHousehold {
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/person-connections.ts
-
 ```typescript
 import { Component, inject, input, output, signal, OnInit } from '@angular/core';
 import { ConnectionsService } from '../../../services/api/connections-service';
@@ -12126,7 +11544,6 @@ export class PersonConnections implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/profile/profile-page.html
-
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-8 md:px-8">
   <!-- Loading State -->
@@ -12531,7 +11948,6 @@ export class PersonConnections implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/profile/profile-page.ts
-
 ```typescript
 import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
@@ -12963,7 +12379,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/account/account-settings.html
-
 ```html
 @if (loading()) {
 <div class="flex items-center gap-3 py-8 text-base-content/50">
@@ -13065,17 +12480,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   @if (status()!.deletion_scheduled_at) {
   <div class="space-y-3">
     <p class="text-sm text-error font-medium">
-      Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being permanently
-      removed.
+      Deletion was initiated on {{ status()!.deletion_scheduled_at | date : 'medium' }}. Your data is being
+      permanently removed.
     </p>
-    <button type="button" class="btn btn-outline btn-sm" (click)="cancelDeletion()" [disabled]="actionPending()">
+    <button
+      type="button"
+      class="btn btn-outline btn-sm"
+      (click)="cancelDeletion()"
+      [disabled]="actionPending()"
+    >
       @if (actionPending()) {
       <span class="loading loading-spinner loading-xs"></span>
       } Cancel Deletion
     </button>
   </div>
   } @else {
-  <button type="button" class="btn btn-error btn-sm" (click)="deleteAccount()" [disabled]="actionPending()">
+  <button
+    type="button"
+    class="btn btn-error btn-sm"
+    (click)="deleteAccount()"
+    [disabled]="actionPending()"
+  >
     @if (actionPending()) {
     <span class="loading loading-spinner loading-xs"></span>
     }
@@ -13088,7 +12513,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/account/account-settings.ts
-
 ```typescript
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -13251,7 +12675,6 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.html
-
 ```html
 @if (!details()) {
 <div class="flex h-48 items-center justify-center">
@@ -13545,7 +12968,6 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/billing/billing-settings.ts
-
 ```typescript
 import { DatePipe } from '@angular/common';
 import { Component, DestroyRef, OnInit, inject, signal } from '@angular/core';
@@ -13693,7 +13115,6 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/domains/domains-settings.html
-
 ```html
 <div class="space-y-6">
   <!-- Add Domain Card -->
@@ -13994,7 +13415,6 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/domains/domains-settings.ts
-
 ```typescript
 import { Component, signal, computed, inject, OnInit, linkedSignal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -14178,7 +13598,6 @@ export class DomainSettingsComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.html
-
 ```html
 <div class="space-y-6">
   @if (isLoading()) {
@@ -14204,10 +13623,7 @@ export class DomainSettingsComponent implements OnInit {
     <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
     <div class="flex-1 min-w-0">
       <p class="font-semibold text-warning">Last sync failed</p>
-      <p class="text-sm text-base-content/70 mt-1">
-        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
-        this code:
-      </p>
+      <p class="text-sm text-base-content/70 mt-1">Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with this code:</p>
       <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
     </div>
   </div>
@@ -14222,7 +13638,12 @@ export class DomainSettingsComponent implements OnInit {
       Sync Now }
     </button>
 
-    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
+    <button
+      type="button"
+      class="btn btn-ghost"
+      [disabled]="isSyncing()"
+      (click)="forceFullResync()"
+    >
       <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
       Force Full Re-sync
     </button>
@@ -14290,7 +13711,6 @@ export class DomainSettingsComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.ts
-
 ```typescript
 import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
@@ -14326,8 +13746,11 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
 
   public ngOnInit(): void {
+
     void this.loadOnInit();
+
   }
+
 
   private async loadOnInit(): Promise<void> {
     // Handle OAuth redirect result (google_connected or google_error query params)
@@ -14468,7 +13891,6 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.html
-
 ```html
 <div class="space-y-6">
   @if (isLoading()) {
@@ -14494,10 +13916,7 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
     <pc-icon name="exclamation-triangle" class="text-warning mt-0.5 shrink-0" [size]="5"></pc-icon>
     <div class="flex-1 min-w-0">
       <p class="font-semibold text-warning">Last sync failed</p>
-      <p class="text-sm text-base-content/70 mt-1">
-        Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with
-        this code:
-      </p>
+      <p class="text-sm text-base-content/70 mt-1">Your emails may be out of date. Try syncing again or reconnecting. If the problem persists, contact support with this code:</p>
       <p class="font-mono text-sm font-semibold mt-1 tracking-wider">{{ status()!.lastSyncError }}</p>
     </div>
   </div>
@@ -14512,7 +13931,12 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
       Sync Now }
     </button>
 
-    <button type="button" class="btn btn-ghost" [disabled]="isSyncing()" (click)="forceFullResync()">
+    <button
+      type="button"
+      class="btn btn-ghost"
+      [disabled]="isSyncing()"
+      (click)="forceFullResync()"
+    >
       <pc-icon name="arrow-path" [size]="4" class="mr-2"></pc-icon>
       Force Full Re-sync
     </button>
@@ -14569,7 +13993,6 @@ export class GoogleSyncSettings extends TRPCService<unknown> implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/ms-sync/ms-sync-settings.ts
-
 ```typescript
 import { Component, OnInit, inject, signal, DestroyRef } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
@@ -14605,8 +14028,11 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
 
   public ngOnInit(): void {
+
     void this.loadOnInit();
+
   }
+
 
   private async loadOnInit(): Promise<void> {
     // Handle OAuth redirect result (ms_connected or ms_error query params)
@@ -14747,7 +14173,6 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.html
-
 ```html
 <div class="space-y-6">
   <div class="flex items-center justify-between">
@@ -14841,7 +14266,6 @@ export class MsSyncSettings extends TRPCService<unknown> implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/security/passkey-settings.ts
-
 ```typescript
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -14967,7 +14391,6 @@ export class PasskeySettingsComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/services/settings-service.ts
-
 ```typescript
 import { signal, Service } from '@angular/core';
 
@@ -15076,7 +14499,6 @@ export class SettingsService extends TRPCService<TenantSettingsSnapshot> {
 ```
 
 ## File: apps/frontend/src/app/experiences/shifts/services/shifts-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -15144,7 +14566,6 @@ export class ShiftsService extends AbstractAPIService<'volunteer_events', Update
 ```
 
 ## File: apps/frontend/src/app/experiences/shifts/ui/shifts-grid.ts
-
 ```typescript
 import { Component } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
@@ -15230,7 +14651,6 @@ export class ShiftsGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/services/dashboard.service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { TRPCService } from '../../../services/api/trpc-service';
@@ -15252,7 +14672,6 @@ export class DashboardService extends TRPCService<any> {
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/sla-details.html
-
 ```html
 <div
   class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden mt-6 transition-all duration-300 animate-fade-in"
@@ -15365,10 +14784,12 @@ export class DashboardService extends TRPCService<any> {
       >
         @if (isLoadingEmails()) {
         <span class="loading loading-spinner loading-xs"></span>
-        } Load More
+        }
+        Load More
       </button>
     </div>
-    } } }
+    }
+    } }
 
     <!-- Tasks Breached Tab Content -->
     @if (activeTab() === 'tasks') { @if (breachedTasks().length === 0) {
@@ -15436,16 +14857,17 @@ export class DashboardService extends TRPCService<any> {
       >
         @if (isLoadingTasks()) {
         <span class="loading loading-spinner loading-xs"></span>
-        } Load More
+        }
+        Load More
       </button>
     </div>
-    } } }
+    }
+    } }
   </div>
 </div>
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/sla-details.ts
-
 ```typescript
 import { Component, input, model, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -15478,7 +14900,6 @@ export class SlaDetails {
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/services/tags-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -15574,7 +14995,6 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
-
 ```typescript
 import { Component, inject, viewChild, signal } from '@angular/core';
 import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
@@ -15684,7 +15104,6 @@ export class AddIssue {
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
-
 ```typescript
 import { Component, inject, viewChild, signal } from '@angular/core';
 import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
@@ -15799,7 +15218,6 @@ export class AddTag {
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/issues-grid.ts
-
 ```typescript
 import { Component, inject } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -15879,7 +15297,6 @@ export class IssuesGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/tag-model.ts
-
 ```typescript
 import { signal } from '@angular/core';
 
@@ -15892,7 +15309,6 @@ export class TagModel {
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/tag-palette.service.ts
-
 ```typescript
 import { Service, inject, resource, computed } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -15958,7 +15374,6 @@ export class TagPaletteService {
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/tags-grid.ts
-
 ```typescript
 import { Component } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -16037,7 +15452,6 @@ export class TagsGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/tags/ui/tags.ts
-
 ```typescript
 import { Component, OnInit, inject, input, output, signal } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -16199,8 +15613,75 @@ export class Tags implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/services/tasks-service.ts
+## File: apps/frontend/src/app/experiences/tasks/services/task-sla.ts
+```typescript
+import { calculateWorkingTimeMs } from '../../../../../../../libs/common/src/lib/sla';
+import type { SlaPill, SlaTone } from '../../emails/services/email-sla';
 
+const MS_PER_HOUR = 3_600_000;
+/** Below this fraction of the target still remaining, the pill turns warning-tinted. */
+const WARNING_REMAINING_FRACTION = 0.25;
+
+export interface TaskSlaInputs {
+  /** When the task was created — the working clock starts here (spec §4). */
+  createdAt: Date | null | undefined;
+  status: string | null | undefined;
+  /** Workspace SLA target for resolving a task, in working hours (`sla.tasks_hours`). */
+  tasksHours: number | null | undefined;
+  /** '09:00' */
+  workingHoursEnd: string | null | undefined;
+  /** '17:00' */
+  workingHoursStart: string | null | undefined;
+  /** '1,2,3,4,5' — day numbers, 0=Sun … 6=Sat. */
+  workingDays: string | null | undefined;
+}
+
+function parseWorkingDays(raw: string | null | undefined): number[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
+}
+
+/**
+ * Honest per-task SLA pill (spec §4), the same shape and reasoning as the email SLA
+ * pill (`../../emails/services/email-sla.ts`) — same underlying `calculateWorkingTimeMs`
+ * from `libs/common`, just anchored on `created_at` instead of the email's received time.
+ * A task that's already `done` or `archived` has nothing left to disclose, so it
+ * reports no pill at all rather than a fabricated "resolved in Xh".
+ */
+export function computeTaskSla(inputs: TaskSlaInputs, now: Date = new Date()): SlaPill | null {
+  const status = (inputs.status ?? 'todo').toLowerCase();
+  if (status === 'done' || status === 'archived') return null;
+
+  const target = inputs.tasksHours;
+  const created = inputs.createdAt;
+  const workingDays = parseWorkingDays(inputs.workingDays);
+
+  if (created == null || target == null || !Number.isFinite(target) || target <= 0 || workingDays.length === 0) {
+    return null;
+  }
+
+  const start = inputs.workingHoursStart || '09:00';
+  const end = inputs.workingHoursEnd || '17:00';
+
+  const elapsedHours = calculateWorkingTimeMs(created, now, workingDays, start, end) / MS_PER_HOUR;
+  const remaining = target - elapsedHours;
+  const targetLabel = Math.round(target);
+
+  if (remaining <= 0) {
+    const overdueBy = Math.max(1, Math.ceil(-remaining));
+    return { text: `Overdue by ${overdueBy}h · ${targetLabel}h SLA`, tone: 'error' };
+  }
+
+  const dueIn = Math.max(1, Math.ceil(remaining));
+  const tone: SlaTone = remaining <= target * WARNING_REMAINING_FRACTION ? 'warning' : 'neutral';
+  return { text: `Due in ${dueIn}h · ${targetLabel}h SLA`, tone };
+}
+```
+
+## File: apps/frontend/src/app/experiences/tasks/services/tasks-service.ts
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -16231,6 +15712,21 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 
   public count(): Promise<number> {
     return this.api.tasks.count.query();
+  }
+
+  /** Live count of open tasks past the working-hours SLA target — sidebar badge + count sentences (spec §4). */
+  public countSlaBreaches(): Promise<number> {
+    return this.api.tasks.countSlaBreaches.query();
+  }
+
+  /** The count-sentence numbers in one call: open total, unassigned, assigned-to-me, SLA breaches. */
+  public getSummaryCounts(): Promise<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  }> {
+    return this.api.tasks.getSummaryCounts.query();
   }
 
   public detachTag(_id: string, _tag_name: string) {
@@ -16274,7 +15770,6 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-add.html
-
 ```html
 <section
   class="max-w-2xl mx-auto my-8 p-8 bg-base-100 rounded-3xl border border-base-200 shadow-xl space-y-6 transition-all duration-300 hover:shadow-2xl"
@@ -16292,6 +15787,7 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
     <pc-form-actions
       [isLoading]="submitting()"
       [signalForm]="form"
+      [saveAlwaysEnabled]="true"
       (btn1Clicked)="submit($event)"
       [buttonsToShow]="'two'"
       [btn1Text]="'Create Task'"
@@ -16306,6 +15802,7 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
         <span class="label-text">Task Name <span class="text-error">*</span></span>
       </label>
       <input
+        #nameInput
         id="name"
         type="text"
         placeholder="Enter task name..."
@@ -16356,7 +15853,7 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
           [formField]="form.status"
         >
           @for (s of statuses; track s) {
-          <option [value]="s">{{ toTitleCase(s) }}</option>
+          <option [value]="s">{{ statusLabels[s] }}</option>
           }
         </select>
       </div>
@@ -16379,25 +15876,37 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Due Date -->
+      <!-- Due -->
       <div class="form-control w-full">
-        <label class="label font-semibold text-sm" for="due_at">
-          <span class="label-text">Due Date</span>
+        <label class="label font-semibold text-sm">
+          <span class="label-text">Due</span>
         </label>
-        <input
-          id="due_at"
-          type="date"
-          class="input input-bordered w-full focus:input-primary transition-all duration-200"
-          [formField]="form.due_at"
-          [class.input-error]="form.due_at().invalid() && (form.due_at().dirty() || form.due_at().touched())"
-        />
-        @if (form.due_at().invalid() && (form.due_at().dirty() || form.due_at().touched())) { @for (err of
-        form.due_at().errors(); track err) {
-        <p class="text-xs text-error mt-1.5 font-medium flex items-center gap-1">
-          <pc-icon name="x-mark" [size]="3"></pc-icon>
-          {{ err.message }}
-        </p>
-        } }
+        <div class="join">
+          <button
+            type="button"
+            class="btn join-item btn-sm"
+            [class.btn-primary]="duePick() === 'today'"
+            (click)="pickDue('today')"
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            class="btn join-item btn-sm"
+            [class.btn-primary]="duePick() === 'tomorrow'"
+            (click)="pickDue('tomorrow')"
+          >
+            Tomorrow
+          </button>
+          <button
+            type="button"
+            class="btn join-item btn-sm"
+            [class.btn-primary]="duePick() === 'next_week'"
+            (click)="pickDue('next_week')"
+          >
+            Next week
+          </button>
+        </div>
       </div>
 
       <!-- Assigned To -->
@@ -16448,7 +15957,6 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-view.html
-
 ```html
 <div class="flex min-h-full flex-col bg-base-200/50 p-6">
   <div class="max-w-7xl mx-auto w-full flex flex-col gap-6">
@@ -16535,7 +16043,7 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
                     class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
                     [class]="getStatusBadgeClass(t.status)"
                   >
-                    {{ toTitleCase(t.status) }}
+                    {{ statusLabel(t.status) }}
                   </span>
                   @if (t.priority) {
                   <span
@@ -16838,7 +16346,7 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
                 (change)="onStatusChange($event)"
               >
                 @for (s of statuses; track s) {
-                <option [value]="s">{{ toTitleCase(s) }}</option>
+                <option [value]="s">{{ statusLabels[s] }}</option>
                 }
               </select>
             </div>
@@ -16978,75 +16486,160 @@ export class TasksService extends AbstractAPIService<'tasks', UpdateTaskType> {
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.html
-
 ```html
-<div class="p-4">
-  <div class="flex items-center gap-2 mb-4">
-    <pc-icon name="view-kanban"></pc-icon>
-    <h2 class="text-xl font-semibold">Task Board</h2>
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-semibold">Task board</h2>
+      @if (countSentence()) {
+        <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <button type="button" class="btn btn-outline btn-sm gap-1.5" (click)="openList()">
+      <pc-icon name="queue-list" [size]="4"></pc-icon>
+      Open list
+    </button>
   </div>
 
-  <div class="grid gap-4" [class]="gridColsClass">
-    @for (col of statuses; track col) {
-    <div class="bg-base-200 rounded-lg p-3 min-h-72 flex flex-col">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="font-semibold">{{ toLabel(col) }}</h3>
-        <span class="badge badge-sm">{{ (grouped()[col] ?? []).length || 0 }}</span>
-      </div>
-      <div
-        class="flex-1 overflow-auto"
-        [attr.data-status]="col"
-        (dragover)="onDragOver($event)"
-        (drop)="onDrop($event, col)"
-      >
-        <div class="flex flex-wrap gap-2 pb-6" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)">
-          @for (t of (grouped()[col] ?? []); track t.id) {
-          <div
-            class="card bg-warning/10 border border-warning/20 shadow-sm cursor-move w-32 md:w-36 aspect-square relative"
-            draggable="true"
-            (dragstart)="onDragStart($event, t)"
-            (dblclick)="openTask(t)"
-            (dragover)="onDragOver($event)"
-            (drop)="onDrop($event, col)"
-          >
-            <div class="card-body p-3">
-              <div class="flex items-center gap-2 mb-1 w-full">
-                <span class="badge badge-ghost badge-xs">#{{ t.id }}</span>
-                <button
-                  (click)="openTask(t); $event.stopPropagation()"
-                  class="btn btn-ghost btn-xs btn-circle ml-auto"
-                  title="View Details"
-                >
-                  <pc-icon name="arrow-top-right-on-square" [size]="3"></pc-icon>
-                </button>
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    @for (col of columns; track col) {
+      <div class="bg-base-200 flex min-h-72 flex-col rounded-lg p-3">
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="font-semibold">{{ columnLabel(col) }}</h3>
+          <span class="badge badge-sm tabular-nums">{{ cardsFor(col).length }}</span>
+        </div>
+
+        <div class="flex flex-1 flex-col gap-2 overflow-auto">
+          @for (t of cardsFor(col); track t.id) {
+            @let pill = slaPill(t);
+            @let reason = waitingReason(t);
+            @let assignee = assigneeName(t.assigned_to);
+            <div
+              class="card bg-base-100 border-line cursor-pointer border shadow-sm"
+              [class.animate-saved-flash]="isFlashed(t.id)"
+              (click)="openTask(t)"
+            >
+              <div class="card-body gap-1.5 p-3">
+                <div class="flex items-start justify-between gap-2">
+                  <span class="text-sm font-medium break-words">{{ t.name }}</span>
+                  @if (t.priority) {
+                    <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+                  }
+                </div>
+
+                @if (t.team_name || t.due_at) {
+                  <div class="text-base-content/60 text-xs">
+                    @if (t.team_name) {
+                      <span>{{ t.team_name }}</span>
+                    }
+                    @if (t.team_name && t.due_at) {
+                      <span> · </span>
+                    }
+                    @if (t.due_at) {
+                      <span>Due {{ dateLabel(t.due_at) }}</span>
+                    }
+                  </div>
+                }
+
+                @if (reason) {
+                  <div class="text-warning flex items-center gap-1 text-xs">
+                    <pc-icon name="clock" [size]="3"></pc-icon>
+                    <span class="break-words">{{ reason }}</span>
+                  </div>
+                }
+
+                @if (pill) {
+                  <span
+                    class="badge badge-xs w-fit"
+                    [class.badge-error]="pill.tone === 'error'"
+                    [class.badge-warning]="pill.tone === 'warning'"
+                    [class.badge-ghost]="pill.tone === 'neutral'"
+                  >
+                    {{ pill.text }}
+                  </span>
+                }
+
+                <div class="mt-1 flex items-center justify-between gap-2">
+                  @if (t.assigned_to) {
+                    <span
+                      class="bg-primary/10 text-primary flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold"
+                      [attr.title]="assignee"
+                      >{{ assigneeInitial(t.assigned_to) }}</span
+                    >
+                  } @else {
+                    <button
+                      type="button"
+                      class="badge badge-outline border-dashed text-xs"
+                      title="Take this task — one click assigns it to you"
+                      (click)="takeTask(t); $event.stopPropagation()"
+                    >
+                      Unassigned
+                    </button>
+                  }
+
+                  <div class="flex items-center gap-1">
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle"
+                      [class.opacity-30]="!canMove(t.status, -1)"
+                      [disabled]="!canMove(t.status, -1)"
+                      [attr.title]="!canMove(t.status, -1) ? moveDisabledReason(-1) : 'Move to the previous column'"
+                      (click)="moveCard(t, -1); $event.stopPropagation()"
+                    >
+                      <pc-icon name="chevron-left" [size]="4"></pc-icon>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-xs btn-circle"
+                      [class.opacity-30]="!canMove(t.status, 1)"
+                      [disabled]="!canMove(t.status, 1)"
+                      [attr.title]="!canMove(t.status, 1) ? moveDisabledReason(1) : 'Move to the next column'"
+                      (click)="moveCard(t, 1); $event.stopPropagation()"
+                    >
+                      <pc-icon name="chevron-right" [size]="4"></pc-icon>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <span class="badge badge-xs absolute bottom-2 right-2" [class]="priorityBadgeClass(t.priority)">
-                {{ t.priority || '' }}
-              </span>
-              <div class="text-sm font-medium break-words overflow-hidden">{{ t.name }}</div>
-              <div class="mt-auto text-xs opacity-70">{{ dateLabel(t.due_at) }}</div>
             </div>
-          </div>
+          } @empty {
+            <div class="text-base-content/40 flex flex-1 items-center justify-center text-xs">No tasks here</div>
           }
-          <!-- Spacer drop zone at bottom of column -->
-          <div class="w-full h-16" (dragover)="onDragOver($event)" (drop)="onDrop($event, col)"></div>
         </div>
       </div>
-    </div>
     }
   </div>
 </div>
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.ts
-
 ```typescript
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { UpdateTaskType } from '../../../../../../../libs/common/src';
-import { Icon } from '@uxcommon/components/icons/icon';
+import { TASK_BOARD_STATUSES, TASK_STATUS_LABELS, TaskBoardStatus, UpdateTaskType } from '../../../../../../../libs/common/src';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
+import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
 import { TasksService } from '../services/tasks-service';
+import { computeTaskSla } from '../services/task-sla';
+
+interface BoardTask {
+  id: string;
+  name: string;
+  status: TaskBoardStatus;
+  priority: string | null;
+  assigned_to: string | null;
+  due_at: string | null;
+  created_at: string | null;
+  details: string | null;
+  team_name: string | null;
+}
+
+const CARD_FLASH_MS = 1200;
 
 @Component({
   selector: 'pc-tasks-board',
@@ -17056,268 +16649,659 @@ import { TasksService } from '../services/tasks-service';
 export class TasksBoard implements OnInit {
   private readonly router = inject(Router);
   private readonly svc = inject(TasksService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
 
-  protected readonly gridColsClass = 'grid-cols-1 md:grid-cols-3 xl:grid-cols-6';
-  protected readonly statuses = STATUSES as unknown as string[];
-  protected readonly tasks = signal<Task[]>([]);
+  protected readonly columns = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
+
+  protected readonly tasks = signal<BoardTask[]>([]);
+  protected readonly usersById = signal<Map<string, string>>(new Map());
+  protected readonly flashedIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly counts = signal<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  } | null>(null);
+
   protected readonly grouped = computed(() => {
-    const map: Record<string, Task[]> = Object.fromEntries(this.statuses.map((s) => [s, []]));
+    const map = new Map<TaskBoardStatus, BoardTask[]>(this.columns.map((c) => [c, []]));
     for (const t of this.tasks()) {
-      const s = (t.status || 'todo').toLowerCase();
-      (map[s] ??= []).push(t);
+      map.get(t.status)?.push(t);
     }
     return map;
   });
 
+  /** "12 open tasks · 2 breaching SLA · 4 assigned to you · 3 waiting for an owner" (spec §4). */
+  protected readonly countSentence = computed(() => {
+    const c = this.counts();
+    if (!c) return '';
+    return (
+      `${c.openTotal} open ${c.openTotal === 1 ? 'task' : 'tasks'} · ${c.slaBreaches} breaching SLA · ` +
+      `${c.assignedToMe} assigned to you · ${c.unassigned} waiting for an owner`
+    );
+  });
+
   public ngOnInit(): void {
+    void this.settingsSvc.load();
     void this.loadOnInit();
   }
 
   private async loadOnInit(): Promise<void> {
-    const res = await this.svc.getAll({
-      limit: 1000,
-      columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at'],
-    });
-    const rows = (res.rows || []) as unknown as any[];
-    const items: Task[] = rows.map((r) => ({
-      id: String(r.id),
-      name: String(r.name || '(no name)'),
-      status: r.status ?? 'todo',
-      priority: r.priority ?? null,
-      assigned_to: r.assigned_to ?? null,
-      due_at: r.due_at ?? null,
-    }));
-    this.tasks.set(items);
-  }
-
-  protected onDragOver(ev: DragEvent) {
-    ev.preventDefault();
-    ev.dataTransfer!.dropEffect = 'move';
-  }
-
-  protected onDragStart(ev: DragEvent, t: Task) {
-    if (ev.dataTransfer) {
-      ev.dataTransfer.setData('text/plain', t.id);
-      ev.dataTransfer.setData('application/x-status', String(t.status || 'todo'));
-      ev.dataTransfer.effectAllowed = 'move';
-    }
-  }
-
-  protected async onDrop(ev: DragEvent, toStatus: string) {
-    ev.preventDefault();
-    const id = ev.dataTransfer?.getData('text/plain');
-    if (!id) return;
-    const list = this.tasks();
-    const idx = list.findIndex((x) => x.id === id);
-    if (idx < 0) return;
-    const curr = list[idx]!;
-    const next = String(toStatus) as UpdateTaskType['status'];
-    if (curr.status === next) return;
-
     try {
-      await this.svc.update(id, { status: next } as UpdateTaskType);
-      this.svc.triggerRefresh();
-      const copy = list.slice();
-      copy[idx] = { ...curr, status: String(next) };
-      this.tasks.set(copy);
-    } catch (_e) {
-      // ignore errors; could add toast
+      const [res, users, counts] = await Promise.all([
+        this.svc.getAll({
+          limit: 1000,
+          columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at', 'created_at', 'details', 'team_name'],
+        }),
+        this.userService.getUsers(),
+        this.svc.getSummaryCounts(),
+      ]);
+      this.usersById.set(new Map(users.map((u) => [String(u.id), `${u.first_name} ${u.last_name || ''}`.trim()])));
+      this.counts.set(counts);
+
+      const rows = (res.rows || []) as unknown as Record<string, unknown>[];
+      const items: BoardTask[] = rows
+        .map((r) => this.toBoardTask(r))
+        .filter((t): t is BoardTask => t !== null);
+      this.tasks.set(items);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not load the task board. Please try again.'));
     }
   }
 
-  protected openTask(t: Task) {
-    void this.router.navigate(['tasks', t.id]);
+  private toBoardTask(r: Record<string, unknown>): BoardTask | null {
+    const status = String(r['status'] ?? 'todo');
+    if (!(this.columns as readonly string[]).includes(status)) return null; // done/archived-excluded rows never reach the board
+    return {
+      id: String(r['id']),
+      name: String(r['name'] || '(no name)'),
+      status: status as TaskBoardStatus,
+      priority: (r['priority'] as string | null) ?? null,
+      assigned_to: r['assigned_to'] == null ? null : String(r['assigned_to']),
+      due_at: (r['due_at'] as string | null) ?? null,
+      created_at: (r['created_at'] as string | null) ?? null,
+      details: (r['details'] as string | null) ?? null,
+      team_name: (r['team_name'] as string | null) ?? null,
+    };
   }
 
-  protected toLabel(s: string) {
-    return STATUS_LABEL[s] || s;
+  protected columnLabel(status: TaskBoardStatus): string {
+    return this.statusLabels[status];
   }
 
-  protected priorityBadgeClass(p?: string | null) {
-    const v = (p || '').toLowerCase();
-    return v === 'urgent'
-      ? 'badge-error'
-      : v === 'high'
-        ? 'badge-warning'
-        : v === 'medium'
-          ? 'badge-info'
-          : 'badge-neutral';
+  protected cardsFor(status: TaskBoardStatus): BoardTask[] {
+    return this.grouped().get(status) ?? [];
   }
 
-  protected dateLabel(v?: string | null) {
+  protected assigneeName(id: string | null): string | null {
+    if (!id) return null;
+    return this.usersById().get(id) ?? null;
+  }
+
+  protected assigneeInitial(id: string | null): string {
+    const name = this.assigneeName(id);
+    return name ? name.slice(0, 1).toUpperCase() : '?';
+  }
+
+  protected isFlashed(id: string): boolean {
+    return this.flashedIds().has(id);
+  }
+
+  protected slaPill(task: BoardTask) {
+    return computeTaskSla({
+      status: task.status,
+      createdAt: task.created_at ? new Date(task.created_at) : null,
+      tasksHours: Number(this.settingsSvc.getValue('sla.tasks_hours', 24)),
+      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
+      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
+      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
+    });
+  }
+
+  protected waitingReason(task: BoardTask): string | null {
+    if (task.status !== 'waiting' || !task.details) return null;
+    const oneLine = task.details.trim().split('\n')[0] ?? '';
+    return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || null;
+  }
+
+  protected dateLabel(v?: string | null): string {
     if (!v) return '';
     const s = typeof v === 'string' ? v : String(v);
     return s.length > 10 ? s.slice(0, 10) : s;
   }
-}
 
-type Task = {
-  id: string;
-  name: string;
-  status: string | null;
-  priority?: string | null;
-  assigned_to?: string | null;
-  due_at?: string | null;
-};
-
-const STATUSES = ['todo', 'in_progress', 'blocked', 'done', 'canceled'] as const;
-const STATUS_LABEL: Record<string, string> = {
-  todo: 'Todo',
-  in_progress: 'In Progress',
-  blocked: 'Blocked',
-  done: 'Done',
-  canceled: 'Canceled',
-};
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
-
-```typescript
-import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { GridRow } from '@frontend/shared/components/datagrid/types';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Component({
-  selector: 'pc-tasks-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Tasks"
-        i18n-title
-        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [showArchiveIcon]="true"
-        (importCSV)="openImportDialog()"
-        plusIcon="add-task"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Tasks from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    />
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: TasksService },
-    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
-  ],
-})
-export class TasksGrid implements OnInit {
-  private readonly userService = inject(UserService);
-  private readonly tasksService = inject(TasksService);
-  public readonly _loading = createLoadingGate();
-  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
-
-  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
-  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
-  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
-  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-
-  private readonly unassignedLabel = 'Not Assigned';
-
-  // Users for Assigned To (populated via AuthService on init)
-  private userIds: string[] = [];
-  private userLabels: string[] = [];
-  private usersById = new Map<string, string>();
-  private usersAvatarById = new Map<string, string | null>();
-
-  // Fields we will accept from CSV for future import support
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
-
-  protected col: ColDef[] = [
-    { field: 'id', headerName: 'ID' },
-    {
-      field: 'assigned_to',
-      headerName: 'Assigned To',
-      editable: true,
-      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
-      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
-      cellEditorParams: () => ({
-        values: [null, ...this.userIds],
-        labels: [this.unassignedLabel, ...this.userLabels],
-      }),
-      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
-    },
-    { field: 'name', headerName: 'Task', editable: true },
-    {
-      field: 'status',
-      headerName: 'Status',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
-      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
-      valueSetter: (p: CellParams) => this.statusValueSetter(p),
-    },
-    {
-      field: 'priority',
-      headerName: 'Priority',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
-      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
-      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
-    },
-    {
-      field: 'due_at',
-      headerName: 'Due',
-      editable: true,
-      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
-      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
-      valueFormatter: (p: CellParams) => this.formatDate(p.value),
-      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
-    },
-    {
-      field: 'createdby_id',
-      headerName: 'Created By',
-      editable: false,
-      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
-      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
-      // Provide filter options using known user labels
-      cellEditorParams: () => ({ values: this.userLabels }),
-    },
-  ];
-  protected importSummary = signal<CsvImportSummary | null>(null);
-  protected importerOpen = signal(false);
-  protected isArchiveMode = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
+  protected priorityBadgeClass(p?: string | null): string {
+    const v = (p || '').toLowerCase();
+    return v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
   }
 
-  private async initialize() {
-    // Load users to drive Assigned To options and name mapping
+  /** ‹ › move: one column at a time. Disabled (dimmed) at either end — see `moveDisabledReason`. */
+  protected canMove(status: TaskBoardStatus, direction: -1 | 1): boolean {
+    const idx = this.columns.indexOf(status);
+    const nextIdx = idx + direction;
+    return nextIdx >= 0 && nextIdx < this.columns.length;
+  }
+
+  protected moveDisabledReason(direction: -1 | 1): string {
+    const edge = direction < 0 ? this.columns[0] : this.columns[this.columns.length - 1];
+    return edge ? `Already in ${this.statusLabels[edge]}` : '';
+  }
+
+  protected async moveCard(task: BoardTask, direction: -1 | 1): Promise<void> {
+    if (!this.canMove(task.status, direction)) return;
+    const idx = this.columns.indexOf(task.status);
+    const next = this.columns[idx + direction];
+    if (!next) return;
+    await this.setStatus(task, next);
+  }
+
+  private async setStatus(task: BoardTask, next: TaskBoardStatus): Promise<void> {
+    const prevStatus = task.status;
+    this.tasks.update((list) => list.map((t) => (t.id === task.id ? { ...t, status: next } : t)));
     try {
-      const users = await this.userService.getUsers();
-      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
-      this.userIds = users.map((u) => String(u.id));
-      this.userLabels = users.map((u) => `${u.first_name}`);
-    } catch {
-      /* no op */
+      await this.svc.update(task.id, { status: next } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      this.flashCard(task.id);
+    } catch (err) {
+      this.tasks.update((list) => list.map((t) => (t.id === task.id ? { ...t, status: prevStatus } : t)));
+      this.alerts.showError(getUserErrorMessage(err, 'Could not move the task. Please try again.'));
     }
+  }
+
+  /** One-click "take" for an unassigned task — assigns it to the current user. */
+  protected async takeTask(task: BoardTask): Promise<void> {
+    const me = this.auth.getUser();
+    if (!me?.id) return;
+    try {
+      await this.svc.update(task.id, { assigned_to: me.id } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      this.tasks.update((list) => list.map((t) => (t.id === task.id ? { ...t, assigned_to: me.id } : t)));
+      this.flashCard(task.id);
+      this.alerts.showSuccess(`You're now assigned to "${task.name}"`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not take the task. Please try again.'));
+    }
+  }
+
+  private flashCard(id: string): void {
+    this.flashedIds.update((s) => new Set([...s, id]));
+    setTimeout(() => {
+      this.flashedIds.update((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }, CARD_FLASH_MS);
+  }
+
+  protected openTask(t: BoardTask): void {
+    void this.router.navigate(['tasks', t.id]);
+  }
+
+  protected openList(): void {
+    void this.router.navigate(['/tasks']);
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.html
+```html
+<div class="flex flex-col gap-4 p-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-semibold">Tasks</h2>
+      @if (countSentence()) {
+        <p class="text-base-content/60 mt-0.5 text-sm tabular-nums">{{ countSentence() }}</p>
+      }
+    </div>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-ghost btn-sm gap-1.5" (click)="openImportDialog()">
+        <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+        Import
+      </button>
+      <button type="button" class="btn btn-outline btn-sm gap-1.5" (click)="openBoard()">
+        <pc-icon name="view-kanban" [size]="4"></pc-icon>
+        Open board
+      </button>
+      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        New task
+      </button>
+    </div>
+  </div>
+
+  <!-- Quiet tab row with counts (design idiom table §4) -->
+  <nav class="border-line flex items-center gap-1 border-b" aria-label="Task filters">
+    @for (t of tabs(); track t.key) {
+      <button
+        type="button"
+        class="-mb-px flex items-center gap-1.5 border-b-2 border-transparent px-3 py-2 text-[13px] tracking-[0.03em] transition-colors"
+        [class.text-primary]="tab() === t.key"
+        [class.font-semibold]="tab() === t.key"
+        [class.border-primary]="tab() === t.key"
+        [class.text-base-content/70]="tab() !== t.key"
+        (click)="setTab(t.key)"
+      >
+        {{ t.label }}
+        <span class="text-xs tabular-nums opacity-70">{{ t.count }}</span>
+      </button>
+    }
+  </nav>
+
+  @if (!loading() && !filtered().length) {
+    <div class="flex flex-col items-center gap-3 py-16 text-center">
+      <pc-icon name="clipboard-document-list" [size]="8" class="opacity-30"></pc-icon>
+      @switch (tab()) {
+        @case ('all') {
+          <span class="text-base font-medium">No tasks yet</span>
+        }
+        @case ('mine') {
+          <span class="text-base font-medium">Nothing assigned to you yet</span>
+        }
+        @case ('unassigned') {
+          <span class="text-base font-medium">Every open task has an owner</span>
+        }
+        @case ('done') {
+          <span class="text-base font-medium">Nothing completed yet</span>
+        }
+      }
+      <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="newTask()">
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        New task
+      </button>
+    </div>
+  } @else {
+    <div class="flex flex-col gap-5">
+      @for (group of groups(); track group.key) {
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-2 px-1">
+            <span
+              class="text-xs font-semibold uppercase tracking-[0.06em]"
+              [class.text-error]="group.meta.tone === 'error'"
+              [class.text-warning]="group.meta.tone === 'warning'"
+              [class.text-info]="group.meta.tone === 'info'"
+              [class.text-base-content/50]="group.meta.tone === 'neutral'"
+            >
+              {{ group.meta.label }}
+            </span>
+            <span class="badge badge-xs tabular-nums">{{ group.rows.length }}</span>
+          </div>
+
+          <div class="flex flex-col divide-y divide-base-200">
+            @for (t of group.rows; track t.id) {
+              @let pill = slaPill(t);
+              @let reason = waitingReason(t);
+              @let assignee = assigneeName(t.assigned_to);
+              <div
+                class="flex items-center gap-3 py-2 px-1"
+                [class.animate-saved-flash]="isFlashed(t.id)"
+              >
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs btn-circle shrink-0"
+                  [class.text-success]="t.status === 'done'"
+                  [attr.title]="t.status === 'done' ? 'Reopen task' : 'Mark complete'"
+                  (click)="toggleDone(t)"
+                >
+                  <pc-icon name="check-circle" [size]="5"></pc-icon>
+                </button>
+
+                <div class="min-w-0 flex-1 cursor-pointer" (click)="openTask(t)">
+                  <div
+                    class="truncate text-sm font-medium"
+                    [class.line-through]="t.status === 'done'"
+                    [class.opacity-50]="t.status === 'done'"
+                  >
+                    {{ t.name }}
+                  </div>
+                  @if (reason) {
+                    <div class="text-warning mt-0.5 flex items-center gap-1 text-xs">
+                      <pc-icon name="clock" [size]="3"></pc-icon>
+                      <span class="truncate">{{ reason }}</span>
+                    </div>
+                  }
+                </div>
+
+                @if (t.priority) {
+                  <span class="badge badge-xs shrink-0" [class]="priorityBadgeClass(t.priority)">{{ t.priority }}</span>
+                }
+
+                @if (pill) {
+                  <span
+                    class="badge badge-xs w-fit shrink-0"
+                    [class.badge-error]="pill.tone === 'error'"
+                    [class.badge-warning]="pill.tone === 'warning'"
+                    [class.badge-ghost]="pill.tone === 'neutral'"
+                  >
+                    {{ pill.text }}
+                  </span>
+                }
+
+                @if (t.due_at) {
+                  <span class="text-base-content/60 hidden shrink-0 text-xs tabular-nums sm:inline">{{ dateLabel(t.due_at) }}</span>
+                }
+
+                @if (t.assigned_to) {
+                  <span
+                    class="bg-primary/10 text-primary flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+                    [attr.title]="assignee"
+                    >{{ assigneeInitial(t.assigned_to) }}</span
+                  >
+                } @else {
+                  <button
+                    type="button"
+                    class="badge badge-outline shrink-0 border-dashed text-xs"
+                    title="Take this task — one click assigns it to you"
+                    (click)="takeTask(t); $event.stopPropagation()"
+                  >
+                    Unassigned
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>
+
+<pc-csv-importer
+  [open]="importerOpen()"
+  [title]="'Import tasks from CSV'"
+  [mappableFields]="mappableFields"
+  [autoMapHeader]="autoMapHeader"
+  [summary]="importSummary()"
+  (submit)="onImportSubmit($event)"
+  (close)="importerOpen.set(false); importSummary.set(null)"
+  (closeSummary)="importSummary.set(null)"
+/>
+```
+
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-list.ts
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+import { UpdateTaskType } from '../../../../../../../libs/common/src';
+
+import { AuthService } from '../../../auth/auth-service';
+import { UserService } from '../../../services/user.service';
+import { TasksService } from '../services/tasks-service';
+import { computeTaskSla } from '../services/task-sla';
+
+type ListTab = 'all' | 'mine' | 'unassigned' | 'done';
+type DueBucket = 'overdue' | 'today' | 'upcoming' | 'none';
+
+interface ListTask {
+  id: string;
+  name: string;
+  status: string;
+  priority: string | null;
+  assigned_to: string | null;
+  due_at: string | null;
+  created_at: string | null;
+  details: string | null;
+}
+
+const DUE_BUCKET_META: Record<DueBucket, { label: string; tone: 'error' | 'warning' | 'info' | 'neutral' }> = {
+  overdue: { label: 'Overdue', tone: 'error' },
+  today: { label: 'Today', tone: 'warning' },
+  upcoming: { label: 'Upcoming', tone: 'info' },
+  none: { label: 'No due date', tone: 'neutral' },
+};
+const DUE_BUCKET_ORDER: DueBucket[] = ['overdue', 'today', 'upcoming', 'none'];
+
+@Component({
+  selector: 'pc-tasks-list',
+  imports: [Icon, CsvImportComponent],
+  templateUrl: './tasks-list.html',
+})
+export class TasksList implements OnInit {
+  private readonly router = inject(Router);
+  private readonly svc = inject(TasksService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly _loading = createLoadingGate();
+
+  protected readonly loading = this._loading.visible;
+  protected readonly tab = signal<ListTab>('all');
+  protected readonly tasks = signal<ListTask[]>([]);
+  protected readonly usersById = signal<Map<string, string>>(new Map());
+  protected readonly flashedIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly counts = signal<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  } | null>(null);
+
+  protected readonly importerOpen = signal(false);
+  protected readonly importSummary = signal<CsvImportSummary | null>(null);
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+
+  private readonly myId = computed(() => this.auth.getUser()?.id ?? null);
+
+  /** "12 open tasks · 2 breaching SLA · 4 assigned to you" (spec §4). */
+  protected readonly countSentence = computed(() => {
+    const c = this.counts();
+    if (!c) return '';
+    return `${c.openTotal} open ${c.openTotal === 1 ? 'task' : 'tasks'} · ${c.slaBreaches} breaching SLA · ${c.assignedToMe} assigned to you`;
+  });
+
+  protected readonly tabCounts = computed(() => {
+    const all = this.tasks();
+    const me = this.myId();
+    return {
+      all: all.length,
+      mine: all.filter((t) => t.assigned_to === me).length,
+      unassigned: all.filter((t) => t.assigned_to == null && t.status !== 'done').length,
+      done: all.filter((t) => t.status === 'done').length,
+    };
+  });
+
+  /** Quiet tab row data (design idiom table §4) — typed so `tab.key` narrows to `ListTab`. */
+  protected readonly tabs = computed((): Array<{ count: number; key: ListTab; label: string }> => {
+    const c = this.tabCounts();
+    return [
+      { key: 'all', label: 'All', count: c.all },
+      { key: 'mine', label: 'Mine', count: c.mine },
+      { key: 'unassigned', label: 'Unassigned', count: c.unassigned },
+      { key: 'done', label: 'Done', count: c.done },
+    ];
+  });
+
+  protected readonly filtered = computed(() => {
+    const all = this.tasks();
+    const me = this.myId();
+    const tab = this.tab();
+    switch (tab) {
+      case 'all':
+        return all;
+      case 'mine':
+        return all.filter((t) => t.assigned_to === me);
+      case 'unassigned':
+        return all.filter((t) => t.assigned_to == null && t.status !== 'done');
+      case 'done':
+        return all.filter((t) => t.status === 'done');
+      default: {
+        const _exhaustive: never = tab;
+        return _exhaustive;
+      }
+    }
+  });
+
+  protected readonly groups = computed(() => {
+    const buckets = new Map<DueBucket, ListTask[]>(DUE_BUCKET_ORDER.map((b) => [b, []]));
+    for (const t of this.filtered()) {
+      buckets.get(this.bucketFor(t))?.push(t);
+    }
+    return DUE_BUCKET_ORDER.map((key) => ({ key, meta: DUE_BUCKET_META[key], rows: buckets.get(key) ?? [] })).filter(
+      (g) => g.rows.length > 0,
+    );
+  });
+
+  public ngOnInit(): void {
+    void this.settingsSvc.load();
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const [res, users, counts] = await Promise.all([
+        this.svc.getAll({
+          limit: 1000,
+          columns: ['id', 'name', 'status', 'priority', 'assigned_to', 'due_at', 'created_at', 'details'],
+        }),
+        this.userService.getUsers(),
+        this.svc.getSummaryCounts(),
+      ]);
+      this.usersById.set(new Map(users.map((u) => [String(u.id), `${u.first_name} ${u.last_name || ''}`.trim()])));
+      this.counts.set(counts);
+
+      const rows = (res.rows || []) as unknown as Record<string, unknown>[];
+      this.tasks.set(rows.map((r) => this.toListTask(r)));
+
+      const flashId = (window.history.state as { flashId?: unknown } | undefined)?.flashId;
+      if (typeof flashId === 'string' && flashId) this.flashCard(flashId);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not load tasks. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+
+  private toListTask(r: Record<string, unknown>): ListTask {
+    return {
+      id: String(r['id']),
+      name: String(r['name'] || '(no name)'),
+      status: String(r['status'] ?? 'todo'),
+      priority: (r['priority'] as string | null) ?? null,
+      assigned_to: r['assigned_to'] == null ? null : String(r['assigned_to']),
+      due_at: (r['due_at'] as string | null) ?? null,
+      created_at: (r['created_at'] as string | null) ?? null,
+      details: (r['details'] as string | null) ?? null,
+    };
+  }
+
+  private bucketFor(t: ListTask): DueBucket {
+    if (!t.due_at) return 'none';
+    const due = this.dateOnly(t.due_at);
+    const today = this.dateOnly(new Date().toISOString());
+    if (due < today) return 'overdue';
+    if (due === today) return 'today';
+    return 'upcoming';
+  }
+
+  private dateOnly(v: string): string {
+    return v.length > 10 ? v.slice(0, 10) : v;
+  }
+
+  protected setTab(tab: ListTab): void {
+    this.tab.set(tab);
+  }
+
+  protected isFlashed(id: string): boolean {
+    return this.flashedIds().has(id);
+  }
+
+  protected assigneeName(id: string | null): string | null {
+    return id ? (this.usersById().get(id) ?? null) : null;
+  }
+
+  protected assigneeInitial(id: string | null): string {
+    const name = this.assigneeName(id);
+    return name ? name.slice(0, 1).toUpperCase() : '?';
+  }
+
+  protected waitingReason(t: ListTask): string | null {
+    if (t.status !== 'waiting' || !t.details) return null;
+    const oneLine = t.details.trim().split('\n')[0] ?? '';
+    return oneLine.length > 80 ? `${oneLine.slice(0, 80)}…` : oneLine || null;
+  }
+
+  protected slaPill(t: ListTask) {
+    return computeTaskSla({
+      status: t.status,
+      createdAt: t.created_at ? new Date(t.created_at) : null,
+      tasksHours: Number(this.settingsSvc.getValue('sla.tasks_hours', 24)),
+      workingDays: this.settingsSvc.getValue<string>('sla.working_days', '1,2,3,4,5'),
+      workingHoursStart: this.settingsSvc.getValue<string>('sla.working_hours_start', '09:00'),
+      workingHoursEnd: this.settingsSvc.getValue<string>('sla.working_hours_end', '17:00'),
+    });
+  }
+
+  protected dateLabel(v?: string | null): string {
+    if (!v) return '';
+    return this.dateOnly(v);
+  }
+
+  protected priorityBadgeClass(p?: string | null): string {
+    const v = (p || '').toLowerCase();
+    return v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
+  }
+
+  /** Check-circle toggle: complete (-> done) or reopen (-> todo) a task in place. */
+  protected async toggleDone(t: ListTask): Promise<void> {
+    const next = t.status === 'done' ? 'todo' : 'done';
+    this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: next } : x)));
+    try {
+      await this.svc.update(t.id, { status: next } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      this.flashCard(t.id);
+    } catch (err) {
+      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, status: t.status } : x)));
+      this.alerts.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
+    }
+  }
+
+  protected async takeTask(t: ListTask): Promise<void> {
+    const me = this.auth.getUser();
+    if (!me?.id) return;
+    try {
+      await this.svc.update(t.id, { assigned_to: me.id } as UpdateTaskType);
+      this.svc.triggerRefresh();
+      this.tasks.update((list) => list.map((x) => (x.id === t.id ? { ...x, assigned_to: me.id } : x)));
+      this.flashCard(t.id);
+      this.alerts.showSuccess(`You're now assigned to "${t.name}"`);
+    } catch (err) {
+      this.alerts.showError(getUserErrorMessage(err, 'Could not take the task. Please try again.'));
+    }
+  }
+
+  private flashCard(id: string): void {
+    this.flashedIds.update((s) => new Set([...s, id]));
+    setTimeout(() => {
+      this.flashedIds.update((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
+    }, 1200);
+  }
+
+  protected openTask(t: ListTask): void {
+    void this.router.navigate(['tasks', t.id]);
+  }
+
+  protected openBoard(): void {
+    void this.router.navigate(['/tasks/board']);
+  }
+
+  protected newTask(): void {
+    void this.router.navigate(['/tasks/add']);
   }
 
   protected readonly autoMapHeader = (h: string): string => {
@@ -17339,6 +17323,11 @@ export class TasksGrid implements OnInit {
     return map[key] || '';
   };
 
+  protected openImportDialog(): void {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
   protected async onImportSubmit(payload: {
     rows: Array<Record<string, string>>;
     skipped: number;
@@ -17349,280 +17338,33 @@ export class TasksGrid implements OnInit {
     const fileName = (payload?.fileName ?? '').trim();
 
     try {
-      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
-
+      const res = await this.svc.import(rows, skippedReported, fileName || undefined);
       const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
       this.importSummary.set({
         inserted: 0,
         errors: 0,
         skipped,
         queued: true,
         failed: false,
-        message: msg,
+        message: `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`,
       });
       this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      await this.loadOnInit();
+    } catch (err) {
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped: skippedReported,
+        failed: true,
+        message: getUserErrorMessage(err, 'Import failed'),
+      });
       this.importerOpen.set(false);
     }
   }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  private assignToValueSetter(p: CellParams) {
-    const val =
-      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
-        ? null
-        : String(p.newValue);
-    const data = p.data;
-    if (!data) return false;
-    if (data['assigned_to'] !== val) {
-      data['assigned_to'] = val;
-      return true;
-    }
-    return false;
-  }
-
-  private assignedToValueFormatter(p: CellParams) {
-    const v = p.value;
-    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
-    return this.usersById.get(String(v)) ?? String(v ?? '');
-  }
-
-  private assignedToValueGetter(p: CellParams) {
-    const id = p.data?.['assigned_to'] ?? p.value;
-    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
-    return String(id);
-  }
-
-  private dueAtValueSetter(p: CellParams) {
-    const val = String(p.newValue || p.value || '');
-    // ensure only YYYY-MM-DD is stored
-    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    const data = p.data;
-    if (!data) return false;
-    if (data['due_at'] !== dateOnly) {
-      data['due_at'] = dateOnly;
-      return true;
-    }
-    return false;
-  }
-
-  private formatDate(value: unknown) {
-    if (!value) return '';
-    const d = new Date(this.toDateOnly(value));
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString();
-  }
-
-  private isOverdue(row: GridRow | undefined): boolean {
-    if (!row) return false;
-
-    const status = String(row['status'] ?? '').toLowerCase();
-    if (status === 'done' || status === 'canceled') return false;
-
-    const due = this.toDateOnly(row['due_at']);
-    if (!due) return false;
-
-    const today = this.toDateOnly(new Date());
-    // Simple lexical compare works for YYYY-MM-DD
-    return due < today;
-  }
-
-  private normalizeChoice(value: string) {
-    return value.replace(/[_\s-]+/g, '').toLowerCase();
-  }
-
-  private parsePriorityLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.priorityOptions[idx];
-    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
-  }
-
-  private parseStatusLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.statusOptions[idx];
-    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
-  }
-
-  private priorityValueSetter(p: CellParams) {
-    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['priority'] !== v) {
-      data['priority'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private renderAssignedCell(value: unknown) {
-    const v = value == null ? '' : String(value);
-    const isUnassigned = !v || v === this.unassignedLabel;
-    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeLabel = escapeHtml(label);
-    if (isUnassigned) {
-      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
-    }
-    let avatarUrl = this.usersAvatarById.get(v);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeLabel}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeLabel}</span>
-      </div>
-    `;
-  }
-
-  private renderCreatedByCell(value: unknown) {
-    const label = value == null ? '' : String(value);
-    if (!label) {
-      return `<span class="text-base-content/30">—</span>`;
-    }
-    const resolvedName = this.usersById.get(label) ?? label;
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeName = escapeHtml(resolvedName);
-    let avatarUrl = this.usersAvatarById.get(label);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeName}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeName}</span>
-      </div>
-    `;
-  }
-
-  private renderPriorityBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private renderStatusBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'done'
-        ? 'badge-success'
-        : v === 'in_progress'
-          ? 'badge-info'
-          : v === 'blocked'
-            ? 'badge-error'
-            : v === 'canceled'
-              ? 'badge-neutral'
-              : 'badge-ghost';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private statusValueSetter(p: CellParams) {
-    const v = this.parseStatusLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['status'] !== v) {
-      data['status'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private toDateOnly(v: unknown): string {
-    if (!v) return '';
-    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
-    return str.length > 10 ? str.slice(0, 10) : str;
-  }
-
-  private toTitle(v: string) {
-    return v
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
-      .join(' ');
-  }
-
-  private userNameForId(id: unknown) {
-    if (id === null || id === undefined || id === '') return '';
-    const key = String(id);
-    return this.usersById.get(key) ?? '';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 ```
 
 ## File: apps/frontend/src/app/experiences/teams/services/teams-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -17657,9 +17399,7 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
   }
 
   public count(): Promise<number> {
-    return this.api.teams.getAll
-      .query({ startRow: 0, endRow: 1 })
-      .then((res: RouterOutputs['teams']['getAll']) => res.count ?? 0);
+    return this.api.teams.getAll.query({ startRow: 0, endRow: 1 }).then((res: RouterOutputs['teams']['getAll']) => res.count ?? 0);
   }
 
   public detachTag(_id: string, _tag_name: string) {
@@ -17696,655 +17436,7 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
-
-```html
-@if (error() && !detail() && !isNew()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!isNew() && !detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading team…
-</div>
-} @else {
-<section class="max-w-4xl space-y-6 p-6">
-  <pc-detail-header
-    [title]="isNew() ? 'New team' : (detail()?.name || 'Team')"
-    [eyebrow]="isNew() ? 'New' : 'Editing'"
-    [crumbs]="crumbs()"
-    subtitle="Teams group volunteers for easier coordination."
-    [form]="form"
-    [isLoading]="saving()"
-    buttonsToShow="two"
-    [btn1Text]="isNew() ? 'Create team' : 'Save team'"
-    [showDelete]="!isNew()"
-    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-    deleteText="Delete team"
-    (save)="save($event)"
-    (delete)="deleteTeam()"
-  ></pc-detail-header>
-
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-  }
-
-  <form class="grid gap-6" (submit)="save($event)" novalidate>
-    <pc-card>
-      <div class="grid gap-4 sm:grid-cols-3">
-        <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
-
-        <pc-select id="team-captain" label="Team Captain (Volunteer)" [formField]="form.team_captain_id">
-          <option value="">No captain</option>
-          @for (person of people(); track person.id) {
-          <option [value]="person.id">{{ person.label }}</option>
-          }
-        </pc-select>
-
-        <pc-select id="team-lead" label="Team Lead (Organizer)" [formField]="form.team_lead_user_id">
-          <option value="">No lead</option>
-          @for (user of users(); track user.id) {
-          <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
-          }
-        </pc-select>
-      </div>
-
-      <pc-textarea
-        id="team-description"
-        label="Description"
-        [rows]="3"
-        [formField]="form.description"
-        placeholder="Describe this team's focus"
-      ></pc-textarea>
-    </pc-card>
-
-    <!-- Volunteers Section -->
-    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
-      <div pc-card-actions class="text-sm text-base-content/60">
-        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
-      </div>
-
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
-          <select
-            id="volunteer-select"
-            class="select select-bordered h-40 w-full"
-            (change)="onVolunteersChange($event)"
-            multiple
-          >
-            @for (person of people(); track person.id) {
-            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
-            }
-          </select>
-          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
-        </div>
-        <div class="space-y-2">
-          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
-          <div class="max-h-40 overflow-auto rounded border border-base-200">
-            @if (volunteers().length === 0) {
-            <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (volunteer of volunteers(); track volunteer.id) {
-              <li class="flex items-center justify-between p-3 text-sm">
-                <div>
-                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
-                  @if (volunteer.email) {
-                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
-                  }
-                </div>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </div>
-      </div>
-    </pc-card>
-
-    <!-- Assigned target constituent lists section -->
-    <pc-card
-      title="Target Constituent Lists"
-      subtitle="Assign lists of people or households this team is responsible for contacting."
-    >
-      <div class="grid gap-4 sm:grid-cols-2">
-        <div class="space-y-2">
-          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
-          <select
-            id="lists-select"
-            class="select select-bordered h-40 w-full"
-            (change)="onListsChange($event)"
-            multiple
-          >
-            @for (list of availableLists(); track list.id) {
-            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
-            }
-          </select>
-          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
-        </div>
-        <div class="space-y-2">
-          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
-          <div class="max-h-40 overflow-auto rounded border border-base-200">
-            @if (assignedLists().length === 0) {
-            <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
-            } @else {
-            <ul class="divide-y divide-base-200">
-              @for (list of assignedLists(); track list.id) {
-              <li class="flex items-center justify-between p-3 text-sm">
-                <div>
-                  <p class="font-medium text-base-content">{{ list.name }}</p>
-                  <p class="text-xs text-base-content/60">
-                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
-                  </p>
-                </div>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-        </div>
-      </div>
-    </pc-card>
-
-    <!-- Team Tasks Section -->
-    @if (!isNew()) {
-    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
-      <a
-        pc-card-actions
-        class="btn btn-xs btn-primary gap-1"
-        [routerLink]="['/tasks/add']"
-        [queryParams]="{ team_id: id }"
-      >
-        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
-      </a>
-
-      <div class="overflow-x-auto rounded border border-base-200">
-        @if (teamTasks().length === 0) {
-        <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
-        } @else {
-        <table class="table table-zebra w-full text-sm">
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th>Due Date</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (task of teamTasks(); track task.id) {
-            <tr>
-              <td class="font-medium">
-                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
-              </td>
-              <td>
-                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
-                  {{ task.priority || 'medium' }}
-                </span>
-              </td>
-              <td>
-                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
-                  {{ task.status || 'todo' }}
-                </span>
-              </td>
-              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
-              <td>
-                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
-              </td>
-            </tr>
-            }
-          </tbody>
-        </table>
-        }
-      </div>
-    </pc-card>
-    }
-  </form>
-</section>
-}
-```
-
-## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
-
-```typescript
-import { Component, computed, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
-import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-import { UserService } from '../../../services/user.service';
-import { ListsService } from '../../lists/services/lists-service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { TasksService } from '../../tasks/services/tasks-service';
-import { TeamDetail, TeamsService } from '../services/teams-service';
-
-interface PersonOption {
-  email: string | null;
-  id: string;
-  label: string;
-}
-
-import { DatePipe } from '@angular/common';
-
-@Component({
-  selector: 'pc-team-form',
-  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
-  templateUrl: './team-form.html',
-})
-export class TeamFormComponent implements OnInit {
-  readonly id = input<string>();
-
-  private readonly alerts = inject(AlertService);
-  private readonly persons = inject(PersonsService);
-  private readonly router = inject(Router);
-  private readonly teams = inject(TeamsService);
-  private readonly lists = inject(ListsService);
-  private readonly userService = inject(UserService);
-  private readonly tasksSvc = inject(TasksService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly isNew = computed(() => !this.id());
-
-  protected readonly detail = signal<TeamDetail | null>(null);
-  protected readonly error = signal<string | null>(null);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const teams: PcBreadcrumb = { label: 'Teams', route: '/teams' };
-    const id = this.id();
-    if (id) {
-      return [teams, { label: this.detail()?.name || 'Team', route: ['/teams', id] }, { label: 'Edit' }];
-    }
-    return [teams, { label: 'New team' }];
-  });
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    team_captain_id: '',
-    team_lead_user_id: '',
-    volunteer_ids: [] as string[],
-    list_ids: [] as string[],
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddTeamObj);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected signalPeople = signal<PersonOption[]>([]);
-  protected readonly people = computed(() => this.signalPeople());
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly availableLists = signal<any[]>([]);
-  protected readonly assignedLists = signal<any[]>([]);
-  protected readonly teamTasks = signal<any[]>([]);
-  protected readonly saving = signal(false);
-  protected readonly volunteers = computed(() => this.detail()?.volunteers ?? []);
-
-  constructor() {
-    effect(() => {
-      const options = this.people();
-      if (options.length === 0) return;
-
-      const current = untracked(this.payload);
-      let nextCaptain = current.team_captain_id;
-      let changed = false;
-
-      if (nextCaptain && !options.some((p) => p.id === nextCaptain)) {
-        nextCaptain = '';
-        changed = true;
-      }
-
-      const currentVolunteers = current.volunteer_ids ?? [];
-      const validIds = currentVolunteers.filter((id) => options.some((p) => p.id === id));
-      if (validIds.length !== currentVolunteers.length) {
-        changed = true;
-      }
-
-      if (changed) {
-        this.payload.update((p) => ({
-          ...p,
-          team_captain_id: nextCaptain,
-          volunteer_ids: validIds,
-        }));
-      }
-    });
-  }
-
-  public ngOnInit(): void {
-    void this.initialize();
-  }
-  private async initialize(): Promise<void> {
-    const end = this._loading.begin();
-    try {
-      await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
-
-      if (this.isNew()) {
-        const state = window.history.state;
-        if (state && state.cloneData) {
-          const sourceTeamId = state.cloneData.id;
-          if (sourceTeamId) {
-            try {
-              const teamDetail = await this.teams.getById(sourceTeamId);
-              this.payload.set({
-                name: teamDetail.name ? `${teamDetail.name} (Copy)` : '',
-                description: teamDetail.description ?? '',
-                team_captain_id: teamDetail.team_captain_id ?? '',
-                team_lead_user_id: teamDetail.team_lead_user_id ?? '',
-                volunteer_ids: teamDetail.volunteers?.map((v) => v.id) ?? [],
-                list_ids: teamDetail.list_ids ?? [],
-              });
-              this.assignedLists.set(teamDetail.lists ?? []);
-            } catch (err) {
-              console.error('Failed to load source team details for cloning', err);
-              const data = state.cloneData;
-              this.payload.set({
-                name: data.name ? `${data.name} (Copy)` : '',
-                description: data.description ?? '',
-                team_captain_id: data.team_captain_id ?? '',
-                team_lead_user_id: data.team_lead_user_id ?? '',
-                volunteer_ids: [],
-                list_ids: [],
-              });
-            }
-          }
-        }
-      }
-    } finally {
-      end();
-    }
-  }
-
-  protected captainLabel(captainId: string | null) {
-    if (!captainId) return '—';
-    const person = this.people().find((p) => p.id === captainId);
-    return person?.label ?? '—';
-  }
-
-  protected isVolunteerSelected(id: string): boolean {
-    return this.payload().volunteer_ids?.includes(id) ?? false;
-  }
-
-  protected onVolunteersChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
-
-    this.payload.update((p) => ({
-      ...p,
-      volunteer_ids: selectedOptions,
-    }));
-    this.form.volunteer_ids().markAsDirty();
-  }
-
-  protected isListSelected(id: string): boolean {
-    return this.payload().list_ids?.includes(id) ?? false;
-  }
-
-  protected onListsChange(event: Event) {
-    const select = event.target as HTMLSelectElement;
-    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
-
-    this.payload.update((p) => ({
-      ...p,
-      list_ids: selectedOptions,
-    }));
-    this.form.list_ids().markAsDirty();
-
-    const matching = this.availableLists().filter((l) => selectedOptions.includes(l.id));
-    this.assignedLists.set(matching);
-  }
-
-  protected async deleteTeam() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Team',
-      message: 'Are you sure you want to delete this team? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      await this.teams.delete(this.id()!);
-      this.teams.triggerRefresh();
-      this.alerts.showSuccess('Team deleted');
-      await this.router.navigate(['/teams']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete team';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this team');
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    const raw = this.payload();
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    try {
-      let result: TeamDetail;
-      if (this.isNew()) {
-        const payload: AddTeamType = {
-          name: raw.name?.trim() ?? '',
-          description: raw.description?.trim()?.length ? raw.description.trim() : null,
-          team_captain_id: raw.team_captain_id || undefined,
-          team_lead_user_id: raw.team_lead_user_id || undefined,
-          volunteer_ids: raw.volunteer_ids ?? [],
-          list_ids: raw.list_ids ?? [],
-        };
-        result = await this.teams.add(payload);
-        this.teams.triggerRefresh();
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/teams']);
-        }
-      } else if (this.id()) {
-        const payload: UpdateTeamType = {
-          name: raw.name?.trim() ?? null,
-          description: raw.description?.trim()?.length ? raw.description.trim() : null,
-          team_captain_id: raw.team_captain_id || null,
-          team_lead_user_id: raw.team_lead_user_id || null,
-          volunteer_ids: raw.volunteer_ids ?? [],
-          list_ids: raw.list_ids ?? [],
-        };
-        result = await this.teams.update(this.id()!, payload);
-        this.teams.triggerRefresh();
-        this.detail.set(result);
-        this.setForm(result);
-        this.form().reset();
-        this.alerts.showSuccess('Team updated');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/teams', this.id()]);
-        }
-        return;
-      } else {
-        throw new Error('Missing team identifier');
-      }
-      this.detail.set(result);
-      this.setForm(result);
-      this.form().reset();
-      this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to save team';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async loadPeople() {
-    try {
-      const res = await this.persons.getAll({ limit: 500, tags: ['volunteer'] });
-      const items = (res?.rows ?? []).map((person: any) => ({
-        id: String(person.id ?? ''),
-        label: `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email || 'Unknown',
-        email: person.email ?? null,
-      }));
-      this.signalPeople.set(items);
-    } catch (err) {
-      console.error('Failed to load volunteers list', err);
-      this.signalPeople.set([]);
-    }
-  }
-
-  private async loadUsers() {
-    try {
-      const us = await this.userService.getUsers();
-      this.users.set(us || []);
-    } catch (err) {
-      console.error('Failed to load teammates list', err);
-      this.users.set([]);
-    }
-  }
-
-  private async loadLists() {
-    try {
-      const res = await this.lists.getAll({ limit: 1000 });
-      this.availableLists.set(res?.rows ?? []);
-    } catch (err) {
-      console.error('Failed to load lists', err);
-      this.availableLists.set([]);
-    }
-  }
-
-  private async loadTeam() {
-    if (this.isNew()) {
-      this.detail.set(null);
-      this.setForm(null);
-      return;
-    }
-    if (!this.id()) {
-      this.error.set('Missing team identifier');
-      return;
-    }
-
-    try {
-      const team = await this.teams.getById(this.id()!);
-      this.detail.set(team);
-      this.setForm(team);
-      const res = await this.tasksSvc.getAll({
-        filterModel: { team_id: { value: this.id() } },
-      } as any);
-      this.teamTasks.set(res?.rows ?? []);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load team';
-      this.error.set(message);
-      this.alerts.showError(message);
-    }
-  }
-
-  private setForm(team: TeamDetail | null) {
-    this.payload.set({
-      name: team?.name ?? '',
-      description: team?.description ?? '',
-      team_captain_id: team?.team_captain_id ?? '',
-      team_lead_user_id: team?.team_lead_user_id ?? '',
-      volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
-      list_ids: team?.list_ids ?? [],
-    });
-    this.assignedLists.set(team?.lists ?? []);
-  }
-
-  protected getPriorityClass(priority: string | null | undefined): string {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'badge-error text-error-content';
-      case 'high':
-        return 'badge-warning text-warning-content';
-      case 'medium':
-        return 'badge-info text-info-content';
-      default:
-        return 'badge-ghost';
-    }
-  }
-
-  protected getStatusClass(status: string | null | undefined): string {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'done':
-        return 'badge-success text-success-content';
-      case 'in_progress':
-        return 'badge-info text-info-content';
-      case 'blocked':
-        return 'badge-error text-error-content';
-      case 'canceled':
-        return 'badge-neutral text-neutral-content';
-      default:
-        return 'badge-ghost';
-    }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.ts
-
 ```typescript
 import { Component } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
@@ -18416,7 +17508,6 @@ export class TeamsGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -18490,498 +17581,7 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-add.html
-
-```html
-<section class="w-full max-w-3xl p-6">
-  <pc-detail-header
-    title="Invite user"
-    [eyebrow]="'New'"
-    [crumbs]="[{ label: 'Users', route: '/users' }, { label: 'Invite user' }]"
-    subtitle="Send an invitation to add a new teammate to this tenant."
-    [form]="form"
-    [isLoading]="submitting()"
-    buttonsToShow="two"
-    btn1Text="Send invite"
-    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-    (save)="submit($event)"
-  ></pc-detail-header>
-
-  <form class="space-y-4" (submit)="submit($event)" novalidate>
-    <pc-input label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
-
-    <div class="grid gap-4 sm:grid-cols-2">
-      <pc-input label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
-
-      <pc-input label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
-    </div>
-
-    <pc-select label="Role" [formField]="form.role">
-      @if (currentUserRole() !== 'admin') {
-      <option value="owner">Owner</option>
-      }
-      <option value="admin">Admin</option>
-      <option value="user">User</option>
-    </pc-select>
-
-    @if (error()) {
-    <p class="text-sm text-danger">{{ error() }}</p>
-    }
-  </form>
-</section>
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
-
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { email, form, required } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { UserAdminService } from '../services/useradmin-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-@Component({
-  selector: 'pc-user-add',
-  imports: [PcInput, PcSelect, PcDetailHeader],
-  templateUrl: './user-add.html',
-})
-export class UserAddComponent implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly settings = inject(SettingsService);
-
-  protected readonly error = signal<string | null>(null);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: 'user',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  protected readonly submitting = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    const state = window.history.state;
-    if (state && state.cloneData) {
-      const data = state.cloneData;
-      this.payload.set({
-        email: data.email || '',
-        first_name: data.first_name || '',
-        last_name: data.last_name || '',
-        role: data.role || '',
-      });
-      return;
-    }
-
-    // Prefill the role with the tenant's configured default invite role (best-effort).
-    try {
-      await this.settings.load();
-      const defaultRole = this.settings.getValue<string>('access.default_role');
-      if (defaultRole) {
-        this.payload.update((p) => ({ ...p, role: defaultRole }));
-      }
-    } catch {
-      // Ignore — fall back to the built-in default role.
-    }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty('this invite');
-  }
-
-  protected cancel() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected async submit(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    this.submitting.set(true);
-    this.error.set(null);
-    try {
-      const payload = this.toPayload();
-      await this.users.add(payload);
-      this.users.triggerRefresh();
-      this.alerts.showSuccess('Invitation sent');
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      } else {
-        await this.router.navigate(['../'], { relativeTo: this.route });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to invite user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  private toPayload() {
-    const raw = this.payload();
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
-      role: raw.role?.trim() ? raw.role.trim() : null,
-    };
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
-
-```html
-@if (error() && !detail()) {
-<div class="p-6 alert alert-error m-4">
-  <span>{{ error() }}</span>
-</div>
-} @else if (!detail()) {
-<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
-  <span class="loading loading-spinner loading-xs"></span>
-  Loading user…
-</div>
-} @else {
-<section class="max-w-4xl space-y-6 p-6">
-  <pc-detail-header
-    [title]="displayName()"
-    [eyebrow]="'Editing'"
-    [crumbs]="crumbs()"
-    [subtitle]="detail()?.email"
-    [form]="form"
-    [isLoading]="saving()"
-    buttonsToShow="two"
-    btn1Text="Save user"
-    [showDelete]="true"
-    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-    deleteText="Delete user"
-    (save)="save($event)"
-    (delete)="deleteUser()"
-  >
-    <button
-      pc-actions-prefix
-      class="btn btn-outline btn-accent btn-sm gap-2"
-      type="button"
-      (click)="triggerPasswordReset()"
-      [disabled]="resettingPassword() || saving()"
-    >
-      <pc-icon name="lock-closed"></pc-icon>
-      {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
-    </button>
-  </pc-detail-header>
-
-  @if (error()) {
-  <div class="alert alert-error">
-    <span>{{ error() }}</span>
-  </div>
-  }
-
-  <pc-card title="Profile">
-    <form class="space-y-4" (submit)="save($event)" novalidate>
-      <div class="grid gap-4 sm:grid-cols-2">
-        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
-
-        <pc-select label="Role" [formField]="form.role">
-          @if (currentUserRole() !== 'admin') {
-          <option value="owner">Owner</option>
-          }
-          <option value="admin">Admin</option>
-          <option value="user">User</option>
-          <option value="viewer">Viewer</option>
-        </pc-select>
-
-        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
-
-        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
-      </div>
-
-      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
-    </form>
-  </pc-card>
-</section>
-}
-```
-
-## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { form, required, email, disabled } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-
-import { UserAdminService } from '../services/useradmin-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-@Component({
-  selector: 'pc-user-edit',
-  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
-  templateUrl: './user-edit.html',
-})
-export class UserEditComponent {
-  readonly id = input.required<string>();
-
-  private readonly alerts = inject(AlertService);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
-  protected readonly saving = signal(false);
-  protected readonly error = signal<string | null>(null);
-  protected readonly detail = signal<IAuthUserDetail | null>(null);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: '',
-    verified: false,
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-    disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
-    disabled(p.verified, () => true);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  protected readonly displayName = computed(() => {
-    const user = this.detail();
-    if (!user) return '';
-    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
-    const name = tokens.join(' ').trim();
-    return name || user.email;
-  });
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Users', route: '/users' },
-    { label: this.displayName() || 'User', route: ['/users', this.id()] },
-    { label: 'Edit' },
-  ]);
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      untracked(() => {
-        if (!currentId) {
-          this.error.set('Missing user identifier.');
-          return;
-        }
-        void this.load();
-      });
-    });
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.displayName() || 'this user');
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid() || !this.id()) {
-      return;
-    }
-
-    const payload = this.buildPayload();
-
-    this.saving.set(true);
-    this.error.set(null);
-    try {
-      await this.users.update(this.id(), payload);
-      this.alerts.showSuccess('User updated');
-      this.users.triggerRefresh();
-      await this.load();
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      }
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to update user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected resetForm() {
-    const user = this.detail();
-    if (!user) return;
-    this.setForm(user);
-    this.form().reset();
-  }
-
-  protected readonly resettingPassword = signal(false);
-
-  protected async triggerPasswordReset() {
-    if (!this.id()) return;
-    this.resettingPassword.set(true);
-    try {
-      await this.users.adminTriggerPasswordReset(this.id());
-      this.alerts.showSuccess('Password reset email sent to user');
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to trigger password reset';
-      this.alerts.showError(message);
-    } finally {
-      this.resettingPassword.set(false);
-    }
-  }
-
-  protected async deleteUser() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete User',
-      message: 'Are you sure you want to delete this user? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    this.saving.set(true);
-    try {
-      const success = await this.users.delete(this.id());
-      if (!success) {
-        throw new Error('User deletion is not supported');
-      }
-      this.alerts.showSuccess('User deleted');
-      await this.router.navigate(['/users']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    this.error.set(null);
-    try {
-      const user = await this.users.getById(this.id());
-      this.detail.set(user);
-      this.setForm(user);
-      this.form().reset();
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Failed to load user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  private setForm(user: IAuthUserDetail) {
-    this.payload.set({
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name ?? '',
-      role: user.role ?? '',
-      verified: Boolean(user.verified),
-    });
-  }
-
-  private buildPayload(): UpdateAuthUserType {
-    const raw = this.payload();
-    const normalize = (value: string | null | undefined) => {
-      const trimmed = value?.trim() ?? '';
-      return trimmed.length ? trimmed : null;
-    };
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: normalize(raw.last_name),
-      role: normalize(raw.role),
-      verified: Boolean(raw.verified),
-    } as UpdateAuthUserType;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/ui/user-view.html
-
 ```html
 <pc-detail-layout
   [title]="displayName() || 'User'"
@@ -19081,7 +17681,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/users/ui/user-view.ts
-
 ```typescript
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -19296,7 +17895,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
-
 ```typescript
 import { Component, inject } from '@angular/core';
 import { escapeHtml } from '../../../../../../../libs/common/src';
@@ -19482,7 +18080,6 @@ export class UsersGridComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/services/workflows-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -19580,7 +18177,6 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.html
-
 ```html
 <div class="flex flex-col gap-6 p-6 max-w-7xl mx-auto h-full min-h-[calc(100vh-120px)]">
   <!-- Navigation Header -->
@@ -20497,7 +19093,6 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.ts
-
 ```typescript
 import { Component } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
@@ -20595,7 +19190,6 @@ export class WorkflowsGridComponent {
 ```
 
 ## File: apps/frontend/src/app/routing/route-reuse-strategy.ts
-
 ```typescript
 import { Injectable, inject, Injector } from '@angular/core';
 import {
@@ -20726,7 +19320,6 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
 ```
 
 ## File: apps/frontend/src/app/services/api/abstract-api.service.ts
-
 ```typescript
 import { signal, Service } from '@angular/core';
 import {
@@ -20810,7 +19403,6 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
 ```
 
 ## File: apps/frontend/src/app/services/api/api-error.ts
-
 ```typescript
 export class ApiError extends Error {
   constructor(
@@ -20824,7 +19416,6 @@ export class ApiError extends Error {
 ```
 
 ## File: apps/frontend/src/app/services/api/connections-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { TRPCService } from './trpc-service';
@@ -20851,7 +19442,6 @@ export class ConnectionsService extends TRPCService<'person_connections'> {
 ```
 
 ## File: apps/frontend/src/app/services/api/events-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { TRPCService } from './trpc-service';
@@ -20911,7 +19501,6 @@ export class EventsService extends TRPCService<'events'> {
 ```
 
 ## File: apps/frontend/src/app/services/api/http-download.ts
-
 ```typescript
 /**
  * Download a protected file by fetching it with an Authorization header and
@@ -20942,7 +19531,6 @@ const OBJECT_URL_REVOKE_DELAY_MS = 10_000;
 ```
 
 ## File: apps/frontend/src/app/services/api/notifications-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { TRPCService } from './trpc-service';
@@ -20968,7 +19556,6 @@ export class NotificationsService extends TRPCService<'notifications'> {
 ```
 
 ## File: apps/frontend/src/app/services/api/search-service.ts
-
 ```typescript
 import { Service, signal, debounced, effect } from '@angular/core';
 
@@ -21031,7 +19618,6 @@ export class SearchService {
 ```
 
 ## File: apps/frontend/src/app/services/api/trpc-types.ts
-
 ```typescript
 import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
 import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
@@ -21041,7 +19627,6 @@ export type RouterOutputs = inferRouterOutputs<TRPCRouter>;
 ```
 
 ## File: apps/frontend/src/app/services/api/volunteer-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { TRPCService } from './trpc-service';
@@ -21082,14 +19667,11 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
     return this.api.volunteer.signupVolunteer.mutate(payload);
   }
 
-  public updateShift(
-    id: string,
-    data: {
-      status?: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
-      hours_worked?: number | null;
-      notes?: string | null;
-    },
-  ) {
+  public updateShift(id: string, data: {
+    status?: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
+    hours_worked?: number | null;
+    notes?: string | null;
+  }) {
     return this.api.volunteer.updateShift.mutate({ id, data });
   }
 
@@ -21108,7 +19690,6 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
 ```
 
 ## File: apps/frontend/src/app/services/global-error-handler.ts
-
 ```typescript
 import { ErrorHandler, inject, Service } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -21142,7 +19723,6 @@ export class GlobalErrorHandler implements ErrorHandler {
 ```
 
 ## File: apps/frontend/src/app/services/jsend.interceptor.ts
-
 ```typescript
 import type { HttpInterceptorFn } from '@angular/common/http';
 import { HttpContextToken, HttpErrorResponse, HttpResponse } from '@angular/common/http';
@@ -21196,7 +19776,6 @@ export const jsendInterceptor: HttpInterceptorFn = (req, next) => {
 ```
 
 ## File: apps/frontend/src/app/services/record-navigation.service.ts
-
 ```typescript
 import { computed, inject, Injectable, signal, Signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -21345,89 +19924,11 @@ function isStoredRecordNavContext(value: unknown): value is StoredRecordNavConte
 ```
 
 ## File: apps/frontend/src/app/services/shared-dialog.service.ts
-
 ```typescript
 export * from '@uxcommon/components/confirm-dialog.service';
 ```
 
-## File: apps/frontend/src/app/services/unsaved-changes-guard.ts
-
-```typescript
-import { computed, inject } from '@angular/core';
-import type { Signal } from '@angular/core';
-import type { CanDeactivateFn } from '@angular/router';
-import type { FieldTree } from '@angular/forms/signals';
-import { ConfirmDialogService } from './shared-dialog.service';
-
-export interface UnsavedChangesHandle {
-  dirtyCount: Signal<number>;
-  headerLine: Signal<string | null>;
-  confirmDiscardIfDirty(recordName: string): Promise<boolean>;
-}
-
-interface Deactivatable {
-  canDeactivate?(): boolean | Promise<boolean>;
-}
-
-/** Route-level guard: lets any edit-page component veto navigation away while it has unsaved changes. */
-export const unsavedChangesGuard: CanDeactivateFn<Deactivatable> = (component) =>
-  component.canDeactivate ? component.canDeactivate() : true;
-
-/**
- * Wires an Angular Signal Forms `form`/`payload` pair up to the "Unsaved changes · N fields" header
- * line and a leave-confirm dialog naming the changed fields. `dirty()` is per-field and already used
- * to gate the Save button (see pc-form-actions) - this just reads the same signals.
- */
-export function injectUnsavedChanges<TModel extends Record<string, unknown>>(
-  form: FieldTree<TModel>,
-  payload: Signal<TModel>,
-): UnsavedChangesHandle {
-  const dialogs = inject(ConfirmDialogService);
-
-  // Subfields<TModel> guarantees one FieldTree per data key, so indexing by the payload's
-  // own keys is safe even though TypeScript can't express a dynamic per-key lookup here.
-  const fields = form as unknown as Record<string, () => { dirty(): boolean }>;
-
-  const dirtyKeys = computed(() => Object.keys(payload()).filter((key) => fields[key]?.().dirty()));
-  const dirtyCount = computed(() => dirtyKeys().length);
-  const headerLine = computed(() =>
-    dirtyCount() > 0 ? `Unsaved changes · ${dirtyCount()} field${dirtyCount() === 1 ? '' : 's'}` : null,
-  );
-
-  return {
-    dirtyCount,
-    headerLine,
-    confirmDiscardIfDirty(recordName: string): Promise<boolean> {
-      if (dirtyCount() === 0) return Promise.resolve(true);
-      const fieldList = joinWithAnd(dirtyKeys().map(humanizeFieldKey));
-      return dialogs.confirm({
-        title: 'Leave without saving?',
-        message: `Your changes to ${recordName} — ${fieldList} — will be lost.`,
-        variant: 'warning',
-        confirmText: 'Discard changes',
-        cancelText: 'Keep editing',
-        emphasizeCancel: true,
-      });
-    },
-  };
-}
-
-function humanizeFieldKey(key: string): string {
-  return key
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/_/g, ' ')
-    .toLowerCase();
-}
-
-function joinWithAnd(items: string[]): string {
-  if (items.length <= 1) return items[0] ?? '';
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
-}
-```
-
 ## File: apps/frontend/src/app/services/user.service.ts
-
 ```typescript
 import { inject, Service } from '@angular/core';
 import { IAuthUser, UpdateAuthUserType } from '../../../../../libs/common/src';
@@ -21474,7 +19975,6 @@ export class UserService extends TRPCService<any> {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/editing.controller.ts
-
 ```typescript
 import { Injectable, inject } from '@angular/core';
 import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
@@ -21573,7 +20073,6 @@ export class EditingController {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/fetch.controller.ts
-
 ```typescript
 import { inject, Injectable } from '@angular/core';
 import type { DataGrid } from '../datagrid';
@@ -21656,7 +20155,6 @@ export class FetchController {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/keyboard.controller.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
@@ -21720,7 +20218,6 @@ export class KeyboardController {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/pinning.controller.ts
-
 ```typescript
 import { Injectable, inject, signal, effect } from '@angular/core';
 import type { Table } from '@tanstack/table-core';
@@ -21818,7 +20315,6 @@ export class PinningController {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/reorder.controller.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 import type { Header, Table } from '@tanstack/table-core';
@@ -21876,7 +20372,6 @@ export class ReorderController {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/resizing.controller.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 import type { HeaderRef } from '../types';
@@ -21979,7 +20474,6 @@ export class ResizingController {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/controllers/virtualizer.controller.ts
-
 ```typescript
 import { Injectable, inject, effect, signal } from '@angular/core';
 import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
@@ -22120,7 +20614,6 @@ export class VirtualizerController {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/editable-cell.directive.ts
-
 ```typescript
 import { Directive, ElementRef, inject, input } from '@angular/core';
 import { EditingController } from '../controllers/editing.controller';
@@ -22243,7 +20736,6 @@ export class EditableCellDirective {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/header-reorder.directive.ts
-
 ```typescript
 import { Directive, inject, input } from '@angular/core';
 import type { Header } from '@tanstack/table-core';
@@ -22284,7 +20776,6 @@ export class HeaderReorderDirective {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/header-resize.directive.ts
-
 ```typescript
 import { Directive, ElementRef, inject, input } from '@angular/core';
 import type { Table } from '@tanstack/table-core';
@@ -22456,13 +20947,11 @@ export class HeaderResizeDirective {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/resize-handle.directive.ts
-
 ```typescript
 export const __resize = true;
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/sticky-pin.directive.ts
-
 ```typescript
 import { Directive, input } from '@angular/core';
 
@@ -22486,7 +20975,6 @@ export class StickyPinDirective {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
@@ -22655,7 +21143,6 @@ type DeleteCtx = {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/columns.service.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 
@@ -22723,7 +21210,6 @@ export class DataGridColumnsService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/data.service.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
@@ -22785,7 +21271,6 @@ export class DataGridDataService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/filters.service.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
@@ -22920,7 +21405,6 @@ export class DataGridFiltersService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/grid-advanced-filter.service.ts
-
 ```typescript
 import { computed, signal } from '@angular/core';
 import type { ColumnDef as ColDef } from '../grid-defaults';
@@ -23036,7 +21520,6 @@ export class GridAdvancedFilterService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/grid-store.service.ts
-
 ```typescript
 import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
 import type { Table } from '@tanstack/table-core';
@@ -23304,7 +21787,6 @@ export class GridStoreService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/grid-tag-filter.service.ts
-
 ```typescript
 import { computed, signal } from '@angular/core';
 
@@ -23435,7 +21917,6 @@ export class GridTagFilterService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/nav.service.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 import type { ActivatedRoute, Router } from '@angular/router';
@@ -23465,7 +21946,6 @@ export class DataGridNavService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/selection.service.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 
@@ -23501,7 +21981,6 @@ export class DataGridSelectionService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/table.service.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 import {
@@ -23605,7 +22084,6 @@ export class DataGridTableService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/tag-options.service.ts
-
 ```typescript
 import { Injectable, inject } from '@angular/core';
 import { TagsService } from '@experiences/tags/services/tags-service';
@@ -23695,7 +22173,6 @@ export class TagOptionsService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/utils.service.ts
-
 ```typescript
 import { Injectable } from '@angular/core';
 
@@ -23754,7 +22231,6 @@ export class DataGridUtilsService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/state/grid-context.service.ts
-
 ```typescript
 import { Injectable, computed } from '@angular/core';
 import { GridStoreService } from '../services/grid-store.service';
@@ -23779,7 +22255,6 @@ export class GridContextService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
-
 ```typescript
 import { Component, computed, input } from '@angular/core';
 import type { DataGrid } from '../datagrid';
@@ -23846,7 +22321,6 @@ export class DataGridColumnsDropdownComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-dropdown.ts
-
 ```typescript
 import { Component, input, output } from '@angular/core';
 
@@ -23896,7 +22370,6 @@ export class DataGridFilterDropdownComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
-
 ```html
 <div class="fixed inset-0 z-40">
   <div class="absolute inset-0 bg-black/30" (click)="closePanel.emit()"></div>
@@ -23979,7 +22452,6 @@ export class DataGridFilterDropdownComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.ts
-
 ```typescript
 import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
@@ -24005,7 +22477,6 @@ export class DataGridFilterPanelComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-section.ts
-
 ```typescript
 import { Component, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
@@ -24074,7 +22545,6 @@ export class DataGridFilterSectionComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-inline-filters-row.html
-
 ```html
 <tr>
   @if (enableSelection()) {
@@ -24134,7 +22604,6 @@ export class DataGridFilterSectionComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-inline-filters-row.ts
-
 ```typescript
 import { Component, computed, inject, input } from '@angular/core';
 import type { Header } from '@tanstack/table-core';
@@ -24179,7 +22648,6 @@ export class DataGridInlineFiltersRowComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
-
 ```typescript
 import { Component, input } from '@angular/core';
 import type { GridRow } from '../types';
@@ -24202,7 +22670,6 @@ export class DataGridRowComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/multiselect-filter.ts
-
 ```typescript
 import { Component, input, model, output } from '@angular/core';
 
@@ -24259,7 +22726,6 @@ export class MultiselectFilterComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/singleselect-filter.ts
-
 ```typescript
 import { Component, input, output } from '@angular/core';
 
@@ -24305,7 +22771,6 @@ export class SingleselectFilterComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
-
 ```css
 /* lock layout + neutralize cell padding/borders */
 :host table {
@@ -24363,7 +22828,6 @@ export class SingleselectFilterComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/tool-button.ts
-
 ```typescript
 import { Component, ElementRef, HostListener, inject, input, output } from '@angular/core';
 import { Icon } from '@icons/icon';
@@ -24474,7 +22938,6 @@ export class GridActionComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/types.ts
-
 ```typescript
 export type SortDir = 'asc' | 'desc' | 'none';
 
@@ -24532,7 +22995,6 @@ export interface GridHost {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
-
 ```typescript
 import { computed, signal } from '@angular/core';
 import type { GridHost, GridRow, GridSnapshot } from './types';
@@ -24728,7 +23190,6 @@ export class UndoManager {
 ```
 
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.html
-
 ```html
 <div class="flex flex-col gap-3">
   <!-- Summary Bar -->
@@ -24896,7 +23357,6 @@ export class UndoManager {
 ```
 
 ## File: apps/frontend/src/app/shared/components/query-builder/query-builder.ts
-
 ```typescript
 import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -25047,7 +23507,6 @@ export class QueryBuilderComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/pipes/pc-date.pipe.ts
-
 ```typescript
 import { inject, Pipe, PipeTransform } from '@angular/core';
 
@@ -25072,7 +23531,6 @@ export class PcDatePipe implements PipeTransform {
 ```
 
 ## File: apps/frontend/src/app/shared/pipes/resolve-avatar.pipe.ts
-
 ```typescript
 import { inject, Pipe, PipeTransform } from '@angular/core';
 import { UserService } from '../../services/user.service';
@@ -25091,7 +23549,6 @@ export class ResolveAvatarPipe implements PipeTransform {
 ```
 
 ## File: apps/frontend/src/app/shared/services/date-format.service.ts
-
 ```typescript
 import { computed, inject, Service } from '@angular/core';
 import { formatDate } from '@angular/common';
@@ -25132,7 +23589,6 @@ export class DateFormatService {
 ```
 
 ## File: apps/frontend/src/app/app.ts
-
 ```typescript
 import { Component, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
@@ -25156,7 +23612,6 @@ export class AppComponent {
 ```
 
 ## File: apps/frontend/src/app/environment-token.ts
-
 ```typescript
 import { InjectionToken } from '@angular/core';
 import { environment } from '../environments/environment';
@@ -25164,13 +23619,11 @@ export const ENVIRONMENT = new InjectionToken<typeof environment>('ENVIRONMENT',
 ```
 
 ## File: apps/frontend/src/assets/.gitkeep
-
 ```
 
 ```
 
 ## File: apps/frontend/src/import-meta.d.ts
-
 ```typescript
 interface ImportMetaEnv {
   readonly [key: string]: string;
@@ -25182,7 +23635,6 @@ interface ImportMeta {
 ```
 
 ## File: apps/frontend/src/main.ts
-
 ```typescript
 import { bootstrapApplication } from '@angular/platform-browser';
 import 'cally';
@@ -25194,7 +23646,6 @@ bootstrapApplication(AppComponent, appConfig).catch((err) => console.error(err))
 ```
 
 ## File: apps/frontend/src/svg.d.ts
-
 ```typescript
 declare module '*.svg?raw' {
   const content: string;
@@ -25203,7 +23654,6 @@ declare module '*.svg?raw' {
 ```
 
 ## File: apps/frontend/src/test-setup.ts
-
 ```typescript
 import '@angular/compiler';
 import '@angular/localize/init';
@@ -25213,9 +23663,15 @@ import { vi } from 'vitest';
 (globalThis as any).jest = vi;
 
 import { getTestBed } from '@angular/core/testing';
-import { BrowserDynamicTestingModule, platformBrowserDynamicTesting } from '@angular/platform-browser-dynamic/testing';
+import {
+  BrowserDynamicTestingModule,
+  platformBrowserDynamicTesting,
+} from '@angular/platform-browser-dynamic/testing';
 
-getTestBed().initTestEnvironment(BrowserDynamicTestingModule, platformBrowserDynamicTesting());
+getTestBed().initTestEnvironment(
+  BrowserDynamicTestingModule,
+  platformBrowserDynamicTesting(),
+);
 
 (globalThis as any).fetch = vi.fn().mockResolvedValue({
   ok: true,
@@ -25224,7 +23680,6 @@ getTestBed().initTestEnvironment(BrowserDynamicTestingModule, platformBrowserDyn
 ```
 
 ## File: apps/frontend/eslint.config.cjs
-
 ```javascript
 /* -----------------  apps/frontend/eslint.config.cjs  -------------- */
 /* Angular-specific rules + selector prefixes for the front-end app. */
@@ -25269,7 +23724,6 @@ module.exports = [
 ```
 
 ## File: apps/frontend/jest.config.ts
-
 ```typescript
 import type { Config } from 'jest';
 
@@ -25277,7 +23731,10 @@ const config: Config = {
   preset: 'jest-preset-angular',
   setupFilesAfterEnv: ['<rootDir>/src/test-setup.ts'],
   transform: {
-    '^.+\\.(ts|mjs|js)$': ['jest-preset-angular', { tsconfig: '<rootDir>/tsconfig.spec.json' }],
+    '^.+\\.(ts|mjs|js)$': [
+      'jest-preset-angular',
+      { tsconfig: '<rootDir>/tsconfig.spec.json' }
+    ],
   },
   moduleNameMapper: {
     '^common/(.*)$': '<rootDir>/../../common/$1',
@@ -25291,18 +23748,17 @@ const config: Config = {
     '.*environments/environment$': '<rootDir>/src/__mocks__/environment.mock.ts',
     '.*environments/environment\\.prod$': '<rootDir>/src/__mocks__/environment.prod.mock.ts',
     '\\.(html)$': '<rootDir>/src/__mocks__/html.mock.ts',
-    '\\.svg\\?raw$': '<rootDir>/src/__mocks__/svg.mock.ts',
+    '\\.svg\\?raw$': '<rootDir>/src/__mocks__/svg.mock.ts'
   },
   moduleFileExtensions: ['ts', 'html', 'js', 'json', 'mjs'],
   testMatch: ['<rootDir>/src/**/*.spec.ts'],
-  coverageDirectory: '../../coverage/apps/frontend',
+  coverageDirectory: '../../coverage/apps/frontend'
 };
 
 export default config;
 ```
 
 ## File: apps/frontend/postcss.config.cjs
-
 ```javascript
 module.exports = {
   plugins: [require('@tailwindcss/postcss')],
@@ -25310,7 +23766,6 @@ module.exports = {
 ```
 
 ## File: apps/frontend/project.json
-
 ```json
 {
   "name": "frontend",
@@ -25423,7 +23878,6 @@ module.exports = {
 ```
 
 ## File: apps/frontend/tsconfig.app.json
-
 ```json
 {
   "extends": "./tsconfig.json",
@@ -25453,7 +23907,6 @@ module.exports = {
 ```
 
 ## File: apps/frontend/tsconfig.editor.json
-
 ```json
 {
   "extends": "./tsconfig.json",
@@ -25465,7 +23918,6 @@ module.exports = {
 ```
 
 ## File: apps/frontend/tsconfig.json
-
 ```json
 {
   "compilerOptions": {
@@ -25505,7 +23957,6 @@ module.exports = {
 ```
 
 ## File: apps/frontend/tsconfig.spec.json
-
 ```json
 {
   "extends": "./tsconfig.json",
@@ -25533,7 +23984,6 @@ module.exports = {
 ```
 
 ## File: apps/frontend-e2e/playwright.config.ts
-
 ```typescript
 import { defineConfig, devices } from '@playwright/test';
 
@@ -25561,7 +24011,6 @@ export default defineConfig({
 ```
 
 ## File: apps/frontend-e2e/project.json
-
 ```json
 {
   "name": "frontend-e2e",
@@ -25580,7 +24029,6 @@ export default defineConfig({
 ```
 
 ## File: apps/frontend-e2e/tsconfig.json
-
 ```json
 {
   "extends": "../../tsconfig.base.json",
@@ -25594,7 +24042,6 @@ export default defineConfig({
 ```
 
 ## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.html
-
 ```html
 <pc-auth-layout>
   @if (isLoading()) {
@@ -25636,7 +24083,6 @@ export default defineConfig({
 ```
 
 ## File: apps/frontend/src/app/auth/new-password-page/new-password-page.html
-
 ```html
 <!-- Template for setting a new password after verifying a reset code. -->
 <pc-auth-layout>
@@ -25686,7 +24132,6 @@ export default defineConfig({
 ```
 
 ## File: apps/frontend/src/app/auth/new-password-page/new-password-page.ts
-
 ```typescript
 import { DecimalPipe } from '@angular/common';
 import { Component, OnInit, inject, signal } from '@angular/core';
@@ -25789,7 +24234,6 @@ export class NewPasswordPage implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/auth/reset-password-page/reset-password-page.html
-
 ```html
 <!-- Template for requesting a password reset email. -->
 <div class="bg-image flex min-h-screen font-light" data-theme="light">
@@ -25831,7 +24275,6 @@ export class NewPasswordPage implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/auth/reset-password-page/reset-password-page.ts
-
 ```typescript
 import { Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
@@ -25912,7 +24355,6 @@ export class ResetPasswordPage {
 ```
 
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.html
-
 ```html
 <pc-auth-layout>
   @if (rateLimitSecondsLeft() > 0) {
@@ -26144,7 +24586,6 @@ export class ResetPasswordPage {
 ```
 
 ## File: apps/frontend/src/app/auth/signup-page/signup-page.ts
-
 ```typescript
 import { DecimalPipe } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
@@ -26245,7 +24686,6 @@ export class SignUpPage {
 ```
 
 ## File: apps/frontend/src/app/auth/verify-email-page/verify-email-page.html
-
 ```html
 <pc-auth-layout>
   @if (isLoading()) {
@@ -26292,7 +24732,6 @@ export class SignUpPage {
 ```
 
 ## File: apps/frontend/src/app/auth/verify-sender-email-page/verify-sender-email-page.html
-
 ```html
 <pc-auth-layout>
   @if (isLoading()) {
@@ -26344,7 +24783,6 @@ export class SignUpPage {
 ```
 
 ## File: apps/frontend/src/app/auth/role-guard.ts
-
 ```typescript
 import { inject } from '@angular/core';
 import { type CanActivateFn, Router } from '@angular/router';
@@ -26371,7 +24809,6 @@ export const roleGuard: CanActivateFn = async (_route, _state) => {
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
-
 ```typescript
 import { Component, signal, inject, viewChild } from '@angular/core';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
@@ -26554,148 +24991,460 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
+```html
+<div class="p-6 max-w-4xl">
+  <!-- Loading State -->
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading company details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNewMode() ? 'New company' : company()?.name || 'Company'"
+      [eyebrow]="isNewMode() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNewMode() ? 'Create a new company record' : 'View and update company information'"
+      [form]="form"
+      [isLoading]="isLoading()"
+      buttonsToShow="two"
+      [btn1Text]="isNewMode() ? 'Create company' : 'Save company'"
+      [showDelete]="!isNewMode()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete company"
+      (save)="save($event)"
+      (delete)="deleteCompany()"
+    ></pc-detail-header>
 
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Form Section -->
+      <pc-card class="lg:col-span-2">
+        <!-- Name -->
+        <pc-input label="Company Name" placeholder="e.g. Acme Corp" [formField]="form.name"></pc-input>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Website -->
+          <pc-input label="Website" type="url" placeholder="https://example.com" [formField]="form.website"></pc-input>
+
+          <!-- Industry -->
+          <pc-input label="Industry" placeholder="e.g. Technology" [formField]="form.industry"></pc-input>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Email -->
+          <pc-input label="Email" type="email" placeholder="info@example.com" [formField]="form.email"></pc-input>
+
+          <!-- Phone -->
+          <pc-input label="Phone" type="tel" placeholder="+1 555-0100" [formField]="form.phone"></pc-input>
+        </div>
+
+        <!-- Description -->
+        <pc-textarea
+          label="Description"
+          placeholder="Company description..."
+          [formField]="form.description"
+          [rows]="3"
+        ></pc-textarea>
+
+        <!-- Notes -->
+        <pc-textarea
+          label="Internal Notes"
+          placeholder="Any additional notes..."
+          [formField]="form.notes"
+          [rows]="4"
+        ></pc-textarea>
+      </pc-card>
+
+      <!-- Members & Info Panel -->
+      <div class="space-y-6">
+        <!-- Employee List (Only when edit mode) -->
+        @if (!isNewMode() && id()) {
+        <pc-card title="Associated Employees" icon="user-group">
+          @defer (on viewport) {
+          <pc-people-in-company [companyId]="id()!"></pc-people-in-company>
+          } @placeholder {
+          <div class="skeleton w-full h-32"></div>
+          }
+        </pc-card>
+        }
+
+        <!-- Metadata Card -->
+        @if (!isNewMode()) {
+        <pc-entity-overview
+          [createdAt]="company()?.created_at"
+          [updatedAt]="company()?.updated_at"
+        ></pc-entity-overview>
+        }
+      </div>
+    </div>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-form.ts
 ```typescript
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { PersonsService } from '../../persons/services/persons-service';
-import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { Component, OnInit, computed, inject, input, signal } from '@angular/core';
+import { Router, RouterModule } from '@angular/router';
+import { form, validateStandardSchema } from '@angular/forms/signals';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { CompanyInputObj } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { CompaniesService } from '../services/companies-service';
+import { PeopleInCompany } from './people-in-company';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 
 @Component({
-  selector: 'pc-people-in-company',
-  imports: [RouterModule],
-  template: `<div>
-    <ul class="space-y-1.5">
-      @if (!peopleInCompany().length && !isLoading()) {
-        <span i18n class="text-sm text-base-content/50 italic">No employees found.</span>
-      }
-      @for (person of peopleInCompany(); track person.id) {
-        <li class="flex items-center gap-2">
-          @if (person.full_name) {
-            <a routerLink="/people/{{ person.id }}" class="link hover:no-underline font-medium text-primary">
-              {{ person.full_name }}
-            </a>
-            @if (person.email) {
-              <span class="text-xs text-base-content/40">({{ person.email }})</span>
-            }
-          } @else {
-            <!-- Grouped by the employer field but never fleshed out into a named person (§7) -->
-            <span i18n class="text-sm text-base-content/50 italic">Employer field only — no person record yet</span>
-          }
-        </li>
-      }
-    </ul>
-    @if (hasMore()) {
-      <div class="mt-2">
-        <button
-          i18n
-          type="button"
-          class="btn btn-xs btn-ghost text-primary"
-          (click)="loadMore()"
-          [disabled]="isLoading()"
-        >
-          - More -
-        </button>
-      </div>
-    }
-  </div>`,
+  selector: 'pc-company-form',
+  imports: [PcInput, PcTextarea, PeopleInCompany, RouterModule, PcDetailHeader, PcEntityOverview, PcCard],
+  templateUrl: './company-form.html',
 })
-export class PeopleInCompany {
-  private personsSvc = inject(PersonsService);
+export class CompanyForm implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  protected peopleInCompany = signal<Array<Persons & { full_name: string }>>([]);
-  protected isLoading = signal(false);
-  protected hasMore = signal(false);
+  private readonly _loading = createLoadingGate();
+  protected readonly company = signal<any | null>(null);
 
-  private readonly pageSize = 25;
-  private currentOffset = signal(0);
-  private requestSequence = 0;
-  private lastParams: { id: string } | null = null;
-
-  public companyId = input.required<string>();
-
-  constructor() {
-    effect(() => {
-      const id = this.companyId();
-
-      if (!id) {
-        this.resetState();
-        this.lastParams = null;
-        return;
-      }
-
-      if (this.lastParams && this.lastParams.id === id) {
-        return;
-      }
-
-      this.lastParams = { id };
-      this.resetState();
-      void this.fetchPage({ id, offset: 0, replace: true });
-    });
-  }
-
-  protected async loadMore() {
-    if (this.isLoading() || !this.hasMore()) {
-      return;
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const companies: PcBreadcrumb = { label: 'Companies', route: '/companies' };
+    const id = this.company()?.id;
+    if (id) {
+      return [
+        companies,
+        { label: this.company()?.name || 'Company', route: ['/companies', String(id)] },
+        { label: 'Edit' },
+      ];
     }
+    return [companies, { label: 'New company' }];
+  });
 
-    const id = this.companyId();
-    if (!id) {
-      return;
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    website: '',
+    industry: '',
+    email: '',
+    phone: '',
+    notes: '',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, CompanyInputObj);
+  });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+  protected id = input<string>();
+  protected isLoading = this._loading.visible;
+
+  public mode = input<'new' | 'edit'>('edit');
+  protected readonly isNewMode = computed(() => this.mode() === 'new' || !this.id());
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadCompany();
+    if (this.isNewMode()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const data = state.cloneData;
+        this.payload.set({
+          name: data.name ? `${data.name} (Copy)` : '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+      }
     }
-
-    const offset = this.currentOffset();
-    await this.fetchPage({ id, offset, replace: false });
   }
 
-  private resetState() {
-    this.peopleInCompany.set([]);
-    this.currentOffset.set(0);
-    this.hasMore.set(false);
-    this.isLoading.set(false);
-    this.requestSequence++;
-  }
-
-  private async fetchPage(params: { id: string; offset: number; replace: boolean }) {
-    const { id, offset, replace } = params;
-    const requestId = ++this.requestSequence;
-    this.isLoading.set(true);
-
+  private async loadCompany() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
     try {
-      const people = (await this.personsSvc.getByCompanyId(id, {
-        limit: this.pageSize,
-        offset,
-      })) as Persons[];
-
-      if (requestId !== this.requestSequence) {
-        return;
+      const data = await this.companiesSvc.getById(this.id()!);
+      this.company.set(data);
+      if (data) {
+        this.payload.set({
+          name: data.name ?? '',
+          description: data.description ?? '',
+          website: data.website ?? '',
+          industry: data.industry ?? '',
+          email: data.email ?? '',
+          phone: data.phone ?? '',
+          notes: data.notes ?? '',
+        });
+        this.form().reset();
       }
-
-      const mapped = people.map((person) => ({
-        ...person,
-        full_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
-      }));
-
-      if (replace) {
-        this.peopleInCompany.set(mapped);
-      } else {
-        this.peopleInCompany.update((current) => [...current, ...mapped]);
-      }
-
-      this.currentOffset.set(offset + people.length);
-      this.hasMore.set(people.length === this.pageSize);
+    } catch (err) {
+      console.error('Failed to load company details:', err);
     } finally {
-      if (requestId === this.requestSequence) {
-        this.isLoading.set(false);
-      }
+      end();
+    }
+  }
+
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id()!);
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.company()?.name || 'this company');
+  }
+
+  protected save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+    const raw = this.payload();
+    if (this.id()) {
+      const end = this._loading.begin();
+      this.companiesSvc
+        .update(this.id()!, raw)
+        .then(() => {
+          this.companiesSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Company updated successfully');
+          if (typeof done === 'function') {
+            done();
+          } else {
+            void this.router.navigate(['/companies', this.id()]);
+          }
+        })
+        .catch((err: any) => {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
+        .finally(() => end());
+    } else {
+      const end = this._loading.begin();
+      this.companiesSvc
+        .add(raw)
+        .then(() => {
+          this.companiesSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Company added successfully');
+          if (typeof done === 'function') {
+            done();
+          } else {
+            void this.router.navigate(['/companies']);
+          }
+        })
+        .catch((err: any) => {
+          const message =
+            err instanceof Error && err.message
+              ? err.message
+              : isRecord(err) &&
+                  isRecord(err['data']) &&
+                  typeof err['data']['message'] === 'string' &&
+                  err['data']['message']
+                ? err['data']['message']
+                : 'Unable to save company';
+          this.alertSvc.showError(message);
+        })
+        .finally(() => end());
     }
   }
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
+```html
+<pc-detail-layout
+  [title]="company()?.name || 'Company'"
+  [eyebrow]="'Company'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!company()"
+  [showDelete]="true"
+  [deleteText]="'Delete company'"
+  [btn1Text]="'Edit company'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editCompany()"
+  (delete)="deleteCompany()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (company()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Company Details Card -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Company Card -->
+      <pc-profile-card [avatarText]="initials()">
+        <!-- Name & Industry -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
+        @if (company().industry) {
+        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
+        } @else {
+        <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
+        }
+
+        <!-- Contact details list -->
+        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
+          <pc-detail-item
+            label="Website"
+            [value]="company().website"
+            icon="globe-americas"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Email Address"
+            [value]="company().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Phone Number"
+            [value]="company().phone"
+            icon="identification"
+            [copyable]="true"
+          ></pc-detail-item>
+        </div>
+
+        <!-- Internal Notes (Short summary) -->
+        @if (company().notes) {
+        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
+          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
+            Internal Notes
+          </span>
+          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+            {{ company().notes }}
+          </p>
+        </div>
+        }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="company().created_at"
+          [createdBy]="getUserName(company().createdby_id)"
+          [updatedAt]="company().updated_at"
+          [updatedBy]="getUserName(company().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Stats Panel -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <pc-stat-card
+          [title]="'Employees'"
+          [value]="employeeCount()"
+          [description]="'Total staff listed'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
+        ></pc-stat-card>
+
+        <pc-stat-card
+          [title]="'Enriched from Google'"
+          [value]="isEnriched() ? 'Yes' : 'No'"
+          [description]="'Google Places sync status'"
+          [icon]="'check-circle'"
+          [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
+          [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Tabs Panel -->
+      <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="employees" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @defer (on viewport) {
+            <pc-people-in-company [companyId]="id()"></pc-people-in-company>
+            } @placeholder {
+            <div class="skeleton w-full h-32"></div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="details" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (company().description) {
+            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
+                Company Description
+              </span>
+              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
+                {{ company().description }}
+              </p>
+            </div>
+            } @else {
+            <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+</pc-detail-layout>
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/store/email-actions.store.ts
-
 ```typescript
 import { inject, signal, Service } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -26935,7 +25684,6 @@ export class EmailActionsStore {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/store/email-state.store.ts
-
 ```typescript
 import { computed, signal, Service, linkedSignal } from '@angular/core';
 
@@ -27136,7 +25884,6 @@ function toNum(n: unknown): number {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/email-sla.ts
-
 ```typescript
 import { calculateWorkingTimeMs } from '../../../../../../../libs/common/src/lib/sla';
 
@@ -27214,7 +25961,6 @@ export function computeEmailSla(inputs: SlaInputs, now: Date = new Date()): SlaP
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
@@ -27408,7 +26154,6 @@ export class EmailsService extends TRPCService<'emails' | 'email_list'> {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-body/email-body.ts
-
 ```typescript
 import { Component, computed, effect, inject, input, untracked } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -27491,7 +26236,6 @@ export class EmailBody {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.html
-
 ```html
 <div class="flex text-sm bg-base-100 h-full overflow-hidden">
   <!-- Folder list panel: full-width on mobile when active, narrow sidebar on desktop -->
@@ -27576,7 +26320,6 @@ export class EmailBody {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-comments/email-comments.html
-
 ```html
 <div class="p-2 space-y-3">
   @for (comment of comments(); track comment.id) {
@@ -27664,7 +26407,6 @@ export class EmailBody {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.html
-
 ```html
 <aside [class]="asideClass()">
   <!-- Header and expand / collapse icon -->
@@ -27759,7 +26501,6 @@ export class EmailBody {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-folder-list/email-folder-list.ts
-
 ```typescript
 import { Component, OnInit, computed, inject, output, signal } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -27866,7 +26607,6 @@ export class EmailFolderList implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.ts
-
 ```typescript
 import { DatePipe, UpperCasePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
@@ -28141,7 +26881,6 @@ export class EmailHeader {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.html
-
 ```html
 <section class="border-r border-base-300 flex flex-col h-full overflow-hidden w-full md:w-48 bg-base-200">
   <!-- Toolbar -->
@@ -28263,7 +27002,6 @@ export class EmailHeader {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-list/email-list.ts
-
 ```typescript
 import { Component, effect, inject, output, signal, computed, viewChild, ElementRef } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -28613,7 +27351,6 @@ export class EmailList {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.html
-
 ```html
 @if (collapsed()) {
 <!-- Collapsed: 48px strip keeps IDENTITY (avatar initials), never nothing (§2) -->
@@ -28735,7 +27472,6 @@ export class EmailList {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-person-rail/email-person-rail.ts
-
 ```typescript
 import { Component, computed, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -28823,381 +27559,336 @@ export class EmailPersonRail {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
+## File: apps/frontend/src/app/experiences/events/ui/event-form.html
+```html
+<div class="p-6 max-w-5xl space-y-6">
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
+      [showDelete]="!isNew()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
 
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
-import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-import { AuthService } from '../../../auth/auth-service';
-import { publicPageUrl } from '../../../shared/public-pages';
-
-import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
-import { EventsService } from '../../../services/api/events-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { EventsFrontendService } from '../services/events-frontend-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-@Component({
-  selector: 'pc-event-form',
-  imports: [
-    FormsModule,
-    FormField,
-    PcInput,
-    PcTextarea,
-    RouterModule,
-    Icon,
-    PcDetailHeader,
-    PcEntityOverview,
-    PcCard,
-    FieldsSelector,
-    PublicLinkPanel,
-  ],
-  templateUrl: './event-form.html',
-  providers: [EventsService],
-})
-export class EventFormComponent implements OnInit {
-  private readonly _loading = createLoadingGate();
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly auth = inject(AuthService);
-  private readonly eventsFrontendSvc = inject(EventsFrontendService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly router = inject(Router);
-
-  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly addingTicket = signal(false);
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-  protected readonly publicUrl = computed(() => {
-    const slug = this.payload().slug;
-    if (!slug || this.isNew()) return '';
-    return publicPageUrl(this.auth.getUser()?.tenant_slug, `e/${slug}`);
-  });
-  protected readonly detail = signal<any>(null);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const events: PcBreadcrumb = { label: 'Events', route: '/events/pages' };
-    const id = this.id();
-    if (id) {
-      return [events, { label: this.detail()?.name || 'Event', route: ['/events/pages', id] }, { label: 'Edit' }];
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
     }
-    return [events, { label: 'New event' }];
-  });
 
-  protected readonly payload = signal({
-    name: '',
-    slug: '',
-    description: '',
-    location_address: '',
-    start_time: '',
-    end_time: '',
-    capacity: null as number | null,
-    contact_email: '',
-    contact_phone: '',
-    is_published: false,
-    send_reminder: true,
-    send_registration_confirmation: true,
-  });
-  protected readonly endBeforeStartError = computed(() => {
-    const { start_time, end_time } = this.payload();
-    if (!start_time || !end_time) return false;
-    return new Date(end_time) <= new Date(start_time);
-  });
-  protected readonly error = signal<string | null>(null);
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddEventObj);
-  });
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-  protected readonly isNew = computed(() => !this.id());
-  protected readonly loading = this._loading.visible;
-  protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
-  protected readonly saving = signal(false);
-  protected readonly slugChecking = signal(false);
-  protected readonly slugUnique = signal<boolean | null>(null);
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Annual Fundraising Dinner"
+          ></pc-input>
 
-  // Ticket types
-  protected readonly ticketTypes = signal<any[]>([]);
-
-  protected slugManuallyEdited = false;
-
-  protected setNewTicketName(v: string) {
-    this.newTicket.update((t) => ({ ...t, name: v }));
-  }
-  protected setNewTicketPrice(v: string) {
-    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
-  }
-  protected setNewTicketCapacity(v: string) {
-    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
-  }
-
-  public readonly id = input<string>();
-
-  constructor() {
-    const nameSignal = computed(() => this.payload().name);
-    effect(() => {
-      const name = nameSignal();
-      if (this.isNew() && !this.slugManuallyEdited) {
-        const suggested = this.slugify(name);
-        if (untracked(this.payload).slug !== suggested) {
-          this.payload.update((p) => ({ ...p, slug: suggested }));
-        }
-      }
-    });
-
-    const slugSignal = computed(() => this.payload().slug);
-    effect(() => {
-      const slug = slugSignal();
-      if (this.slugTimeoutId) {
-        clearTimeout(this.slugTimeoutId);
-        this.slugTimeoutId = null;
-      }
-      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-        this.slugUnique.set(null);
-        this.slugChecking.set(false);
-        return;
-      }
-      this.slugChecking.set(true);
-      this.slugTimeoutId = setTimeout(() => {
-        void (async () => {
-          try {
-            const res = await this.eventsFrontendSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
-            if (untracked(slugSignal) === slug) {
-              this.slugUnique.set(res.unique);
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. annual-fundraising-dinner"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
             }
-          } catch (err) {
-            console.error('Failed to check slug uniqueness', err);
-          } finally {
-            if (untracked(slugSignal) === slug) {
-              this.slugChecking.set(false);
-            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the event, agenda, and what attendees can expect..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., 123 Main St, City Hall Ballroom"
+          ></pc-input>
+
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public RSVP form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact
+          </h4>
+          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Ticket Types (only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Ticket Types"
+          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
+          icon="tag"
+        >
+          <button
+            pc-card-actions
+            type="button"
+            class="btn btn-xs btn-primary gap-1"
+            (click)="startAddTicket()"
+            [disabled]="addingTicket()"
+          >
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
+          </button>
+
+          @if (ticketTypes().length === 0 && !addingTicket()) {
+          <p class="text-sm text-base-content/40 italic">
+            No ticket types defined — this event uses a simple free RSVP.
+          </p>
+          } @else {
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table table-sm w-full text-xs">
+              <thead>
+                <tr class="bg-base-200 text-base-content/70">
+                  <th>Name</th>
+                  <th>Price</th>
+                  <th>Capacity</th>
+                  <th class="w-16 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @for (ticket of ticketTypes(); track ticket.id) {
+                <tr class="hover:bg-base-200/40">
+                  <td>
+                    <div class="font-semibold">{{ ticket.name }}</div>
+                    @if (ticket.description) {
+                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
+                    }
+                  </td>
+                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
+                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
+                  <td>
+                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
+                      <pc-icon name="trash" [size]="4"></pc-icon>
+                    </button>
+                  </td>
+                </tr>
+                } @if (addingTicket()) {
+                <tr class="bg-base-200/30">
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-full"
+                      placeholder="Ticket name *"
+                      [ngModel]="newTicket().name"
+                      (ngModelChange)="setNewTicketName($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="0"
+                      min="0"
+                      step="1"
+                      title="Price in cents (e.g. 2500 = $25.00)"
+                      [ngModel]="newTicket().price_cents"
+                      (ngModelChange)="setNewTicketPrice($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="∞"
+                      min="1"
+                      [ngModel]="newTicket().capacity"
+                      (ngModelChange)="setNewTicketCapacity($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
+                        <pc-icon name="check-circle" [size]="4"></pc-icon>
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
+                        <pc-icon name="x-mark" [size]="4"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
           }
-        })();
-      }, 300);
-    });
-  }
-
-  public ngOnInit(): void {
-    const end = this._loading.begin();
-    void this.loadEvent().finally(() => end());
-  }
-
-  protected cancelAddTicket() {
-    this.addingTicket.set(false);
-  }
-
-  protected async deleteEvent() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event Page',
-      message: 'Are you sure you want to delete this event page? All registrations will also be deleted.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    this.saving.set(true);
-    try {
-      await this.eventsFrontendSvc.delete(this.id()!);
-      this.eventsFrontendSvc.triggerRefresh();
-      this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/events/pages']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async deleteTicketType(id: string) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Ticket Type',
-      message: 'Delete this ticket type?',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    try {
-      await this.eventsSvc.deleteTicketType(id);
-      this.alerts.showSuccess('Ticket type deleted');
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
-    }
-  }
-
-  protected formatPrice(cents: number): string {
-    if (!cents) return 'Free';
-    return `$${(cents / 100).toFixed(2)}`;
-  }
-
-  protected async loadEvent() {
-    if (this.isNew()) return;
-
-    try {
-      const event = (await this.eventsFrontendSvc.getById(this.id()!)) as any;
-      this.detail.set(event);
-      this.payload.set({
-        name: event.name ?? '',
-        slug: event.slug ?? '',
-        description: event.description ?? '',
-        location_address: event.location_address ?? '',
-        start_time: this.toDatetimeLocalString(event.start_time),
-        end_time: this.toDatetimeLocalString(event.end_time),
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? '',
-        contact_phone: event.contact_phone ?? '',
-        is_published: !!event.is_published,
-        send_reminder: event.send_reminder !== false,
-        send_registration_confirmation: event.send_registration_confirmation !== false,
-      });
-      if (Array.isArray(event.fields) && event.fields.length > 0) {
-        this.selectedFields.set(event.fields);
-      }
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
-      this.alerts.showError(this.error()!);
-    }
-  }
-
-  protected async loadTicketTypes() {
-    if (!this.id()) return;
-    try {
-      const types = await this.eventsSvc.getTicketTypes(this.id()!);
-      this.ticketTypes.set(types || []);
-    } catch (err) {
-      console.error('Failed to load ticket types', err);
-    }
-  }
-
-  protected onSlugInput() {
-    this.slugManuallyEdited = true;
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this event');
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) done.preventDefault();
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    if (this.endBeforeStartError()) {
-      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
-      return;
-    }
-
-    if (this.slugUnique() === false) {
-      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    const raw = this.payload();
-    const data = {
-      name: raw.name.trim(),
-      slug: raw.slug.trim(),
-      description: raw.description?.trim() || null,
-      location_address: raw.location_address?.trim() || null,
-      start_time: new Date(raw.start_time),
-      end_time: new Date(raw.end_time),
-      capacity: raw.capacity ? Number(raw.capacity) : null,
-      contact_email: raw.contact_email?.trim() || null,
-      contact_phone: raw.contact_phone?.trim() || null,
-      is_published: !!raw.is_published,
-      send_reminder: !!raw.send_reminder,
-      send_registration_confirmation: !!raw.send_registration_confirmation,
-      fields: this.selectedFields(),
-    };
-
-    try {
-      if (this.isNew()) {
-        const res = await this.eventsFrontendSvc.add(data as AddEventType);
-        this.eventsFrontendSvc.triggerRefresh();
-        this.alerts.showSuccess('Event created successfully');
-        await this.router.navigate(['/events/pages', (res as any).id]);
-      } else {
-        await this.eventsFrontendSvc.update(this.id()!, data as UpdateEventType);
-        this.eventsFrontendSvc.triggerRefresh();
-        this.alerts.showSuccess('Event updated successfully');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/events/pages', this.id()]);
+        </pc-card>
         }
+      </div>
+
+      <!-- Right col: Scheduling, toggles -->
+      <div class="space-y-6">
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Total Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+        </pc-card>
+
+        <pc-card title="Publishing & Notifications">
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  When enabled, this event page is visible to the public.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email when someone RSVPs for this event.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_registration_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to registered attendees 24 hours before the event.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+        </pc-card>
+
+        @if (!isNew()) {
+        <pc-entity-overview
+          title="Event Overview"
+          [createdAt]="detail()?.created_at"
+          createdBy="Representative"
+        ></pc-entity-overview>
+        }
+      </div>
+
+      <!-- Right col: Fields & Public Link -->
+
+      @if (!isNew() && publicUrl()) {
+      <pc-public-link-panel
+        [url]="publicUrl()"
+        label="Public RSVP Link"
+        subtitle="Share this link so people can RSVP for the event."
+      ></pc-public-link-panel>
       }
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
-      this.alerts.showError(this.error()!);
-    } finally {
-      this.saving.set(false);
-    }
+    </form>
+  </div>
   }
-
-  protected async saveNewTicket() {
-    const t = this.newTicket();
-    if (!t.name.trim()) {
-      this.alerts.showError('Ticket type name is required');
-      return;
-    }
-    try {
-      await this.eventsSvc.addTicketType({
-        event_id: this.id()!,
-        name: t.name.trim(),
-        description: t.description?.trim() || null,
-        price_cents: Number(t.price_cents) || 0,
-        capacity: t.capacity ? Number(t.capacity) : null,
-      });
-      this.addingTicket.set(false);
-      this.alerts.showSuccess('Ticket type added');
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
-    }
-  }
-
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
-
-  // Ticket type management
-  protected startAddTicket() {
-    this.newTicket.set({ name: '', description: '', price_cents: 0, capacity: null });
-    this.addingTicket.set(true);
-  }
-
-  protected toDatetimeLocalString(val: any): string {
-    if (!val) return '';
-    const date = new Date(val);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-}
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/events/ui/public-event.ts
-
 ```typescript
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
@@ -29621,7 +28312,6 @@ export class PublicEventComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/services/forms-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -29799,7 +28489,6 @@ export class FormsService extends AbstractAPIService<'web_forms', AddWebFormType
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/form-render.ts
-
 ```typescript
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { FormField } from '../../../../../../../libs/common/src';
@@ -29917,7 +28606,6 @@ export class FormRenderComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.html
-
 ```html
 <div class="flex h-full flex-col bg-base-100">
   <!-- Header -->
@@ -30341,7 +29029,6 @@ export class FormRenderComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-form.ts
-
 ```typescript
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -30714,7 +29401,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/data-management.ts
-
 ```typescript
 import type { HelpArticle } from '../help-types';
 
@@ -30858,7 +29544,6 @@ export const DATA_ARTICLES: HelpArticle[] = [
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/grids.ts
-
 ```typescript
 import type { HelpArticle } from '../help-types';
 
@@ -31019,7 +29704,6 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/help-content.ts
-
 ```typescript
 import { ADMIN_ARTICLES } from './articles/administration';
 import { CONTACTS_ARTICLES } from './articles/contacts';
@@ -31167,7 +29851,6 @@ export function categoryNeighbors(article: HelpArticle): { next?: HelpArticle; p
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/help-search.ts
-
 ```typescript
 import { getHelpCategory, HELP_ARTICLES } from './help-content';
 import { articleToPlainText } from './help-types';
@@ -31341,7 +30024,6 @@ export function searchHelp(query: string, articles: HelpArticle[] = HELP_ARTICLE
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/help-types.ts
-
 ```typescript
 import type { PcIconNameType } from '@icons/icons.index';
 
@@ -31496,7 +30178,6 @@ export function readingMinutes(article: HelpArticle): number {
 ```
 
 ## File: apps/frontend/src/app/experiences/help/ui/help-blocks.html
-
 ```html
 <div class="space-y-5">
   @for (block of blocks(); track $index) { @switch (block.kind) { @case ('p') {
@@ -31582,7 +30263,6 @@ export function readingMinutes(article: HelpArticle): number {
 ```
 
 ## File: apps/frontend/src/app/experiences/help/ui/help-blocks.ts
-
 ```typescript
 import { Component, input } from '@angular/core';
 import { Icon } from '@icons/icon';
@@ -31619,7 +30299,6 @@ export class HelpBlocks {
 ```
 
 ## File: apps/frontend/src/app/experiences/help/ui/help-home.html
-
 ```html
 <div class="mx-auto max-w-5xl px-4 py-8 sm:px-6">
   <!-- Hero: title + search -->
@@ -31754,7 +30433,6 @@ export class HelpBlocks {
 ```
 
 ## File: apps/frontend/src/app/experiences/help/ui/help-home.ts
-
 ```typescript
 import { afterNextRender, Component, computed, signal, viewChild } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -31824,7 +30502,6 @@ export class HelpHomePage {
 ```
 
 ## File: apps/frontend/src/app/experiences/help/ui/help-rich-text.ts
-
 ```typescript
 import { Component, computed, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -31866,7 +30543,6 @@ export class HelpRichText {
 ```
 
 ## File: apps/frontend/src/app/experiences/households/ui/household-form.html
-
 ```html
 <!-- Template for household edit form -->
 <div class="flex min-h-full flex-col bg-base-100 p-6">
@@ -31918,18 +30594,13 @@ export class HelpRichText {
               </div>
               }
 
-              <!-- Autocomplete Address Search (§6 — Google Places) -->
+              <!-- Autocomplete Address Search -->
               <div class="flex flex-col gap-2">
                 <label class="text-sm font-semibold text-base-content/75">Search address</label>
                 <pc-address-autocomplete
                   (addressSelected)="handleAddressChange($event)"
                   [disabled]="isLoading() || (household()?.is_placeholder ?? false)"
                 ></pc-address-autocomplete>
-                <p class="text-xs text-base-content/55 leading-snug">
-                  Picking a suggestion fills every field below and geocodes the household — ward, district and precinct
-                  update automatically.
-                </p>
-                <span class="text-[10px] text-base-content/35 tracking-wide">powered by Google</span>
               </div>
 
               <!-- Collapsible manual entry -->
@@ -31940,11 +30611,7 @@ export class HelpRichText {
                   <pc-icon name="chevron-right" [size]="3" class="transition-transform group-open:rotate-90"></pc-icon>
                   Enter address manually
                 </summary>
-                <div class="mt-4 pl-3 border-l-2 border-base-300 flex flex-col gap-3">
-                  <p class="text-xs text-base-content/55 leading-snug">
-                    Manual edits are saved as typed — they geocode in the background, and the map pin appears once the
-                    address verifies.
-                  </p>
+                <div class="mt-4 pl-3 border-l-2 border-base-300">
                   <pc-address-form-group [form]="form"></pc-address-form-group>
                 </div>
               </details>
@@ -31982,14 +30649,10 @@ export class HelpRichText {
                 ></pc-tags>
               </div>
 
-              <div class="divider mb-1 uppercase tracking-wider text-xs font-semibold text-base-content/40">
-                Door notes
-              </div>
-
-              <!-- Door notes -->
+              <!-- Notes -->
               <pc-textarea
-                label="Door notes"
-                placeholder="What a canvasser should know at this door…"
+                label="Internal Notes"
+                placeholder="Internal notes regarding this household..."
                 [formField]="form.notes"
                 [rows]="3"
               ></pc-textarea>
@@ -32000,38 +30663,13 @@ export class HelpRichText {
         </form>
       </div>
 
-      <!-- Overview Sidebar (§6 rail: first seen · members · geocode status · ward/district/precinct) -->
-      <div class="flex flex-col gap-4">
-        @if (!isNewMode() && household(); as h) {
-        <div class="card bg-base-100 border border-base-300 rounded-xl p-4 flex flex-col gap-3">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/50">Overview</span>
-
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-base-content/60">Geocoding status</span>
-            <pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip>
-          </div>
-
-          <dl class="flex flex-col gap-2 text-sm border-t border-base-200 pt-3">
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Ward</dt>
-              <dd class="font-medium tabular-nums">{{ h.ward || '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">District</dt>
-              <dd class="font-medium tabular-nums">{{ h.district || '—' }}</dd>
-            </div>
-            <div class="flex items-center justify-between">
-              <dt class="text-base-content/60">Precinct</dt>
-              <dd class="font-medium tabular-nums">{{ h.precinct || '—' }}</dd>
-            </div>
-          </dl>
-
-          <p class="text-xs text-base-content/45 leading-snug border-t border-base-200 pt-3">
-            Electoral boundaries come from the geocoder — they refresh in the background after save.
-          </p>
-        </div>
-
-        <pc-entity-overview [createdAt]="h.created_at" [updatedAt]="h.updated_at"></pc-entity-overview>
+      <!-- Overview Sidebar -->
+      <div>
+        @if (!isNewMode()) {
+        <pc-entity-overview
+          [createdAt]="household()?.created_at"
+          [updatedAt]="household()?.updated_at"
+        ></pc-entity-overview>
         }
       </div>
     </div>
@@ -32041,7 +30679,6 @@ export class HelpRichText {
 ```
 
 ## File: apps/frontend/src/app/experiences/households/ui/household-form.ts
-
 ```typescript
 import { Component, OnInit, inject, input, signal, computed } from '@angular/core';
 import { form, validateStandardSchema } from '@angular/forms/signals';
@@ -32057,9 +30694,7 @@ import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-head
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
-import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 
-import type { Selectable } from 'kysely';
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
@@ -32078,7 +30713,6 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
     PcDetailHeader,
     PcEntityOverview,
     PcAddressFormGroup,
-    GeocodeChip,
   ],
   templateUrl: './household-form.html',
 })
@@ -32092,7 +30726,7 @@ export class HouseholdForm implements OnInit {
 
   private _loading = createLoadingGate();
 
-  protected readonly household = signal<Selectable<Households> | null>(null);
+  protected readonly household = signal<Households | null>(null);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
     const households: PcBreadcrumb = { label: 'Households', route: '/households' };
@@ -32383,7 +31017,7 @@ export class HouseholdForm implements OnInit {
     const end = this._loading.begin();
 
     try {
-      this.household.set((await this.householdsSvc.getById(id)) as Selectable<Households>);
+      this.household.set((await this.householdsSvc.getById(id)) as Households);
       await this.getTags();
       this.refreshForm();
     } finally {
@@ -32440,8 +31074,246 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
+## File: apps/frontend/src/app/experiences/households/ui/household-view.html
+```html
+<pc-detail-layout
+  [title]="addressString()"
+  [eyebrow]="'Household'"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!household()"
+  [showActions]="!!(household() && !household()?.is_placeholder)"
+  [showDelete]="true"
+  [deleteText]="'Delete household'"
+  [btn1Text]="'Edit household'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editHousehold()"
+  (delete)="deleteHousehold()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  @if (household(); as h) { @if (h.is_placeholder) {
+  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
+    <div class="avatar placeholder mb-4">
+      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
+        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
+      </div>
+    </div>
+    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
+    <p class="text-sm text-base-content/60 mb-6">
+      This is a system placeholder representing individuals who do not currently have a household or address assigned.
+      It is not a real household record and cannot be edited.
+    </p>
+    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Return to People
+    </a>
+  </div>
+  } @else {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Household Card, Map & Segmentation -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Elegant Household Card -->
+      <pc-profile-card iconName="home">
+        <!-- Address Title -->
+        <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
 
+        <!-- Contact Details List -->
+        <div class="w-full flex flex-col text-sm">
+          <pc-detail-item label="Home Phone" [value]="h.home_phone" icon="phone" [copyable]="true"></pc-detail-item>
+          <pc-detail-item label="Household Type" [value]="h.type" icon="information-circle"></pc-detail-item>
+        </div>
+
+        <!-- Mapped Districts (GIS) -->
+        @if (h.district || h.precinct || h.ward || h.geocoding_status) {
+        <div
+          class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
+        >
+          <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
+            <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
+            <span>Electoral Boundaries</span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
+            @if (h.district) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">District / Riding</span>
+              <span class="font-bold text-base-content">{{ h.district }}</span>
+            </div>
+            } @if (h.ward) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">Ward</span>
+              <span class="font-bold text-base-content">{{ h.ward }}</span>
+            </div>
+            } @if (h.precinct) {
+            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
+              <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
+              <span class="font-bold text-base-content">{{ h.precinct }}</span>
+            </div>
+            }
+          </div>
+
+          <!-- Geocoding Status Badge -->
+          <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
+            <span class="text-base-content/60">Geocoding Status:</span>
+            @if (h.geocoding_status === 'success') {
+            <span class="badge badge-success badge-sm font-medium">Success</span>
+            } @else if (h.geocoding_status === 'pending') {
+            <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
+              <span class="loading loading-spinner loading-xs scale-75"></span>
+              Pending
+            </span>
+            } @else if (h.geocoding_status === 'failed') {
+            <span class="badge badge-error badge-sm text-xs">Unresolved</span>
+            } @else {
+            <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
+            }
+          </div>
+        </div>
+        }
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="h.created_at"
+          [createdBy]="getUserName(h.createdby_id)"
+          [updatedAt]="h.updated_at"
+          [updatedBy]="getUserName(h.updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Google Maps Card -->
+      <pc-card title="Map Location" icon="map">
+        <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
+          @if (hasMap()) { @defer (on viewport) {
+          <div #mapContainer id="household-map" class="w-full h-full"></div>
+          } @placeholder {
+          <div class="skeleton w-full h-full"></div>
+          } } @else {
+          <!-- Unverified Map Placeholder -->
+          <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
+            <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
+            <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
+            <p class="text-xs max-w-[220px] font-light leading-snug">
+              Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
+              address.
+            </p>
+          </div>
+          }
+        </div>
+      </pc-card>
+
+      <!-- Segmentation Card -->
+      <pc-card title="Segmentation">
+        <div class="flex flex-col gap-3">
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            }
+          </div>
+
+          <div>
+            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
+            }
+          </div>
+        </div>
+      </pc-card>
+    </div>
+
+    <!-- Right Column: Stats & Tabs Panel -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Dashboard Stats Grid -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <!-- Stats: People -->
+        <pc-stat-card
+          [title]="'People'"
+          [value]="peopleCount()"
+          [description]="'Household members'"
+          [icon]="'user-group'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
+        ></pc-stat-card>
+
+        <!-- Stats: Interactions -->
+        <pc-stat-card
+          [title]="'Interactions'"
+          [value]="0"
+          [description]="'Logged contacts'"
+          [icon]="'envelope'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
+        ></pc-stat-card>
+
+        <!-- Stats: Donations -->
+        <pc-stat-card
+          [title]="'Donations'"
+          [value]="'$0'"
+          [description]="'Financial support'"
+          [icon]="'currency-dollar'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
+        ></pc-stat-card>
+
+        <!-- Stats: Volunteers -->
+        <pc-stat-card
+          [title]="'Volunteers'"
+          [value]="0"
+          [description]="'Active assignments'"
+          [icon]="'volunteer'"
+          [valueColorClass]="'text-base-content'"
+          [iconColorClass]="'text-primary'"
+        ></pc-stat-card>
+      </div>
+
+      <!-- Multi-Tab Details & History Panel -->
+      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="members" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
+            <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="details" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (h.notes) {
+            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
+                >Household Notes</span
+              >
+              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
+            </div>
+            } @else {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No internal notes recorded for this household
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  } }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
 ```typescript
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -32832,7 +31704,6 @@ export class HouseholdsGrid implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/ui/list-view.ts
-
 ```typescript
 import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -33012,7 +31883,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
-
 ```typescript
 import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
 import { UpdateListType } from '../../../../../../../libs/common/src';
@@ -33235,7 +32105,6 @@ export class ListsGridComponent implements OnDestroy {
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/services/newsletters-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -33374,7 +32243,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.html
-
 ```html
 @if (mode() === 'options') {
 <div class="flex h-full flex-col bg-base-100">
@@ -33993,7 +32861,6 @@ export class NewslettersService extends AbstractAPIService<'newsletters', Update
 ```
 
 ## File: apps/frontend/src/app/experiences/newsletters/ui/newsletter-add.ts
-
 ```typescript
 import {
   CUSTOM_ELEMENTS_SCHEMA,
@@ -34772,7 +33639,6 @@ type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
-
 ```html
 <div class="space-y-8">
   <!-- Stripe Connection Section -->
@@ -35377,7 +34243,6 @@ type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
-
 ```typescript
 import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -35953,7 +34818,6 @@ export class DonationsSettingsComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.html
-
 ```html
 @if (open()) {
 <div class="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4 py-10">
@@ -36069,7 +34933,6 @@ export class DonationsSettingsComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/personal-settings-dialog/personal-settings-dialog.ts
-
 ```typescript
 import { Component, computed, effect, inject, model, output, signal } from '@angular/core';
 import { Icon } from '@icons/icon';
@@ -36252,7 +35115,6 @@ export class PersonalSettingsDialog {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
-
 ```typescript
 import { DatePipe, NgClass } from '@angular/common';
 import { Component, DestroyRef, OnInit, WritableSignal, computed, effect, inject, input, signal } from '@angular/core';
@@ -36885,7 +35747,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings.config.ts
-
 ```typescript
 import type { PcIconNameType } from '@icons/icons.index';
 
@@ -37247,7 +36108,6 @@ export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
 ```
 
 ## File: apps/frontend/src/app/experiences/shifts/ui/public-volunteer-list.ts
-
 ```typescript
 import { DatePipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
@@ -37398,940 +36258,18 @@ export class PublicVolunteerListComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
-
-```html
-<div class="p-6 max-w-5xl space-y-6">
-  <!-- Loading State -->
-  @if (error() && !detail() && !isNew()) {
-  <div class="alert alert-error m-4">
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!isNew() && !detail()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading event details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <!-- Header -->
-    <pc-detail-header
-      [title]="isNew() ? 'New volunteer event' : detail()?.name || 'Volunteer event'"
-      [eyebrow]="isNew() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
-      [form]="form"
-      [isLoading]="saving()"
-      [disabled]="slugChecking() || slugUnique() === false"
-      buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
-      [showDelete]="!isNew()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete event"
-      (save)="save($event)"
-      (delete)="deleteEvent()"
-    ></pc-detail-header>
-
-    <!-- Error alert -->
-    @if (error()) {
-    <div class="alert alert-error shadow-sm py-3 text-sm">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <!-- Event has passed alert -->
-    @if (eventPassed()) {
-    <div class="alert alert-warning shadow-sm py-3 text-sm flex items-center gap-2">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>This event has passed. Roster and details are now archived.</span>
-    </div>
-    }
-
-    <!-- Event details form -->
-    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
-      <!-- Left 2 cols: Main details -->
-      <div class="md:col-span-2 space-y-6">
-        <pc-card title="Event Details">
-          <pc-input
-            id="event-name"
-            label="Event Name *"
-            [formField]="form.name"
-            placeholder="E.g., Weekend Door Knocking Campaign"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="event-slug"
-              label="URL Slug *"
-              [formField]="form.slug"
-              placeholder="e.g. weekend-knocking"
-              [hasError]="slugUnique() === false"
-              (input)="onSlugInput()"
-            >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/v/</span>
-            </pc-input>
-            @if (slugChecking()) {
-            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-            </p>
-            } @else if (slugUnique() === true) {
-            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-            } @else if (slugUnique() === false) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
-            }
-          </div>
-
-          <pc-textarea
-            id="event-desc"
-            label="Description"
-            [formField]="form.description"
-            placeholder="Describe the purpose, tasks, and instructions for volunteers..."
-            [rows]="4"
-          ></pc-textarea>
-
-          <pc-input
-            id="event-location"
-            label="Location Address"
-            [formField]="form.location_address"
-            placeholder="E.g., Central Park Pavilion, or street coordinates"
-          ></pc-input>
-
-          <div class="divider mt-4"></div>
-          <div>
-            <h4 class="font-bold text-md">Collected Fields</h4>
-            <h5>Choose which fields appear on the public signup form.</h5>
-            <pc-fields-selector
-              [selectedFields]="selectedFields()"
-              (fieldsChange)="selectedFields.set($event)"
-            ></pc-fields-selector>
-          </div>
-          <div class="divider"></div>
-
-          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-            Organizer Contact Point
-          </h4>
-          <p class="text-xs text-base-content/60">
-            Provide contact info for constituents who have questions about this shift.
-          </p>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <pc-input
-              id="contact-email"
-              label="Contact Email"
-              type="email"
-              [formField]="form.contact_email"
-              placeholder="organizer@example.com"
-            ></pc-input>
-            <pc-input
-              id="contact-phone"
-              label="Contact Phone"
-              [formField]="form.contact_phone"
-              placeholder="E.g., 555-0199"
-            ></pc-input>
-          </div>
-        </pc-card>
-
-        <!-- Roster Management (Only for existing events) -->
-        @if (!isNew()) {
-        <pc-card
-          title="Shift Roster"
-          subtitle="Sign up volunteers and record their attendance and hours."
-          icon="user-group"
-        >
-          <div pc-card-actions class="badge badge-primary gap-1">
-            {{ roster().length }} Signed Up @if (detail()?.capacity) {
-            <span>/ {{ detail()?.capacity }} Max</span>
-            }
-          </div>
-
-          <!-- Search to Add Volunteers -->
-          <div class="relative space-y-1">
-            <label class="label text-xs font-semibold text-base-content/65 uppercase">Add Volunteer to Roster</label>
-            <div class="relative">
-              <input
-                type="text"
-                class="input input-bordered w-full pl-10"
-                placeholder="Search volunteers by name or email..."
-                [ngModel]="volunteerSearch()"
-                (ngModelChange)="volunteerSearch.set($event)"
-                [ngModelOptions]="{standalone: true}"
-              />
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
-                <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
-              </div>
-            </div>
-
-            <!-- Search suggestions -->
-            @if (volunteerSearchResults().length > 0) {
-            <div
-              class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
-            >
-              @for (p of volunteerSearchResults(); track p.id) {
-              <div
-                (click)="addVolunteer(p)"
-                class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
-              >
-                <div>
-                  <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
-                  <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
-                </div>
-                <button type="button" class="btn btn-primary btn-xs gap-1">
-                  <pc-icon name="plus" [size]="3"></pc-icon>
-                  Add
-                </button>
-              </div>
-              }
-            </div>
-            }
-          </div>
-
-          <!-- Roster Table -->
-          <div class="overflow-x-auto border border-base-300 rounded-lg">
-            <table class="table w-full text-sm">
-              <thead>
-                <tr class="bg-base-200 text-xs">
-                  <th>Volunteer</th>
-                  <th class="w-40">Status</th>
-                  <th class="w-24">Hours</th>
-                  <th>Notes</th>
-                  <th class="w-20 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-base-200">
-                @if (roster().length === 0) {
-                <tr>
-                  <td colspan="5" class="text-center py-8 text-base-content/60 font-light italic">
-                    No volunteers signed up for this event yet.
-                  </td>
-                </tr>
-                } @for (shift of roster(); track shift.id) {
-                <tr class="hover:bg-base-200/40">
-                  <!-- Contact details -->
-                  <td>
-                    <div>
-                      <a
-                        [routerLink]="['/people', shift.person_id]"
-                        class="font-bold text-primary hover:underline hover:cursor-pointer"
-                      >
-                        {{ shift.first_name }} {{ shift.last_name }}
-                      </a>
-                    </div>
-                    <div class="text-xs text-base-content/60">{{ shift.email || 'No email' }}</div>
-                  </td>
-                  <!-- Shift status dropdown -->
-                  <td>
-                    <select
-                      class="select select-bordered select-sm w-full font-medium"
-                      [ngModel]="shift.status"
-                      (ngModelChange)="updateShiftStatus(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                      [class.select-success]="shift.status === 'attended'"
-                      [class.select-warning]="shift.status === 'signed_up'"
-                      [class.select-error]="shift.status === 'no_show'"
-                    >
-                      <option value="signed_up">Signed Up</option>
-                      <option value="attended">Attended</option>
-                      <option value="no_show">No Show</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </td>
-                  <!-- Hours worked input -->
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-sm w-full text-center font-mono"
-                      placeholder="--"
-                      min="0"
-                      max="24"
-                      step="0.5"
-                      [ngModel]="shift.hours_worked"
-                      (ngModelChange)="updateShiftHours(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                      [disabled]="shift.status !== 'attended'"
-                    />
-                  </td>
-                  <!-- Notes -->
-                  <td>
-                    <input
-                      type="text"
-                      class="input input-bordered input-sm w-full"
-                      placeholder="Optional details..."
-                      [ngModel]="shift.notes"
-                      (ngModelChange)="updateShiftNotes(shift, $event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <!-- Actions -->
-                  <td>
-                    <div class="flex items-center justify-center gap-1.5">
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-xs text-primary"
-                        title="Save shift edits"
-                        (click)="saveShiftDetails(shift)"
-                      >
-                        <pc-icon name="check-circle" [size]="6"></pc-icon>
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-xs text-error"
-                        title="Remove volunteer"
-                        (click)="removeVolunteer(shift)"
-                      >
-                        <pc-icon name="trash" [size]="5"></pc-icon>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        </pc-card>
-        }
-      </div>
-
-      <!-- Right 1 col: Timing, Capacity, Actions -->
-      <div class="space-y-6">
-        @if (!isNew() && publicUrl()) {
-        <pc-card
-          title="Public Signup Link"
-          subtitle="Constituents can use this URL to view the event and sign up for this shift."
-          icon="globe-americas"
-        >
-          <div class="flex gap-2 items-center">
-            <input
-              #publicUrlInput
-              readonly
-              type="text"
-              class="input input-bordered input-sm flex-1 font-mono text-xs"
-              [value]="publicUrl()"
-            />
-            <button
-              type="button"
-              class="btn btn-primary btn-sm btn-square"
-              title="Copy Link"
-              (click)="copyToClipboard(publicUrl())"
-            >
-              <pc-icon name="document-duplicate" [size]="5"></pc-icon>
-            </button>
-          </div>
-
-          @if (detail()?.is_private) {
-          <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
-            <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-            <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
-          </div>
-          } @else {
-          <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
-            <span>All volunteer events page:</span>
-            <a [href]="volunteerListUrl()" target="_blank" class="link link-primary font-mono text-[10px] break-all">
-              {{ volunteerListUrl() }}
-            </a>
-          </div>
-          }
-        </pc-card>
-        }
-        <pc-card title="Scheduling">
-          <pc-input
-            id="start-time"
-            label="Start Date & Time *"
-            type="datetime-local"
-            [formField]="form.start_time"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-              [hasError]="endBeforeStartError()"
-            ></pc-input>
-            @if (endBeforeStartError()) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
-            }
-          </div>
-
-          <pc-input
-            id="capacity"
-            label="Volunteer Capacity"
-            type="number"
-            [formField]="form.capacity"
-            placeholder="Unlimited"
-          ></pc-input>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Shift Reminder</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send automated reminder emails to signed up volunteers 24 hours before the shift start time.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Signup Confirmation</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send a confirmation email with shift and coordinator details to constituents when they sign up.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_signup_confirmation"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Volunteer Alert</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send email alert notifications to the event coordinator or organization admins upon new volunteer
-                  signups.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_volunteer_alert"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Private Event</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  If enabled, this event will not be shown on the public upcoming list. Only constituents with the
-                  direct link can sign up.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_private" />
-            </label>
-          </div>
-        </pc-card>
-
-        <!-- Event Summary Panel -->
-        @if (!isNew()) {
-        <pc-entity-overview title="Event Overview" [createdAt]="detail()?.created_at" createdBy="Representative">
-          <div pc-overview-prefix class="space-y-2 mb-2">
-            <div class="flex justify-between">
-              <span>Start:</span>
-              <span class="font-semibold">{{ detail()?.start_time | date:'medium' }}</span>
-            </div>
-            <div class="flex justify-between">
-              <span>End:</span>
-              <span class="font-semibold">{{ detail()?.end_time | date:'medium' }}</span>
-            </div>
-          </div>
-        </pc-entity-overview>
-        }
-      </div>
-    </form>
-
-    @if (!isNew() && publicUrl()) {
-    <pc-public-link-panel
-      [url]="publicUrl()"
-      label="Public Signup Link"
-      subtitle="Share this link so volunteers can sign up for the shift."
-    ></pc-public-link-panel>
-    }
-  </div>
-
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.ts
-
-```typescript
-import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
-import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-
-import {
-  AddVolunteerEventObj,
-  AddVolunteerEventType,
-  UpdateVolunteerEventType,
-} from '../../../../../../../libs/common/src';
-import { AuthService } from '../../../auth/auth-service';
-import { publicPageUrl } from '../../../shared/public-pages';
-import { VolunteerService } from '../../../services/api/volunteer-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ShiftsService } from '../services/shifts-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-@Component({
-  selector: 'pc-shift-form',
-  imports: [
-    DatePipe,
-    FormsModule,
-    FormField,
-    PcInput,
-    PcTextarea,
-    RouterModule,
-    Icon,
-    PcDetailHeader,
-    PcEntityOverview,
-    PcCard,
-    FieldsSelector,
-    PublicLinkPanel,
-  ],
-  templateUrl: './shift-form.html',
-  providers: [VolunteerService],
-})
-export class ShiftFormComponent implements OnInit {
-  private readonly _loading = createLoadingGate();
-  private readonly alerts = inject(AlertService);
-  private readonly auth = inject(AuthService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly router = inject(Router);
-  private readonly volunteerEventsSvc = inject(ShiftsService);
-  private readonly volunteerSvc = inject(VolunteerService);
-
-  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-  protected readonly publicUrl = computed(() => {
-    const slug = this.payload().slug;
-    if (!slug || this.isNew()) return '';
-    return publicPageUrl(this.auth.getUser()?.tenant_slug, `v/${slug}`);
-  });
-
-  protected readonly allVolunteers = signal<any[]>([]);
-  protected readonly detail = signal<any>(null);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const shifts: PcBreadcrumb = { label: 'Shifts', route: '/events/shifts' };
-    const id = this.id();
-    if (id) {
-      return [
-        shifts,
-        { label: this.detail()?.name || 'Volunteer event', route: ['/events/shifts', id] },
-        { label: 'Edit' },
-      ];
-    }
-    return [shifts, { label: 'New volunteer event' }];
-  });
-
-  protected readonly payload = signal({
-    name: '',
-    slug: '',
-    description: '',
-    location_address: '',
-    start_time: '',
-    end_time: '',
-    capacity: null as number | null,
-    contact_email: '',
-    contact_phone: '',
-    is_private: false,
-    send_reminder: true,
-    send_signup_confirmation: true,
-    send_volunteer_alert: true,
-  });
-  protected readonly endBeforeStartError = computed(() => {
-    const { start_time, end_time } = this.payload();
-    if (!start_time || !end_time) return false;
-    return new Date(end_time) <= new Date(start_time);
-  });
-  protected readonly volunteerListUrl = computed(() => publicPageUrl(this.auth.getUser()?.tenant_slug, 'volunteer'));
-  protected readonly error = signal<string | null>(null);
-  protected readonly eventPassed = computed(() => {
-    const end = this.payload().end_time;
-    if (!end) return false;
-    return new Date(end) < new Date();
-  });
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddVolunteerEventObj);
-  });
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-  protected readonly isNew = computed(() => !this.id());
-  protected readonly loading = this._loading.visible;
-
-  // Roster state
-  protected readonly roster = signal<any[]>([]);
-  protected readonly saving = signal(false);
-  protected readonly slugChecking = signal(false);
-  protected readonly slugUnique = signal<boolean | null>(null);
-  protected readonly volunteerSearch = signal('');
-
-  // Filter out volunteers that are already signed up
-  protected readonly volunteerSearchResults = computed(() => {
-    const search = this.volunteerSearch().toLowerCase().trim();
-    if (!search) return [];
-
-    const rosterIds = new Set(this.roster().map((r) => String(r.person_id)));
-    return this.allVolunteers().filter((v) => {
-      if (rosterIds.has(String(v.id))) return false;
-      const fullName = `${v.first_name || ''} ${v.last_name || ''}`.toLowerCase();
-      const email = (v.email || '').toLowerCase();
-      return fullName.includes(search) || email.includes(search);
-    });
-  });
-
-  protected slugManuallyEdited = false;
-
-  public readonly id = input<string>();
-
-  constructor() {
-    const nameSignal = computed(() => this.payload().name);
-    effect(() => {
-      const name = nameSignal();
-      if (this.isNew() && !this.slugManuallyEdited) {
-        const suggested = this.slugify(name);
-        if (untracked(this.payload).slug !== suggested) {
-          this.payload.update((p) => ({
-            ...p,
-            slug: suggested,
-          }));
-        }
-      }
-    });
-
-    const slugSignal = computed(() => this.payload().slug);
-    effect(() => {
-      const slug = slugSignal();
-      if (this.slugTimeoutId) {
-        clearTimeout(this.slugTimeoutId);
-        this.slugTimeoutId = null;
-      }
-
-      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-        this.slugUnique.set(null);
-        this.slugChecking.set(false);
-        return;
-      }
-
-      this.slugChecking.set(true);
-      this.slugTimeoutId = setTimeout(() => {
-        void (async () => {
-          try {
-            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
-            if (untracked(slugSignal) === slug) {
-              this.slugUnique.set(res.unique);
-            }
-          } catch (err) {
-            console.error('Failed to check slug uniqueness', err);
-          } finally {
-            if (untracked(slugSignal) === slug) {
-              this.slugChecking.set(false);
-            }
-          }
-        })();
-      }, 300);
-    });
-  }
-
-  public ngOnInit(): void {
-    const end = this._loading.begin();
-    try {
-      void Promise.all([this.loadVolunteers(), this.loadEvent()]).finally(() => end());
-    } catch {
-      end();
-    }
-  }
-
-  // Roster Management
-  protected async addVolunteer(person: any) {
-    try {
-      await this.volunteerSvc.signupVolunteer({
-        event_id: this.id()!,
-        person_id: String(person.id),
-        status: 'signed_up',
-      });
-      this.volunteerSearch.set('');
-      this.alerts.showSuccess(`${person.first_name} added to roster`);
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
-    }
-  }
-
-  protected copyToClipboard(url: string) {
-    navigator.clipboard
-      .writeText(url)
-      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
-      .catch((err) => console.error('Failed to copy', err));
-  }
-
-  protected async deleteEvent() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event',
-      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    this.saving.set(true);
-    try {
-      await this.volunteerEventsSvc.delete(this.id()!);
-      this.volunteerEventsSvc.triggerRefresh();
-      this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/events/shifts']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async loadEvent() {
-    if (this.isNew()) {
-      const state = window.history.state;
-      if (state && state.cloneData) {
-        const event = state.cloneData;
-        this.payload.set({
-          name: event.name ? `${event.name} (Copy)` : '',
-          slug: event.slug ? `${event.slug}-copy` : '',
-          description: event.description ?? '',
-          location_address: event.location_address ?? '',
-          start_time: this.toDatetimeLocalString(event.start_time),
-          end_time: this.toDatetimeLocalString(event.end_time),
-          capacity: event.capacity ?? null,
-          contact_email: event.contact_email ?? '',
-          contact_phone: event.contact_phone ?? '',
-          is_private: !!event.is_private,
-          send_reminder: event.send_reminder !== false,
-          send_signup_confirmation: event.send_signup_confirmation !== false,
-          send_volunteer_alert: event.send_volunteer_alert !== false,
-        });
-      }
-      return;
-    }
-
-    try {
-      const event = (await this.volunteerEventsSvc.getById(this.id()!)) as any;
-      this.detail.set(event);
-      this.payload.set({
-        name: event.name ?? '',
-        slug: event.slug ?? '',
-        description: event.description ?? '',
-        location_address: event.location_address ?? '',
-        start_time: this.toDatetimeLocalString(event.start_time),
-        end_time: this.toDatetimeLocalString(event.end_time),
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? '',
-        contact_phone: event.contact_phone ?? '',
-        is_private: !!event.is_private,
-        send_reminder: event.send_reminder !== false,
-        send_signup_confirmation: event.send_signup_confirmation !== false,
-        send_volunteer_alert: event.send_volunteer_alert !== false,
-      });
-
-      if (Array.isArray((event as any).fields) && (event as any).fields.length > 0) {
-        this.selectedFields.set((event as any).fields);
-      }
-
-      await this.loadRoster();
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
-      this.alerts.showError(this.error()!);
-    }
-  }
-
-  protected async loadRoster() {
-    if (!this.id()) return;
-    try {
-      const roster = await this.volunteerSvc.getShiftsForEvent(this.id()!);
-      this.roster.set(roster || []);
-    } catch (err) {
-      console.error('Failed to load event roster', err);
-    }
-  }
-
-  protected async loadVolunteers() {
-    try {
-      const res = await this.personsSvc.getAll({ limit: 1000, tags: ['volunteer'] });
-      this.allVolunteers.set(res?.rows || []);
-    } catch (err) {
-      console.error('Failed to load volunteers', err);
-    }
-  }
-
-  protected onSlugInput() {
-    this.slugManuallyEdited = true;
-  }
-
-  protected async removeVolunteer(shift: any) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Volunteer',
-      message: 'Remove this person from the event roster?',
-      variant: 'danger',
-      confirmText: 'Remove',
-    });
-    if (!confirmed) return;
-    try {
-      await this.volunteerSvc.deleteShift(shift.id);
-      this.alerts.showSuccess('Volunteer removed');
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
-    }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this volunteer event');
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    if (this.endBeforeStartError()) {
-      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
-      return;
-    }
-
-    if (this.slugUnique() === false) {
-      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    const raw = this.payload();
-    const data = {
-      name: raw.name.trim(),
-      slug: raw.slug.trim(),
-      description: raw.description?.trim() || null,
-      location_address: raw.location_address?.trim() || null,
-      start_time: new Date(raw.start_time),
-      end_time: new Date(raw.end_time),
-      capacity: raw.capacity ? Number(raw.capacity) : null,
-      contact_email: raw.contact_email?.trim() || null,
-      contact_phone: raw.contact_phone?.trim() || null,
-      is_private: !!raw.is_private,
-      send_reminder: !!raw.send_reminder,
-      send_signup_confirmation: !!raw.send_signup_confirmation,
-      send_volunteer_alert: !!raw.send_volunteer_alert,
-      fields: this.selectedFields(),
-    };
-
-    try {
-      if (this.isNew()) {
-        const res = await this.volunteerEventsSvc.add(data as AddVolunteerEventType);
-        this.volunteerEventsSvc.triggerRefresh();
-        this.alerts.showSuccess('Event created successfully');
-        await this.router.navigate(['/events/shifts', res.id]);
-      } else {
-        await this.volunteerEventsSvc.update(this.id()!, data as UpdateVolunteerEventType);
-        this.volunteerEventsSvc.triggerRefresh();
-        this.alerts.showSuccess('Event updated successfully');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/events/shifts', this.id()]);
-        }
-      }
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
-      this.alerts.showError(this.error()!);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async saveShiftDetails(shift: any) {
-    try {
-      await this.volunteerSvc.updateShift(shift.id, {
-        status: shift.status,
-        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
-        notes: shift.notes || null,
-      });
-      this.alerts.showSuccess('Shift details saved');
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
-    }
-  }
-
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
-
-  protected toDatetimeLocalString(val: any): string {
-    if (!val) return '';
-    const date = new Date(val);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
-  protected updateShiftHours(shift: any, hours: any) {
-    shift.hours_worked = hours ? Number(hours) : null;
-  }
-
-  protected updateShiftNotes(shift: any, notes: any) {
-    shift.notes = notes || null;
-  }
-
-  protected async updateShiftStatus(shift: any, status: any) {
-    try {
-      await this.volunteerSvc.updateShift(shift.id, {
-        status,
-        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
-        notes: shift.notes || null,
-      });
-      this.alerts.showSuccess('Shift status updated');
-      await this.loadRoster();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-add.ts
-
 ```typescript
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, inject, signal, viewChild } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IAuthUser, AddTaskObj } from '../../../../../../../libs/common/src';
+import {
+  IAuthUser,
+  AddTaskObj,
+  TASK_BOARD_STATUSES,
+  TASK_STATUSES,
+  TASK_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -38341,6 +36279,9 @@ import { UserService } from '../../../services/user.service';
 import { TasksService } from '../services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+/** The three due quick-picks the New task dialog offers (spec §4) — no freeform date. */
+type DueQuickPick = 'today' | 'tomorrow' | 'next_week' | null;
 
 @Component({
   selector: 'pc-task-add',
@@ -38354,6 +36295,7 @@ export class TaskAddComponent implements OnInit {
   private readonly tasks = inject(TasksService);
   private readonly userService = inject(UserService);
   private readonly teams = inject(TeamsService);
+  private readonly nameInput = viewChild<ElementRef<HTMLInputElement>>('nameInput');
 
   private _loading = createLoadingGate();
 
@@ -38364,14 +36306,18 @@ export class TaskAddComponent implements OnInit {
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly teamsList = signal<any[]>([]);
 
-  // Autocomplete lists for status and priority
+  // Autocomplete lists for priority and (advanced) status
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
+
+  /** Which of the three due quick-picks is selected — null means no due date. */
+  protected readonly duePick = signal<DueQuickPick>(null);
 
   protected readonly payload = signal({
     name: '',
     details: '',
-    status: 'todo' as 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived',
+    status: 'todo' as (typeof TASK_STATUSES)[number],
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     due_at: '',
     assigned_to: '',
@@ -38425,6 +36371,20 @@ export class TaskAddComponent implements OnInit {
     void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
+  /** Today / Tomorrow / Next week (spec §4) — the only due-date choices in this dialog. */
+  protected pickDue(pick: Exclude<DueQuickPick, null>): void {
+    const next = this.duePick() === pick ? null : pick;
+    this.duePick.set(next);
+    this.payload.update((p) => ({ ...p, due_at: next ? this.dueDateFor(next) : '' }));
+  }
+
+  private dueDateFor(pick: Exclude<DueQuickPick, null>): string {
+    const days = pick === 'today' ? 0 : pick === 'tomorrow' ? 1 : 7;
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0] ?? '';
+  }
+
   protected async submit(done?: (() => void) | Event) {
     if (done instanceof Event) {
       done.preventDefault();
@@ -38432,6 +36392,8 @@ export class TaskAddComponent implements OnInit {
 
     this.form().markAsTouched();
     if (this.form().invalid()) {
+      // Guide, don't error (§3): focus the first problem instead of a dead button.
+      this.nameInput()?.nativeElement.focus();
       return;
     }
 
@@ -38441,13 +36403,14 @@ export class TaskAddComponent implements OnInit {
 
     try {
       const taskData = this.toPayload();
-      await this.tasks.add(taskData);
+      const created = await this.tasks.add(taskData);
       this.tasks.triggerRefresh();
-      this.alertSvc.showSuccess('Task created successfully');
+      this.alertSvc.showSuccess(this.createdToastMessage(taskData));
       if (typeof done === 'function') {
         done();
       } else {
-        await this.router.navigate(['../'], { relativeTo: this.route });
+        // New card lands in To do with a flash (spec §4) — the list picks this up on init.
+        await this.router.navigate(['../'], { relativeTo: this.route, state: { flashId: created?.id } });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to create task';
@@ -38457,6 +36420,21 @@ export class TaskAddComponent implements OnInit {
       this.submitting.set(false);
       end();
     }
+  }
+
+  /** "Task created — "{title}" assigned to {name} / waiting for an owner, due today." (spec §4) */
+  private createdToastMessage(taskData: ReturnType<typeof this.toPayload>): string {
+    const assigneePart = taskData.assigned_to
+      ? `assigned to ${this.userName(taskData.assigned_to)}`
+      : 'waiting for an owner';
+    const duePick = this.duePick();
+    const duePart = duePick === 'today' ? ', due today' : duePick === 'tomorrow' ? ', due tomorrow' : duePick === 'next_week' ? ', due next week' : '';
+    return `Task created — "${taskData.name}" ${assigneePart}${duePart}.`;
+  }
+
+  private userName(id: string): string {
+    const u = this.users().find((x) => String(x.id) === id);
+    return u ? `${u.first_name} ${u.last_name || ''}`.trim() : 'them';
   }
 
   private toPayload() {
@@ -38484,14 +36462,18 @@ export class TaskAddComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-view.ts
-
 ```typescript
 import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
 import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Router, RouterModule } from '@angular/router';
-import { IAuthUser } from '../../../../../../../libs/common/src';
+import {
+  IAuthUser,
+  TASK_BOARD_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+} from '../../../../../../../libs/common/src';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { QuillModule } from 'ngx-quill';
@@ -38584,7 +36566,8 @@ export class TaskView {
 
   // Priority classes and options for display/inputs
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
 
   constructor() {
     effect(() => {
@@ -38911,22 +36894,28 @@ export class TaskView {
     return parsed.toISOString().slice(0, 10);
   }
 
+  protected statusLabel(status: string): string {
+    return isTaskStatus(status) ? TASK_STATUS_LABELS[status] : this.toTitleCase(status);
+  }
+
   // Styling helper classes
   protected getStatusBadgeClass(status: string): string {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
+    if (!isTaskStatus(status)) return 'badge-ghost'; // unrecognized/corrupt data — neutral, not a crash
+    switch (status) {
       case 'done':
         return 'badge-success text-success-content';
       case 'in_progress':
         return 'badge-info text-info-content';
-      case 'blocked':
+      case 'waiting':
         return 'badge-error text-error-content';
-      case 'canceled':
-        return 'badge-neutral text-neutral-content';
       case 'archived':
-        return 'badge-warning text-warning-content';
-      default:
+        return 'badge-neutral text-neutral-content';
+      case 'todo':
         return 'badge-ghost';
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
     }
   }
 
@@ -38955,8 +36944,652 @@ export class TaskView {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/team-view.html
+## File: apps/frontend/src/app/experiences/teams/ui/team-form.html
+```html
+@if (error() && !detail() && !isNew()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!isNew() && !detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading team…
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="isNew() ? 'New team' : (detail()?.name || 'Team')"
+    [eyebrow]="isNew() ? 'New' : 'Editing'"
+    [crumbs]="crumbs()"
+    subtitle="Teams group volunteers for easier coordination."
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    [btn1Text]="isNew() ? 'Create team' : 'Save team'"
+    [showDelete]="!isNew()"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    deleteText="Delete team"
+    (save)="save($event)"
+    (delete)="deleteTeam()"
+  ></pc-detail-header>
 
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <form class="grid gap-6" (submit)="save($event)" novalidate>
+    <pc-card>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <pc-input id="team-name" label="Team Name" [formField]="form.name" placeholder="Community Outreach"></pc-input>
+
+        <pc-select id="team-captain" label="Team Captain (Volunteer)" [formField]="form.team_captain_id">
+          <option value="">No captain</option>
+          @for (person of people(); track person.id) {
+          <option [value]="person.id">{{ person.label }}</option>
+          }
+        </pc-select>
+
+        <pc-select id="team-lead" label="Team Lead (Organizer)" [formField]="form.team_lead_user_id">
+          <option value="">No lead</option>
+          @for (user of users(); track user.id) {
+          <option [value]="user.id">{{ user.first_name }} {{ user.last_name || '' }}</option>
+          }
+        </pc-select>
+      </div>
+
+      <pc-textarea
+        id="team-description"
+        label="Description"
+        [rows]="3"
+        [formField]="form.description"
+        placeholder="Describe this team's focus"
+      ></pc-textarea>
+    </pc-card>
+
+    <!-- Volunteers Section -->
+    <pc-card title="Volunteers" subtitle="Select volunteers who belong to this team.">
+      <div pc-card-actions class="text-sm text-base-content/60">
+        Captain: {{ captainLabel(form.team_captain_id().value() || null) }}
+      </div>
+
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="volunteer-select">Select Volunteers</label>
+          <select
+            id="volunteer-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onVolunteersChange($event)"
+            multiple
+          >
+            @for (person of people(); track person.id) {
+            <option [value]="person.id" [selected]="isVolunteerSelected(person.id)">{{ person.label }}</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple volunteers.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (volunteers().length === 0) {
+            <p class="p-3 text-sm text-base-content/60">No volunteers assigned yet.</p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (volunteer of volunteers(); track volunteer.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ volunteer.first_name }} {{ volunteer.last_name }}</p>
+                  @if (volunteer.email) {
+                  <p class="text-xs text-base-content/60">{{ volunteer.email }}</p>
+                  }
+                </div>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-card>
+
+    <!-- Assigned target constituent lists section -->
+    <pc-card
+      title="Target Constituent Lists"
+      subtitle="Assign lists of people or households this team is responsible for contacting."
+    >
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div class="space-y-2">
+          <label class="text-sm font-medium text-base-content/80" for="lists-select">Select Target Lists</label>
+          <select
+            id="lists-select"
+            class="select select-bordered h-40 w-full"
+            (change)="onListsChange($event)"
+            multiple
+          >
+            @for (list of availableLists(); track list.id) {
+            <option [value]="list.id" [selected]="isListSelected(list.id)">{{ list.name }} ({{ list.object }})</option>
+            }
+          </select>
+          <p class="text-xs text-base-content/50">Hold Ctrl/Cmd to select multiple lists.</p>
+        </div>
+        <div class="space-y-2">
+          <h3 class="text-sm font-semibold text-base-content/80">Currently Assigned Target Lists</h3>
+          <div class="max-h-40 overflow-auto rounded border border-base-200">
+            @if (assignedLists().length === 0) {
+            <p class="p-3 text-sm text-base-content/60">No lists assigned yet.</p>
+            } @else {
+            <ul class="divide-y divide-base-200">
+              @for (list of assignedLists(); track list.id) {
+              <li class="flex items-center justify-between p-3 text-sm">
+                <div>
+                  <p class="font-medium text-base-content">{{ list.name }}</p>
+                  <p class="text-xs text-base-content/60">
+                    {{ list.is_dynamic ? 'Dynamic' : 'Static' }} • Target: {{ list.object }}
+                  </p>
+                </div>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+        </div>
+      </div>
+    </pc-card>
+
+    <!-- Team Tasks Section -->
+    @if (!isNew()) {
+    <pc-card title="Team Tasks" subtitle="Track the tasks and campaign progress assigned to this team.">
+      <a
+        pc-card-actions
+        class="btn btn-xs btn-primary gap-1"
+        [routerLink]="['/tasks/add']"
+        [queryParams]="{ team_id: id }"
+      >
+        <pc-icon name="plus" [size]="3"></pc-icon> Add Task
+      </a>
+
+      <div class="overflow-x-auto rounded border border-base-200">
+        @if (teamTasks().length === 0) {
+        <p class="p-4 text-sm text-base-content/60 italic">No tasks currently assigned to this team.</p>
+        } @else {
+        <table class="table table-zebra w-full text-sm">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Due Date</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (task of teamTasks(); track task.id) {
+            <tr>
+              <td class="font-medium">
+                <a [routerLink]="['/tasks', task.id]" class="hover:underline text-primary"> {{ task.name }} </a>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getPriorityClass(task.priority)">
+                  {{ task.priority || 'medium' }}
+                </span>
+              </td>
+              <td>
+                <span class="badge badge-sm uppercase font-semibold" [class]="getStatusClass(task.status)">
+                  {{ task.status || 'todo' }}
+                </span>
+              </td>
+              <td>{{ task.due_at ? (task.due_at | date:'mediumDate') : '—' }}</td>
+              <td>
+                <a [routerLink]="['/tasks', task.id]" class="btn btn-xs btn-ghost text-primary"> View details </a>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+        }
+      </div>
+    </pc-card>
+    }
+  </form>
+</section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
+```typescript
+import { Component, computed, effect, inject, input, OnInit, signal, untracked } from '@angular/core';
+import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AddTeamObj, AddTeamType, IAuthUser, UpdateTeamType } from '../../../../../../../libs/common/src';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+import { UserService } from '../../../services/user.service';
+import { ListsService } from '../../lists/services/lists-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { TasksService } from '../../tasks/services/tasks-service';
+import { TeamDetail, TeamsService } from '../services/teams-service';
+
+interface PersonOption {
+  email: string | null;
+  id: string;
+  label: string;
+}
+
+import { DatePipe } from '@angular/common';
+
+@Component({
+  selector: 'pc-team-form',
+  imports: [FormField, RouterModule, Icon, DatePipe, PcDetailHeader, PcInput, PcTextarea, PcSelect, PcCard],
+  templateUrl: './team-form.html',
+})
+export class TeamFormComponent implements OnInit {
+  readonly id = input<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly persons = inject(PersonsService);
+  private readonly router = inject(Router);
+  private readonly teams = inject(TeamsService);
+  private readonly lists = inject(ListsService);
+  private readonly userService = inject(UserService);
+  private readonly tasksSvc = inject(TasksService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  protected readonly isNew = computed(() => !this.id());
+
+  protected readonly detail = signal<TeamDetail | null>(null);
+  protected readonly error = signal<string | null>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const teams: PcBreadcrumb = { label: 'Teams', route: '/teams' };
+    const id = this.id();
+    if (id) {
+      return [teams, { label: this.detail()?.name || 'Team', route: ['/teams', id] }, { label: 'Edit' }];
+    }
+    return [teams, { label: 'New team' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    team_captain_id: '',
+    team_lead_user_id: '',
+    volunteer_ids: [] as string[],
+    list_ids: [] as string[],
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddTeamObj);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected signalPeople = signal<PersonOption[]>([]);
+  protected readonly people = computed(() => this.signalPeople());
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly availableLists = signal<any[]>([]);
+  protected readonly assignedLists = signal<any[]>([]);
+  protected readonly teamTasks = signal<any[]>([]);
+  protected readonly saving = signal(false);
+  protected readonly volunteers = computed(() => this.detail()?.volunteers ?? []);
+
+  constructor() {
+    effect(() => {
+      const options = this.people();
+      if (options.length === 0) return;
+
+      const current = untracked(this.payload);
+      let nextCaptain = current.team_captain_id;
+      let changed = false;
+
+      if (nextCaptain && !options.some((p) => p.id === nextCaptain)) {
+        nextCaptain = '';
+        changed = true;
+      }
+
+      const currentVolunteers = current.volunteer_ids ?? [];
+      const validIds = currentVolunteers.filter((id) => options.some((p) => p.id === id));
+      if (validIds.length !== currentVolunteers.length) {
+        changed = true;
+      }
+
+      if (changed) {
+        this.payload.update((p) => ({
+          ...p,
+          team_captain_id: nextCaptain,
+          volunteer_ids: validIds,
+        }));
+      }
+    });
+  }
+
+  public ngOnInit(): void {
+    void this.initialize();
+  }
+  private async initialize(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      await Promise.all([this.loadPeople(), this.loadUsers(), this.loadLists(), this.loadTeam()]);
+
+      if (this.isNew()) {
+        const state = window.history.state;
+        if (state && state.cloneData) {
+          const sourceTeamId = state.cloneData.id;
+          if (sourceTeamId) {
+            try {
+              const teamDetail = await this.teams.getById(sourceTeamId);
+              this.payload.set({
+                name: teamDetail.name ? `${teamDetail.name} (Copy)` : '',
+                description: teamDetail.description ?? '',
+                team_captain_id: teamDetail.team_captain_id ?? '',
+                team_lead_user_id: teamDetail.team_lead_user_id ?? '',
+                volunteer_ids: teamDetail.volunteers?.map((v) => v.id) ?? [],
+                list_ids: teamDetail.list_ids ?? [],
+              });
+              this.assignedLists.set(teamDetail.lists ?? []);
+            } catch (err) {
+              console.error('Failed to load source team details for cloning', err);
+              const data = state.cloneData;
+              this.payload.set({
+                name: data.name ? `${data.name} (Copy)` : '',
+                description: data.description ?? '',
+                team_captain_id: data.team_captain_id ?? '',
+                team_lead_user_id: data.team_lead_user_id ?? '',
+                volunteer_ids: [],
+                list_ids: [],
+              });
+            }
+          }
+        }
+      }
+    } finally {
+      end();
+    }
+  }
+
+  protected captainLabel(captainId: string | null) {
+    if (!captainId) return '—';
+    const person = this.people().find((p) => p.id === captainId);
+    return person?.label ?? '—';
+  }
+
+  protected isVolunteerSelected(id: string): boolean {
+    return this.payload().volunteer_ids?.includes(id) ?? false;
+  }
+
+  protected onVolunteersChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
+
+    this.payload.update((p) => ({
+      ...p,
+      volunteer_ids: selectedOptions,
+    }));
+    this.form.volunteer_ids().markAsDirty();
+  }
+
+  protected isListSelected(id: string): boolean {
+    return this.payload().list_ids?.includes(id) ?? false;
+  }
+
+  protected onListsChange(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const selectedOptions = Array.from(select.selectedOptions).map((o) => o.value);
+
+    this.payload.update((p) => ({
+      ...p,
+      list_ids: selectedOptions,
+    }));
+    this.form.list_ids().markAsDirty();
+
+    const matching = this.availableLists().filter((l) => selectedOptions.includes(l.id));
+    this.assignedLists.set(matching);
+  }
+
+  protected async deleteTeam() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Team',
+      message: 'Are you sure you want to delete this team? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      await this.teams.delete(this.id()!);
+      this.teams.triggerRefresh();
+      this.alerts.showSuccess('Team deleted');
+      await this.router.navigate(['/teams']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this team');
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    const raw = this.payload();
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    try {
+      let result: TeamDetail;
+      if (this.isNew()) {
+        const payload: AddTeamType = {
+          name: raw.name?.trim() ?? '',
+          description: raw.description?.trim()?.length ? raw.description.trim() : null,
+          team_captain_id: raw.team_captain_id || undefined,
+          team_lead_user_id: raw.team_lead_user_id || undefined,
+          volunteer_ids: raw.volunteer_ids ?? [],
+          list_ids: raw.list_ids ?? [],
+        };
+        result = await this.teams.add(payload);
+        this.teams.triggerRefresh();
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/teams']);
+        }
+      } else if (this.id()) {
+        const payload: UpdateTeamType = {
+          name: raw.name?.trim() ?? null,
+          description: raw.description?.trim()?.length ? raw.description.trim() : null,
+          team_captain_id: raw.team_captain_id || null,
+          team_lead_user_id: raw.team_lead_user_id || null,
+          volunteer_ids: raw.volunteer_ids ?? [],
+          list_ids: raw.list_ids ?? [],
+        };
+        result = await this.teams.update(this.id()!, payload);
+        this.teams.triggerRefresh();
+        this.detail.set(result);
+        this.setForm(result);
+        this.form().reset();
+        this.alerts.showSuccess('Team updated');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/teams', this.id()]);
+        }
+        return;
+      } else {
+        throw new Error('Missing team identifier');
+      }
+      this.detail.set(result);
+      this.setForm(result);
+      this.form().reset();
+      this.alerts.showSuccess(this.isNew() ? 'Team created' : 'Team updated');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to save team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async loadPeople() {
+    try {
+      const res = await this.persons.getAll({ limit: 500, tags: ['volunteer'] });
+      const items = (res?.rows ?? []).map((person: any) => ({
+        id: String(person.id ?? ''),
+        label: `${person.first_name ?? ''} ${person.last_name ?? ''}`.trim() || person.email || 'Unknown',
+        email: person.email ?? null,
+      }));
+      this.signalPeople.set(items);
+    } catch (err) {
+      console.error('Failed to load volunteers list', err);
+      this.signalPeople.set([]);
+    }
+  }
+
+  private async loadUsers() {
+    try {
+      const us = await this.userService.getUsers();
+      this.users.set(us || []);
+    } catch (err) {
+      console.error('Failed to load teammates list', err);
+      this.users.set([]);
+    }
+  }
+
+  private async loadLists() {
+    try {
+      const res = await this.lists.getAll({ limit: 1000 });
+      this.availableLists.set(res?.rows ?? []);
+    } catch (err) {
+      console.error('Failed to load lists', err);
+      this.availableLists.set([]);
+    }
+  }
+
+  private async loadTeam() {
+    if (this.isNew()) {
+      this.detail.set(null);
+      this.setForm(null);
+      return;
+    }
+    if (!this.id()) {
+      this.error.set('Missing team identifier');
+      return;
+    }
+
+    try {
+      const team = await this.teams.getById(this.id()!);
+      this.detail.set(team);
+      this.setForm(team);
+      const res = await this.tasksSvc.getAll({
+        filterModel: { team_id: { value: this.id() } },
+      } as any);
+      this.teamTasks.set(res?.rows ?? []);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load team';
+      this.error.set(message);
+      this.alerts.showError(message);
+    }
+  }
+
+  private setForm(team: TeamDetail | null) {
+    this.payload.set({
+      name: team?.name ?? '',
+      description: team?.description ?? '',
+      team_captain_id: team?.team_captain_id ?? '',
+      team_lead_user_id: team?.team_lead_user_id ?? '',
+      volunteer_ids: team?.volunteers?.map((v) => v.id) ?? [],
+      list_ids: team?.list_ids ?? [],
+    });
+    this.assignedLists.set(team?.lists ?? []);
+  }
+
+  protected getPriorityClass(priority: string | null | undefined): string {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'badge-error text-error-content';
+      case 'high':
+        return 'badge-warning text-warning-content';
+      case 'medium':
+        return 'badge-info text-info-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+
+  protected getStatusClass(status: string | null | undefined): string {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done':
+        return 'badge-success text-success-content';
+      case 'in_progress':
+        return 'badge-info text-info-content';
+      case 'waiting':
+        return 'badge-error text-error-content';
+      case 'archived':
+        return 'badge-neutral text-neutral-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/experiences/teams/ui/team-view.html
 ```html
 <pc-detail-layout
   [title]="team()?.name || 'Team'"
@@ -39149,7 +37782,6 @@ export class TaskView {
 ```
 
 ## File: apps/frontend/src/app/experiences/teams/ui/team-view.ts
-
 ```typescript
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
@@ -39240,7 +37872,7 @@ export class TeamViewComponent {
   });
 
   protected readonly activeTasksCount = computed(() => {
-    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
+    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'archived').length;
   });
 
   constructor() {
@@ -39350,9 +37982,9 @@ export class TeamViewComponent {
         return 'success';
       case 'in_progress':
         return 'info';
-      case 'blocked':
+      case 'waiting':
         return 'error';
-      case 'canceled':
+      case 'archived':
         return 'neutral';
       default:
         return 'ghost';
@@ -39365,8 +37997,493 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/command-palette/command-palette.html
+## File: apps/frontend/src/app/experiences/users/ui/user-add.html
+```html
+<section class="w-full max-w-3xl p-6">
+  <pc-detail-header
+    title="Invite user"
+    [eyebrow]="'New'"
+    [crumbs]="[{ label: 'Users', route: '/users' }, { label: 'Invite user' }]"
+    subtitle="Send an invitation to add a new teammate to this tenant."
+    [form]="form"
+    [isLoading]="submitting()"
+    buttonsToShow="two"
+    btn1Text="Send invite"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    (save)="submit($event)"
+  ></pc-detail-header>
 
+  <form class="space-y-4" (submit)="submit($event)" novalidate>
+    <pc-input label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
+
+    <div class="grid gap-4 sm:grid-cols-2">
+      <pc-input label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
+
+      <pc-input label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+    </div>
+
+    <pc-select label="Role" [formField]="form.role">
+      @if (currentUserRole() !== 'admin') {
+      <option value="owner">Owner</option>
+      }
+      <option value="admin">Admin</option>
+      <option value="user">User</option>
+    </pc-select>
+
+    @if (error()) {
+    <p class="text-sm text-danger">{{ error() }}</p>
+    }
+  </form>
+</section>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { email, form, required } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { UserAdminService } from '../services/useradmin-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-user-add',
+  imports: [PcInput, PcSelect, PcDetailHeader],
+  templateUrl: './user-add.html',
+})
+export class UserAddComponent implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly settings = inject(SettingsService);
+
+  protected readonly error = signal<string | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: 'user',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  protected readonly submitting = signal(false);
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
+    const state = window.history.state;
+    if (state && state.cloneData) {
+      const data = state.cloneData;
+      this.payload.set({
+        email: data.email || '',
+        first_name: data.first_name || '',
+        last_name: data.last_name || '',
+        role: data.role || '',
+      });
+      return;
+    }
+
+    // Prefill the role with the tenant's configured default invite role (best-effort).
+    try {
+      await this.settings.load();
+      const defaultRole = this.settings.getValue<string>('access.default_role');
+      if (defaultRole) {
+        this.payload.update((p) => ({ ...p, role: defaultRole }));
+      }
+    } catch {
+      // Ignore — fall back to the built-in default role.
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty('this invite');
+  }
+
+  protected cancel() {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected async submit(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    this.submitting.set(true);
+    this.error.set(null);
+    try {
+      const payload = this.toPayload();
+      await this.users.add(payload);
+      this.users.triggerRefresh();
+      this.alerts.showSuccess('Invitation sent');
+      this.form().reset();
+      if (typeof done === 'function') {
+        done();
+      } else {
+        await this.router.navigate(['../'], { relativeTo: this.route });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to invite user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  private toPayload() {
+    const raw = this.payload();
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
+      role: raw.role?.trim() ? raw.role.trim() : null,
+    };
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
+```html
+@if (error() && !detail()) {
+<div class="p-6 alert alert-error m-4">
+  <span>{{ error() }}</span>
+</div>
+} @else if (!detail()) {
+<div class="p-6 text-sm text-base-content/70 flex items-center gap-2">
+  <span class="loading loading-spinner loading-xs"></span>
+  Loading user…
+</div>
+} @else {
+<section class="max-w-4xl space-y-6 p-6">
+  <pc-detail-header
+    [title]="displayName()"
+    [eyebrow]="'Editing'"
+    [crumbs]="crumbs()"
+    [subtitle]="detail()?.email"
+    [form]="form"
+    [isLoading]="saving()"
+    buttonsToShow="two"
+    btn1Text="Save user"
+    [showDelete]="true"
+    [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+    deleteText="Delete user"
+    (save)="save($event)"
+    (delete)="deleteUser()"
+  >
+    <button
+      pc-actions-prefix
+      class="btn btn-outline btn-accent btn-sm gap-2"
+      type="button"
+      (click)="triggerPasswordReset()"
+      [disabled]="resettingPassword() || saving()"
+    >
+      <pc-icon name="lock-closed"></pc-icon>
+      {{ resettingPassword() ? 'Sending link…' : 'Trigger Password Reset' }}
+    </button>
+  </pc-detail-header>
+
+  @if (error()) {
+  <div class="alert alert-error">
+    <span>{{ error() }}</span>
+  </div>
+  }
+
+  <pc-card title="Profile">
+    <form class="space-y-4" (submit)="save($event)" novalidate>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <pc-input id="email" label="Email" type="email" [formField]="form.email" autocomplete="email"></pc-input>
+
+        <pc-select label="Role" [formField]="form.role">
+          @if (currentUserRole() !== 'admin') {
+          <option value="owner">Owner</option>
+          }
+          <option value="admin">Admin</option>
+          <option value="user">User</option>
+          <option value="viewer">Viewer</option>
+        </pc-select>
+
+        <pc-input id="first_name" label="First name" [formField]="form.first_name" autocomplete="given-name"></pc-input>
+
+        <pc-input id="last_name" label="Last name" [formField]="form.last_name" autocomplete="family-name"></pc-input>
+      </div>
+
+      <pc-toggle label="Verified account" [formField]="form.verified"></pc-toggle>
+    </form>
+  </pc-card>
+</section>
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-edit.ts
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { form, required, email, disabled } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { IAuthUserDetail, UpdateAuthUserType } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+import { Toggle as PcToggle } from '@uxcommon/components/toggle/toggle';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+
+import { UserAdminService } from '../services/useradmin-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-user-edit',
+  imports: [PcInput, PcSelect, PcToggle, RouterModule, Icon, PcDetailHeader, PcCard],
+  templateUrl: './user-edit.html',
+})
+export class UserEditComponent {
+  readonly id = input.required<string>();
+
+  private readonly alerts = inject(AlertService);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+  protected readonly saving = signal(false);
+  protected readonly error = signal<string | null>(null);
+  protected readonly detail = signal<IAuthUserDetail | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+  protected readonly isOwnerBeingEdited = computed(() => this.detail()?.role === 'owner');
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: '',
+    verified: false,
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+    disabled(p.role, () => this.currentUserRole() === 'admin' && this.isOwnerBeingEdited());
+    disabled(p.verified, () => true);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  protected readonly displayName = computed(() => {
+    const user = this.detail();
+    if (!user) return '';
+    const tokens = [user.first_name, user.last_name].filter((t) => !!t && t.trim().length > 0);
+    const name = tokens.join(' ').trim();
+    return name || user.email;
+  });
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Users', route: '/users' },
+    { label: this.displayName() || 'User', route: ['/users', this.id()] },
+    { label: 'Edit' },
+  ]);
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      untracked(() => {
+        if (!currentId) {
+          this.error.set('Missing user identifier.');
+          return;
+        }
+        void this.load();
+      });
+    });
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.displayName() || 'this user');
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid() || !this.id()) {
+      return;
+    }
+
+    const payload = this.buildPayload();
+
+    this.saving.set(true);
+    this.error.set(null);
+    try {
+      await this.users.update(this.id(), payload);
+      this.alerts.showSuccess('User updated');
+      this.users.triggerRefresh();
+      await this.load();
+      this.form().reset();
+      if (typeof done === 'function') {
+        done();
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to update user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected resetForm() {
+    const user = this.detail();
+    if (!user) return;
+    this.setForm(user);
+    this.form().reset();
+  }
+
+  protected readonly resettingPassword = signal(false);
+
+  protected async triggerPasswordReset() {
+    if (!this.id()) return;
+    this.resettingPassword.set(true);
+    try {
+      await this.users.adminTriggerPasswordReset(this.id());
+      this.alerts.showSuccess('Password reset email sent to user');
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to trigger password reset';
+      this.alerts.showError(message);
+    } finally {
+      this.resettingPassword.set(false);
+    }
+  }
+
+  protected async deleteUser() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete User',
+      message: 'Are you sure you want to delete this user? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    this.saving.set(true);
+    try {
+      const success = await this.users.delete(this.id());
+      if (!success) {
+        throw new Error('User deletion is not supported');
+      }
+      this.alerts.showSuccess('User deleted');
+      await this.router.navigate(['/users']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Unable to delete user');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    this.error.set(null);
+    try {
+      const user = await this.users.getById(this.id());
+      this.detail.set(user);
+      this.setForm(user);
+      this.form().reset();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Failed to load user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      end();
+    }
+  }
+
+  private setForm(user: IAuthUserDetail) {
+    this.payload.set({
+      email: user.email,
+      first_name: user.first_name,
+      last_name: user.last_name ?? '',
+      role: user.role ?? '',
+      verified: Boolean(user.verified),
+    });
+  }
+
+  private buildPayload(): UpdateAuthUserType {
+    const raw = this.payload();
+    const normalize = (value: string | null | undefined) => {
+      const trimmed = value?.trim() ?? '';
+      return trimmed.length ? trimmed : null;
+    };
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: normalize(raw.last_name),
+      role: normalize(raw.role),
+      verified: Boolean(raw.verified),
+    } as UpdateAuthUserType;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/layout/command-palette/command-palette.html
 ```html
 <!-- Command palette overlay (⌘⇧K) -->
 @if (isOpen()) {
@@ -39441,7 +38558,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/layout/command-palette/command-palette.ts
-
 ```typescript
 import type { ElementRef } from '@angular/core';
 import { Component, computed, effect, inject, signal, viewChild } from '@angular/core';
@@ -39640,7 +38756,6 @@ export class CommandPalette {
 ```
 
 ## File: apps/frontend/src/app/layout/dashboards/dashboard.html
-
 ```html
 <!-- Dashboard layout template combining sidebar, navbar, and routed content -->
 <!-- Sidebar -->
@@ -39680,7 +38795,6 @@ export class CommandPalette {
 ```
 
 ## File: apps/frontend/src/app/layout/dashboards/dashboard.ts
-
 ```typescript
 import { Component, computed, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
@@ -39722,7 +38836,6 @@ export class Dashboard {
 ```
 
 ## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
-
 ```typescript
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
@@ -39841,7 +38954,6 @@ export class FavouriteToggle {
 ```
 
 ## File: apps/frontend/src/app/layout/keyboard-shortcuts/keyboard-shortcuts-help.html
-
 ```html
 @if (shortcuts.helpVisible()) {
 <div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" (click)="close()">
@@ -39885,7 +38997,6 @@ export class FavouriteToggle {
 ```
 
 ## File: apps/frontend/src/app/layout/keyboard-shortcuts/keyboard-shortcuts-help.ts
-
 ```typescript
 import { Component, inject } from '@angular/core';
 import { Icon } from '@icons/icon';
@@ -39911,7 +39022,6 @@ export class KeyboardShortcutsHelp {
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-service.ts
-
 ```typescript
 import { signal, Service } from '@angular/core';
 import { ISidebarItem, SidebarItems } from './sidebar-items';
@@ -40187,7 +39297,6 @@ const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
-
 ```typescript
 import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -40208,6 +39317,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { ISidebarItem } from './sidebar-items';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
 
 @Component({
   selector: 'pc-sidebar',
@@ -40226,6 +39336,11 @@ export class Sidebar {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly tasksSvc = inject(TasksService);
+
+  /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
+   *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
+  protected readonly taskSlaBreaches = signal<number | null>(null);
 
   // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
   private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
@@ -40249,8 +39364,9 @@ export class Sidebar {
   protected readonly items = computed(() => {
     const role = this.auth.getUser()?.role;
     const allItems = this.sidebarSvc.getItems()();
+    const withBadges = this.applyBadges(allItems);
     if (role === 'user') {
-      return allItems.map((item) => {
+      return withBadges.map((item) => {
         if (item.children) {
           return {
             ...item,
@@ -40260,7 +39376,7 @@ export class Sidebar {
         return item;
       });
     }
-    return allItems;
+    return withBadges;
   });
 
   constructor() {
@@ -40282,6 +39398,28 @@ export class Sidebar {
           this.visibilitySignals.set(key, signal(visible));
         }
       }
+    });
+
+    void this.loadTaskSlaBreaches();
+  }
+
+  private async loadTaskSlaBreaches(): Promise<void> {
+    try {
+      this.taskSlaBreaches.set(await this.tasksSvc.countSlaBreaches());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Stamps the live `badgeCount` onto the Tasks entry only — every other item is untouched. */
+  private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
+    const breaches = this.taskSlaBreaches();
+    return items.map((item) => {
+      const children = item.children ? this.applyBadges(item.children) : undefined;
+      if (item.route === '/tasks') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
+      }
+      return children ? { ...item, children } : item;
     });
   }
 
@@ -40330,7 +39468,6 @@ export class Sidebar {
 ```
 
 ## File: apps/frontend/src/app/layout/theme/theme-service.ts
-
 ```typescript
 import { signal, Service, inject, effect } from '@angular/core';
 import { SettingsService } from '../../experiences/settings/services/settings-service';
@@ -40426,7 +39563,6 @@ export class ThemeService {
 ```
 
 ## File: apps/frontend/src/app/routing/public-routes.ts
-
 ```typescript
 /**
  * Routes reachable without an authenticated session. A stray UNAUTHORIZED/401 from a background
@@ -40476,7 +39612,6 @@ export function isCurrentRoutePublic(routerUrl: string): boolean {
 ```
 
 ## File: apps/frontend/src/app/services/api/donations-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import { TRPCService } from './trpc-service';
@@ -40604,7 +39739,6 @@ export class DonationsService extends TRPCService<'donations'> {
 ```
 
 ## File: apps/frontend/src/app/services/api/token-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 
@@ -40662,7 +39796,6 @@ const PERSISTENCE_KEY = 'pc-persistence';
 ```
 
 ## File: apps/frontend/src/app/services/api/user-message.ts
-
 ```typescript
 import { JSendServerError } from '../../../../../../libs/common/src';
 import { TRPCClientError } from '@trpc/client';
@@ -40693,7 +39826,6 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
 ```
 
 ## File: apps/frontend/src/app/services/fullscreen.service.ts
-
 ```typescript
 import { inject, signal, Service } from '@angular/core';
 
@@ -40784,7 +39916,6 @@ export class FullScreenService {
 ```
 
 ## File: apps/frontend/src/app/services/keyboard-shortcuts.service.ts
-
 ```typescript
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
@@ -40978,7 +40109,6 @@ export class KeyboardShortcutsService {
 ```
 
 ## File: apps/frontend/src/app/services/record-slug.resolver.ts
-
 ```typescript
 import { inject } from '@angular/core';
 import type { ActivatedRouteSnapshot, ResolveFn } from '@angular/router';
@@ -41041,7 +40171,6 @@ export const companyRecordIdResolver = recordSlugResolver(CompaniesService, '/co
 ```
 
 ## File: apps/frontend/src/app/services/tab-title.service.ts
-
 ```typescript
 import type { RouterStateSnapshot } from '@angular/router';
 import { Injectable, effect, inject, signal } from '@angular/core';
@@ -41152,8 +40281,82 @@ export class AppTitleStrategy extends TitleStrategy {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
+## File: apps/frontend/src/app/services/unsaved-changes-guard.ts
+```typescript
+import { computed, inject } from '@angular/core';
+import type { Signal } from '@angular/core';
+import type { CanDeactivateFn } from '@angular/router';
+import type { FieldTree } from '@angular/forms/signals';
+import { ConfirmDialogService } from './shared-dialog.service';
 
+export interface UnsavedChangesHandle {
+  dirtyCount: Signal<number>;
+  headerLine: Signal<string | null>;
+  confirmDiscardIfDirty(recordName: string): Promise<boolean>;
+}
+
+interface Deactivatable {
+  canDeactivate?(): boolean | Promise<boolean>;
+}
+
+/** Route-level guard: lets any edit-page component veto navigation away while it has unsaved changes. */
+export const unsavedChangesGuard: CanDeactivateFn<Deactivatable> = (component) =>
+  component.canDeactivate ? component.canDeactivate() : true;
+
+/**
+ * Wires an Angular Signal Forms `form`/`payload` pair up to the "Unsaved changes · N fields" header
+ * line and a leave-confirm dialog naming the changed fields. `dirty()` is per-field and already used
+ * to gate the Save button (see pc-form-actions) - this just reads the same signals.
+ */
+export function injectUnsavedChanges<TModel extends Record<string, unknown>>(
+  form: FieldTree<TModel>,
+  payload: Signal<TModel>,
+): UnsavedChangesHandle {
+  const dialogs = inject(ConfirmDialogService);
+
+  // Subfields<TModel> guarantees one FieldTree per data key, so indexing by the payload's
+  // own keys is safe even though TypeScript can't express a dynamic per-key lookup here.
+  const fields = form as unknown as Record<string, () => { dirty(): boolean }>;
+
+  const dirtyKeys = computed(() => Object.keys(payload()).filter((key) => fields[key]?.().dirty()));
+  const dirtyCount = computed(() => dirtyKeys().length);
+  const headerLine = computed(() =>
+    dirtyCount() > 0 ? `Unsaved changes · ${dirtyCount()} field${dirtyCount() === 1 ? '' : 's'}` : null,
+  );
+
+  return {
+    dirtyCount,
+    headerLine,
+    confirmDiscardIfDirty(recordName: string): Promise<boolean> {
+      if (dirtyCount() === 0) return Promise.resolve(true);
+      const fieldList = joinWithAnd(dirtyKeys().map(humanizeFieldKey));
+      return dialogs.confirm({
+        title: 'Leave without saving?',
+        message: `Your changes to ${recordName} — ${fieldList} — will be lost.`,
+        variant: 'warning',
+        confirmText: 'Discard changes',
+        cancelText: 'Keep editing',
+        emphasizeCancel: true,
+      });
+    },
+  };
+}
+
+function humanizeFieldKey(key: string): string {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/_/g, ' ')
+    .toLowerCase();
+}
+
+function joinWithAnd(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
 ```typescript
 import { Component, computed, inject } from '@angular/core';
 import { DataGrid } from '../datagrid';
@@ -41248,7 +40451,6 @@ export class DataGridToolbarComponent {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
-
 ```typescript
 import type { Provider } from '@angular/core';
 import { InjectionToken } from '@angular/core';
@@ -41346,7 +40548,6 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
-
 ```typescript
 import type { GridRow } from './types';
 
@@ -41393,7 +40594,6 @@ export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
 ## File: apps/frontend/src/app/shared/components/grain-tabs/grain-tabs.ts
-
 ```typescript
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
@@ -41472,7 +40672,6 @@ export class GrainTabs {
 ```
 
 ## File: apps/frontend/src/app/shared/public-pages.ts
-
 ```typescript
 import { environment } from '../../environments/environment';
 
@@ -41525,7 +40724,6 @@ export function publicPageUrl(tenantSlug: string | null | undefined, path: strin
 ```
 
 ## File: apps/frontend/src/app/app.config.ts
-
 ```typescript
 import type { ApplicationConfig } from '@angular/core';
 import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
@@ -41589,7 +40787,6 @@ export const appConfig: ApplicationConfig = {
 ```
 
 ## File: apps/frontend/src/index.html
-
 ```html
 <!doctype html>
 <html lang="en">
@@ -41699,7 +40896,6 @@ export const appConfig: ApplicationConfig = {
 ```
 
 ## File: apps/frontend/vite.config.ts
-
 ```typescript
 /// <reference types='vitest' />
 import { defineConfig } from 'vite';
@@ -41758,8 +40954,7 @@ export default defineConfig(() => ({
 }));
 ```
 
-## File: apps/frontend/src/**mocks**/environment.mock.ts
-
+## File: apps/frontend/src/__mocks__/environment.mock.ts
 ```typescript
 export const environment = {
   production: false,
@@ -41769,8 +40964,7 @@ export const environment = {
 };
 ```
 
-## File: apps/frontend/src/**mocks**/environment.prod.mock.ts
-
+## File: apps/frontend/src/__mocks__/environment.prod.mock.ts
 ```typescript
 export const environment = {
   production: true,
@@ -41781,7 +40975,6 @@ export const environment = {
 ```
 
 ## File: apps/frontend/src/app/auth/login/login-guard.ts
-
 ```typescript
 import { inject } from '@angular/core';
 import type { CanActivateFn } from '@angular/router';
@@ -41805,7 +40998,6 @@ export const loginGuard: CanActivateFn = () => {
 ```
 
 ## File: apps/frontend/src/app/auth/signin-page/signin-page.ts
-
 ```typescript
 import { Component, OnDestroy, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { AbstractControl, ValidatorFn } from '@angular/forms';
@@ -42224,187 +41416,85 @@ function getTRPCData(err: unknown): Record<string, unknown> | undefined {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.html
+## File: apps/frontend/src/app/experiences/companies/services/companies-service.ts
+```typescript
+import { Service } from '@angular/core';
+import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
 
-```html
-<pc-detail-layout
-  [title]="company()?.name || 'Company'"
-  [subtitle]="subtitle()"
-  [eyebrow]="'Company'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!company()"
-  [showDelete]="true"
-  [deleteText]="'Delete company'"
-  [btn1Text]="'Edit company'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editCompany()"
-  (delete)="deleteCompany()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
-  @if (company()) {
-  <button
-    pc-actions-prefix
-    type="button"
-    class="btn btn-sm btn-ghost gap-2"
-    [disabled]="enriching()"
-    [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
-    (click)="enrichCompany()"
-  >
-    <pc-icon name="magnifying-glass" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
-    {{ enrichLabel() }}
-  </button>
-  } @if (company()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Company Details Card -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Company Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Industry -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ company().name }}</h2>
-        @if (company().industry) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-4 font-medium">{{ company().industry }}</div>
-        } @else {
-        <span class="text-xs text-base-content/40 italic mb-4">No industry assigned</span>
-        }
+@Service()
+export class CompaniesService extends AbstractAPIService<'companies', any> {
+  protected override readonly endpointName = 'companies';
 
-        <!-- Contact details list -->
-        <div class="w-full flex flex-col text-sm border-t border-base-200 pt-4">
-          <pc-detail-item
-            label="Website"
-            [value]="company().website"
-            icon="globe-americas"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Email Address"
-            [value]="company().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Phone Number"
-            [value]="company().phone"
-            icon="identification"
-            [copyable]="true"
-          ></pc-detail-item>
-        </div>
-
-        <!-- Internal Notes (Short summary) -->
-        @if (company().notes) {
-        <div class="w-full mt-4 p-3 rounded-lg border border-base-200 bg-base-50/50">
-          <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1">
-            Internal Notes
-          </span>
-          <p class="text-xs text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-            {{ company().notes }}
-          </p>
-        </div>
-        }
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="company().created_at"
-          [createdBy]="getUserName(company().createdby_id)"
-          [updatedAt]="company().updated_at"
-          [updatedBy]="getUserName(company().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-    </div>
-
-    <!-- Right Column: Stats & Tabs -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Stats Panel -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <pc-stat-card
-          [title]="'Employees'"
-          [value]="employeeCount()"
-          [description]="'Total staff listed'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-
-        <pc-stat-card
-          [title]="'Enriched from Google'"
-          [value]="isEnriched() ? 'Yes' : 'No'"
-          [description]="'Google Places sync status'"
-          [icon]="'check-circle'"
-          [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-          [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
-        ></pc-stat-card>
-      </div>
-
-      <!-- GOOGLE ENRICHMENT card (§7) -->
-      <div class="card bg-base-100 border border-base-300 rounded-xl p-4 flex flex-col gap-2">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <pc-icon name="globe-americas" [size]="4" class="text-primary"></pc-icon>
-            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Google enrichment</span>
-          </div>
-          @if (isEnriched()) {
-          <pc-status-badge type="success">Enriched</pc-status-badge>
-          } @else {
-          <pc-status-badge type="neutral">Not enriched</pc-status-badge>
-          }
-        </div>
-        <p class="text-sm text-base-content/65 font-light leading-relaxed">
-          Runs as a background job — a Places text search finds the business, then place details fill website, phone,
-          industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
-        </p>
-      </div>
-
-      <!-- Tabs Panel -->
-      <pc-tabs [tabs]="companyTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'companies'" [entityId]="id()"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="employees" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @defer (on viewport) {
-            <pc-people-in-company [companyId]="id()"></pc-people-in-company>
-            } @placeholder {
-            <div class="skeleton w-full h-32"></div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="details" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (company().description) {
-            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2">
-                Company Description
-              </span>
-              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">
-                {{ company().description }}
-              </p>
-            </div>
-            } @else {
-            <div class="text-center py-10 text-base-content/40 italic">No company description recorded.</div>
-            }
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
+  public add(row: RouterInputs['companies']['add']) {
+    return this.api.companies.add.mutate(row);
   }
-</pc-detail-layout>
+
+  public addMany(rows: RouterInputs['companies']['add'][]) {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.companies.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(true);
+  }
+
+  public async getAll(options?: getAllOptionsType) {
+    return this.api.companies.getAll.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string): Promise<any> {
+    return this.api.companies.getById.query(id);
+  }
+
+  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.companies.getBySlug.query(slug);
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public async update(id: string, data: RouterInputs['companies']['update']['data']) {
+    return this.api.companies.update.mutate({ id, data });
+  }
+
+  public import(rows: any[], skipped: number, file_name?: string): Promise<RouterOutputs['companies']['import']> {
+    return this.api.companies.import.mutate({ rows, skipped, file_name });
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.companies.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(
+    options?: RouterInputs['companies']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['companies']['getPotentialDuplicates']> {
+    return this.api.companies.getPotentialDuplicates.query(options);
+  }
+
+  public mergeCompanies(targetId: string, sourceId: string): Promise<RouterOutputs['companies']['mergeCompanies']> {
+    return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-activities/email-activities.html
-
 ```html
 <div
   class="min-h-0 flex flex-col overflow-hidden"
@@ -42512,7 +41602,6 @@ function getTRPCData(err: unknown): Record<string, unknown> | undefined {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-activities/email-activities.ts
-
 ```typescript
 import { DatePipe } from '@angular/common';
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
@@ -42629,7 +41718,6 @@ export class EmailActivities {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-client/email-client.ts
-
 ```typescript
 import { Component, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { Icon } from '@uxcommon/components/icons/icon';
@@ -42969,7 +42057,6 @@ export class EmailClient {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.ts
-
 ```typescript
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -43079,8 +42166,379 @@ export class EmailDetails {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-view.html
+## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 
+import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
+import { EventsService } from '../../../services/api/events-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EventsFrontendService } from '../services/events-frontend-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-event-form',
+  imports: [
+    FormsModule,
+    FormField,
+    PcInput,
+    PcTextarea,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    PcEntityOverview,
+    PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
+  ],
+  templateUrl: './event-form.html',
+  providers: [EventsService],
+})
+export class EventFormComponent implements OnInit {
+  private readonly _loading = createLoadingGate();
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
+  private readonly eventsFrontendSvc = inject(EventsFrontendService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly router = inject(Router);
+
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly addingTicket = signal(false);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `e/${slug}`);
+  });
+  protected readonly detail = signal<any>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const events: PcBreadcrumb = { label: 'Events', route: '/events/pages' };
+    const id = this.id();
+    if (id) {
+      return [events, { label: this.detail()?.name || 'Event', route: ['/events/pages', id] }, { label: 'Edit' }];
+    }
+    return [events, { label: 'New event' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    slug: '',
+    description: '',
+    location_address: '',
+    start_time: '',
+    end_time: '',
+    capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_published: false,
+    send_reminder: true,
+    send_registration_confirmation: true,
+  });
+  protected readonly endBeforeStartError = computed(() => {
+    const { start_time, end_time } = this.payload();
+    if (!start_time || !end_time) return false;
+    return new Date(end_time) <= new Date(start_time);
+  });
+  protected readonly error = signal<string | null>(null);
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddEventObj);
+  });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly loading = this._loading.visible;
+  protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
+  protected readonly saving = signal(false);
+  protected readonly slugChecking = signal(false);
+  protected readonly slugUnique = signal<boolean | null>(null);
+
+  // Ticket types
+  protected readonly ticketTypes = signal<any[]>([]);
+
+  protected slugManuallyEdited = false;
+
+  protected setNewTicketName(v: string) {
+    this.newTicket.update((t) => ({ ...t, name: v }));
+  }
+  protected setNewTicketPrice(v: string) {
+    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
+  }
+  protected setNewTicketCapacity(v: string) {
+    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
+  }
+
+  public readonly id = input<string>();
+
+  constructor() {
+    const nameSignal = computed(() => this.payload().name);
+    effect(() => {
+      const name = nameSignal();
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        if (untracked(this.payload).slug !== suggested) {
+          this.payload.update((p) => ({ ...p, slug: suggested }));
+        }
+      }
+    });
+
+    const slugSignal = computed(() => this.payload().slug);
+    effect(() => {
+      const slug = slugSignal();
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.eventsFrontendSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
+            if (untracked(slugSignal) === slug) {
+              this.slugUnique.set(res.unique);
+            }
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (untracked(slugSignal) === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
+    });
+  }
+
+  public ngOnInit(): void {
+    const end = this._loading.begin();
+    void this.loadEvent().finally(() => end());
+  }
+
+  protected cancelAddTicket() {
+    this.addingTicket.set(false);
+  }
+
+  protected async deleteEvent() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event Page',
+      message: 'Are you sure you want to delete this event page? All registrations will also be deleted.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
+    try {
+      await this.eventsFrontendSvc.delete(this.id()!);
+      this.eventsFrontendSvc.triggerRefresh();
+      this.alerts.showSuccess('Event deleted');
+      await this.router.navigate(['/events/pages']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async deleteTicketType(id: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Ticket Type',
+      message: 'Delete this ticket type?',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    try {
+      await this.eventsSvc.deleteTicketType(id);
+      this.alerts.showSuccess('Ticket type deleted');
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
+    }
+  }
+
+  protected formatPrice(cents: number): string {
+    if (!cents) return 'Free';
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+
+  protected async loadEvent() {
+    if (this.isNew()) return;
+
+    try {
+      const event = (await this.eventsFrontendSvc.getById(this.id()!)) as any;
+      this.detail.set(event);
+      this.payload.set({
+        name: event.name ?? '',
+        slug: event.slug ?? '',
+        description: event.description ?? '',
+        location_address: event.location_address ?? '',
+        start_time: this.toDatetimeLocalString(event.start_time),
+        end_time: this.toDatetimeLocalString(event.end_time),
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? '',
+        contact_phone: event.contact_phone ?? '',
+        is_published: !!event.is_published,
+        send_reminder: event.send_reminder !== false,
+        send_registration_confirmation: event.send_registration_confirmation !== false,
+      });
+      if (Array.isArray(event.fields) && event.fields.length > 0) {
+        this.selectedFields.set(event.fields);
+      }
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
+      this.alerts.showError(this.error()!);
+    }
+  }
+
+  protected async loadTicketTypes() {
+    if (!this.id()) return;
+    try {
+      const types = await this.eventsSvc.getTicketTypes(this.id()!);
+      this.ticketTypes.set(types || []);
+    } catch (err) {
+      console.error('Failed to load ticket types', err);
+    }
+  }
+
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this event');
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) done.preventDefault();
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    if (this.endBeforeStartError()) {
+      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
+      return;
+    }
+
+    if (this.slugUnique() === false) {
+      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    const raw = this.payload();
+    const data = {
+      name: raw.name.trim(),
+      slug: raw.slug.trim(),
+      description: raw.description?.trim() || null,
+      location_address: raw.location_address?.trim() || null,
+      start_time: new Date(raw.start_time),
+      end_time: new Date(raw.end_time),
+      capacity: raw.capacity ? Number(raw.capacity) : null,
+      contact_email: raw.contact_email?.trim() || null,
+      contact_phone: raw.contact_phone?.trim() || null,
+      is_published: !!raw.is_published,
+      send_reminder: !!raw.send_reminder,
+      send_registration_confirmation: !!raw.send_registration_confirmation,
+      fields: this.selectedFields(),
+    };
+
+    try {
+      if (this.isNew()) {
+        const res = await this.eventsFrontendSvc.add(data as AddEventType);
+        this.eventsFrontendSvc.triggerRefresh();
+        this.alerts.showSuccess('Event created successfully');
+        await this.router.navigate(['/events/pages', (res as any).id]);
+      } else {
+        await this.eventsFrontendSvc.update(this.id()!, data as UpdateEventType);
+        this.eventsFrontendSvc.triggerRefresh();
+        this.alerts.showSuccess('Event updated successfully');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/events/pages', this.id()]);
+        }
+      }
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
+      this.alerts.showError(this.error()!);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async saveNewTicket() {
+    const t = this.newTicket();
+    if (!t.name.trim()) {
+      this.alerts.showError('Ticket type name is required');
+      return;
+    }
+    try {
+      await this.eventsSvc.addTicketType({
+        event_id: this.id()!,
+        name: t.name.trim(),
+        description: t.description?.trim() || null,
+        price_cents: Number(t.price_cents) || 0,
+        capacity: t.capacity ? Number(t.capacity) : null,
+      });
+      this.addingTicket.set(false);
+      this.alerts.showSuccess('Ticket type added');
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
+    }
+  }
+
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+
+  // Ticket type management
+  protected startAddTicket() {
+    this.newTicket.set({ name: '', description: '', price_cents: 0, capacity: null });
+    this.addingTicket.set(true);
+  }
+
+  protected toDatetimeLocalString(val: any): string {
+    if (!val) return '';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/events/ui/event-view.html
 ```html
 <pc-detail-layout
   [title]="event()?.name || 'Event'"
@@ -43395,7 +42853,6 @@ export class EmailDetails {
 ```
 
 ## File: apps/frontend/src/app/experiences/events/ui/event-view.ts
-
 ```typescript
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -43707,7 +43164,6 @@ export class EventViewComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/form-view.html
-
 ```html
 <pc-detail-layout
   [title]="formRecord()?.name || 'Form'"
@@ -43923,7 +43379,6 @@ export class EventViewComponent {
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/form-view.ts
-
 ```typescript
 import { Component, effect, inject, input, signal, computed, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -44245,7 +43700,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-page.html
-
 ```html
 <!-- Preview panel (shared by browse + edit) ---------------------------------->
 <ng-template #previewPanel let-showEdit="showEdit">
@@ -44880,7 +44334,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/productivity.ts
-
 ```typescript
 import type { HelpArticle } from '../help-types';
 
@@ -44888,40 +44341,41 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
   {
     id: 'tasks',
     category: 'productivity',
-    title: 'Tasks and the board',
-    summary: 'Track the work — assign it, date it, and move it across a kanban board from to-do to done.',
-    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'blocked'],
+    title: 'Tasks — list and board',
+    summary: 'Track the work — assign it, date it, and move it from to do to done, in whichever of the two views you prefer.',
+    keywords: ['task', 'todo', 'board', 'kanban', 'assign', 'due date', 'priority', 'status', 'waiting', 'sla'],
     related: ['dashboard', 'teams', 'automations'],
     blocks: [
       {
         kind: 'p',
-        text: 'Tasks capture commitments — call this donor back, print the signs, book the room. Every task carries a status, a priority, an assignee, and a due date, and you can work them from two views of the same data.',
+        text: 'Tasks capture commitments — call this donor back, print the signs, book the room. Every task carries a status, an optional priority, an assignee, and a due date, and it is the same data whichever of the two views you work from.',
       },
-      { kind: 'h2', id: 'views', text: 'Grid or board — your choice' },
+      { kind: 'h2', id: 'views', text: 'List or board — one dataset, two views' },
       {
         kind: 'list',
         items: [
-          '[Tasks](/tasks) — the grid view: filter, sort into your own order, edit inline, work in bulk.',
-          '[Task board](/board) — the kanban view: one column per status. Drag a card to a new column and its status updates instantly. Jump there anytime with `g` then `b`.',
+          '[Tasks](/tasks) — the list view: tabs for All, Mine, Unassigned, and Done, grouped under Overdue/Today/Upcoming/No due date headings. Check a task off, or hand an unowned one to yourself with its Unassigned pill.',
+          '[Task board](/tasks/board) — one column per status: To do, In progress, Waiting, Done. The ‹ › buttons on a card move it one column; they dim at either end of the row. Jump there anytime with `g` then `b`.',
+          'Every header carries a swap button — Open board / Open list — so you never have to hunt for the sidebar to switch.',
         ],
       },
       {
         kind: 'p',
-        text: 'Statuses run **to do → in progress → blocked → done → canceled**. “Blocked” is worth using honestly — a column of blocked cards is a meeting agenda that writes itself.',
+        text: 'Statuses run **to do → in progress → waiting → done**. "Waiting" is worth using honestly — a card with a waiting reason attached (shown with a clock icon) is a meeting agenda that writes itself. Tasks nobody is coming back to are archived, not left cluttering the board.',
       },
       { kind: 'h2', id: 'accountability', text: 'Assignment, due dates, and SLAs' },
       {
         kind: 'list',
         items: [
-          'Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
-          'If your workspace sets a task SLA, open tasks count against it and the [Dashboard](/dashboard) shows the rollup — see [The dashboard and SLA health](/help/dashboard).',
+          'A task with no assignee shows a dashed Unassigned pill — one click takes it and assigns it to you. Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
+          'If your workspace sets a task SLA, every open task shows an honest SLA pill (due-in or overdue, in working hours) and the sidebar\'s Tasks badge is the live breach count. The [Dashboard](/dashboard) shows the rollup — see [The dashboard and SLA health](/help/dashboard).',
         ],
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'Tasks come from everywhere',
-        text: 'Automations can create tasks too — “new major donor” can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
+        text: 'Create one directly, turn an inbox thread into one from [Inbox](/inbox), or let an automation open one — "new major donor" can open a personal-call task for the right person automatically. See [Automations](/help/automations).',
       },
     ],
   },
@@ -44961,7 +44415,6 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/segmentation.ts
-
 ```typescript
 import type { HelpArticle } from '../help-types';
 
@@ -45057,7 +44510,6 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
 ```
 
 ## File: apps/frontend/src/app/experiences/help/ui/help-article.html
-
 ```html
 <div class="mx-auto max-w-5xl px-4 py-6 sm:px-6">
   @if (article(); as article) {
@@ -45165,7 +44617,6 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
 ```
 
 ## File: apps/frontend/src/app/experiences/help/ui/help-article.ts
-
 ```typescript
 import { Component, computed, DestroyRef, effect, ElementRef, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -45262,7 +44713,6 @@ export class HelpArticlePage {
 ```
 
 ## File: apps/frontend/src/app/experiences/households/services/households-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -45365,269 +44815,292 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/household-view.html
+## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
+```typescript
+import { Location } from '@angular/common';
+import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { Loader } from '@googlemaps/js-api-loader';
+import type { IAuthUser } from '@common';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInHousehold } from '../../persons/ui/people-in-household';
+import { UserService } from '../../../services/user.service';
+import { HouseholdsService } from '../services/households-service';
+import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '@experiences/persons/services/persons-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { Tags } from '@experiences/tags/ui/tags';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
-```html
-<pc-detail-layout
-  [title]="addressString()"
-  [subtitle]="subtitle()"
-  [eyebrow]="'Household'"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!household()"
-  [showActions]="!!(household() && !household()?.is_placeholder)"
-  [showDelete]="true"
-  [deleteText]="'Delete household'"
-  [btn1Text]="'Edit household'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editHousehold()"
-  (delete)="deleteHousehold()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  @if (household(); as h) { @if (h.is_placeholder) {
-  <div class="card bg-base-100 shadow-xl border border-base-300 p-8 text-center max-w-lg mx-auto mt-10">
-    <div class="avatar placeholder mb-4">
-      <div class="bg-warning/10 text-warning rounded-full w-20 h-20 flex items-center justify-center">
-        <pc-icon name="exclamation-triangle" [size]="8"></pc-icon>
-      </div>
-    </div>
-    <h2 class="text-xl font-bold text-base-content mb-2">No Household Assigned</h2>
-    <p class="text-sm text-base-content/60 mb-6">
-      This is a system placeholder representing individuals who do not currently have a household or address assigned.
-      It is not a real household record and cannot be edited.
-    </p>
-    <a routerLink="/people" class="btn btn-primary btn-sm gap-2">
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Return to People
-    </a>
-  </div>
-  } @else {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Household Card, Map & Segmentation -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Elegant Household Card -->
-      <pc-profile-card iconName="home">
-        <!-- Address Title -->
-        <h2 class="text-xl font-bold text-base-content text-center mb-4 leading-tight">{{ addressString() }}</h2>
+@Component({
+  selector: 'pc-household-view',
+  imports: [
+    RouterModule,
+    PeopleInHousehold,
+    Icon,
+    RecordActivities,
+    DetailLayout,
+    PcCard,
+    Tabs,
+    TabPanel,
+    StatCard,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+    Tags,
+  ],
+  templateUrl: './household-view.html',
+})
+export class HouseholdView {
+  readonly id = input.required<string>();
 
-        <!-- Contact Details List -->
-        <div class="w-full flex flex-col text-sm">
-          <pc-detail-item label="Home Phone" [value]="h.home_phone" icon="phone" [copyable]="true"></pc-detail-item>
-          <pc-detail-item label="Household Type" [value]="h.type" icon="information-circle"></pc-detail-item>
-        </div>
+  protected readonly recordNav = injectRecordNavigation('household', this.id);
 
-        <!-- Mapped Districts (GIS) -->
-        @if (h.district || h.precinct || h.ward || h.geocoding_status) {
-        <div
-          class="flex flex-col gap-2 p-3 rounded-lg bg-base-200/50 text-base-content/80 mt-2 border border-base-300/40 w-full"
-        >
-          <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider text-base-content/50">
-            <pc-icon name="map" [size]="4" class="text-primary"></pc-icon>
-            <span>Electoral Boundaries</span>
-          </div>
-          <div class="flex flex-wrap gap-2 mt-1 text-center text-xs">
-            @if (h.district) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">District / Riding</span>
-              <span class="font-bold text-base-content">{{ h.district }}</span>
-            </div>
-            } @if (h.ward) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">Ward</span>
-              <span class="font-bold text-base-content">{{ h.ward }}</span>
-            </div>
-            } @if (h.precinct) {
-            <div class="bg-base-100 p-2 rounded border border-base-200 flex-1 min-w-[80px]">
-              <span class="text-[10px] text-base-content/40 block">Precinct / Polling Div.</span>
-              <span class="font-bold text-base-content">{{ h.precinct }}</span>
-            </div>
-            }
-          </div>
+  private readonly alertSvc = inject(AlertService);
+  private readonly userService = inject(UserService);
+  private readonly householdsSvc = inject(HouseholdsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly loader = inject(Loader);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
+  protected readonly household = signal<Households | null>(null);
+  protected readonly users = signal<IAuthUser[]>([]);
+  private usersById = new Map<string, IAuthUser>();
 
-          <!-- Geocoding status — binding chip (Located / Locating… / Address problem), never hidden -->
-          <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
-            <span class="text-base-content/60">Geocoding status</span>
-            <pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip>
-          </div>
-        </div>
-        }
+  // Segmentation
+  protected readonly tags = signal<string[]>([]);
+  protected readonly issues = signal<string[]>([]);
+  protected readonly peopleCount = signal(0);
 
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="h.created_at"
-          [createdBy]="getUserName(h.createdby_id)"
-          [updatedAt]="h.updated_at"
-          [updatedBy]="getUserName(h.updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Households', route: '/households' },
+    { label: this.addressString() },
+  ]);
 
-      <!-- Map card — static Google map; clicking opens the maps app. Ward + address chips overlay it. (§6) -->
-      <pc-card title="Map location" icon="map">
-        <div class="relative w-full h-64 rounded-lg overflow-hidden">
-          @if (hasMap()) {
-          <pc-map
-            class="block h-full w-full"
-            [markers]="mapMarkers()"
-            [interactive]="false"
-            [deepLink]="true"
-            ariaLabel="Household location"
-          ></pc-map>
-          <!-- Overlays -->
-          <div class="pointer-events-none absolute inset-x-2 top-2 flex flex-wrap gap-2">
-            @if (h.ward) {
-            <span class="badge badge-sm badge-neutral font-semibold shadow">Ward {{ h.ward }}</span>
-            }
-            <span class="badge badge-sm bg-base-100/90 text-base-content font-medium shadow max-w-full truncate">
-              {{ addressString() }}
-            </span>
-          </div>
-          } @else {
-          <!-- No verified pin yet — degrade honestly, never fake a pin (§13 maps ruling) -->
-          <div
-            class="p-6 h-full flex flex-col items-center justify-center gap-2 text-center text-base-content/40 select-none bg-base-200"
-          >
-            <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
-            <h4 class="font-semibold text-sm text-base-content/60">No pin yet</h4>
-            <p class="text-xs max-w-[220px] font-light leading-snug">
-              The map pin appears once the address verifies — it geocodes in the background.
-            </p>
-          </div>
+  // Address
+  protected readonly addressString = computed(() => {
+    const raw = this.household();
+    if (!raw) return 'No Address Assigned';
+    if (raw.is_placeholder) return 'People with no addresses';
+    if (raw.formatted_address) return raw.formatted_address;
+
+    const parts: string[] = [];
+    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
+
+    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
+
+    if (streetParts.length) parts.push(streetParts.join(' ').trim());
+    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+
+    return parts.join(', ').trim() || 'No Address Assigned';
+  });
+
+  protected readonly hasMap = computed(() => {
+    const h = this.household();
+    return !!(h && h.lat && h.lng && !h.is_placeholder);
+  });
+
+  private mapInitialized = false;
+  private readonly mapContainer = viewChild<ElementRef>('mapContainer');
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly householdTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'members', label: `Household Members (${this.peopleCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
+    });
+
+    effect(() => {
+      const elRef = this.mapContainer();
+      if (elRef) {
+        void this.initMap(elRef.nativeElement);
+      } else {
+        this.mapInitialized = false;
+      }
+    });
+
+    // Load users for addedby/updatedby display names
+    this.userService
+      .getUsers()
+      .then((u) => {
+        this.users.set(u);
+        this.usersById = new Map(u.map((x) => [x.id, x]));
+      })
+      .catch(() => void 0);
+  }
+
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load household details
+      const householdData = (await this.householdsSvc.getById(id)) as Households;
+      this.household.set(householdData);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof householdData?.slug === 'string' && householdData.slug.length > 0) {
+        this.location.replaceState(`/households/${householdData.slug}`);
+      }
+
+      // 2. Load tags and issues
+      const tagList = await this.householdsSvc.getTags(id, 'tag');
+      this.tags.set(tagList);
+      const issueList = await this.householdsSvc.getTags(id, 'issue');
+      this.issues.set(issueList);
+
+      // 3. Load people in household count
+      const count = await this.householdsSvc.getPeopleCount(id);
+      this.peopleCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
+  }
+
+  protected editHousehold() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
+  }
+
+  protected async deleteHousehold() {
+    if (!this.id()) return;
+    const end = this._loading.begin();
+    try {
+      // Fetch people belonging to this household
+      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
+      const personIds = people.map((p) => p.id);
+      const peopleCount = personIds.length;
+
+      if (peopleCount > 0) {
+        // Show the 3-option warning dialog
+        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+          title: 'Households have people',
+          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+          variant: 'warning',
+          choices: [
+            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+          ],
+          cancelText: 'Cancel',
+        });
+
+        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
+
+        if (choice === 'keep-people') {
+          for (const pid of personIds) {
+            await this.personsSvc.removeHousehold(pid);
           }
-        </div>
-      </pc-card>
+        } else if (choice === 'delete-people') {
+          await this.personsSvc.deleteMany(personIds);
+        }
+      } else {
+        const confirmed = await this.dialogSvc.confirm({
+          title: 'Delete Household',
+          message: 'Are you sure you want to delete this household? This action cannot be undone.',
+          variant: 'danger',
+          confirmText: 'Delete',
+        });
+        if (!confirmed) return;
+      }
 
-      <!-- Segmentation Card -->
-      <pc-card title="Segmentation">
-        <div class="flex flex-col gap-3">
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
-            }
-          </div>
+      await this.householdsSvc.delete(this.id());
+      this.householdsSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Household deleted');
+      await this.router.navigate(['/households']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete household';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
+  }
 
-          <div>
-            <span class="text-xs font-semibold text-base-content/60 block mb-1.5">Issues of Interest</span>
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No issues recorded</span>
-            }
-          </div>
-        </div>
-      </pc-card>
-    </div>
+  private async initMap(mapEl: HTMLElement) {
+    const h = this.household();
+    if (!h || !h.lat || !h.lng || h.is_placeholder || this.mapInitialized) return;
 
-    <!-- Right Column: Stats & Tabs Panel -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Dashboard Stats Grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <!-- Stats: People -->
-        <pc-stat-card
-          [title]="'People'"
-          [value]="peopleCount()"
-          [description]="'Household members'"
-          [icon]="'user-group'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
+    try {
+      await this.loader.importLibrary('maps');
+      const { AdvancedMarkerElement } = (await this.loader.importLibrary('marker')) as any;
+      const center = { lat: Number(h.lat), lng: Number(h.lng) };
+      const map = new google.maps.Map(mapEl, {
+        center,
+        zoom: 15,
+        disableDefaultUI: false,
+        zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: false,
+        mapId: 'DEMO_MAP_ID',
+      });
 
-        <!-- Stats: Interactions -->
-        <pc-stat-card
-          [title]="'Interactions'"
-          [value]="0"
-          [description]="'Logged contacts'"
-          [icon]="'envelope'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
+      new AdvancedMarkerElement({
+        position: center,
+        map,
+        title: this.addressString(),
+      });
+      this.mapInitialized = true;
+    } catch (err) {
+      console.error('Failed to load Google Map:', err);
+    }
+  }
 
-        <!-- Stats: Donations -->
-        <pc-stat-card
-          [title]="'Donations'"
-          [value]="'$0'"
-          [description]="'Financial support'"
-          [icon]="'currency-dollar'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
+  }
 
-        <!-- Stats: Volunteers -->
-        <pc-stat-card
-          [title]="'Volunteers'"
-          [value]="0"
-          [description]="'Active assignments'"
-          [icon]="'volunteer'"
-          [valueColorClass]="'text-base-content'"
-          [iconColorClass]="'text-primary'"
-        ></pc-stat-card>
-      </div>
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById.get(String(id))?.first_name ?? '?';
+  }
+}
 
-      <!-- Multi-Tab Details & History Panel -->
-      <pc-tabs [tabs]="householdTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="members" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <pc-people-in-household [householdId]="id()!"></pc-people-in-household>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4 max-h-[450px] overflow-y-auto pr-1">
-            <pc-record-activities [entity]="'households'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="details" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Details: city, first seen, grouping model (§6) -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <pc-detail-item label="City" [value]="h.city" icon="map-pin"></pc-detail-item>
-              <pc-detail-item
-                label="First seen"
-                [value]="h.created_at | date: 'mediumDate'"
-                icon="file-calendar"
-              ></pc-detail-item>
-            </div>
-            <div class="p-3 rounded-lg border border-base-200 bg-base-200/40">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
-                >Grouping</span
-              >
-              <p class="text-sm text-base-content/70 font-light leading-relaxed">
-                By address — edit a member's address and the household follows.
-              </p>
-            </div>
-
-            <!-- Door notes (§6) -->
-            <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
-                >Door notes</span
-              >
-              @if (h.notes) {
-              <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
-              } @else {
-              <p class="text-sm text-base-content/40 italic">No door notes recorded for this household.</p>
-              }
-            </div>
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  } }
-</pc-detail-layout>
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
-
 ```typescript
 import { Service } from '@angular/core';
 import {
@@ -45801,342 +45274,7 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
 export type DATA_TYPE = 'persons' | 'households';
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
-
-```html
-<!-- Template for person edit/add view -->
-<div class="flex min-h-full flex-col bg-base-100 p-6">
-  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
-
-  <div class="w-full max-w-4xl">
-    <!-- Back to profile or list -->
-    <pc-detail-header
-      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
-      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
-      [crumbs]="crumbs()"
-      [form]="form"
-      [isLoading]="isLoading()"
-      [saveAlwaysEnabled]="true"
-      [buttonsToShow]="buttonsToShow()"
-      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
-      [showDelete]="!!person()?.id"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete person"
-      (save)="save($event)"
-      (delete)="deletePerson()"
-    ></pc-detail-header>
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-      <div class="lg:col-span-2">
-        <form (submit)="save()" novalidate class="flex flex-col gap-5">
-          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
-            @if (!person()?.id) {
-            <label class="label text-xs text-base-content/50 -mb-2"
-              >All fields are optional, but try to add as much as possible</label
-            >
-            }
-
-            <!-- Name Inputs -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="First name"
-                aria-label="First name"
-                [formField]="form.first_name"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Last name"
-                aria-label="Last name"
-                [formField]="form.last_name"
-              ></pc-input>
-            </div>
-            <pc-input
-              placeholder="Middle name(s)"
-              aria-label="Middle name(s)"
-              [formField]="form.middle_names"
-            ></pc-input>
-
-            <!-- Emails -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email"
-                aria-label="Email Address"
-                [formField]="form.email"
-                [hasError]="!!emailError()"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="email"
-                placeholder="Email 2"
-                aria-label="Secondary Email Address"
-                [formField]="form.email2"
-              ></pc-input>
-            </div>
-            @if (emailError()) {
-            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
-              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
-              {{ emailError() }}
-            </div>
-            }
-
-            <!-- Phones -->
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Mobile Phone"
-                aria-label="Mobile Phone"
-                [formField]="form.mobile"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                type="tel"
-                placeholder="Home Phone"
-                aria-label="Home Phone"
-                [formField]="form.home_phone"
-              ></pc-input>
-            </div>
-
-            <!-- Company & Preferred contact -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <pc-select placeholder="-- Select company --" aria-label="Company" [formField]="form.company_id">
-                @for (c of companies(); track c.id) {
-                <option [value]="c.id">{{ c.name }}</option>
-                }
-              </pc-select>
-
-              <pc-select
-                placeholder="No preference"
-                aria-label="Preferred contact"
-                [formField]="form.preferred_contact"
-              >
-                <option value="email">Email</option>
-                <option value="mobile">Mobile phone</option>
-                <option value="home_phone">Home phone</option>
-              </pc-select>
-            </div>
-
-            <!-- Assigned To / Owner Select -->
-            <pc-select placeholder="-- Select contact owner --" aria-label="Assigned To" [formField]="form.assigned_to">
-              @for (u of users(); track u.id) {
-              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
-              }
-            </pc-select>
-
-            <!-- Address & Household Assignment -->
-            @if (householdId() && !isPlaceholderHousehold()) {
-            <div class="flex items-center gap-3 text-sm bg-base-200 p-3 rounded-lg border border-base-300">
-              <pc-icon name="map-pin" [size]="4" class="text-base-content/40 shrink-0"></pc-icon>
-              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
-              <button type="button" class="link link-primary text-xs shrink-0" (click)="navigateToHousehold()">
-                Edit on household
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip shrink-0"
-                data-tip="Change household"
-                (click)="openAssignDrawer()"
-              >
-                <pc-icon name="chevron-down" [size]="4"></pc-icon>
-              </button>
-              <button
-                type="button"
-                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip shrink-0"
-                data-tip="Remove address"
-                (click)="removeAddress()"
-              >
-                <pc-icon name="trash" [size]="4"></pc-icon>
-              </button>
-            </div>
-            } @else {
-            <div
-              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
-            >
-              <div class="flex items-center gap-2">
-                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
-                <span class="text-base-content/50 italic">No address assigned</span>
-              </div>
-              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
-                <pc-icon name="plus" [size]="3"></pc-icon>
-                Assign Household
-              </button>
-            </div>
-            }
-            <p
-              class="pl-1 text-xs text-base-content/50"
-              i18n="PersonForm|Explains why address is edited via the household@@person.address.reason"
-            >
-              Addresses belong to households, so everyone at the same address stays in sync.
-            </p>
-
-            <!-- Social Media Profile Links -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Social Media Profiles
-            </div>
-
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="LinkedIn URL"
-                aria-label="LinkedIn URL"
-                [formField]="form.linkedin"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Twitter/X URL"
-                aria-label="Twitter/X URL"
-                [formField]="form.twitter"
-              ></pc-input>
-            </div>
-            <div class="flex flex-col md:flex-row gap-2">
-              <pc-input
-                class="basis-1/2"
-                placeholder="Facebook URL"
-                aria-label="Facebook URL"
-                [formField]="form.facebook"
-              ></pc-input>
-              <pc-input
-                class="basis-1/2"
-                placeholder="Instagram URL"
-                aria-label="Instagram URL"
-                [formField]="form.instagram"
-              ></pc-input>
-            </div>
-
-            <!-- Tags & Segmentation -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
-              Tags & Issues
-            </div>
-
-            <!-- Tags -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-base-content/60">Tags</label>
-              <pc-tags
-                [tags]="tags()"
-                type="tag"
-                [enableAutoComplete]="true"
-                placeholder="Type and press Enter to add"
-                (tagAdded)="tagAdded($event)"
-                (tagRemoved)="tagRemoved($event)"
-              ></pc-tags>
-              @if (tagSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of tagSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addTagSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Issues of interest -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-base-content/60">Issues of interest</label>
-              <pc-tags
-                [tags]="issues()"
-                type="issue"
-                [enableAutoComplete]="true"
-                placeholder="What does this person care about? Enter to add"
-                (tagAdded)="issueAdded($event)"
-                (tagRemoved)="issueRemoved($event)"
-              ></pc-tags>
-              @if (issueSuggestions().length) {
-              <div class="flex flex-wrap items-center gap-1.5 text-xs">
-                <span class="text-base-content/50">Suggestions:</span>
-                @for (s of issueSuggestions(); track s) {
-                <button
-                  type="button"
-                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
-                  (click)="addIssueSuggestion(s)"
-                >
-                  {{ s }}
-                </button>
-                }
-              </div>
-              }
-            </div>
-
-            <!-- Internal Notes -->
-            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
-
-            <pc-textarea
-              placeholder="Internal Notes..."
-              aria-label="Notes"
-              [formField]="form.notes"
-              [rows]="3"
-            ></pc-textarea>
-          </fieldset>
-        </form>
-      </div>
-
-      <!-- Overview Sidebar -->
-      <div>
-        @if (!isNewMode()) {
-        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
-        }
-      </div>
-    </div>
-
-    <!-- Back to the person record -->
-    @if (person()?.id) {
-    <a
-      [routerLink]="['/people', person()!.id]"
-      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
-    >
-      <pc-icon name="arrow-left" [size]="4"></pc-icon>
-      Back to {{ formName() || 'person' }}
-    </a>
-    }
-  </div>
-
-  <!-- Right-side drawer: Assign to a different household -->
-  <pc-side-drawer
-    [isOpen]="assignDrawerOpen()"
-    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
-    (close)="closeAssignDrawer()"
-  >
-    <div class="flex flex-col gap-3">
-      <input
-        type="text"
-        class="input w-full"
-        placeholder="Search address, city, zip, tag..."
-        aria-label="Search address, city, zip, or tag to assign a household"
-        [value]="householdSearch()"
-        (input)="onHouseholdSearch($event)"
-      />
-      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
-      <div
-        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
-        [class.hidden]="householdsLoading() && householdResults().length === 0"
-      >
-        @for (h of householdResults(); track h.id) {
-        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
-          <div class="text-sm">
-            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
-            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
-          </div>
-          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
-        </div>
-        } @if (!householdsLoading() && householdResults().length === 0) {
-        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
-        }
-      </div>
-    </div>
-  </pc-side-drawer>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.html
-
 ```html
 <!-- Template for persons grid -->
 <div class="flex flex-col gap-6">
@@ -46205,8 +45343,932 @@ export type DATA_TYPE = 'persons' | 'households';
 </pc-csv-importer>
 ```
 
-## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.html
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
+```html
+<div class="p-6 max-w-5xl space-y-6">
+  <!-- Loading State -->
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <!-- Header -->
+    <pc-detail-header
+      [title]="isNew() ? 'New volunteer event' : detail()?.name || 'Volunteer event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNew() ? 'Schedule a new volunteer opportunity.' : 'Manage volunteer settings and log attendance roster.'"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
+      [showDelete]="!isNew()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
 
+    <!-- Error alert -->
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <!-- Event has passed alert -->
+    @if (eventPassed()) {
+    <div class="alert alert-warning shadow-sm py-3 text-sm flex items-center gap-2">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>This event has passed. Roster and details are now archived.</span>
+    </div>
+    }
+
+    <!-- Event details form -->
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Weekend Door Knocking Campaign"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. weekend-knocking"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/v/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the purpose, tasks, and instructions for volunteers..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., Central Park Pavilion, or street coordinates"
+          ></pc-input>
+
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public signup form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact Point
+          </h4>
+          <p class="text-xs text-base-content/60">
+            Provide contact info for constituents who have questions about this shift.
+          </p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Roster Management (Only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Shift Roster"
+          subtitle="Sign up volunteers and record their attendance and hours."
+          icon="user-group"
+        >
+          <div pc-card-actions class="badge badge-primary gap-1">
+            {{ roster().length }} Signed Up @if (detail()?.capacity) {
+            <span>/ {{ detail()?.capacity }} Max</span>
+            }
+          </div>
+
+          <!-- Search to Add Volunteers -->
+          <div class="relative space-y-1">
+            <label class="label text-xs font-semibold text-base-content/65 uppercase">Add Volunteer to Roster</label>
+            <div class="relative">
+              <input
+                type="text"
+                class="input input-bordered w-full pl-10"
+                placeholder="Search volunteers by name or email..."
+                [ngModel]="volunteerSearch()"
+                (ngModelChange)="volunteerSearch.set($event)"
+                [ngModelOptions]="{standalone: true}"
+              />
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-base-content/40">
+                <pc-icon name="magnifying-glass" [size]="5"></pc-icon>
+              </div>
+            </div>
+
+            <!-- Search suggestions -->
+            @if (volunteerSearchResults().length > 0) {
+            <div
+              class="absolute z-10 w-full mt-1 bg-base-100 border border-base-300 rounded-md shadow-lg max-h-48 overflow-y-auto divide-y divide-base-200"
+            >
+              @for (p of volunteerSearchResults(); track p.id) {
+              <div
+                (click)="addVolunteer(p)"
+                class="p-3 hover:bg-base-200 cursor-pointer flex items-center justify-between"
+              >
+                <div>
+                  <div class="font-semibold text-sm">{{ p.first_name }} {{ p.last_name }}</div>
+                  <div class="text-xs text-base-content/60">{{ p.email || 'No email' }}</div>
+                </div>
+                <button type="button" class="btn btn-primary btn-xs gap-1">
+                  <pc-icon name="plus" [size]="3"></pc-icon>
+                  Add
+                </button>
+              </div>
+              }
+            </div>
+            }
+          </div>
+
+          <!-- Roster Table -->
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table w-full text-sm">
+              <thead>
+                <tr class="bg-base-200 text-xs">
+                  <th>Volunteer</th>
+                  <th class="w-40">Status</th>
+                  <th class="w-24">Hours</th>
+                  <th>Notes</th>
+                  <th class="w-20 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @if (roster().length === 0) {
+                <tr>
+                  <td colspan="5" class="text-center py-8 text-base-content/60 font-light italic">
+                    No volunteers signed up for this event yet.
+                  </td>
+                </tr>
+                } @for (shift of roster(); track shift.id) {
+                <tr class="hover:bg-base-200/40">
+                  <!-- Contact details -->
+                  <td>
+                    <div>
+                      <a
+                        [routerLink]="['/people', shift.person_id]"
+                        class="font-bold text-primary hover:underline hover:cursor-pointer"
+                      >
+                        {{ shift.first_name }} {{ shift.last_name }}
+                      </a>
+                    </div>
+                    <div class="text-xs text-base-content/60">{{ shift.email || 'No email' }}</div>
+                  </td>
+                  <!-- Shift status dropdown -->
+                  <td>
+                    <select
+                      class="select select-bordered select-sm w-full font-medium"
+                      [ngModel]="shift.status"
+                      (ngModelChange)="updateShiftStatus(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                      [class.select-success]="shift.status === 'attended'"
+                      [class.select-warning]="shift.status === 'signed_up'"
+                      [class.select-error]="shift.status === 'no_show'"
+                    >
+                      <option value="signed_up">Signed Up</option>
+                      <option value="attended">Attended</option>
+                      <option value="no_show">No Show</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </td>
+                  <!-- Hours worked input -->
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-sm w-full text-center font-mono"
+                      placeholder="--"
+                      min="0"
+                      max="24"
+                      step="0.5"
+                      [ngModel]="shift.hours_worked"
+                      (ngModelChange)="updateShiftHours(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                      [disabled]="shift.status !== 'attended'"
+                    />
+                  </td>
+                  <!-- Notes -->
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-sm w-full"
+                      placeholder="Optional details..."
+                      [ngModel]="shift.notes"
+                      (ngModelChange)="updateShiftNotes(shift, $event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <!-- Actions -->
+                  <td>
+                    <div class="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-primary"
+                        title="Save shift edits"
+                        (click)="saveShiftDetails(shift)"
+                      >
+                        <pc-icon name="check-circle" [size]="6"></pc-icon>
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-error"
+                        title="Remove volunteer"
+                        (click)="removeVolunteer(shift)"
+                      >
+                        <pc-icon name="trash" [size]="5"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </pc-card>
+        }
+      </div>
+
+      <!-- Right 1 col: Timing, Capacity, Actions -->
+      <div class="space-y-6">
+        @if (!isNew() && publicUrl()) {
+        <pc-card
+          title="Public Signup Link"
+          subtitle="Constituents can use this URL to view the event and sign up for this shift."
+          icon="globe-americas"
+        >
+          <div class="flex gap-2 items-center">
+            <input
+              #publicUrlInput
+              readonly
+              type="text"
+              class="input input-bordered input-sm flex-1 font-mono text-xs"
+              [value]="publicUrl()"
+            />
+            <button
+              type="button"
+              class="btn btn-primary btn-sm btn-square"
+              title="Copy Link"
+              (click)="copyToClipboard(publicUrl())"
+            >
+              <pc-icon name="document-duplicate" [size]="5"></pc-icon>
+            </button>
+          </div>
+
+          @if (detail()?.is_private) {
+          <div class="alert alert-warning py-2 text-xs flex gap-2 mt-2">
+            <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+            <span>This event is <strong>Private</strong>. Only constituents with this direct link can view it.</span>
+          </div>
+          } @else {
+          <div class="text-xs text-base-content/50 mt-1 flex flex-col gap-1">
+            <span>All volunteer events page:</span>
+            <a [href]="volunteerListUrl()" target="_blank" class="link link-primary font-mono text-[10px] break-all">
+              {{ volunteerListUrl() }}
+            </a>
+          </div>
+          }
+        </pc-card>
+        }
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Volunteer Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Shift Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to signed up volunteers 24 hours before the shift start time.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Signup Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email with shift and coordinator details to constituents when they sign up.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_signup_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Volunteer Alert</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send email alert notifications to the event coordinator or organization admins upon new volunteer
+                  signups.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_volunteer_alert"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Private Event</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  If enabled, this event will not be shown on the public upcoming list. Only constituents with the
+                  direct link can sign up.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_private" />
+            </label>
+          </div>
+        </pc-card>
+
+        <!-- Event Summary Panel -->
+        @if (!isNew()) {
+        <pc-entity-overview title="Event Overview" [createdAt]="detail()?.created_at" createdBy="Representative">
+          <div pc-overview-prefix class="space-y-2 mb-2">
+            <div class="flex justify-between">
+              <span>Start:</span>
+              <span class="font-semibold">{{ detail()?.start_time | date:'medium' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span>End:</span>
+              <span class="font-semibold">{{ detail()?.end_time | date:'medium' }}</span>
+            </div>
+          </div>
+        </pc-entity-overview>
+        }
+      </div>
+    </form>
+
+    @if (!isNew() && publicUrl()) {
+    <pc-public-link-panel
+      [url]="publicUrl()"
+      label="Public Signup Link"
+      subtitle="Share this link so volunteers can sign up for the shift."
+    ></pc-public-link-panel>
+    }
+  </div>
+
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.ts
+```typescript
+import { DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
+
+import {
+  AddVolunteerEventObj,
+  AddVolunteerEventType,
+  UpdateVolunteerEventType,
+} from '../../../../../../../libs/common/src';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
+import { VolunteerService } from '../../../services/api/volunteer-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ShiftsService } from '../services/shifts-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-shift-form',
+  imports: [
+    DatePipe,
+    FormsModule,
+    FormField,
+    PcInput,
+    PcTextarea,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    PcEntityOverview,
+    PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
+  ],
+  templateUrl: './shift-form.html',
+  providers: [VolunteerService],
+})
+export class ShiftFormComponent implements OnInit {
+  private readonly _loading = createLoadingGate();
+  private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly router = inject(Router);
+  private readonly volunteerEventsSvc = inject(ShiftsService);
+  private readonly volunteerSvc = inject(VolunteerService);
+
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `v/${slug}`);
+  });
+
+  protected readonly allVolunteers = signal<any[]>([]);
+  protected readonly detail = signal<any>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const shifts: PcBreadcrumb = { label: 'Shifts', route: '/events/shifts' };
+    const id = this.id();
+    if (id) {
+      return [
+        shifts,
+        { label: this.detail()?.name || 'Volunteer event', route: ['/events/shifts', id] },
+        { label: 'Edit' },
+      ];
+    }
+    return [shifts, { label: 'New volunteer event' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    slug: '',
+    description: '',
+    location_address: '',
+    start_time: '',
+    end_time: '',
+    capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_private: false,
+    send_reminder: true,
+    send_signup_confirmation: true,
+    send_volunteer_alert: true,
+  });
+  protected readonly endBeforeStartError = computed(() => {
+    const { start_time, end_time } = this.payload();
+    if (!start_time || !end_time) return false;
+    return new Date(end_time) <= new Date(start_time);
+  });
+  protected readonly volunteerListUrl = computed(() => publicPageUrl(this.auth.getUser()?.tenant_slug, 'volunteer'));
+  protected readonly error = signal<string | null>(null);
+  protected readonly eventPassed = computed(() => {
+    const end = this.payload().end_time;
+    if (!end) return false;
+    return new Date(end) < new Date();
+  });
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddVolunteerEventObj);
+  });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly loading = this._loading.visible;
+
+  // Roster state
+  protected readonly roster = signal<any[]>([]);
+  protected readonly saving = signal(false);
+  protected readonly slugChecking = signal(false);
+  protected readonly slugUnique = signal<boolean | null>(null);
+  protected readonly volunteerSearch = signal('');
+
+  // Filter out volunteers that are already signed up
+  protected readonly volunteerSearchResults = computed(() => {
+    const search = this.volunteerSearch().toLowerCase().trim();
+    if (!search) return [];
+
+    const rosterIds = new Set(this.roster().map((r) => String(r.person_id)));
+    return this.allVolunteers().filter((v) => {
+      if (rosterIds.has(String(v.id))) return false;
+      const fullName = `${v.first_name || ''} ${v.last_name || ''}`.toLowerCase();
+      const email = (v.email || '').toLowerCase();
+      return fullName.includes(search) || email.includes(search);
+    });
+  });
+
+  protected slugManuallyEdited = false;
+
+  public readonly id = input<string>();
+
+  constructor() {
+    const nameSignal = computed(() => this.payload().name);
+    effect(() => {
+      const name = nameSignal();
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        if (untracked(this.payload).slug !== suggested) {
+          this.payload.update((p) => ({
+            ...p,
+            slug: suggested,
+          }));
+        }
+      }
+    });
+
+    const slugSignal = computed(() => this.payload().slug);
+    effect(() => {
+      const slug = slugSignal();
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
+
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
+
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.volunteerEventsSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
+            if (untracked(slugSignal) === slug) {
+              this.slugUnique.set(res.unique);
+            }
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (untracked(slugSignal) === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
+    });
+  }
+
+  public ngOnInit(): void {
+    const end = this._loading.begin();
+    try {
+      void Promise.all([this.loadVolunteers(), this.loadEvent()]).finally(() => end());
+    } catch {
+      end();
+    }
+  }
+
+  // Roster Management
+  protected async addVolunteer(person: any) {
+    try {
+      await this.volunteerSvc.signupVolunteer({
+        event_id: this.id()!,
+        person_id: String(person.id),
+        status: 'signed_up',
+      });
+      this.volunteerSearch.set('');
+      this.alerts.showSuccess(`${person.first_name} added to roster`);
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add volunteer');
+    }
+  }
+
+  protected copyToClipboard(url: string) {
+    navigator.clipboard
+      .writeText(url)
+      .then(() => this.alerts.showSuccess('Link copied to clipboard'))
+      .catch((err) => console.error('Failed to copy', err));
+  }
+
+  protected async deleteEvent() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event',
+      message: 'Are you sure you want to delete this event? This will also delete all signed up shifts.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
+    try {
+      await this.volunteerEventsSvc.delete(this.id()!);
+      this.volunteerEventsSvc.triggerRefresh();
+      this.alerts.showSuccess('Event deleted');
+      await this.router.navigate(['/events/shifts']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async loadEvent() {
+    if (this.isNew()) {
+      const state = window.history.state;
+      if (state && state.cloneData) {
+        const event = state.cloneData;
+        this.payload.set({
+          name: event.name ? `${event.name} (Copy)` : '',
+          slug: event.slug ? `${event.slug}-copy` : '',
+          description: event.description ?? '',
+          location_address: event.location_address ?? '',
+          start_time: this.toDatetimeLocalString(event.start_time),
+          end_time: this.toDatetimeLocalString(event.end_time),
+          capacity: event.capacity ?? null,
+          contact_email: event.contact_email ?? '',
+          contact_phone: event.contact_phone ?? '',
+          is_private: !!event.is_private,
+          send_reminder: event.send_reminder !== false,
+          send_signup_confirmation: event.send_signup_confirmation !== false,
+          send_volunteer_alert: event.send_volunteer_alert !== false,
+        });
+      }
+      return;
+    }
+
+    try {
+      const event = (await this.volunteerEventsSvc.getById(this.id()!)) as any;
+      this.detail.set(event);
+      this.payload.set({
+        name: event.name ?? '',
+        slug: event.slug ?? '',
+        description: event.description ?? '',
+        location_address: event.location_address ?? '',
+        start_time: this.toDatetimeLocalString(event.start_time),
+        end_time: this.toDatetimeLocalString(event.end_time),
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? '',
+        contact_phone: event.contact_phone ?? '',
+        is_private: !!event.is_private,
+        send_reminder: event.send_reminder !== false,
+        send_signup_confirmation: event.send_signup_confirmation !== false,
+        send_volunteer_alert: event.send_volunteer_alert !== false,
+      });
+
+      if (Array.isArray((event as any).fields) && (event as any).fields.length > 0) {
+        this.selectedFields.set((event as any).fields);
+      }
+
+      await this.loadRoster();
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
+      this.alerts.showError(this.error()!);
+    }
+  }
+
+  protected async loadRoster() {
+    if (!this.id()) return;
+    try {
+      const roster = await this.volunteerSvc.getShiftsForEvent(this.id()!);
+      this.roster.set(roster || []);
+    } catch (err) {
+      console.error('Failed to load event roster', err);
+    }
+  }
+
+  protected async loadVolunteers() {
+    try {
+      const res = await this.personsSvc.getAll({ limit: 1000, tags: ['volunteer'] });
+      this.allVolunteers.set(res?.rows || []);
+    } catch (err) {
+      console.error('Failed to load volunteers', err);
+    }
+  }
+
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
+
+  protected async removeVolunteer(shift: any) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Volunteer',
+      message: 'Remove this person from the event roster?',
+      variant: 'danger',
+      confirmText: 'Remove',
+    });
+    if (!confirmed) return;
+    try {
+      await this.volunteerSvc.deleteShift(shift.id);
+      this.alerts.showSuccess('Volunteer removed');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to remove volunteer');
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this volunteer event');
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    if (this.endBeforeStartError()) {
+      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
+      return;
+    }
+
+    if (this.slugUnique() === false) {
+      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    const raw = this.payload();
+    const data = {
+      name: raw.name.trim(),
+      slug: raw.slug.trim(),
+      description: raw.description?.trim() || null,
+      location_address: raw.location_address?.trim() || null,
+      start_time: new Date(raw.start_time),
+      end_time: new Date(raw.end_time),
+      capacity: raw.capacity ? Number(raw.capacity) : null,
+      contact_email: raw.contact_email?.trim() || null,
+      contact_phone: raw.contact_phone?.trim() || null,
+      is_private: !!raw.is_private,
+      send_reminder: !!raw.send_reminder,
+      send_signup_confirmation: !!raw.send_signup_confirmation,
+      send_volunteer_alert: !!raw.send_volunteer_alert,
+      fields: this.selectedFields(),
+    };
+
+    try {
+      if (this.isNew()) {
+        const res = await this.volunteerEventsSvc.add(data as AddVolunteerEventType);
+        this.volunteerEventsSvc.triggerRefresh();
+        this.alerts.showSuccess('Event created successfully');
+        await this.router.navigate(['/events/shifts', res.id]);
+      } else {
+        await this.volunteerEventsSvc.update(this.id()!, data as UpdateVolunteerEventType);
+        this.volunteerEventsSvc.triggerRefresh();
+        this.alerts.showSuccess('Event updated successfully');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/events/shifts', this.id()]);
+        }
+      }
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
+      this.alerts.showError(this.error()!);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async saveShiftDetails(shift: any) {
+    try {
+      await this.volunteerSvc.updateShift(shift.id, {
+        status: shift.status,
+        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
+        notes: shift.notes || null,
+      });
+      this.alerts.showSuccess('Shift details saved');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to save shift details');
+    }
+  }
+
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+
+  protected toDatetimeLocalString(val: any): string {
+    if (!val) return '';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  protected updateShiftHours(shift: any, hours: any) {
+    shift.hours_worked = hours ? Number(hours) : null;
+  }
+
+  protected updateShiftNotes(shift: any, notes: any) {
+    shift.notes = notes || null;
+  }
+
+  protected async updateShiftStatus(shift: any, status: any) {
+    try {
+      await this.volunteerSvc.updateShift(shift.id, {
+        status,
+        hours_worked: shift.hours_worked ? Number(shift.hours_worked) : null,
+        notes: shift.notes || null,
+      });
+      this.alerts.showSuccess('Shift status updated');
+      await this.loadRoster();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update shift');
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.html
 ```html
 <pc-detail-layout
   [title]="event()?.name || 'Volunteer event'"
@@ -46396,7 +46458,6 @@ export type DATA_TYPE = 'persons' | 'households';
 ```
 
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.ts
-
 ```typescript
 import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
@@ -46584,7 +46645,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/services/getting-started.service.ts
-
 ```typescript
 import { Injectable, computed, inject, signal } from '@angular/core';
 
@@ -46708,7 +46768,6 @@ export class GettingStartedService {
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/getting-started-card.ts
-
 ```typescript
 import { Component, inject } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -46794,7 +46853,6 @@ export class GettingStartedCard {
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.ts
-
 ```typescript
 import { Component, OnInit, signal, inject, computed } from '@angular/core';
 import { FormField, form, validateStandardSchema, submit } from '@angular/forms/signals';
@@ -47418,7 +47476,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
-
 ```typescript
 import type { Router } from '@angular/router';
 import type { TRPCLink } from '@trpc/client';
@@ -47590,7 +47647,6 @@ const trpcRetryClient = createTRPCClient<TRPCRouter>({
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.html
-
 ```html
 <!-- Mobile toolbar -->
 <ul class="menu menu-horizontal flex lg:hidden flex-row pl-0 relative z-30">
@@ -47911,7 +47967,6 @@ const trpcRetryClient = createTRPCClient<TRPCRouter>({
 ```
 
 ## File: apps/frontend/src/environments/environment.prod.ts
-
 ```typescript
 export const environment = {
   production: true,
@@ -47924,7 +47979,6 @@ export const environment = {
 ```
 
 ## File: apps/frontend/src/environments/environment.ts
-
 ```typescript
 export const environment = {
   production: false,
@@ -47937,7 +47991,6 @@ export const environment = {
 ```
 
 ## File: apps/frontend/src/app/auth/auth-service.ts
-
 ```typescript
 import { signal, Service } from '@angular/core';
 import { IAuthUser, signInInputType, signUpInputType } from '../../../../../libs/common/src';
@@ -48177,92 +48230,199 @@ export class AuthService extends TRPCService<'authusers'> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/services/companies-service.ts
-
+## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
 ```typescript
-import { Service } from '@angular/core';
-import { ExportCsvInputType, ExportCsvResponseType, getAllOptionsType } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+import { Location } from '@angular/common';
+import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { PeopleInCompany } from './people-in-company';
+import { CompaniesService } from '../services/companies-service';
+import { UserService } from '../../../services/user.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { StatCard } from '@uxcommon/components/stat-card/stat-card';
+import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
+import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
+import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
+import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
+import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
-@Service()
-export class CompaniesService extends AbstractAPIService<'companies', any> {
-  protected override readonly endpointName = 'companies';
+@Component({
+  selector: 'pc-company-view',
+  imports: [
+    RouterModule,
+    PeopleInCompany,
+    RecordActivities,
+    DetailLayout,
+    StatCard,
+    Tabs,
+    TabPanel,
+    ProfileCard,
+    DetailItem,
+    SystemMetadata,
+  ],
+  templateUrl: './company-view.html',
+})
+export class CompanyView {
+  readonly id = input.required<string>();
 
-  public add(row: RouterInputs['companies']['add']) {
-    return this.api.companies.add.mutate(row);
-  }
+  protected readonly recordNav = injectRecordNavigation('company', this.id);
 
-  public addMany(rows: RouterInputs['companies']['add'][]) {
-    return Promise.resolve(rows);
-  }
+  private readonly alertSvc = inject(AlertService);
+  private readonly companiesSvc = inject(CompaniesService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly userService = inject(UserService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly initialized = signal(false);
 
-  public count(): Promise<number> {
-    return this.api.companies.count.query();
-  }
+  protected readonly company = signal<any | null>(null);
+  protected readonly employeeCount = signal(0);
 
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(true);
-  }
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
+    { label: 'Companies', route: '/companies' },
+    { label: this.company()?.name || 'Company' },
+  ]);
 
-  public async getAll(options?: getAllOptionsType) {
-    return this.api.companies.getAll.query(options, {
-      signal: this.ac.signal,
+  private readonly usersResource = resource({
+    loader: () => this.userService.getUsers(),
+  });
+  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
+
+  // Active tab state
+  protected activeTab = signal<string>('activity');
+
+  protected readonly companyTabs = computed<PcTabOption[]>(() => [
+    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
+    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
+    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
+  ]);
+
+  protected readonly initials = computed(() => {
+    const name = this.company()?.name || '';
+    if (!name) return '?';
+    return name
+      .split(' ')
+      .slice(0, 2)
+      .map((w: string) => w[0] ?? '')
+      .join('')
+      .toUpperCase();
+  });
+
+  protected readonly isEnriched = computed(() => {
+    const rawEnrichment = this.company()?.enrichment;
+    if (!rawEnrichment) return false;
+
+    let enrichment = null;
+
+    try {
+      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
+    } catch {
+      return false;
+    }
+    return !!enrichment.google_enriched;
+  });
+
+  constructor() {
+    effect(() => {
+      const currentId = this.id();
+      void untracked(() => this.loadAllData(currentId));
     });
   }
 
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
+  protected async loadAllData(id: string) {
+    const end = this._loading.begin();
+    try {
+      // 1. Load company details (triggers Google enrichment job on backend)
+      const data = await this.companiesSvc.getById(id);
+      this.company.set(data);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof data?.slug === 'string' && data.slug.length > 0) {
+        this.location.replaceState(`/companies/${data.slug}`);
+      }
+
+      // 2. Load employee count via dedicated count endpoint (no row data fetched)
+      const count = await this.personsSvc.countByCompanyId(id);
+      this.employeeCount.set(count);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
+    } finally {
+      end();
+      this.initialized.set(true);
+    }
   }
 
-  public getById(id: string): Promise<any> {
-    return this.api.companies.getById.query(id);
+  protected editCompany() {
+    void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
-  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
-  public getBySlug(slug: string) {
-    return this.api.companies.getBySlug.query(slug);
+  protected async deleteCompany() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Company',
+      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    const end = this._loading.begin();
+    try {
+      await this.companiesSvc.delete(this.id());
+      this.companiesSvc.triggerRefresh();
+      this.alertSvc.showSuccess('Company deleted');
+      await this.router.navigate(['/companies']);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : 'Unable to delete company';
+      this.alertSvc.showError(message);
+    } finally {
+      end();
+    }
   }
 
-  /** §7 "Enrich" / "Re-check Google" — queues a Google Places lookup background job. */
-  public enrich(id: string, force = false): Promise<RouterOutputs['companies']['enrich']> {
-    return this.api.companies.enrich.mutate({ id, force });
+  protected copyToClipboard(text: string | null | undefined, label: string) {
+    if (!text) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        this.alertSvc.showSuccess(`${label} copied to clipboard`);
+      })
+      .catch(() => {
+        this.alertSvc.showError(`Failed to copy ${label}`);
+      });
   }
 
-  public getTags(_id: string) {
-    return Promise.resolve([]);
+  protected getUserName(id: string | null | undefined): string {
+    if (!id) return '?';
+    return this.usersById().get(String(id))?.first_name ?? '?';
   }
+}
 
-  public async update(id: string, data: RouterInputs['companies']['update']['data']) {
-    return this.api.companies.update.mutate({ id, data });
-  }
-
-  public import(rows: any[], skipped: number, file_name?: string): Promise<RouterOutputs['companies']['import']> {
-    return this.api.companies.import.mutate({ rows, skipped, file_name });
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.companies.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(
-    options?: RouterInputs['companies']['getPotentialDuplicates'],
-  ): Promise<RouterOutputs['companies']['getPotentialDuplicates']> {
-    return this.api.companies.getPotentialDuplicates.query(options);
-  }
-
-  public mergeCompanies(targetId: string, sourceId: string): Promise<RouterOutputs['companies']['mergeCompanies']> {
-    return this.api.companies.mergeCompanies.mutate({ target_id: targetId, source_id: sourceId });
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/store/emailstore.ts
-
 ```typescript
 import { computed, inject, signal, Service, debounced, effect, untracked } from '@angular/core';
 import { Router } from '@angular/router';
@@ -48538,7 +48698,6 @@ export class EmailsStore {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-details/email-details.html
-
 ```html
 <section class="flex-1 flex flex-col bg-base-100 h-full overflow-hidden">
   @if (email()) {
@@ -48651,7 +48810,6 @@ export class EmailsStore {
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/ui/email-header/email-header.html
-
 ```html
 <header class="border-b border-base-300 px-4 pb-4">
   <div class="flex items-center gap-2 min-w-0 border-b-2 border-base-200 pb-2">
@@ -49157,7 +49315,6 @@ export class EmailsStore {
 ```
 
 ## File: apps/frontend/src/app/experiences/forms/ui/public-form.ts
-
 ```typescript
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
@@ -49427,8 +49584,207 @@ export class PublicFormComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
+## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
+```typescript
+import type { HelpArticle } from '../help-types';
 
+export const CONTACTS_ARTICLES: HelpArticle[] = [
+  {
+    id: 'add-people',
+    category: 'contacts',
+    title: 'Add and edit people',
+    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
+    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
+    related: ['person-profile', 'import', 'tags-issues', 'households'],
+    blocks: [
+      { kind: 'h2', id: 'add-one', text: 'Add a person' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
+          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
+          {
+            title: 'Fill in what you know',
+            detail:
+              'Fields validate as you type — problems are explained right under the field, so you can fix them before saving.',
+          },
+          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Have a spreadsheet?',
+        text: 'Do not type hundreds of rows by hand — [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
+      },
+      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
+      {
+        kind: 'p',
+        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid — double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
+      },
+      {
+        kind: 'p',
+        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use — click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
+      },
+      {
+        kind: 'p',
+        text: 'If you try to leave a form with unsaved changes, PeopleCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
+      },
+      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
+      {
+        kind: 'p',
+        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
+      },
+    ],
+  },
+  {
+    id: 'person-profile',
+    category: 'contacts',
+    title: 'Inside a person profile',
+    summary:
+      'The profile gathers everything about one person — here is what each tab shows and where the numbers come from.',
+    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
+    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials — who this is and their status — and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
+      },
+      {
+        kind: 'p',
+        text: 'The contact card on the left carries the essentials — email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest — with the record’s notes just below it.',
+      },
+      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
+      {
+        kind: 'list',
+        items: [
+          '**Activity** — the audit trail of changes and touches on this record, newest first.',
+          '**Emails** — messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
+          '**Donations** — every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
+          '**Volunteer** — their shift history and hours.',
+          '**Events** — event registrations and attendance.',
+          '**Household** — everyone at the same address, plus this person’s connections.',
+        ],
+      },
+      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
+      {
+        kind: 'p',
+        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows — use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
+      },
+      {
+        kind: 'callout',
+        tone: 'info',
+        title: 'Empty tab? That is a prompt, not a dead end',
+        text: 'Empty states name the cause and offer the next step — for example, a person with no household shows an assign action right there.',
+      },
+    ],
+  },
+  {
+    id: 'households',
+    category: 'contacts',
+    title: 'Households',
+    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
+    keywords: ['household', 'family', 'address', 'members', 'assign household', 'home'],
+    related: ['add-people', 'person-profile', 'duplicates'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
+      },
+      { kind: 'h2', id: 'create', text: 'Create a household' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Households](/households)',
+            detail:
+              'From [People](/people), click the **Households** tab under the header — People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
+          },
+          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
+          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Start from the person',
+        text: 'On a profile with no household yet, the household area offers **Assign household** directly — often the fastest route.',
+      },
+      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
+      {
+        kind: 'p',
+        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them — see [Find and merge duplicates](/help/duplicates).',
+      },
+    ],
+  },
+  {
+    id: 'companies',
+    category: 'contacts',
+    title: 'Companies',
+    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
+    keywords: ['company', 'organization', 'employer', 'business', 'sponsor', 'corporate'],
+    related: ['person-profile', 'duplicates', 'grid-basics'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Companies hold the organizations in your world — employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
+      },
+      { kind: 'h2', id: 'create', text: 'Add a company' },
+      {
+        kind: 'steps',
+        items: [
+          {
+            title: 'Open [Companies](/companies)',
+            detail:
+              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
+          },
+          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
+          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
+        ],
+      },
+      {
+        kind: 'p',
+        text: 'Companies get the full grid toolkit — filters, tags, CSV import and export, and inline editing — plus their own view in the [Duplicates](/duplicates) finder.',
+      },
+    ],
+  },
+  {
+    id: 'teams',
+    category: 'contacts',
+    title: 'Teams',
+    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
+    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
+    related: ['events-shifts', 'tasks', 'lists'],
+    blocks: [
+      {
+        kind: 'p',
+        text: 'Teams turn a crowd of volunteers into working units — a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
+      },
+      { kind: 'h2', id: 'create', text: 'Set up a team' },
+      {
+        kind: 'steps',
+        items: [
+          { title: 'Open [Teams](/teams)', detail: 'The grid shows every team at a glance.' },
+          { title: 'Click the + button', detail: 'Name the team and describe its purpose.' },
+          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
+          {
+            title: 'Give it work',
+            detail: 'Attach lists to call through and tasks to complete — the team page tracks both.',
+          },
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Teams pair well with shifts',
+        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile — see [Events and volunteer shifts](/help/events-shifts).',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/help/data/articles/outreach.ts
 ```typescript
 import type { HelpArticle } from '../help-types';
 
@@ -49580,289 +49936,340 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/household-view.ts
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
+```html
+<!-- Template for person edit/add view -->
+<div class="flex min-h-full flex-col bg-base-100 p-6">
+  <progress class="progress w-full" [class.hidden]="!isLoading()"></progress>
 
-```typescript
-import { DatePipe, Location } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import type { IAuthUser } from '@common';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcMap } from '@uxcommon/components/map/map';
-import type { PcMapMarker } from '@uxcommon/components/map/map-types';
-import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInHousehold } from '../../persons/ui/people-in-household';
-import { UserService } from '../../../services/user.service';
-import type { Selectable } from 'kysely';
-import { HouseholdsService } from '../services/households-service';
-import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '@experiences/persons/services/persons-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { Tags } from '@experiences/tags/ui/tags';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
+  <div class="w-full max-w-4xl">
+    <!-- Back to profile or list -->
+    <pc-detail-header
+      [title]="person()?.id ? formName() || 'Edit person' : 'New person'"
+      [eyebrow]="person()?.id ? 'Edit person' : 'New person'"
+      [crumbs]="crumbs()"
+      [form]="form"
+      [isLoading]="isLoading()"
+      [saveAlwaysEnabled]="true"
+      [buttonsToShow]="buttonsToShow()"
+      [btn1Text]="person()?.id ? 'Save person' : 'Create person'"
+      [showDelete]="!!person()?.id"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete person"
+      (save)="save($event)"
+      (delete)="deletePerson()"
+    ></pc-detail-header>
 
-@Component({
-  selector: 'pc-household-view',
-  imports: [
-    RouterModule,
-    PeopleInHousehold,
-    Icon,
-    RecordActivities,
-    DetailLayout,
-    PcCard,
-    Tabs,
-    TabPanel,
-    StatCard,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Tags,
-    PcMap,
-    GeocodeChip,
-    DatePipe,
-  ],
-  templateUrl: './household-view.html',
-})
-export class HouseholdView {
-  readonly id = input.required<string>();
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+      <div class="lg:col-span-2">
+        <form (submit)="save()" novalidate class="flex flex-col gap-5">
+          <fieldset [disabled]="isLoading()" class="flex flex-col gap-5">
+            @if (!person()?.id) {
+            <label class="label text-xs text-base-content/50 -mb-2"
+              >All fields are optional, but try to add as much as possible</label
+            >
+            }
 
-  protected readonly recordNav = injectRecordNavigation('household', this.id);
+            <!-- Name Inputs -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="First name"
+                aria-label="First name"
+                [formField]="form.first_name"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Last name"
+                aria-label="Last name"
+                [formField]="form.last_name"
+              ></pc-input>
+            </div>
+            <pc-input
+              placeholder="Middle name(s)"
+              aria-label="Middle name(s)"
+              [formField]="form.middle_names"
+            ></pc-input>
 
-  private readonly alertSvc = inject(AlertService);
-  private readonly userService = inject(UserService);
-  private readonly householdsSvc = inject(HouseholdsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly location = inject(Location);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-  protected readonly household = signal<Selectable<Households> | null>(null);
-  protected readonly users = signal<IAuthUser[]>([]);
-  private usersById = new Map<string, IAuthUser>();
+            <!-- Emails -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                type="email"
+                placeholder="Email"
+                aria-label="Email Address"
+                [formField]="form.email"
+                [hasError]="!!emailError()"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                type="email"
+                placeholder="Email 2"
+                aria-label="Secondary Email Address"
+                [formField]="form.email2"
+              ></pc-input>
+            </div>
+            @if (emailError()) {
+            <div class="text-error text-sm pl-1 -mt-2 flex items-center gap-1">
+              <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+              {{ emailError() }}
+            </div>
+            }
 
-  // Segmentation
-  protected readonly tags = signal<string[]>([]);
-  protected readonly issues = signal<string[]>([]);
-  protected readonly peopleCount = signal(0);
+            <!-- Phones -->
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                type="tel"
+                placeholder="Mobile Phone"
+                aria-label="Mobile Phone"
+                [formField]="form.mobile"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                type="tel"
+                placeholder="Home Phone"
+                aria-label="Home Phone"
+                [formField]="form.home_phone"
+              ></pc-input>
+            </div>
 
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Households', route: '/households' },
-    { label: this.addressString() },
-  ]);
+            <!-- Company & Preferred contact -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <pc-select placeholder="-- Select company --" aria-label="Company" [formField]="form.company_id">
+                @for (c of companies(); track c.id) {
+                <option [value]="c.id">{{ c.name }}</option>
+                }
+              </pc-select>
 
-  // Address
-  protected readonly addressString = computed(() => {
-    const raw = this.household();
-    if (!raw) return 'No Address Assigned';
-    if (raw.is_placeholder) return 'People with no addresses';
-    if (raw.formatted_address) return raw.formatted_address;
+              <pc-select
+                placeholder="No preference"
+                aria-label="Preferred contact"
+                [formField]="form.preferred_contact"
+              >
+                <option value="email">Email</option>
+                <option value="mobile">Mobile phone</option>
+                <option value="home_phone">Home phone</option>
+              </pc-select>
+            </div>
 
-    const parts: string[] = [];
-    const streetParts = [raw.apt ? `Apt ${raw.apt}` : null, raw.street_num, raw.street1, raw.street2].filter(Boolean);
+            <!-- Assigned To / Owner Select -->
+            <pc-select placeholder="-- Select contact owner --" aria-label="Assigned To" [formField]="form.assigned_to">
+              @for (u of users(); track u.id) {
+              <option [value]="u.id">{{ u.first_name }} {{ u.last_name || '' }}</option>
+              }
+            </pc-select>
 
-    const locationParts = [raw.city, raw.state, raw.zip, raw.country].filter(Boolean);
+            <!-- Address & Household Assignment -->
+            @if (householdId() && !isPlaceholderHousehold()) {
+            <div class="flex items-center gap-3 text-sm bg-base-200 p-3 rounded-lg border border-base-300">
+              <pc-icon name="map-pin" [size]="4" class="text-base-content/40 shrink-0"></pc-icon>
+              <span class="font-medium text-base-content flex-grow">{{ addressString() }}</span>
+              <button type="button" class="link link-primary text-xs shrink-0" (click)="navigateToHousehold()">
+                Edit on household
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip shrink-0"
+                data-tip="Change household"
+                (click)="openAssignDrawer()"
+              >
+                <pc-icon name="chevron-down" [size]="4"></pc-icon>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-error tooltip shrink-0"
+                data-tip="Remove address"
+                (click)="removeAddress()"
+              >
+                <pc-icon name="trash" [size]="4"></pc-icon>
+              </button>
+            </div>
+            } @else {
+            <div
+              class="flex items-center justify-between text-sm pl-1 bg-base-200/30 p-2.5 rounded-lg border border-base-200 border-dashed"
+            >
+              <div class="flex items-center gap-2">
+                <pc-icon name="map-pin" [size]="4" class="text-base-content/40"></pc-icon>
+                <span class="text-base-content/50 italic">No address assigned</span>
+              </div>
+              <button type="button" class="btn btn-xs btn-primary gap-1" (click)="openAssignDrawer()">
+                <pc-icon name="plus" [size]="3"></pc-icon>
+                Assign Household
+              </button>
+            </div>
+            }
+            <p
+              class="pl-1 text-xs text-base-content/50"
+              i18n="PersonForm|Explains why address is edited via the household@@person.address.reason"
+            >
+              Addresses belong to households, so everyone at the same address stays in sync.
+            </p>
 
-    if (streetParts.length) parts.push(streetParts.join(' ').trim());
-    if (locationParts.length) parts.push(locationParts.join(', ').trim());
+            <!-- Social Media Profile Links -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
+              Social Media Profiles
+            </div>
 
-    return parts.join(', ').trim() || 'No Address Assigned';
-  });
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="LinkedIn URL"
+                aria-label="LinkedIn URL"
+                [formField]="form.linkedin"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Twitter/X URL"
+                aria-label="Twitter/X URL"
+                [formField]="form.twitter"
+              ></pc-input>
+            </div>
+            <div class="flex flex-col md:flex-row gap-2">
+              <pc-input
+                class="basis-1/2"
+                placeholder="Facebook URL"
+                aria-label="Facebook URL"
+                [formField]="form.facebook"
+              ></pc-input>
+              <pc-input
+                class="basis-1/2"
+                placeholder="Instagram URL"
+                aria-label="Instagram URL"
+                [formField]="form.instagram"
+              ></pc-input>
+            </div>
 
-  protected readonly hasMap = computed(() => {
-    const h = this.household();
-    return !!(h && h.lat && h.lng && !h.is_placeholder);
-  });
+            <!-- Tags & Segmentation -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">
+              Tags & Issues
+            </div>
 
-  /** One static, deep-linkable marker for the household's verified location (§6 map card). */
-  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
-    const h = this.household();
-    if (!h || !h.lat || !h.lng || h.is_placeholder) return [];
-    return [{ position: { lat: Number(h.lat), lng: Number(h.lng) }, tooltip: this.addressString() }];
-  });
+            <!-- Tags -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-base-content/60">Tags</label>
+              <pc-tags
+                [tags]="tags()"
+                type="tag"
+                [enableAutoComplete]="true"
+                placeholder="Type and press Enter to add"
+                (tagAdded)="tagAdded($event)"
+                (tagRemoved)="tagRemoved($event)"
+              ></pc-tags>
+              @if (tagSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of tagSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addTagSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
 
-  /** Header subtitle — "Ward 5 · 3 people · last touch" (§6). Parts drop out honestly when absent. */
-  protected readonly subtitle = computed(() => {
-    const h = this.household();
-    if (!h || h.is_placeholder) return null;
-    const parts: string[] = [];
-    if (h.ward) parts.push(`Ward ${h.ward}`);
-    const n = this.peopleCount();
-    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
-    if (h.updated_at) parts.push(`last touch ${this.formatLastTouch(h.updated_at)}`);
-    return parts.join(' · ');
-  });
+            <!-- Issues of interest -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-base-content/60">Issues of interest</label>
+              <pc-tags
+                [tags]="issues()"
+                type="issue"
+                [enableAutoComplete]="true"
+                placeholder="What does this person care about? Enter to add"
+                (tagAdded)="issueAdded($event)"
+                (tagRemoved)="issueRemoved($event)"
+              ></pc-tags>
+              @if (issueSuggestions().length) {
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="text-base-content/50">Suggestions:</span>
+                @for (s of issueSuggestions(); track s) {
+                <button
+                  type="button"
+                  class="badge badge-sm badge-ghost border border-dashed border-base-300 text-base-content/60 hover:border-primary hover:text-primary"
+                  (click)="addIssueSuggestion(s)"
+                >
+                  {{ s }}
+                </button>
+                }
+              </div>
+              }
+            </div>
 
-  // Active tab state
-  protected activeTab = signal<string>('activity');
+            <!-- Internal Notes -->
+            <div class="divider text-xs font-bold uppercase tracking-wider text-base-content/60 my-1">Notes</div>
 
-  protected readonly householdTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'members', label: `Household Members (${this.peopleCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
-  ]);
+            <pc-textarea
+              placeholder="Internal Notes..."
+              aria-label="Notes"
+              [formField]="form.notes"
+              [rows]="3"
+            ></pc-textarea>
+          </fieldset>
+        </form>
+      </div>
 
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-
-    // Load users for addedby/updatedby display names
-    this.userService
-      .getUsers()
-      .then((u) => {
-        this.users.set(u);
-        this.usersById = new Map(u.map((x) => [x.id, x]));
-      })
-      .catch(() => void 0);
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load household details
-      const householdData = (await this.householdsSvc.getById(id)) as Selectable<Households>;
-      this.household.set(householdData);
-      // Spec §1: the address bar shows the record slug, never the internal id.
-      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
-      if (typeof householdData?.slug === 'string' && householdData.slug.length > 0) {
-        this.location.replaceState(`/households/${householdData.slug}`);
-      }
-
-      // 2. Load tags and issues
-      const tagList = await this.householdsSvc.getTags(id, 'tag');
-      this.tags.set(tagList);
-      const issueList = await this.householdsSvc.getTags(id, 'issue');
-      this.issues.set(issueList);
-
-      // 3. Load people in household count
-      const count = await this.householdsSvc.getPeopleCount(id);
-      this.peopleCount.set(count);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the household. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editHousehold() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  protected async deleteHousehold() {
-    if (!this.id()) return;
-    const end = this._loading.begin();
-    try {
-      // Fetch people belonging to this household
-      const people = (await this.personsSvc.getByHouseholdId(this.id(), { columns: ['id'] })) as Array<{ id: string }>;
-      const personIds = people.map((p) => p.id);
-      const peopleCount = personIds.length;
-
-      if (peopleCount > 0) {
-        // Show the 3-option warning dialog
-        const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-          title: 'Households have people',
-          message: `1 household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-          variant: 'warning',
-          choices: [
-            { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-            { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-          ],
-          cancelText: 'Cancel',
-        });
-
-        if (!choice) return; // Handled (user clicked Cancel, so do nothing)
-
-        if (choice === 'keep-people') {
-          for (const pid of personIds) {
-            await this.personsSvc.removeHousehold(pid);
-          }
-        } else if (choice === 'delete-people') {
-          await this.personsSvc.deleteMany(personIds);
+      <!-- Overview Sidebar -->
+      <div>
+        @if (!isNewMode()) {
+        <pc-entity-overview [createdAt]="person()?.created_at" [updatedAt]="person()?.updated_at"></pc-entity-overview>
         }
-      } else {
-        const confirmed = await this.dialogSvc.confirm({
-          title: 'Delete Household',
-          message: 'Are you sure you want to delete this household? This action cannot be undone.',
-          variant: 'danger',
-          confirmText: 'Delete',
-        });
-        if (!confirmed) return;
-      }
+      </div>
+    </div>
 
-      await this.householdsSvc.delete(this.id());
-      this.householdsSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Household deleted');
-      await this.router.navigate(['/households']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete household';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
+    <!-- Back to the person record -->
+    @if (person()?.id) {
+    <a
+      [routerLink]="['/people', person()!.id]"
+      class="mt-6 inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-primary"
+    >
+      <pc-icon name="arrow-left" [size]="4"></pc-icon>
+      Back to {{ formName() || 'person' }}
+    </a>
     }
-  }
+  </div>
 
-  /** Compact relative "last touch" — matches the house tabular, low-chrome style. */
-  private formatLastTouch(value: Date | string): string {
-    const then = new Date(value).getTime();
-    if (Number.isNaN(then)) return '';
-    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 0) return 'today';
-    if (diffDays === 1) return 'yesterday';
-    if (diffDays < 30) return `${diffDays}d ago`;
-    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
-    return `${Math.floor(diffDays / 365)}y ago`;
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById.get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+  <!-- Right-side drawer: Assign to a different household -->
+  <pc-side-drawer
+    [isOpen]="assignDrawerOpen()"
+    [title]="person()?.id ? 'Assign to a different household' : 'Assign to a household'"
+    (close)="closeAssignDrawer()"
+  >
+    <div class="flex flex-col gap-3">
+      <input
+        type="text"
+        class="input w-full"
+        placeholder="Search address, city, zip, tag..."
+        aria-label="Search address, city, zip, or tag to assign a household"
+        [value]="householdSearch()"
+        (input)="onHouseholdSearch($event)"
+      />
+      <div class="text-xs text-base-content/60" [class.hidden]="!householdsLoading()">Searching households…</div>
+      <div
+        class="divide-y divide-base-300 rounded-box border border-base-300 max-h-[60vh] overflow-y-auto"
+        [class.hidden]="householdsLoading() && householdResults().length === 0"
+      >
+        @for (h of householdResults(); track h.id) {
+        <div class="p-3 hover:bg-base-200 flex items-start justify-between gap-2">
+          <div class="text-sm">
+            <div class="font-medium text-base-content">{{ formatHouseholdRow(h) }}</div>
+            <div class="text-xs text-base-content/60">People: {{ h.persons_count || 0 }}</div>
+          </div>
+          <button class="btn btn-primary btn-sm" (click)="assignToHousehold(h.id)">Assign</button>
+        </div>
+        } @if (!householdsLoading() && householdResults().length === 0) {
+        <div class="p-4 text-sm text-center text-base-content/60">No households found</div>
+        }
+      </div>
+    </div>
+  </pc-side-drawer>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
 ```typescript
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -50415,7 +50822,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
-
 ```html
 <div class="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
   <header class="mb-5 flex flex-wrap items-start justify-between gap-4">
@@ -51020,7 +51426,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/summary.html
-
 ```html
 <div class="mx-auto max-w-7xl space-y-6 p-6">
   <!-- Header: date · greeting · briefing (numbers are inline links, §1 "where am I going") -->
@@ -51451,7 +51856,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/summary.ts
-
 ```typescript
 import { Component, inject, signal, OnInit, computed, effect } from '@angular/core';
 import { RouterLink } from '@angular/router';
@@ -51891,7 +52295,6 @@ export class Summary implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/services/command-palette.service.ts
-
 ```typescript
 import type { PcIconNameType } from '@icons/icons.index';
 import { Injectable, computed, inject, signal } from '@angular/core';
@@ -52008,7 +52411,6 @@ export class CommandPaletteService {
 ```
 
 ## File: apps/frontend/src/app/services/error.service.ts
-
 ```typescript
 import { inject, Service } from '@angular/core';
 import { Router } from '@angular/router';
@@ -52102,7 +52504,6 @@ export class ErrorService {
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-
 ```html
 <div class="flex h-full w-full flex-col" [class.p-6]="displayTitle()">
   @if (displayTitle()) {
@@ -52868,231 +53269,7 @@ export class ErrorService {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/company-view.ts
-
-```typescript
-import { Location } from '@angular/common';
-import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
-import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { PeopleInCompany } from './people-in-company';
-import { CompaniesService } from '../services/companies-service';
-import { UserService } from '../../../services/user.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { StatCard } from '@uxcommon/components/stat-card/stat-card';
-import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
-import { ProfileCard } from '@uxcommon/components/profile-card/profile-card';
-import { DetailItem } from '@uxcommon/components/detail-item/detail-item';
-import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { SystemMetadata } from '@uxcommon/components/system-metadata/system-metadata';
-import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-@Component({
-  selector: 'pc-company-view',
-  imports: [
-    RouterModule,
-    PeopleInCompany,
-    RecordActivities,
-    DetailLayout,
-    StatCard,
-    Tabs,
-    TabPanel,
-    ProfileCard,
-    DetailItem,
-    SystemMetadata,
-    Icon,
-    StatusBadge,
-  ],
-  templateUrl: './company-view.html',
-})
-export class CompanyView {
-  readonly id = input.required<string>();
-
-  protected readonly recordNav = injectRecordNavigation('company', this.id);
-
-  private readonly alertSvc = inject(AlertService);
-  private readonly companiesSvc = inject(CompaniesService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly location = inject(Location);
-  private readonly userService = inject(UserService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly initialized = signal(false);
-
-  protected readonly company = signal<any | null>(null);
-  protected readonly employeeCount = signal(0);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => [
-    { label: 'Companies', route: '/companies' },
-    { label: this.company()?.name || 'Company' },
-  ]);
-
-  private readonly usersResource = resource({
-    loader: () => this.userService.getUsers(),
-  });
-  private readonly usersById = computed(() => new Map((this.usersResource.value() ?? []).map((x) => [x.id, x])));
-
-  // Active tab state
-  protected activeTab = signal<string>('activity');
-
-  protected readonly companyTabs = computed<PcTabOption[]>(() => [
-    { id: 'activity', label: 'Activity Feed', icon: 'adjustments-horizontal' },
-    { id: 'employees', label: `Employees (${this.employeeCount()})`, icon: 'user-group' },
-    { id: 'details', label: 'Description & Info', icon: 'information-circle' },
-  ]);
-
-  protected readonly initials = computed(() => {
-    const name = this.company()?.name || '';
-    if (!name) return '?';
-    return name
-      .split(' ')
-      .slice(0, 2)
-      .map((w: string) => w[0] ?? '')
-      .join('')
-      .toUpperCase();
-  });
-
-  protected readonly enriching = signal(false);
-
-  protected readonly isEnriched = computed(() => {
-    const rawEnrichment = this.company()?.enrichment;
-    if (!rawEnrichment) return false;
-
-    let enrichment = null;
-
-    try {
-      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
-    } catch {
-      return false;
-    }
-    return !!enrichment.google_enriched;
-  });
-
-  /** Header subtitle — people count (§7). */
-  protected readonly subtitle = computed(() => {
-    const n = this.employeeCount();
-    return `${n} ${n === 1 ? 'person' : 'people'}`;
-  });
-
-  /** §7 header button label: "Re-check Google" once enriched, else "Enrich". */
-  protected readonly enrichLabel = computed(() => (this.isEnriched() ? 'Re-check Google' : 'Enrich'));
-
-  constructor() {
-    effect(() => {
-      const currentId = this.id();
-      void untracked(() => this.loadAllData(currentId));
-    });
-  }
-
-  protected async loadAllData(id: string) {
-    const end = this._loading.begin();
-    try {
-      // 1. Load company details (triggers Google enrichment job on backend)
-      const data = await this.companiesSvc.getById(id);
-      this.company.set(data);
-      // Spec §1: the address bar shows the record slug, never the internal id.
-      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
-      if (typeof data?.slug === 'string' && data.slug.length > 0) {
-        this.location.replaceState(`/companies/${data.slug}`);
-      }
-
-      // 2. Load employee count via dedicated count endpoint (no row data fetched)
-      const count = await this.personsSvc.countByCompanyId(id);
-      this.employeeCount.set(count);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the company. Please try again.'));
-    } finally {
-      end();
-      this.initialized.set(true);
-    }
-  }
-
-  protected editCompany() {
-    void this.router.navigate(['edit'], { relativeTo: this.route });
-  }
-
-  /** §7 Enrich / Re-check Google — queues the Places lookup background job. */
-  protected async enrichCompany() {
-    const id = this.id();
-    if (!id || this.enriching()) return;
-    this.enriching.set(true);
-    try {
-      await this.companiesSvc.enrich(id, this.isEnriched());
-      this.alertSvc.showSuccess('Enrichment queued — fields fill in the background.');
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not queue enrichment. Please try again.'));
-    } finally {
-      this.enriching.set(false);
-    }
-  }
-
-  protected async deleteCompany() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete company',
-      message: 'Employees keep their person records — only the employer grouping clears.',
-      variant: 'danger',
-      confirmText: 'Delete company',
-    });
-    if (!confirmed) return;
-    const end = this._loading.begin();
-    try {
-      await this.companiesSvc.delete(this.id());
-      this.companiesSvc.triggerRefresh();
-      this.alertSvc.showSuccess('Company deleted');
-      await this.router.navigate(['/companies']);
-    } catch (err) {
-      const message =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : 'Unable to delete company';
-      this.alertSvc.showError(message);
-    } finally {
-      end();
-    }
-  }
-
-  protected copyToClipboard(text: string | null | undefined, label: string) {
-    if (!text) return;
-    navigator.clipboard
-      .writeText(text)
-      .then(() => {
-        this.alertSvc.showSuccess(`${label} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${label}`);
-      });
-  }
-
-  protected getUserName(id: string | null | undefined): string {
-    if (!id) return '?';
-    return this.usersById().get(String(id))?.first_name ?? '?';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
-
 ```typescript
 import {
   ChangeDetectionStrategy,
@@ -53662,7 +53839,6 @@ export class FormsPageComponent implements OnInit {
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/administration.ts
-
 ```typescript
 import type { HelpArticle } from '../help-types';
 
@@ -53835,252 +54011,7 @@ export const ADMIN_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/help/data/articles/contacts.ts
-
-```typescript
-import type { HelpArticle } from '../help-types';
-
-export const CONTACTS_ARTICLES: HelpArticle[] = [
-  {
-    id: 'add-people',
-    category: 'contacts',
-    title: 'Add and edit people',
-    summary: 'Create person records one at a time, edit them safely, and understand what happens to unsaved changes.',
-    keywords: ['add person', 'create contact', 'new person', 'edit person', 'contact details', 'unsaved changes'],
-    related: ['person-profile', 'import', 'tags-issues', 'households'],
-    blocks: [
-      { kind: 'h2', id: 'add-one', text: 'Add a person' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [People](/people)', detail: 'Everything about individual contacts starts in this grid.' },
-          { title: 'Click the + button in the toolbar', detail: 'The new-person form opens.' },
-          {
-            title: 'Fill in what you know',
-            detail:
-              'Fields validate as you type — problems are explained right under the field, so you can fix them before saving.',
-          },
-          { title: 'Save', detail: 'You land on the new profile, ready for tags, a household, or a follow-up task.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Have a spreadsheet?',
-        text: 'Do not type hundreds of rows by hand — [Import data from CSV](/help/import) brings them in at once, and the [Duplicates](/help/duplicates) finder cleans up any overlap afterwards.',
-      },
-      { kind: 'h2', id: 'editing', text: 'Edit an existing person' },
-      {
-        kind: 'p',
-        text: 'Open the profile and use its edit action for the full form, or edit simple fields straight in the grid — double-click a cell, change the value, and it saves on the spot with a brief green flash to confirm. Grid edits can be undone with the undo arrow in the toolbar.',
-      },
-      {
-        kind: 'p',
-        text: 'In the form, tags and issues offer suggestion chips drawn from values already in use — click one to apply it instead of retyping. The address is not edited here: because addresses belong to households, the form shows it read-only with an “Edit on household” link, so everyone at that address stays in sync.',
-      },
-      {
-        kind: 'p',
-        text: 'If you try to leave a form with unsaved changes, PeopleCRM asks before discarding them — it names exactly which fields would be lost, so nothing disappears silently.',
-      },
-      { kind: 'h2', id: 'deleting', text: 'Delete with care' },
-      {
-        kind: 'p',
-        text: 'Delete lives in the record menu (and in the grid, appears once you select rows). You will always be asked to confirm, because deleting a person also removes them from the lists and histories that reference them.',
-      },
-    ],
-  },
-  {
-    id: 'person-profile',
-    category: 'contacts',
-    title: 'Inside a person profile',
-    summary:
-      'The profile gathers everything about one person — here is what each tab shows and where the numbers come from.',
-    keywords: ['profile', 'person view', 'detail page', 'tabs', 'history', 'activity', 'donations tab', 'emails tab'],
-    related: ['add-people', 'activity-log', 'donations', 'events-shifts'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Open any person from the [People](/people) grid by clicking their name in the first column. The header answers the essentials — who this is and their status — and the tabs below collect their entire history. Tab labels carry counts, so you can see at a glance where the substance is before you click.',
-      },
-      {
-        kind: 'p',
-        text: 'The contact card on the left carries the essentials — email, phone, address (which links to the household), preferred contact channel, tags, and issues of interest — with the record’s notes just below it.',
-      },
-      { kind: 'h2', id: 'tabs', text: 'What each tab holds' },
-      {
-        kind: 'list',
-        items: [
-          '**Activity** — the audit trail of changes and touches on this record, newest first.',
-          '**Emails** — messages exchanged with this person through the [Inbox](/inbox), followed by their newsletter engagement (opens, clicks, bounces).',
-          '**Donations** — every gift on record, showing date, amount, method (card or manual, with a “· monthly” note for pledge-linked gifts), and receipt status. An active monthly pledge also lights up a “Monthly donor” chip beside the name.',
-          '**Volunteer** — their shift history and hours.',
-          '**Events** — event registrations and attendance.',
-          '**Household** — everyone at the same address, plus this person’s connections.',
-        ],
-      },
-      { kind: 'h2', id: 'navigating', text: 'Working through many profiles' },
-      {
-        kind: 'p',
-        text: 'Arriving from a filtered grid, the header shows “N of M filtered” with previous/next arrows — use `J` and `K` to walk the whole set hands-on-keyboard. See [Finding your way around](/help/getting-around).',
-      },
-      {
-        kind: 'callout',
-        tone: 'info',
-        title: 'Empty tab? That is a prompt, not a dead end',
-        text: 'Empty states name the cause and offer the next step — for example, a person with no household shows an assign action right there.',
-      },
-    ],
-  },
-  {
-    id: 'households',
-    category: 'contacts',
-    title: 'Households',
-    summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
-    keywords: [
-      'household',
-      'family',
-      'address',
-      'members',
-      'assign household',
-      'home',
-      'map',
-      'ward',
-      'district',
-      'precinct',
-      'geocode',
-      'door notes',
-    ],
-    related: ['add-people', 'person-profile', 'duplicates'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'A household groups the people at one address. Use households to avoid mailing the same home twice, to canvass efficiently, and to understand giving at the family level.',
-      },
-      { kind: 'h2', id: 'create', text: 'Create a household' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Households](/households)',
-            detail:
-              'From [People](/people), click the **Households** tab under the header — People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
-          },
-          { title: 'Click the + button', detail: 'Name the household and give it an address.' },
-          { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Start from the person',
-        text: 'On a profile with no household yet, the household area offers **Assign household** directly — often the fastest route.',
-      },
-      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
-      {
-        kind: 'p',
-        text: 'Editing a household, search for an address and pick a suggestion — it fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
-      },
-      {
-        kind: 'p',
-        text: 'The household page shows a map card — clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), or **Address problem** (the address could not be found — open Edit and fix it). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream.',
-      },
-      { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
-      {
-        kind: 'p',
-        text: 'Imports sometimes create near-identical households. The [Duplicates](/duplicates) finder has a dedicated households view for merging them — see [Find and merge duplicates](/help/duplicates).',
-      },
-    ],
-  },
-  {
-    id: 'companies',
-    category: 'contacts',
-    title: 'Companies',
-    summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
-    keywords: [
-      'company',
-      'organization',
-      'employer',
-      'business',
-      'sponsor',
-      'corporate',
-      'enrich',
-      'google',
-      'google places',
-    ],
-    related: ['person-profile', 'duplicates', 'grid-basics'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Companies hold the organizations in your world — employers of your supporters, sponsors, vendors, and institutional partners. Each company page shows its details and the people connected to it, with counts on every tab.',
-      },
-      { kind: 'h2', id: 'create', text: 'Add a company' },
-      {
-        kind: 'steps',
-        items: [
-          {
-            title: 'Open [Companies](/companies)',
-            detail:
-              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
-          },
-          { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
-          { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
-        ],
-      },
-      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
-      {
-        kind: 'p',
-        text: 'Press **Enrich** on a company page to look it up on Google Places. A background job finds the business, then fills the website, phone, industry, and description **only where they are blank** — anything you typed is never overwritten. Once a company has been enriched, the button reads **Re-check Google** so you can refresh it later.',
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Deleting a company keeps the people',
-        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping — everyone keeps their person record, they just lose the employer link.',
-      },
-      {
-        kind: 'p',
-        text: 'Companies get the full grid toolkit — filters, tags, CSV import and export, and inline editing — plus their own view in the [Duplicates](/duplicates) finder.',
-      },
-    ],
-  },
-  {
-    id: 'teams',
-    category: 'contacts',
-    title: 'Teams',
-    summary: 'Organize volunteers and staff into teams with their own members, lists, and tasks.',
-    keywords: ['team', 'volunteers', 'staff', 'group', 'organizing', 'crew'],
-    related: ['events-shifts', 'tasks', 'lists'],
-    blocks: [
-      {
-        kind: 'p',
-        text: 'Teams turn a crowd of volunteers into working units — a canvassing crew, a phone-bank team, an events committee. Each team page carries its own tabs for activity, volunteers, lists, and tasks, so the team’s whole world lives in one place.',
-      },
-      { kind: 'h2', id: 'create', text: 'Set up a team' },
-      {
-        kind: 'steps',
-        items: [
-          { title: 'Open [Teams](/teams)', detail: 'The grid shows every team at a glance.' },
-          { title: 'Click the + button', detail: 'Name the team and describe its purpose.' },
-          { title: 'Add volunteers', detail: 'Build the roster from your existing people.' },
-          {
-            title: 'Give it work',
-            detail: 'Attach lists to call through and tasks to complete — the team page tracks both.',
-          },
-        ],
-      },
-      {
-        kind: 'callout',
-        tone: 'tip',
-        title: 'Teams pair well with shifts',
-        text: 'Schedule a team’s work as volunteer shifts and attendance flows back to each member’s profile — see [Events and volunteer shifts](/help/events-shifts).',
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/experiences/help/data/articles/engagement.ts
-
 ```typescript
 import type { HelpArticle } from '../help-types';
 
@@ -54255,7 +54186,6 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
 ```
 
 ## File: apps/frontend/src/app/experiences/help/data/articles/getting-started.ts
-
 ```typescript
 import type { HelpArticle } from '../help-types';
 
@@ -54277,7 +54207,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/board](/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
+          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
           '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, public-facing [Forms](/forms), [Donations](/donations), and [Fundraising](/donation-pages) pages.',
           '**Field** — [Events](/events/pages), [Teams](/teams), and volunteer [Shifts](/events/shifts).',
           '**Data** — [Import / export](/imports) (with [Exports](/exports)), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), [Automations](/automations), and [Files](/files).',
@@ -54529,7 +54459,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           { keys: ['g', 'e'], action: '[Events](/events/pages)' },
           { keys: ['g', 'r'], action: '[Fundraising](/donation-pages)' },
           { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/board)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
           { keys: ['g', 'm'], action: '[Files](/files)' },
         ],
       },
@@ -54583,8 +54513,1564 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
 ];
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
+## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
+```html
+<pc-detail-layout
+  [title]="fullName() || 'Person'"
+  [eyebrow]="'Person'"
+  [statusChip]="statusChip()"
+  [crumbs]="crumbs()"
+  [isLoading]="isLoading()"
+  [hasRecord]="!initialized() || !!person()"
+  [showDelete]="true"
+  [deleteText]="'Delete person'"
+  [btn1Text]="'Edit person'"
+  [btn1Icon]="'pencil-square'"
+  [positionLabel]="recordNav.positionLabel()"
+  [hasPrev]="recordNav.hasPrev()"
+  [hasNext]="recordNav.hasNext()"
+  [prevLabel]="recordNav.prevLabel()"
+  [nextLabel]="recordNav.nextLabel()"
+  (save)="editPerson()"
+  (delete)="deletePerson()"
+  (prevRecord)="recordNav.goToPrev()"
+  (nextRecord)="recordNav.goToNext()"
+>
+  <li pc-overflow-extra>
+    <button type="button" (click)="exportVCard()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <ng-container i18n="PersonView|Export contact as vCard@@person.overflow.vcard">Export vCard</ng-container>
+    </button>
+  </li>
 
+  @if (person()) {
+  <!-- Main Content Grid -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Contact Card & Bio -->
+    <div class="lg:col-span-1 flex flex-col gap-6">
+      <!-- Contact Card -->
+      <pc-profile-card [avatarText]="initials()">
+        <!-- Name & Company -->
+        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
+        @if (person().company_name) {
+        <div class="badge badge-lg badge-neutral gap-2 mb-2 font-medium">
+          <pc-icon name="briefcase" [size]="4"></pc-icon>
+          {{ person().company_name }}
+        </div>
+        }
+
+        <!-- Social Media Buttons (quiet, semantic tokens; muted when a URL isn't set) -->
+        <div class="flex justify-center gap-2 w-full border-y border-base-200 py-3 my-4">
+          @for (link of socialLinks(); track link.name) {
+          <a
+            [attr.href]="link.url || null"
+            [attr.target]="link.url ? '_blank' : null"
+            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' not set'"
+            class="btn btn-ghost btn-sm btn-circle tooltip"
+            [class]="link.url ? 'text-base-content/60 hover:text-primary' : 'text-base-content/25 pointer-events-none'"
+          >
+            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
+          </a>
+          }
+        </div>
+
+        <!-- Contact & Address Details List -->
+        <div class="w-full flex flex-col text-sm">
+          <pc-detail-item
+            label="Primary Email"
+            [value]="person().email"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Secondary Email"
+            [value]="person().email2"
+            icon="envelope"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Mobile Phone"
+            [value]="person().mobile"
+            icon="phone"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Home Phone"
+            [value]="person().home_phone"
+            icon="home"
+            [copyable]="true"
+          ></pc-detail-item>
+          <pc-detail-item
+            label="Address"
+            [value]="addressString()"
+            icon="map-pin"
+            [link]="!!householdId() && !isPlaceholderHousehold()"
+            (linkClicked)="navigateToHousehold()"
+          ></pc-detail-item>
+          @if (preferredContactLabel()) {
+          <pc-detail-item
+            label="Preferred Contact"
+            [value]="preferredContactLabel()"
+            icon="chat-bubble-bottom-center-text"
+          ></pc-detail-item>
+          }
+        </div>
+
+        <!-- Tags & Issues of Interest -->
+        <div class="w-full flex flex-col gap-3 border-t border-base-200 pt-4 mt-2">
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5">Tags</span>
+            @if (tags().length > 0) {
+            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
+            }
+          </div>
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5"
+              >Issues of Interest</span
+            >
+            @if (issues().length > 0) {
+            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
+            } @else {
+            <button
+              type="button"
+              class="text-left text-xs text-primary hover:underline"
+              (click)="editPerson()"
+              i18n="PersonView|Issues empty-state guided link@@person.issues.emptyLink"
+            >
+              No issues yet — add what they care about
+            </button>
+            }
+          </div>
+        </div>
+
+        <!-- System Metadata -->
+        <pc-system-metadata
+          [createdAt]="person().created_at"
+          [createdBy]="getUserName(person().createdby_id)"
+          [updatedAt]="person().updated_at"
+          [updatedBy]="getUserName(person().updatedby_id)"
+        ></pc-system-metadata>
+      </pc-profile-card>
+
+      <!-- Internal Notes (own card) -->
+      @if (person().notes) {
+      <pc-card title="Internal notes">
+        <p class="text-sm text-base-content/80 whitespace-pre-line leading-relaxed">{{ person().notes }}</p>
+      </pc-card>
+      }
+    </div>
+
+    <!-- Right Column: Multi-Tab Activity Feed -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Activities, Interactions & History Tabs -->
+      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
+        <pc-tab-panel id="activity" [activeTab]="activeTab()">
+          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
+            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="emails" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (activityData().emails.length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
+            } @else {
+            <div class="flex flex-col gap-3">
+              @for (mail of activityData().emails; track mail.id) {
+              <a
+                [routerLink]="['/inbox']"
+                [queryParams]="{ email: mail.id }"
+                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
+              >
+                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
+                  <span class="font-mono text-base-content/60">
+                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
+                    <strong>{{ mail.to_email }}</strong>
+                  </span>
+                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
+                    {{ mail.subject || '(No Subject)' }}
+                  </h4>
+                  <pc-icon
+                    name="arrow-top-right-on-square"
+                    [size]="4"
+                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                  ></pc-icon>
+                </div>
+                @if (mail.preview) {
+                <p
+                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
+                >
+                  {{ mail.preview }}
+                </p>
+                }
+                <div class="flex justify-end mt-1">
+                  <pc-status-badge [type]="getMailStatusType(mail.status)">
+                    {{ mail.status || 'received' }}
+                  </pc-status-badge>
+                </div>
+              </a>
+              }
+            </div>
+            }
+
+            <!-- Newsletter engagement (folded into Emails) -->
+            @if (activityData().newsletters.length > 0) {
+            <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60"
+                >Newsletter activity</span
+              >
+              @for (ev of activityData().newsletters; track ev.id) {
+              <div
+                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
+              >
+                <div class="flex items-center gap-3 overflow-hidden">
+                  <!-- Icon mappings for event types -->
+                  <div
+                    class="p-2 rounded-lg flex-shrink-0"
+                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
+                    [class.bg-success/10]="ev.event_type === 'open'"
+                    [class.text-success]="ev.event_type === 'open'"
+                    [class.bg-warning/10]="ev.event_type === 'click'"
+                    [class.text-warning]="ev.event_type === 'click'"
+                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
+                  >
+                    @if (ev.event_type === 'open') {
+                    <pc-icon name="eye" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'click') {
+                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
+                    } @else if (ev.event_type === 'delivered') {
+                    <pc-icon name="check-circle" [size]="4"></pc-icon>
+                    } @else {
+                    <pc-icon name="information-circle" [size]="4"></pc-icon>
+                    }
+                  </div>
+                  <div class="flex flex-col overflow-hidden">
+                    <span class="font-medium text-base-content truncate"
+                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
+                    >
+                    @if (ev.url) {
+                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
+                      >Clicked URL: {{ ev.url }}</span
+                    >
+                    }
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-3 flex-shrink-0">
+                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
+                    {{ ev.event_type }}
+                  </pc-status-badge>
+                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
+                </div>
+              </div>
+              }
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (volunteerHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event Name</th>
+                    <th>Date & Time</th>
+                    <th>Status</th>
+                    <th>Hours</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (shift of volunteerHistory(); track shift.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td class="font-semibold">{{ shift.event_name }}</td>
+                    <td>{{ shift.start_time | date:'medium' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
+                    <td class="font-light">{{ shift.notes || '--' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="donations" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            <!-- Summary card for limits progress -->
+            @if (donationStats()) {
+            <div
+              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
+            >
+              <div class="flex-1 w-full space-y-1">
+                <div class="flex justify-between text-xs font-bold text-base-content/75">
+                  <span>Annual Limit Progress</span>
+                  <span
+                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
+                    donationStats()!.limitAmount.toLocaleString() }}</span
+                  >
+                </div>
+                <progress
+                  class="progress progress-success w-full h-2.5 bg-base-300"
+                  [value]="donationStats()!.cumulativeAmount"
+                  [max]="donationStats()!.limitAmount"
+                ></progress>
+                <p class="text-[10px] text-base-content/50">
+                  Remaining allowable donation this calendar year:
+                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
+                (click)="openCollectDonation()"
+                [disabled]="donationStats()!.remainingAmount <= 0"
+              >
+                <pc-icon name="plus" [size]="4"></pc-icon>
+                Collect Donation
+              </button>
+            </div>
+            } @if (donationHistory().length === 0) {
+            <div
+              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
+            >
+              No donations recorded yet for this person.
+            </div>
+            } @else {
+            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
+              <table class="table w-full text-xs">
+                <thead>
+                  <tr class="bg-base-50 border-b border-base-200">
+                    <th class="font-bold text-base-content/70">Date</th>
+                    <th class="font-bold text-base-content/70">Amount</th>
+                    <th class="font-bold text-base-content/70">Method</th>
+                    <th class="font-bold text-base-content/70">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (donation of visibleDonations(); track donation.id) {
+                  <tr class="hover:bg-base-200/20 border-b border-base-200">
+                    <td class="font-medium text-base-content/75 tabular-nums">
+                      {{ donation.created_at | date:'mediumDate' }}
+                    </td>
+                    <td class="font-bold text-base-content tabular-nums">${{ (donation.amount / 100).toFixed(2) }}</td>
+                    <td class="text-base-content/65">{{ donationMethod(donation) }}</td>
+                    <td>
+                      <pc-status-badge [type]="donationReceipt(donation).type">
+                        {{ donationReceipt(donation).label }}
+                      </pc-status-badge>
+                    </td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
+            <div class="text-xs text-base-content/60 px-1">
+              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }} —
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
+                Show all {{ donationHistory().length }}
+              </button>
+              } @else { Showing all {{ donationHistory().length }} —
+              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
+                Show fewer
+              </button>
+              }
+            </div>
+            } }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="events" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-4">
+            @if (eventHistory().length === 0) {
+            <div class="text-center py-10 text-base-content/40 italic">
+              No event registrations found for this person.
+            </div>
+            } @else {
+            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
+              <table class="table table-sm w-full text-xs">
+                <thead>
+                  <tr class="bg-base-200">
+                    <th>Event</th>
+                    <th>Date</th>
+                    <th>Ticket</th>
+                    <th>Status</th>
+                    <th>Checked In</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (reg of eventHistory(); track reg.id) {
+                  <tr class="hover:bg-base-200/50">
+                    <td>
+                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
+                        {{ reg.event_name }}
+                      </a>
+                    </td>
+                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
+                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
+                    <td>
+                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
+                    </td>
+                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
+                  </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            }
+          </div>
+        </pc-tab-panel>
+
+        <pc-tab-panel id="household" [activeTab]="activeTab()">
+          <div class="flex flex-col gap-6">
+            <!-- Household members -->
+            <div class="flex flex-col gap-4">
+              @if (householdId() && !isPlaceholderHousehold()) { @defer {
+              <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
+              } @placeholder {
+              <div class="skeleton w-full h-32"></div>
+              } } @else {
+              <div class="flex flex-col items-center gap-3 py-10 text-center">
+                <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
+                <div class="flex flex-col gap-1">
+                  <span
+                    class="font-medium text-base-content"
+                    i18n="PersonView|Household empty heading@@person.household.emptyHeading"
+                    >Not part of a household yet</span
+                  >
+                  <span
+                    class="max-w-sm text-sm text-base-content/50"
+                    i18n="PersonView|Household empty cause@@person.household.emptyCause"
+                    >Households group people who share an address, so everyone at the same address stays in sync.</span
+                  >
+                </div>
+                <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
+                  <pc-icon name="home" [size]="4"></pc-icon>
+                  <ng-container i18n="PersonView|Assign household action@@person.household.assign"
+                    >Assign household</ng-container
+                  >
+                </button>
+              </div>
+              }
+            </div>
+
+            <!-- Connections (folded into Household) -->
+            <div class="flex flex-col gap-2 border-t border-base-200 pt-4">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Connections</span>
+              <pc-person-connections
+                [personId]="id()"
+                (countChange)="connectionCount.set($event)"
+              ></pc-person-connections>
+            </div>
+          </div>
+        </pc-tab-panel>
+      </pc-tabs>
+    </div>
+  </div>
+  }
+  <!-- Collect Donation Modal -->
+  @if (showDonationModal()) {
+  <div class="modal modal-open z-50">
+    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
+      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
+        <h3 class="text-lg font-bold flex items-center gap-2">
+          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
+          Collect Donation
+        </h3>
+        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
+      </div>
+
+      <div class="space-y-4">
+        <p class="text-xs text-base-content/60">
+          Enter the donation amount in dollars. Residency validation and limit verification will be performed
+          automatically before redirecting to the payment gateway.
+        </p>
+
+        <!-- Donor Residency Profile -->
+        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
+          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
+            >Donor Residency Profile</span
+          >
+          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
+            <pc-icon name="map-pin" [size]="4"></pc-icon>
+            {{ addressString() }}
+          </div>
+        </div>
+
+        <!-- Donation Amount input -->
+        <div class="flex flex-col gap-1.5">
+          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
+          <div class="relative">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
+            <input
+              id="donation_input"
+              type="number"
+              min="1"
+              placeholder="250"
+              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
+              [(ngModel)]="donationAmount"
+            />
+          </div>
+        </div>
+
+        <!-- Error alert -->
+        @if (eligibilityError()) {
+        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
+          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
+          <span>{{ eligibilityError() }}</span>
+        </div>
+        }
+      </div>
+
+      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          class="btn btn-ghost text-sm font-semibold"
+          (click)="closeDonationModal()"
+          [disabled]="isCheckingEligibility()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary min-w-[140px] text-sm font-semibold"
+          (click)="submitDonation()"
+          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
+        >
+          @if (isCheckingEligibility()) {
+          <span class="loading loading-spinner loading-xs mr-1.5"></span>
+          Verifying... } @else { Verify & Proceed }
+        </button>
+      </div>
+    </div>
+    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
+  </div>
+  }
+</pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/layout/navbar/navbar.ts
+```typescript
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@icons/icon';
+import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { Router, RouterLink } from '@angular/router';
+
+import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
+import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
+import { SearchService } from '../../services/api/search-service';
+import { FullScreenService } from '../../services/fullscreen.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { UserService } from '@frontend/services/user.service';
+import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
+import { NotificationsService } from '../../services/api/notifications-service';
+
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  created_at: string | Date;
+};
+
+@Component({
+  selector: 'pc-navbar',
+  imports: [
+    Icon,
+    Swap,
+    ReactiveFormsModule,
+    AnimateIfDirective,
+    RouterLink,
+    FavouriteToggle,
+    Breadcrumbs,
+    PersonalSettingsDialog,
+  ],
+  templateUrl: './navbar.html',
+  host: {
+    '(window:keydown)': 'handleKeyDown($event)',
+  },
+})
+export class Navbar implements OnDestroy {
+  protected readonly emailActions = inject(EmailActionsStore);
+  protected readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly fullscreen = inject(FullScreenService);
+  private readonly searchSvc = inject(SearchService);
+  private readonly sideBarSvc = inject(SidebarService);
+  private readonly notificationsSvc = inject(NotificationsService);
+  private readonly router = inject(Router);
+
+  protected readonly currentUser = this.auth.getUserSignal();
+  protected readonly currentUserAvatar = computed(() => {
+    const user = this.currentUser();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
+
+  /** Initials shown in the avatar circle when the user has no picture. */
+  protected readonly userInitials = computed(() => {
+    const user = this.currentUser();
+    if (!user) return '';
+    const first = (user.first_name ?? '').trim();
+    const last = (user.last_name ?? '').trim();
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
+    return (initials || user.email?.charAt(0) || '?').toUpperCase();
+  });
+
+  private pollInterval?: ReturnType<typeof setInterval>;
+
+  public readonly notifications = signal<NotificationItem[]>([]);
+  public readonly unreadCount = signal<number>(0);
+  public readonly isLoadingMore = signal<boolean>(false);
+  public readonly hasMore = signal<boolean>(true);
+
+  protected isMobileOpen() {
+    return this.sideBarSvc.isMobileOpen();
+  }
+  protected readonly searchBarVisible = signal(false);
+
+  /** Personal Settings popup (§5a) — opened from the avatar menu. */
+  protected readonly settingsOpen = signal(false);
+
+  protected openSettings(): void {
+    this.closeDropdown();
+    this.settingsOpen.set(true);
+  }
+
+  protected readonly searchStr = signal('');
+  protected readonly themeSvc = inject(ThemeService);
+
+  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+
+  constructor() {
+    // Move focus to the search bar whenever it becomes visible
+    effect(() => {
+      if (this.searchBarVisible())
+        queueMicrotask(() => {
+          this.searchInputRef()?.nativeElement?.focus();
+        });
+    });
+
+    void this.initNotifications();
+    this.pollInterval = setInterval(() => {
+      void this.refreshCount();
+    }, 60000);
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+  }
+
+  private async initNotifications() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      this.unreadCount.set(count || 0);
+      await this.fetchInitial();
+    } catch (err) {
+      console.error('Failed to initialize notifications', err);
+    }
+  }
+
+  protected async fetchInitial() {
+    this.isLoadingMore.set(true);
+    try {
+      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
+      this.notifications.set(list || []);
+      this.hasMore.set((list || []).length === 5);
+    } catch (err) {
+      console.error('Failed to fetch initial notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async refreshCount() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      const oldCount = this.unreadCount();
+      this.unreadCount.set(count || 0);
+      if (count > oldCount) {
+        // Notification count increased, fetch first 5 notifications in background
+        await this.fetchInitial();
+      }
+    } catch (err) {
+      console.error('Failed to poll notification count', err);
+    }
+  }
+
+  protected onNotificationOpen() {
+    if (this.notifications().length === 0) {
+      void this.fetchInitial();
+    }
+  }
+
+  protected onScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    const threshold = 20; // px from bottom
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
+    if (isNearBottom) {
+      void this.loadMore();
+    }
+  }
+
+  protected async loadMore() {
+    if (this.isLoadingMore() || !this.hasMore()) return;
+    this.isLoadingMore.set(true);
+    try {
+      const nextBatch = await this.notificationsSvc.getLatest({
+        limit: 5,
+        offset: this.notifications().length,
+      });
+      if (!nextBatch || nextBatch.length < 5) {
+        this.hasMore.set(false);
+      }
+      if (nextBatch && nextBatch.length > 0) {
+        const existingIds = new Set(this.notifications().map((n) => n.id));
+        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
+        if (uniqueNext.length > 0) {
+          this.notifications.set([...this.notifications(), ...uniqueNext]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load more notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async clickNotification(notif: NotificationItem) {
+    if (!notif.read) {
+      try {
+        await this.notificationsSvc.markRead(notif.id);
+        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
+        this.unreadCount.update((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error('Failed to mark notification read', err);
+      }
+    }
+    if (notif.link) {
+      void this.router.navigateByUrl(notif.link);
+    }
+    this.closeDropdown();
+  }
+
+  protected async markAllAsRead(event: Event) {
+    event.stopPropagation();
+    try {
+      await this.notificationsSvc.markAllRead();
+      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
+      this.unreadCount.set(0);
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  }
+
+  protected formatTime(dateStr: string | Date | null | undefined): string {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  public clearSearch(): void {
+    this.searchStr.set('');
+    this.searchSvc.clearSearch();
+  }
+
+  public handleKeyDown(event: KeyboardEvent): void {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+    const isK = event?.key?.toLowerCase() === 'k';
+
+    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
+    if (isCtrlOrCmd && isK && !event.shiftKey) {
+      event.preventDefault();
+
+      this.showSearchBar();
+    } else if (event.key === 'Escape' && this.searchBarVisible()) {
+      this.clearSearch();
+      this.hideSearchBar();
+    }
+  }
+
+  protected hideSearchBar(): void {
+    this.searchBarVisible.set(false);
+  }
+
+  protected isFullScreenMode(): boolean {
+    return this.fullscreen.isFullScreenMode();
+  }
+
+  protected onBlurSearchBar() {
+    if (!this.searchStr().length) {
+      this.hideSearchBar();
+    }
+  }
+
+  protected onSearchEnter(): void {
+    this.searchSvc.doSearchImmediate(this.searchStr());
+  }
+
+  protected onSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.searchStr.set(input.value);
+    this.search();
+  }
+
+  protected search(): void {
+    this.searchSvc.doSearch(this.searchStr());
+  }
+
+  protected showSearchBar(): void {
+    this.searchBarVisible.set(true);
+  }
+
+  protected signOut(): void {
+    void this.auth.signOut();
+  }
+
+  protected closeDropdown(): void {
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl) {
+      activeEl.blur();
+    }
+  }
+
+  protected toggleFullScreen(): void {
+    void this.fullscreen.toggleFullScreen();
+  }
+
+  protected toggleMobile(): void {
+    this.sideBarSvc.toggleMobile();
+  }
+
+  protected toggleSearch(): void {
+    this.searchBarVisible.set(!this.searchBarVisible());
+  }
+
+  protected toggleTheme(): void {
+    this.themeSvc.toggleTheme();
+  }
+}
+```
+
+## File: apps/frontend/src/app/services/api/trpc-service.ts
+```typescript
+import { inject, Service } from '@angular/core';
+import { Router } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
+import { ErrorService } from '../error.service';
+import {
+  TRPCClient,
+  TRPCClientError,
+  TRPCLink,
+  createTRPCClient,
+  httpLink as trpcHttpLink,
+  loggerLink,
+} from '@trpc/client';
+import { observable } from '@trpc/server/observable';
+import superjson from 'superjson';
+
+import { get, set } from 'idb-keyval';
+
+import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { environment } from '../../../environments/environment';
+import { TokenService } from './token-service';
+import { refreshLink } from './trpc-refreshlink';
+import { ApiError } from './api-error';
+
+@Service()
+export class TRPCService<T> {
+  protected readonly errorSvc = inject(ErrorService);
+
+  protected readonly router = inject(Router);
+
+  protected readonly tokenService = inject(TokenService);
+
+  protected ac = new AbortController();
+
+  public readonly api: TRPCClient<TRPCRouter>;
+
+  constructor() {
+    this.api = createTRPCClient<TRPCRouter>({
+      links: [
+        loggerLink(),
+        refreshLink(this.tokenService, this.router),
+        errorLink(this.errorSvc),
+        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
+      ],
+    });
+  }
+
+  public abort() {
+    this.ac.abort();
+    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
+  }
+
+  protected async runCachedCall(
+    apiCall: Promise<Partial<T>[]>,
+    apiName: string,
+    options: getAllOptionsType,
+    refresh: boolean,
+  ) {
+    // Use the full serialized (apiName + options) as the IndexedDB key. IDB string
+    // keys can be arbitrarily long, so there's no need to fold it into a 32-bit hash
+    // — that hash collided, letting one query serve another query's cached rows.
+    const cacheKey = `trpc:${JSON.stringify({ apiName, ...options })}`;
+    const payload = await get(cacheKey);
+    let data = payload?.expires > Date.now() ? payload.data : null;
+
+    if (refresh || !data || data.length === 0) {
+      data = await apiCall;
+      await set(cacheKey, { expires: this.addDays(1), data });
+    }
+
+    return data;
+  }
+
+  private addDays(days: number) {
+    const date = new Date(Date.now());
+    date.setDate(date.getDate() + days);
+    return date;
+  }
+}
+
+function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
+  const GENERIC_INPUT_MSG = 'Please check your input and try again';
+
+  return () =>
+    ({ next, op }) =>
+      observable((observer) => {
+        const unsubscribe = next(op).subscribe({
+          next: (value) => observer.next(value),
+          error: (err) => {
+            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
+            const path = op.path ?? '';
+            const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
+            let finalErr: any = err;
+            let code: string | undefined;
+
+            if (err instanceof TRPCClientError) {
+              code = err.data?.code as string | undefined;
+
+              let msg = err.message;
+              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+                // Server formatter should already do this; this is just a client fallback
+                msg = GENERIC_SIGNIN_ERROR;
+              } else if (code === 'BAD_REQUEST') {
+                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
+                if (isValidationError) {
+                  msg = GENERIC_INPUT_MSG;
+                }
+              }
+              finalErr = new ApiError(msg, err);
+            }
+
+            // Aborted requests (component teardown, superseded loads) are not
+            // user-facing failures — never toast or redirect them.
+            if (!isAbortError(err)) {
+              if (code === 'UNAUTHORIZED' && !isSignIn) {
+                // A dead session must sign the user out even when the caller passed skipErrorHandler:
+                // that flag suppresses the error toast, not the sign-out. redirectToSignIn() no-ops on
+                // public pages and de-dupes, so probes and public routes stay put.
+                errorSvc.redirectToSignIn();
+              } else if (!meta?.skipErrorHandler) {
+                errorSvc.handle(finalErr);
+              }
+            }
+
+            observer.error(finalErr);
+          },
+          complete: () => observer.complete(),
+        });
+        return unsubscribe;
+      });
+}
+
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof TRPCClientError) {
+    const cause: unknown = err.cause;
+    return cause instanceof DOMException && cause.name === 'AbortError';
+  }
+  return false;
+}
+
+function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
+  return trpcHttpLink({
+    url: environment.apiUrl,
+    transformer: superjson,
+    // Combine the per-request signal tRPC provides with the service-level
+    // controller so TRPCService.abort() actually cancels in-flight requests.
+    // `credentials: 'include'` is required so the browser honors Set-Cookie on the
+    // sign-in/out responses and attaches the HttpOnly refresh cookie (SECURITY-REVIEW 2.1).
+    fetch(input, init) {
+      const signals: AbortSignal[] = [getAbortSignal()];
+      if (init?.signal) signals.push(init.signal);
+      return globalThis.fetch(input, { ...init, credentials: 'include', signal: AbortSignal.any(signals) });
+    },
+    headers() {
+      const authToken = tokenSvc.getAuthToken();
+      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+    },
+  });
+}
+```
+
+## File: apps/frontend/src/app/app.routes.ts
+```typescript
+import type { Routes } from '@angular/router';
+
+import { authGuard } from './auth/auth-guard';
+import { loginGuard } from './auth/login/login-guard';
+
+export const appRoutes = [
+  // Default redirect to the dashboard inside the app shell
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  // Auth pages
+  {
+    path: 'signin',
+    canActivate: [loginGuard],
+    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
+  },
+  {
+    path: 'signup',
+    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
+  },
+  {
+    path: 'resetpassword',
+    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
+  },
+  {
+    path: 'new-password',
+    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
+  },
+  {
+    path: 'verify-sender-email',
+    loadComponent: () =>
+      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
+  },
+  {
+    path: 'confirm-subscription',
+    loadComponent: () =>
+      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'f/:slug',
+    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
+  },
+  {
+    path: 'e/:slug',
+    data: { kind: 'event' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'v/:slug',
+    data: { kind: 'volunteer' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'volunteer',
+    loadComponent: () =>
+      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
+  },
+  {
+    path: 'verify-email',
+    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
+  {
+    path: 'cancel-deletion',
+    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
+  },
+  {
+    path: 'resume-account',
+    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
+  },
+
+  // Main dashboard shell + children (protected)
+  {
+    path: '',
+    canActivate: [authGuard],
+    // optionally also: canActivateChild: [authGuard],
+    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
+    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
+  },
+
+  // Fallback
+  {
+    path: '**',
+    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
+  },
+] as const satisfies Routes;
+```
+
+## File: apps/frontend/src/styles.css
+```css
+@import 'tailwindcss';
+@plugin "daisyui";
+@plugin "@tailwindcss/typography";
+
+/* styles.css */
+@import 'quill/dist/quill.snow.css';
+
+/* Self-hosted app font — bundled from node_modules, no external font CDN */
+@import '@fontsource-variable/inter';
+
+@plugin "daisyui/theme" {
+  name: 'light';
+  default: true;
+  --color-primary: #0ea5e9;
+  --color-primary-content: #ffffff;
+  --color-secondary: #14e8a6;
+  --color-secondary-content: #1f2937;
+  --color-accent: #0c506e;
+  --color-accent-content: #f0f0f0;
+  --color-neutral: #cbd5e1;
+  --color-neutral-content: #1f2937;
+  --color-base-100: #ffffff;
+  --color-base-200: #f8f8f8ff;
+  --color-base-300: #efeeeeff;
+  --color-base-content: #1f2937;
+  --color-info: #38bdf8;
+  --color-success: #2dd4bf;
+  --color-success-content: #053a34;
+  --color-warning: #e5c963;
+  --color-warning-content: #4a3d0a;
+  --color-error: #f37373;
+  --color-error-content: #ffffff;
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #e7e5e4;
+
+  --tooltip-bg: #333333;
+  --tooltip-color: #eeeeee;
+  --color-placeholder: #9ca3af;
+}
+
+.input::placeholder,
+textarea::placeholder,
+label.input input::placeholder,
+label.input textarea::placeholder,
+label.input pc-icon {
+  color: var(--color-placeholder);
+}
+
+/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
+label.input input {
+  flex-grow: 1;
+  width: 100%;
+}
+
+/* Prevent browser autofill from coloring the background, preserving transparency */
+label.input input:-webkit-autofill,
+label.input input:-webkit-autofill:hover,
+label.input input:-webkit-autofill:focus,
+label.input input:-webkit-autofill:active {
+  transition: background-color 5000s ease-in-out 0s;
+  -webkit-text-fill-color: inherit !important;
+}
+
+@plugin "daisyui/theme" {
+  name: 'dark';
+
+  /* Brand / accent */
+  --color-primary: #3ea6ff; /* bright azure */
+  --color-secondary: #20d7a7; /* teal pop (optional) */
+  --color-accent: #3ea6ff;
+  --color-accent-content: #0b1220; /* dark text on bright azure */
+
+  /* Text + neutrals */
+  --color-neutral: #0e182b; /* chrome / panels */
+  --color-neutral-content: #c7d1e5; /* default text on dark */
+
+  /* Surfaces */
+  --color-base-100: #0b1220; /* app/page background */
+  --color-base-200: #131e31; /* row alt / subtle surface */
+  --color-base-300: #1a2b45; /* headers / raised surface */
+
+  /* Hairline border token — one line color app-wide, per theme (design §5). */
+  --color-line: #1a2b45;
+
+  /* Feedback */
+  --color-info: #3ea6ff;
+  --color-success: #22c55e;
+  --color-success-content: #052e12;
+  --color-warning: #f59e0b;
+  --color-warning-content: #3d2a05;
+  --color-error: #ef4444;
+  --color-error-content: #2b0505;
+
+  /* Tooltips */
+  --tooltip-bg: #0e1626;
+  --tooltip-color: #e6edf7;
+}
+
+html,
+body {
+  height: 100vh;
+}
+
+body {
+  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-weight: 400;
+}
+
+/* Custom scrollbar styles for email components */
+.email-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-base-300) var(--color-base-200);
+}
+
+.email-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.email-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-base-200);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-base-300);
+  border-radius: 4px;
+}
+
+.email-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
+}
+
+.bg-image {
+  background-image: url('assets/bg.jpg');
+  background-size: cover; /* scale to cover entire container */
+  background-position: center; /* keep it centered */
+  background-repeat: no-repeat; /* prevent tiling */
+}
+
+/* AG Grid legacy themes removed */
+
+@layer utilities {
+  /* Ensure mentions inside chat bubbles are inline */
+  .chat-bubble [data-mention] {
+    display: inline;
+  }
+
+  /* In composer mirrors, keep mention width identical to textarea text
+     to avoid caret drift. Use underline instead of bold in the mirror. */
+  .composer-mirror [data-mention] {
+    font-weight: inherit !important;
+    text-decoration: underline;
+  }
+
+  @keyframes up {
+    0% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes down {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes right {
+    0% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes left {
+    0% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+  @keyframes drop {
+    0% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes flash {
+    0% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  /* Save-landed feedback for grids and forms — success tint fading to nothing.
+     Semantic token so it survives theme switch (design §5). Mirrors the
+     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
+  @keyframes savedFlash {
+    0% {
+      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
+    }
+    60% {
+      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
+  @keyframes exitUp {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitDown {
+    0% {
+      transform: translateY(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitRight {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+  @keyframes exitLeft {
+    0% {
+      transform: translateX(0%);
+      opacity: 1;
+    }
+    100% {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+  }
+
+  .animate-up {
+    animation: up 0.3s ease-in-out both;
+  }
+  .animate-down {
+    animation: down 0.3s ease-in-out both;
+  }
+  .animate-right {
+    animation: right 0.3s ease-in-out both;
+  }
+  .animate-left {
+    animation: left 0.3s ease-in-out both;
+  }
+  .animate-drop {
+    animation: drop 0.3s ease-in-out both;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out;
+  }
+  .animate-exit-up {
+    animation: exitUp 0.3s ease-in-out forwards;
+  }
+  .animate-exit-down {
+    animation: exitDown 0.3s ease-in-out forwards;
+  }
+  .animate-exit-left {
+    animation: exitLeft 0.3s ease-in-out forwards;
+  }
+  .animate-exit-right {
+    animation: exitRight 0.3s ease-in-out forwards;
+  }
+  .animate-flash {
+    animation: flash 1s ease-in-out 1;
+  }
+  .animate-saved-flash {
+    animation: savedFlash 1.2s ease-out 1;
+  }
+}
+
+/* Hairline border helper — pairs with any border-width utility to paint the
+   app-wide line color (design §5). Use as `class="border-b border-line"`. */
+@utility border-line {
+  border-color: var(--color-line);
+}
+
+/* Dark mode overrides for Quill and email prose */
+[data-theme='dark'] .ql-toolbar.ql-snow,
+[data-theme='dark'] .ql-container.ql-snow {
+  border-color: var(--color-base-300) !important;
+  background-color: var(--color-base-100) !important;
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-stroke {
+  stroke: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-fill {
+  fill: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .ql-snow .ql-picker-options {
+  background-color: var(--color-base-300) !important;
+  border-color: var(--color-base-100) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
+[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
+[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
+  color: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
+[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
+[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-primary) !important;
+}
+[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
+  color: var(--color-placeholder) !important;
+}
+[data-theme='dark'] .prose {
+  color: var(--color-neutral-content) !important;
+}
+[data-theme='dark'] .prose h1,
+[data-theme='dark'] .prose h2,
+[data-theme='dark'] .prose h3,
+[data-theme='dark'] .prose h4,
+[data-theme='dark'] .prose h5,
+[data-theme='dark'] .prose h6,
+[data-theme='dark'] .prose strong,
+[data-theme='dark'] .prose b,
+[data-theme='dark'] .prose a {
+  color: var(--color-neutral-content) !important;
+}
+
+/* Ensure closed dropdown contents do not intercept pointer events or hover */
+.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+/* Allow dropdown-hover to work if ever used in the future */
+.dropdown.dropdown-hover:hover .dropdown-content {
+  visibility: visible !important;
+  pointer-events: auto !important;
+  opacity: 1 !important;
+}
+
+/* Ensure tooltip text is consistently normal weight and not bold */
+.tooltip:before,
+.tooltip::before {
+  font-weight: 400 !important;
+}
+
+/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
+.menu details.dropdown {
+  overflow: visible !important;
+}
+
+/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
+   Semantic primary token so it survives theme switch (design §5). */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
+   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-form.ts
 ```typescript
 import { Component, ElementRef, OnInit, computed, inject, input, resource, signal, linkedSignal } from '@angular/core';
 import { form, validateStandardSchema } from '@angular/forms/signals';
@@ -55328,1570 +56814,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
-
-```html
-<pc-detail-layout
-  [title]="fullName() || 'Person'"
-  [eyebrow]="'Person'"
-  [statusChip]="statusChip()"
-  [crumbs]="crumbs()"
-  [isLoading]="isLoading()"
-  [hasRecord]="!initialized() || !!person()"
-  [showDelete]="true"
-  [deleteText]="'Delete person'"
-  [btn1Text]="'Edit person'"
-  [btn1Icon]="'pencil-square'"
-  [positionLabel]="recordNav.positionLabel()"
-  [hasPrev]="recordNav.hasPrev()"
-  [hasNext]="recordNav.hasNext()"
-  [prevLabel]="recordNav.prevLabel()"
-  [nextLabel]="recordNav.nextLabel()"
-  (save)="editPerson()"
-  (delete)="deletePerson()"
-  (prevRecord)="recordNav.goToPrev()"
-  (nextRecord)="recordNav.goToNext()"
->
-  <li pc-overflow-extra>
-    <button type="button" (click)="exportVCard()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <ng-container i18n="PersonView|Export contact as vCard@@person.overflow.vcard">Export vCard</ng-container>
-    </button>
-  </li>
-
-  @if (person()) {
-  <!-- Main Content Grid -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Contact Card & Bio -->
-    <div class="lg:col-span-1 flex flex-col gap-6">
-      <!-- Contact Card -->
-      <pc-profile-card [avatarText]="initials()">
-        <!-- Name & Company -->
-        <h2 class="text-2xl font-bold text-base-content text-center mb-1">{{ fullName() }}</h2>
-        @if (person().company_name) {
-        <div class="badge badge-lg badge-neutral gap-2 mb-2 font-medium">
-          <pc-icon name="briefcase" [size]="4"></pc-icon>
-          {{ person().company_name }}
-        </div>
-        }
-
-        <!-- Social Media Buttons (quiet, semantic tokens; muted when a URL isn't set) -->
-        <div class="flex justify-center gap-2 w-full border-y border-base-200 py-3 my-4">
-          @for (link of socialLinks(); track link.name) {
-          <a
-            [attr.href]="link.url || null"
-            [attr.target]="link.url ? '_blank' : null"
-            [attr.data-tip]="link.url ? link.name + ' profile' : link.name + ' not set'"
-            class="btn btn-ghost btn-sm btn-circle tooltip"
-            [class]="link.url ? 'text-base-content/60 hover:text-primary' : 'text-base-content/25 pointer-events-none'"
-          >
-            <pc-icon [name]="link.icon" [size]="4"></pc-icon>
-          </a>
-          }
-        </div>
-
-        <!-- Contact & Address Details List -->
-        <div class="w-full flex flex-col text-sm">
-          <pc-detail-item
-            label="Primary Email"
-            [value]="person().email"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Secondary Email"
-            [value]="person().email2"
-            icon="envelope"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Mobile Phone"
-            [value]="person().mobile"
-            icon="phone"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Home Phone"
-            [value]="person().home_phone"
-            icon="home"
-            [copyable]="true"
-          ></pc-detail-item>
-          <pc-detail-item
-            label="Address"
-            [value]="addressString()"
-            icon="map-pin"
-            [link]="!!householdId() && !isPlaceholderHousehold()"
-            (linkClicked)="navigateToHousehold()"
-          ></pc-detail-item>
-          @if (preferredContactLabel()) {
-          <pc-detail-item
-            label="Preferred Contact"
-            [value]="preferredContactLabel()"
-            icon="chat-bubble-bottom-center-text"
-          ></pc-detail-item>
-          }
-        </div>
-
-        <!-- Tags & Issues of Interest -->
-        <div class="w-full flex flex-col gap-3 border-t border-base-200 pt-4 mt-2">
-          <div>
-            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5">Tags</span>
-            @if (tags().length > 0) {
-            <pc-tags [tags]="tags()" type="tag" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <span class="text-xs text-base-content/40 italic">No tags assigned</span>
-            }
-          </div>
-          <div>
-            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1.5"
-              >Issues of Interest</span
-            >
-            @if (issues().length > 0) {
-            <pc-tags [tags]="issues()" type="issue" [readonly]="true" [canDelete]="false" [compact]="true"></pc-tags>
-            } @else {
-            <button
-              type="button"
-              class="text-left text-xs text-primary hover:underline"
-              (click)="editPerson()"
-              i18n="PersonView|Issues empty-state guided link@@person.issues.emptyLink"
-            >
-              No issues yet — add what they care about
-            </button>
-            }
-          </div>
-        </div>
-
-        <!-- System Metadata -->
-        <pc-system-metadata
-          [createdAt]="person().created_at"
-          [createdBy]="getUserName(person().createdby_id)"
-          [updatedAt]="person().updated_at"
-          [updatedBy]="getUserName(person().updatedby_id)"
-        ></pc-system-metadata>
-      </pc-profile-card>
-
-      <!-- Internal Notes (own card) -->
-      @if (person().notes) {
-      <pc-card title="Internal notes">
-        <p class="text-sm text-base-content/80 whitespace-pre-line leading-relaxed">{{ person().notes }}</p>
-      </pc-card>
-      }
-    </div>
-
-    <!-- Right Column: Multi-Tab Activity Feed -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Activities, Interactions & History Tabs -->
-      <pc-tabs [tabs]="personTabs()" [(activeTab)]="activeTab">
-        <pc-tab-panel id="activity" [activeTab]="activeTab()">
-          <div class="flex flex-col flex-1 min-h-0 gap-4 pr-1">
-            <pc-record-activities class="flex-1" [entity]="'persons'" [entityId]="id()!"></pc-record-activities>
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="emails" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (activityData().emails.length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No direct email correspondence recorded</div>
-            } @else {
-            <div class="flex flex-col gap-3">
-              @for (mail of activityData().emails; track mail.id) {
-              <a
-                [routerLink]="['/inbox']"
-                [queryParams]="{ email: mail.id }"
-                class="p-4 rounded-xl border border-base-200 hover:border-indigo-300 bg-base-50/20 hover:bg-base-100 transition-all flex flex-col gap-2 no-underline text-current group cursor-pointer hover:shadow-sm"
-              >
-                <div class="flex items-center justify-between flex-wrap gap-2 text-xs">
-                  <span class="font-mono text-base-content/60">
-                    From: <strong class="text-base-content">{{ mail.from_email }}</strong> &rarr; To:
-                    <strong>{{ mail.to_email }}</strong>
-                  </span>
-                  <span class="text-base-content/40">{{ mail.created_at | date:'medium' }}</span>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                  <h4 class="font-semibold text-sm text-base-content group-hover:text-primary transition-colors">
-                    {{ mail.subject || '(No Subject)' }}
-                  </h4>
-                  <pc-icon
-                    name="arrow-top-right-on-square"
-                    [size]="4"
-                    class="text-base-content/30 group-hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
-                  ></pc-icon>
-                </div>
-                @if (mail.preview) {
-                <p
-                  class="text-xs text-base-content/60 line-clamp-2 leading-relaxed bg-base-200/20 p-2.5 rounded-lg border border-base-200/50"
-                >
-                  {{ mail.preview }}
-                </p>
-                }
-                <div class="flex justify-end mt-1">
-                  <pc-status-badge [type]="getMailStatusType(mail.status)">
-                    {{ mail.status || 'received' }}
-                  </pc-status-badge>
-                </div>
-              </a>
-              }
-            </div>
-            }
-
-            <!-- Newsletter engagement (folded into Emails) -->
-            @if (activityData().newsletters.length > 0) {
-            <div class="flex flex-col gap-2 border-t border-base-200 pt-4 mt-2">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60"
-                >Newsletter activity</span
-              >
-              @for (ev of activityData().newsletters; track ev.id) {
-              <div
-                class="p-3 rounded-lg border border-base-200/60 bg-base-100 flex items-center justify-between gap-4 text-xs hover:bg-base-200/20 transition-colors"
-              >
-                <div class="flex items-center gap-3 overflow-hidden">
-                  <!-- Icon mappings for event types -->
-                  <div
-                    class="p-2 rounded-lg flex-shrink-0"
-                    [class.bg-info/10]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.text-info]="ev.event_type === 'processed' || ev.event_type === 'delivered'"
-                    [class.bg-success/10]="ev.event_type === 'open'"
-                    [class.text-success]="ev.event_type === 'open'"
-                    [class.bg-warning/10]="ev.event_type === 'click'"
-                    [class.text-warning]="ev.event_type === 'click'"
-                    [class.bg-error/10]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                    [class.text-error]="ev.event_type === 'bounce' || ev.event_type === 'dropped' || ev.event_type === 'spamreport' || ev.event_type === 'unsubscribe'"
-                  >
-                    @if (ev.event_type === 'open') {
-                    <pc-icon name="eye" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'click') {
-                    <pc-icon name="arrow-top-right-on-square" [size]="4"></pc-icon>
-                    } @else if (ev.event_type === 'delivered') {
-                    <pc-icon name="check-circle" [size]="4"></pc-icon>
-                    } @else {
-                    <pc-icon name="information-circle" [size]="4"></pc-icon>
-                    }
-                  </div>
-                  <div class="flex flex-col overflow-hidden">
-                    <span class="font-medium text-base-content truncate"
-                      >{{ ev.newsletter_subject || ev.newsletter_name }}</span
-                    >
-                    @if (ev.url) {
-                    <span class="text-[10px] text-primary truncate hover:underline cursor-pointer"
-                      >Clicked URL: {{ ev.url }}</span
-                    >
-                    }
-                  </div>
-                </div>
-
-                <div class="flex items-center gap-3 flex-shrink-0">
-                  <pc-status-badge [type]="getEmailEventType(ev.event_type)" class="tracking-wider text-[9px]">
-                    {{ ev.event_type }}
-                  </pc-status-badge>
-                  <span class="text-base-content/40 text-[10px]">{{ ev.timestamp | date:'short' }}</span>
-                </div>
-              </div>
-              }
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="volunteer" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (volunteerHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">No shift records found for this person</div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event Name</th>
-                    <th>Date & Time</th>
-                    <th>Status</th>
-                    <th>Hours</th>
-                    <th>Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (shift of volunteerHistory(); track shift.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td class="font-semibold">{{ shift.event_name }}</td>
-                    <td>{{ shift.start_time | date:'medium' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getShiftStatusType(shift.status)"> {{ shift.status }} </pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ shift.hours_worked || '--' }}</td>
-                    <td class="font-light">{{ shift.notes || '--' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="donations" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            <!-- Summary card for limits progress -->
-            @if (donationStats()) {
-            <div
-              class="card border border-base-200 bg-base-50/50 p-4 rounded-xl flex flex-col md:flex-row justify-between items-center gap-4"
-            >
-              <div class="flex-1 w-full space-y-1">
-                <div class="flex justify-between text-xs font-bold text-base-content/75">
-                  <span>Annual Limit Progress</span>
-                  <span
-                    >${{ donationStats()!.cumulativeAmount.toLocaleString() }} / ${{
-                    donationStats()!.limitAmount.toLocaleString() }}</span
-                  >
-                </div>
-                <progress
-                  class="progress progress-success w-full h-2.5 bg-base-300"
-                  [value]="donationStats()!.cumulativeAmount"
-                  [max]="donationStats()!.limitAmount"
-                ></progress>
-                <p class="text-[10px] text-base-content/50">
-                  Remaining allowable donation this calendar year:
-                  <strong>${{ donationStats()!.remainingAmount.toLocaleString() }}</strong>
-                </p>
-              </div>
-              <button
-                type="button"
-                class="btn btn-sm btn-primary shrink-0 w-full md:w-auto font-semibold flex items-center justify-center gap-1.5"
-                (click)="openCollectDonation()"
-                [disabled]="donationStats()!.remainingAmount <= 0"
-              >
-                <pc-icon name="plus" [size]="4"></pc-icon>
-                Collect Donation
-              </button>
-            </div>
-            } @if (donationHistory().length === 0) {
-            <div
-              class="text-center py-10 text-base-content/40 italic bg-base-100 rounded-xl border border-dashed border-base-200"
-            >
-              No donations recorded yet for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl shadow-sm">
-              <table class="table w-full text-xs">
-                <thead>
-                  <tr class="bg-base-50 border-b border-base-200">
-                    <th class="font-bold text-base-content/70">Date</th>
-                    <th class="font-bold text-base-content/70">Amount</th>
-                    <th class="font-bold text-base-content/70">Method</th>
-                    <th class="font-bold text-base-content/70">Receipt</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (donation of visibleDonations(); track donation.id) {
-                  <tr class="hover:bg-base-200/20 border-b border-base-200">
-                    <td class="font-medium text-base-content/75 tabular-nums">
-                      {{ donation.created_at | date:'mediumDate' }}
-                    </td>
-                    <td class="font-bold text-base-content tabular-nums">${{ (donation.amount / 100).toFixed(2) }}</td>
-                    <td class="text-base-content/65">{{ donationMethod(donation) }}</td>
-                    <td>
-                      <pc-status-badge [type]="donationReceipt(donation).type">
-                        {{ donationReceipt(donation).label }}
-                      </pc-status-badge>
-                    </td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            @if (donationHistory().length > DONATION_PREVIEW_COUNT) {
-            <div class="text-xs text-base-content/60 px-1">
-              @if (!showAllDonations()) { Showing {{ DONATION_PREVIEW_COUNT }} of {{ donationHistory().length }} —
-              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(true)">
-                Show all {{ donationHistory().length }}
-              </button>
-              } @else { Showing all {{ donationHistory().length }} —
-              <button type="button" class="text-primary hover:underline" (click)="showAllDonations.set(false)">
-                Show fewer
-              </button>
-              }
-            </div>
-            } }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="events" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-4">
-            @if (eventHistory().length === 0) {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No event registrations found for this person.
-            </div>
-            } @else {
-            <div class="overflow-x-auto border border-base-300 rounded-lg bg-base-100 p-2 shadow-sm">
-              <table class="table table-sm w-full text-xs">
-                <thead>
-                  <tr class="bg-base-200">
-                    <th>Event</th>
-                    <th>Date</th>
-                    <th>Ticket</th>
-                    <th>Status</th>
-                    <th>Checked In</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (reg of eventHistory(); track reg.id) {
-                  <tr class="hover:bg-base-200/50">
-                    <td>
-                      <a [routerLink]="['/events/pages', reg.event_id]" class="link link-primary font-bold">
-                        {{ reg.event_name }}
-                      </a>
-                    </td>
-                    <td>{{ reg.start_time | date:'mediumDate' }}</td>
-                    <td class="font-light">{{ reg.ticket_type_name || '—' }}</td>
-                    <td>
-                      <pc-status-badge [type]="getEventStatusType(reg.status)">{{ reg.status }}</pc-status-badge>
-                    </td>
-                    <td class="font-mono">{{ reg.checked_in_at ? (reg.checked_in_at | date:'shortTime') : '—' }}</td>
-                  </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-            }
-          </div>
-        </pc-tab-panel>
-
-        <pc-tab-panel id="household" [activeTab]="activeTab()">
-          <div class="flex flex-col gap-6">
-            <!-- Household members -->
-            <div class="flex flex-col gap-4">
-              @if (householdId() && !isPlaceholderHousehold()) { @defer {
-              <pc-people-in-household [householdId]="householdId()!" [excludePersonId]="id()"></pc-people-in-household>
-              } @placeholder {
-              <div class="skeleton w-full h-32"></div>
-              } } @else {
-              <div class="flex flex-col items-center gap-3 py-10 text-center">
-                <pc-icon name="home" [size]="10" class="text-base-content/25"></pc-icon>
-                <div class="flex flex-col gap-1">
-                  <span
-                    class="font-medium text-base-content"
-                    i18n="PersonView|Household empty heading@@person.household.emptyHeading"
-                    >Not part of a household yet</span
-                  >
-                  <span
-                    class="max-w-sm text-sm text-base-content/50"
-                    i18n="PersonView|Household empty cause@@person.household.emptyCause"
-                    >Households group people who share an address, so everyone at the same address stays in sync.</span
-                  >
-                </div>
-                <button type="button" class="btn btn-primary btn-sm gap-1.5" (click)="editPerson()">
-                  <pc-icon name="home" [size]="4"></pc-icon>
-                  <ng-container i18n="PersonView|Assign household action@@person.household.assign"
-                    >Assign household</ng-container
-                  >
-                </button>
-              </div>
-              }
-            </div>
-
-            <!-- Connections (folded into Household) -->
-            <div class="flex flex-col gap-2 border-t border-base-200 pt-4">
-              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Connections</span>
-              <pc-person-connections
-                [personId]="id()"
-                (countChange)="connectionCount.set($event)"
-              ></pc-person-connections>
-            </div>
-          </div>
-        </pc-tab-panel>
-      </pc-tabs>
-    </div>
-  </div>
-  }
-  <!-- Collect Donation Modal -->
-  @if (showDonationModal()) {
-  <div class="modal modal-open z-50">
-    <div class="modal-box rounded-2xl border border-base-200 max-w-md p-6 bg-base-100 shadow-2xl">
-      <div class="flex justify-between items-center border-b border-base-200 pb-3 mb-4">
-        <h3 class="text-lg font-bold flex items-center gap-2">
-          <pc-icon name="currency-dollar" class="text-primary" [size]="5"></pc-icon>
-          Collect Donation
-        </h3>
-        <button type="button" class="btn btn-sm btn-circle btn-ghost" (click)="closeDonationModal()">✕</button>
-      </div>
-
-      <div class="space-y-4">
-        <p class="text-xs text-base-content/60">
-          Enter the donation amount in dollars. Residency validation and limit verification will be performed
-          automatically before redirecting to the payment gateway.
-        </p>
-
-        <!-- Donor Residency Profile -->
-        <div class="bg-base-50 p-3 rounded-lg border border-base-200 text-xs space-y-1">
-          <span class="font-bold text-base-content/70 block uppercase tracking-wider text-[9px]"
-            >Donor Residency Profile</span
-          >
-          <div class="flex items-center gap-1.5 text-base-content/75 font-semibold mt-1">
-            <pc-icon name="map-pin" [size]="4"></pc-icon>
-            {{ addressString() }}
-          </div>
-        </div>
-
-        <!-- Donation Amount input -->
-        <div class="flex flex-col gap-1.5">
-          <label for="donation_input" class="text-sm font-semibold text-base-content/90">Donation Amount ($)</label>
-          <div class="relative">
-            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-bold">$</span>
-            <input
-              id="donation_input"
-              type="number"
-              min="1"
-              placeholder="250"
-              class="input input-bordered focus:input-primary w-full pl-8 font-semibold text-base-content text-sm bg-base-200/20"
-              [(ngModel)]="donationAmount"
-            />
-          </div>
-        </div>
-
-        <!-- Error alert -->
-        @if (eligibilityError()) {
-        <div class="alert alert-error text-xs rounded-xl flex items-start gap-2 shadow-sm font-medium">
-          <pc-icon name="exclamation-triangle" class="shrink-0 mt-0.5" [size]="4"></pc-icon>
-          <span>{{ eligibilityError() }}</span>
-        </div>
-        }
-      </div>
-
-      <div class="modal-action border-t border-base-200 pt-4 mt-6 flex justify-end gap-3">
-        <button
-          type="button"
-          class="btn btn-ghost text-sm font-semibold"
-          (click)="closeDonationModal()"
-          [disabled]="isCheckingEligibility()"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          class="btn btn-primary min-w-[140px] text-sm font-semibold"
-          (click)="submitDonation()"
-          [disabled]="isCheckingEligibility() || !donationAmount() || donationAmount()! <= 0"
-        >
-          @if (isCheckingEligibility()) {
-          <span class="loading loading-spinner loading-xs mr-1.5"></span>
-          Verifying... } @else { Verify & Proceed }
-        </button>
-      </div>
-    </div>
-    <div class="modal-backdrop bg-black/40 backdrop-blur-sm" (click)="closeDonationModal()"></div>
-  </div>
-  }
-</pc-detail-layout>
-```
-
-## File: apps/frontend/src/app/layout/navbar/navbar.ts
-
-```typescript
-import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Router, RouterLink } from '@angular/router';
-
-import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
-import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
-import { SearchService } from '../../services/api/search-service';
-import { FullScreenService } from '../../services/fullscreen.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
-import { UserService } from '@frontend/services/user.service';
-import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
-import { NotificationsService } from '../../services/api/notifications-service';
-
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: string | Date;
-};
-
-@Component({
-  selector: 'pc-navbar',
-  imports: [
-    Icon,
-    Swap,
-    ReactiveFormsModule,
-    AnimateIfDirective,
-    RouterLink,
-    FavouriteToggle,
-    Breadcrumbs,
-    PersonalSettingsDialog,
-  ],
-  templateUrl: './navbar.html',
-  host: {
-    '(window:keydown)': 'handleKeyDown($event)',
-  },
-})
-export class Navbar implements OnDestroy {
-  protected readonly emailActions = inject(EmailActionsStore);
-  protected readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly fullscreen = inject(FullScreenService);
-  private readonly searchSvc = inject(SearchService);
-  private readonly sideBarSvc = inject(SidebarService);
-  private readonly notificationsSvc = inject(NotificationsService);
-  private readonly router = inject(Router);
-
-  protected readonly currentUser = this.auth.getUserSignal();
-  protected readonly currentUserAvatar = computed(() => {
-    const user = this.currentUser();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  /** Initials shown in the avatar circle when the user has no picture. */
-  protected readonly userInitials = computed(() => {
-    const user = this.currentUser();
-    if (!user) return '';
-    const first = (user.first_name ?? '').trim();
-    const last = (user.last_name ?? '').trim();
-    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
-    return (initials || user.email?.charAt(0) || '?').toUpperCase();
-  });
-
-  private pollInterval?: ReturnType<typeof setInterval>;
-
-  public readonly notifications = signal<NotificationItem[]>([]);
-  public readonly unreadCount = signal<number>(0);
-  public readonly isLoadingMore = signal<boolean>(false);
-  public readonly hasMore = signal<boolean>(true);
-
-  protected isMobileOpen() {
-    return this.sideBarSvc.isMobileOpen();
-  }
-  protected readonly searchBarVisible = signal(false);
-
-  /** Personal Settings popup (§5a) — opened from the avatar menu. */
-  protected readonly settingsOpen = signal(false);
-
-  protected openSettings(): void {
-    this.closeDropdown();
-    this.settingsOpen.set(true);
-  }
-
-  protected readonly searchStr = signal('');
-  protected readonly themeSvc = inject(ThemeService);
-
-  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
-
-  constructor() {
-    // Move focus to the search bar whenever it becomes visible
-    effect(() => {
-      if (this.searchBarVisible())
-        queueMicrotask(() => {
-          this.searchInputRef()?.nativeElement?.focus();
-        });
-    });
-
-    void this.initNotifications();
-    this.pollInterval = setInterval(() => {
-      void this.refreshCount();
-    }, 60000);
-  }
-
-  public ngOnDestroy() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-    }
-  }
-
-  private async initNotifications() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      this.unreadCount.set(count || 0);
-      await this.fetchInitial();
-    } catch (err) {
-      console.error('Failed to initialize notifications', err);
-    }
-  }
-
-  protected async fetchInitial() {
-    this.isLoadingMore.set(true);
-    try {
-      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
-      this.notifications.set(list || []);
-      this.hasMore.set((list || []).length === 5);
-    } catch (err) {
-      console.error('Failed to fetch initial notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async refreshCount() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      const oldCount = this.unreadCount();
-      this.unreadCount.set(count || 0);
-      if (count > oldCount) {
-        // Notification count increased, fetch first 5 notifications in background
-        await this.fetchInitial();
-      }
-    } catch (err) {
-      console.error('Failed to poll notification count', err);
-    }
-  }
-
-  protected onNotificationOpen() {
-    if (this.notifications().length === 0) {
-      void this.fetchInitial();
-    }
-  }
-
-  protected onScroll(event: Event) {
-    const target = event.target as HTMLElement;
-    const threshold = 20; // px from bottom
-    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
-    if (isNearBottom) {
-      void this.loadMore();
-    }
-  }
-
-  protected async loadMore() {
-    if (this.isLoadingMore() || !this.hasMore()) return;
-    this.isLoadingMore.set(true);
-    try {
-      const nextBatch = await this.notificationsSvc.getLatest({
-        limit: 5,
-        offset: this.notifications().length,
-      });
-      if (!nextBatch || nextBatch.length < 5) {
-        this.hasMore.set(false);
-      }
-      if (nextBatch && nextBatch.length > 0) {
-        const existingIds = new Set(this.notifications().map((n) => n.id));
-        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
-        if (uniqueNext.length > 0) {
-          this.notifications.set([...this.notifications(), ...uniqueNext]);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load more notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async clickNotification(notif: NotificationItem) {
-    if (!notif.read) {
-      try {
-        await this.notificationsSvc.markRead(notif.id);
-        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
-        this.unreadCount.update((c) => Math.max(0, c - 1));
-      } catch (err) {
-        console.error('Failed to mark notification read', err);
-      }
-    }
-    if (notif.link) {
-      void this.router.navigateByUrl(notif.link);
-    }
-    this.closeDropdown();
-  }
-
-  protected async markAllAsRead(event: Event) {
-    event.stopPropagation();
-    try {
-      await this.notificationsSvc.markAllRead();
-      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
-      this.unreadCount.set(0);
-    } catch (err) {
-      console.error('Failed to mark all read', err);
-    }
-  }
-
-  protected formatTime(dateStr: string | Date | null | undefined): string {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  public clearSearch(): void {
-    this.searchStr.set('');
-    this.searchSvc.clearSearch();
-  }
-
-  public handleKeyDown(event: KeyboardEvent): void {
-    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-    const isK = event?.key?.toLowerCase() === 'k';
-
-    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
-    if (isCtrlOrCmd && isK && !event.shiftKey) {
-      event.preventDefault();
-
-      this.showSearchBar();
-    } else if (event.key === 'Escape' && this.searchBarVisible()) {
-      this.clearSearch();
-      this.hideSearchBar();
-    }
-  }
-
-  protected hideSearchBar(): void {
-    this.searchBarVisible.set(false);
-  }
-
-  protected isFullScreenMode(): boolean {
-    return this.fullscreen.isFullScreenMode();
-  }
-
-  protected onBlurSearchBar() {
-    if (!this.searchStr().length) {
-      this.hideSearchBar();
-    }
-  }
-
-  protected onSearchEnter(): void {
-    this.searchSvc.doSearchImmediate(this.searchStr());
-  }
-
-  protected onSearchInput(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.searchStr.set(input.value);
-    this.search();
-  }
-
-  protected search(): void {
-    this.searchSvc.doSearch(this.searchStr());
-  }
-
-  protected showSearchBar(): void {
-    this.searchBarVisible.set(true);
-  }
-
-  protected signOut(): void {
-    void this.auth.signOut();
-  }
-
-  protected closeDropdown(): void {
-    const activeEl = document.activeElement as HTMLElement | null;
-    if (activeEl) {
-      activeEl.blur();
-    }
-  }
-
-  protected toggleFullScreen(): void {
-    void this.fullscreen.toggleFullScreen();
-  }
-
-  protected toggleMobile(): void {
-    this.sideBarSvc.toggleMobile();
-  }
-
-  protected toggleSearch(): void {
-    this.searchBarVisible.set(!this.searchBarVisible());
-  }
-
-  protected toggleTheme(): void {
-    this.themeSvc.toggleTheme();
-  }
-}
-```
-
-## File: apps/frontend/src/app/services/api/trpc-service.ts
-
-```typescript
-import { inject, Service } from '@angular/core';
-import { Router } from '@angular/router';
-import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
-import { ErrorService } from '../error.service';
-import {
-  TRPCClient,
-  TRPCClientError,
-  TRPCLink,
-  createTRPCClient,
-  httpLink as trpcHttpLink,
-  loggerLink,
-} from '@trpc/client';
-import { observable } from '@trpc/server/observable';
-import superjson from 'superjson';
-
-import { get, set } from 'idb-keyval';
-
-import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-import { environment } from '../../../environments/environment';
-import { TokenService } from './token-service';
-import { refreshLink } from './trpc-refreshlink';
-import { ApiError } from './api-error';
-
-@Service()
-export class TRPCService<T> {
-  protected readonly errorSvc = inject(ErrorService);
-
-  protected readonly router = inject(Router);
-
-  protected readonly tokenService = inject(TokenService);
-
-  protected ac = new AbortController();
-
-  public readonly api: TRPCClient<TRPCRouter>;
-
-  constructor() {
-    this.api = createTRPCClient<TRPCRouter>({
-      links: [
-        loggerLink(),
-        refreshLink(this.tokenService, this.router),
-        errorLink(this.errorSvc),
-        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
-      ],
-    });
-  }
-
-  public abort() {
-    this.ac.abort();
-    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
-  }
-
-  protected async runCachedCall(
-    apiCall: Promise<Partial<T>[]>,
-    apiName: string,
-    options: getAllOptionsType,
-    refresh: boolean,
-  ) {
-    // Use the full serialized (apiName + options) as the IndexedDB key. IDB string
-    // keys can be arbitrarily long, so there's no need to fold it into a 32-bit hash
-    // — that hash collided, letting one query serve another query's cached rows.
-    const cacheKey = `trpc:${JSON.stringify({ apiName, ...options })}`;
-    const payload = await get(cacheKey);
-    let data = payload?.expires > Date.now() ? payload.data : null;
-
-    if (refresh || !data || data.length === 0) {
-      data = await apiCall;
-      await set(cacheKey, { expires: this.addDays(1), data });
-    }
-
-    return data;
-  }
-
-  private addDays(days: number) {
-    const date = new Date(Date.now());
-    date.setDate(date.getDate() + days);
-    return date;
-  }
-}
-
-function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
-  const GENERIC_INPUT_MSG = 'Please check your input and try again';
-
-  return () =>
-    ({ next, op }) =>
-      observable((observer) => {
-        const unsubscribe = next(op).subscribe({
-          next: (value) => observer.next(value),
-          error: (err) => {
-            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
-            const path = op.path ?? '';
-            const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
-            let finalErr: any = err;
-            let code: string | undefined;
-
-            if (err instanceof TRPCClientError) {
-              code = err.data?.code as string | undefined;
-
-              let msg = err.message;
-              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-                // Server formatter should already do this; this is just a client fallback
-                msg = GENERIC_SIGNIN_ERROR;
-              } else if (code === 'BAD_REQUEST') {
-                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
-                if (isValidationError) {
-                  msg = GENERIC_INPUT_MSG;
-                }
-              }
-              finalErr = new ApiError(msg, err);
-            }
-
-            // Aborted requests (component teardown, superseded loads) are not
-            // user-facing failures — never toast or redirect them.
-            if (!isAbortError(err)) {
-              if (code === 'UNAUTHORIZED' && !isSignIn) {
-                // A dead session must sign the user out even when the caller passed skipErrorHandler:
-                // that flag suppresses the error toast, not the sign-out. redirectToSignIn() no-ops on
-                // public pages and de-dupes, so probes and public routes stay put.
-                errorSvc.redirectToSignIn();
-              } else if (!meta?.skipErrorHandler) {
-                errorSvc.handle(finalErr);
-              }
-            }
-
-            observer.error(finalErr);
-          },
-          complete: () => observer.complete(),
-        });
-        return unsubscribe;
-      });
-}
-
-function isAbortError(err: unknown): boolean {
-  if (err instanceof DOMException && err.name === 'AbortError') return true;
-  if (err instanceof TRPCClientError) {
-    const cause: unknown = err.cause;
-    return cause instanceof DOMException && cause.name === 'AbortError';
-  }
-  return false;
-}
-
-function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
-  return trpcHttpLink({
-    url: environment.apiUrl,
-    transformer: superjson,
-    // Combine the per-request signal tRPC provides with the service-level
-    // controller so TRPCService.abort() actually cancels in-flight requests.
-    // `credentials: 'include'` is required so the browser honors Set-Cookie on the
-    // sign-in/out responses and attaches the HttpOnly refresh cookie (SECURITY-REVIEW 2.1).
-    fetch(input, init) {
-      const signals: AbortSignal[] = [getAbortSignal()];
-      if (init?.signal) signals.push(init.signal);
-      return globalThis.fetch(input, { ...init, credentials: 'include', signal: AbortSignal.any(signals) });
-    },
-    headers() {
-      const authToken = tokenSvc.getAuthToken();
-      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
-    },
-  });
-}
-```
-
-## File: apps/frontend/src/app/app.routes.ts
-
-```typescript
-import type { Routes } from '@angular/router';
-
-import { authGuard } from './auth/auth-guard';
-import { loginGuard } from './auth/login/login-guard';
-
-export const appRoutes = [
-  // Default redirect to the dashboard inside the app shell
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  // Auth pages
-  {
-    path: 'signin',
-    canActivate: [loginGuard],
-    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
-  },
-  {
-    path: 'signup',
-    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
-  },
-  {
-    path: 'resetpassword',
-    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
-  },
-  {
-    path: 'new-password',
-    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
-  },
-  {
-    path: 'verify-sender-email',
-    loadComponent: () =>
-      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
-  },
-  {
-    path: 'confirm-subscription',
-    loadComponent: () =>
-      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
-  },
-  {
-    path: 'f/:slug',
-    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
-  },
-  {
-    path: 'e/:slug',
-    data: { kind: 'event' },
-    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
-  },
-  {
-    path: 'v/:slug',
-    data: { kind: 'volunteer' },
-    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
-  },
-  {
-    path: 'volunteer',
-    loadComponent: () =>
-      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
-  },
-  {
-    path: 'verify-email',
-    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
-  },
-  {
-    path: 'cancel-deletion',
-    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
-  },
-  {
-    path: 'resume-account',
-    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
-  },
-
-  // Main dashboard shell + children (protected)
-  {
-    path: '',
-    canActivate: [authGuard],
-    // optionally also: canActivateChild: [authGuard],
-    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
-    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
-  },
-
-  // Fallback
-  {
-    path: '**',
-    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
-  },
-] as const satisfies Routes;
-```
-
-## File: apps/frontend/src/styles.css
-
-```css
-@import 'tailwindcss';
-@plugin "daisyui";
-@plugin "@tailwindcss/typography";
-
-/* styles.css */
-@import 'quill/dist/quill.snow.css';
-
-/* Self-hosted app font — bundled from node_modules, no external font CDN */
-@import '@fontsource-variable/inter';
-
-@plugin "daisyui/theme" {
-  name: 'light';
-  default: true;
-  --color-primary: #0ea5e9;
-  --color-primary-content: #ffffff;
-  --color-secondary: #14e8a6;
-  --color-secondary-content: #1f2937;
-  --color-accent: #0c506e;
-  --color-accent-content: #f0f0f0;
-  --color-neutral: #cbd5e1;
-  --color-neutral-content: #1f2937;
-  --color-base-100: #ffffff;
-  --color-base-200: #f8f8f8ff;
-  --color-base-300: #efeeeeff;
-  --color-base-content: #1f2937;
-  --color-info: #38bdf8;
-  --color-success: #2dd4bf;
-  --color-success-content: #053a34;
-  --color-warning: #e5c963;
-  --color-warning-content: #4a3d0a;
-  --color-error: #f37373;
-  --color-error-content: #ffffff;
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #e7e5e4;
-
-  --tooltip-bg: #333333;
-  --tooltip-color: #eeeeee;
-  --color-placeholder: #9ca3af;
-}
-
-.input::placeholder,
-textarea::placeholder,
-label.input input::placeholder,
-label.input textarea::placeholder,
-label.input pc-icon {
-  color: var(--color-placeholder);
-}
-
-/* Ensure all input elements inside a label.input wrapper grow to take full horizontal space */
-label.input input {
-  flex-grow: 1;
-  width: 100%;
-}
-
-/* Prevent browser autofill from coloring the background, preserving transparency */
-label.input input:-webkit-autofill,
-label.input input:-webkit-autofill:hover,
-label.input input:-webkit-autofill:focus,
-label.input input:-webkit-autofill:active {
-  transition: background-color 5000s ease-in-out 0s;
-  -webkit-text-fill-color: inherit !important;
-}
-
-@plugin "daisyui/theme" {
-  name: 'dark';
-
-  /* Brand / accent */
-  --color-primary: #3ea6ff; /* bright azure */
-  --color-secondary: #20d7a7; /* teal pop (optional) */
-  --color-accent: #3ea6ff;
-  --color-accent-content: #0b1220; /* dark text on bright azure */
-
-  /* Text + neutrals */
-  --color-neutral: #0e182b; /* chrome / panels */
-  --color-neutral-content: #c7d1e5; /* default text on dark */
-
-  /* Surfaces */
-  --color-base-100: #0b1220; /* app/page background */
-  --color-base-200: #131e31; /* row alt / subtle surface */
-  --color-base-300: #1a2b45; /* headers / raised surface */
-
-  /* Hairline border token — one line color app-wide, per theme (design §5). */
-  --color-line: #1a2b45;
-
-  /* Feedback */
-  --color-info: #3ea6ff;
-  --color-success: #22c55e;
-  --color-success-content: #052e12;
-  --color-warning: #f59e0b;
-  --color-warning-content: #3d2a05;
-  --color-error: #ef4444;
-  --color-error-content: #2b0505;
-
-  /* Tooltips */
-  --tooltip-bg: #0e1626;
-  --tooltip-color: #e6edf7;
-}
-
-html,
-body {
-  height: 100vh;
-}
-
-body {
-  font-family: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
-  font-weight: 400;
-}
-
-/* Custom scrollbar styles for email components */
-.email-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-base-300) var(--color-base-200);
-}
-
-.email-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-.email-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-base-200);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-base-300);
-  border-radius: 4px;
-}
-
-.email-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
-}
-
-.bg-image {
-  background-image: url('assets/bg.jpg');
-  background-size: cover; /* scale to cover entire container */
-  background-position: center; /* keep it centered */
-  background-repeat: no-repeat; /* prevent tiling */
-}
-
-/* AG Grid legacy themes removed */
-
-@layer utilities {
-  /* Ensure mentions inside chat bubbles are inline */
-  .chat-bubble [data-mention] {
-    display: inline;
-  }
-
-  /* In composer mirrors, keep mention width identical to textarea text
-     to avoid caret drift. Use underline instead of bold in the mirror. */
-  .composer-mirror [data-mention] {
-    font-weight: inherit !important;
-    text-decoration: underline;
-  }
-
-  @keyframes up {
-    0% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes down {
-    0% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-  @keyframes right {
-    0% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes left {
-    0% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    100% {
-      transform: translateX(0);
-      opacity: 1;
-    }
-  }
-  @keyframes drop {
-    0% {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    100% {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-  @keyframes flash {
-    0% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-    100% {
-      opacity: 1;
-    }
-  }
-
-  /* Save-landed feedback for grids and forms — success tint fading to nothing.
-     Semantic token so it survives theme switch (design §5). Mirrors the
-     datagrid's :host-scoped row-saved-flash so form fields can reuse it. */
-  @keyframes savedFlash {
-    0% {
-      background-color: color-mix(in srgb, var(--color-success) 50%, transparent);
-    }
-    60% {
-      background-color: color-mix(in srgb, var(--color-success) 20%, transparent);
-    }
-    100% {
-      background-color: transparent;
-    }
-  }
-
-  @keyframes exitUp {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(-100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitDown {
-    0% {
-      transform: translateY(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitRight {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-  }
-  @keyframes exitLeft {
-    0% {
-      transform: translateX(0%);
-      opacity: 1;
-    }
-    100% {
-      transform: translateX(-100%);
-      opacity: 0;
-    }
-  }
-
-  .animate-up {
-    animation: up 0.3s ease-in-out both;
-  }
-  .animate-down {
-    animation: down 0.3s ease-in-out both;
-  }
-  .animate-right {
-    animation: right 0.3s ease-in-out both;
-  }
-  .animate-left {
-    animation: left 0.3s ease-in-out both;
-  }
-  .animate-drop {
-    animation: drop 0.3s ease-in-out both;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out;
-  }
-  .animate-exit-up {
-    animation: exitUp 0.3s ease-in-out forwards;
-  }
-  .animate-exit-down {
-    animation: exitDown 0.3s ease-in-out forwards;
-  }
-  .animate-exit-left {
-    animation: exitLeft 0.3s ease-in-out forwards;
-  }
-  .animate-exit-right {
-    animation: exitRight 0.3s ease-in-out forwards;
-  }
-  .animate-flash {
-    animation: flash 1s ease-in-out 1;
-  }
-  .animate-saved-flash {
-    animation: savedFlash 1.2s ease-out 1;
-  }
-}
-
-/* Hairline border helper — pairs with any border-width utility to paint the
-   app-wide line color (design §5). Use as `class="border-b border-line"`. */
-@utility border-line {
-  border-color: var(--color-line);
-}
-
-/* Dark mode overrides for Quill and email prose */
-[data-theme='dark'] .ql-toolbar.ql-snow,
-[data-theme='dark'] .ql-container.ql-snow {
-  border-color: var(--color-base-300) !important;
-  background-color: var(--color-base-100) !important;
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-stroke {
-  stroke: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-fill {
-  fill: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .ql-snow .ql-picker-options {
-  background-color: var(--color-base-300) !important;
-  border-color: var(--color-base-100) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow .ql-toolbar button:focus,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-label.ql-active,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item:hover,
-[data-theme='dark'] .ql-snow.ql-toolbar .ql-picker-item.ql-selected,
-[data-theme='dark'] .ql-snow .ql-toolbar .ql-picker-item.ql-selected {
-  color: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow.ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button:hover .ql-stroke,
-[data-theme='dark'] .ql-snow.ql-toolbar button.ql-active .ql-stroke,
-[data-theme='dark'] .ql-snow .ql-toolbar button.ql-active .ql-stroke {
-  stroke: var(--color-primary) !important;
-}
-[data-theme='dark'] .ql-snow .ql-editor.ql-blank::before {
-  color: var(--color-placeholder) !important;
-}
-[data-theme='dark'] .prose {
-  color: var(--color-neutral-content) !important;
-}
-[data-theme='dark'] .prose h1,
-[data-theme='dark'] .prose h2,
-[data-theme='dark'] .prose h3,
-[data-theme='dark'] .prose h4,
-[data-theme='dark'] .prose h5,
-[data-theme='dark'] .prose h6,
-[data-theme='dark'] .prose strong,
-[data-theme='dark'] .prose b,
-[data-theme='dark'] .prose a {
-  color: var(--color-neutral-content) !important;
-}
-
-/* Ensure closed dropdown contents do not intercept pointer events or hover */
-.dropdown:not(.dropdown-open):not([open]):not(:focus):not(:focus-within) .dropdown-content {
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}
-
-/* Allow dropdown-hover to work if ever used in the future */
-.dropdown.dropdown-hover:hover .dropdown-content {
-  visibility: visible !important;
-  pointer-events: auto !important;
-  opacity: 1 !important;
-}
-
-/* Ensure tooltip text is consistently normal weight and not bold */
-.tooltip:before,
-.tooltip::before {
-  font-weight: 400 !important;
-}
-
-/* Override DaisyUI menu details overflow rule to prevent clipping details dropdowns */
-.menu details.dropdown {
-  overflow: visible !important;
-}
-
-/* Global keyboard focus ring — one ring style everywhere, keyboard only, both themes.
-   Semantic primary token so it survives theme switch (design §5). */
-:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
-}
-/* Suppress the ring for pointer/mouse focus on controls that manage their own affordance;
-   :focus-visible already excludes most mouse focus, but belt-and-suspenders for inputs. */
-:focus:not(:focus-visible) {
-  outline: none;
-}
-
-/* Respect reduced-motion: collapse all animation/transition to near-instant (design §7). */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/persons/ui/person-view.ts
-
 ```typescript
 import { DatePipe, Location } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
@@ -57453,494 +57376,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/dashboard.routes.ts
-
-```typescript
-import type { Routes } from '@angular/router';
-import { roleGuard } from './auth/role-guard';
-import {
-  companyRecordIdResolver,
-  householdRecordIdResolver,
-  personRecordIdResolver,
-} from './services/record-slug.resolver';
-import { unsavedChangesGuard } from './services/unsaved-changes-guard';
-
-export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  {
-    path: 'dashboard',
-    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
-  },
-  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
-  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
-
-  {
-    path: 'people',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
-        data: { shouldReuse: true, key: 'persongridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
-        // Slug-aware: the URL may carry /people/amira-hassan; the component's
-        // `id` input always receives the numeric id (route data wins over params).
-        resolve: { id: personRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: personRecordIdResolver },
-      },
-    ],
-  },
-
-  {
-    path: 'households',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
-        data: { shouldReuse: true, key: 'householdsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
-        resolve: { id: householdRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: householdRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'duplicates',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
-      },
-      {
-        path: 'people',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
-      },
-      {
-        path: 'households',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
-      },
-      {
-        path: 'companies',
-        loadComponent: () =>
-          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
-      },
-    ],
-  },
-  {
-    path: 'tags',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
-        data: { shouldReuse: true, key: 'tagsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
-      },
-    ],
-  },
-
-  {
-    path: 'issues',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
-        data: { shouldReuse: true, key: 'issuesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
-      },
-    ],
-  },
-
-  {
-    path: 'lists',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
-        data: { shouldReuse: true, key: 'listsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'new' },
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
-        data: { mode: 'edit' },
-      },
-    ],
-  },
-
-  {
-    path: 'newsletters',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'newslettersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () =>
-          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'automations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
-        pathMatch: 'full',
-        data: { shouldReuse: true, key: 'workflowsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
-      },
-    ],
-  },
-  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
-  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
-
-  {
-    path: 'events',
-    children: [
-      {
-        path: '',
-        redirectTo: 'pages',
-        pathMatch: 'full',
-      },
-      {
-        path: 'shifts',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
-            data: { shouldReuse: true, key: 'eventsgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-      {
-        path: 'pages',
-        children: [
-          {
-            path: '',
-            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
-            data: { shouldReuse: true, key: 'eventpagesgridroot' },
-          },
-          {
-            path: 'add',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-          {
-            path: ':id',
-            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
-          },
-          {
-            path: ':id/edit',
-            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
-            canDeactivate: [unsavedChangesGuard],
-          },
-        ],
-      },
-    ],
-  },
-
-  {
-    path: 'donations',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
-        data: { shouldReuse: true, key: 'donationsgridroot' },
-      },
-      {
-        path: 'pledges',
-        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
-        data: { shouldReuse: true, key: 'pledgesgridroot' },
-      },
-    ],
-  },
-
-  {
-    path: 'inbox',
-    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
-  },
-  {
-    path: 'tasks',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/tasks/ui/tasks-grid').then((m) => m.TasksGrid),
-        data: { shouldReuse: true, key: 'tasksgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
-      },
-    ],
-  },
-  {
-    path: 'board',
-    loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
-  },
-
-  {
-    path: 'teams',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
-        data: { shouldReuse: true, key: 'teamsgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'new' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
-        data: { mode: 'edit' },
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'users',
-    canActivate: [roleGuard],
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
-        data: { shouldReuse: true, key: 'usersgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
-        canDeactivate: [unsavedChangesGuard],
-      },
-    ],
-  },
-  {
-    path: 'forms',
-    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
-    data: { shouldReuse: true, key: 'formspageroot' },
-  },
-  {
-    path: 'donation-pages',
-    children: [
-      {
-        path: '',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
-        data: { shouldReuse: true, key: 'donationpagesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
-        data: { backRoute: '/donation-pages' },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () =>
-          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
-      },
-    ],
-  },
-
-  {
-    path: 'settings',
-    children: [
-      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'settings' },
-      },
-    ],
-  },
-  {
-    path: 'workspace',
-    canActivate: [roleGuard],
-    children: [
-      { path: '', redirectTo: 'organization', pathMatch: 'full' },
-      {
-        path: ':section',
-        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
-        data: { mode: 'workspace' },
-      },
-    ],
-  },
-  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
-  {
-    path: 'configuration',
-    redirectTo: '/workspace',
-    pathMatch: 'prefix',
-  },
-  {
-    path: 'billing',
-    redirectTo: '/workspace/billing',
-    pathMatch: 'full',
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
-  },
-  {
-    path: 'imports',
-    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
-  },
-  {
-    path: 'exports',
-    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
-  },
-  {
-    path: 'companies',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
-        data: { shouldReuse: true, key: 'companiesgridroot' },
-      },
-      {
-        path: 'add',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
-        resolve: { id: companyRecordIdResolver },
-      },
-      {
-        path: ':id/edit',
-        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
-        canDeactivate: [unsavedChangesGuard],
-        resolve: { id: companyRecordIdResolver },
-      },
-    ],
-  },
-  {
-    path: 'files',
-    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
-  },
-  {
-    path: 'activity',
-    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
-  },
-  // Back-compat: old /activities links redirect to /activity.
-  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
-  {
-    path: 'help',
-    children: [
-      {
-        path: '',
-        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
-      },
-      {
-        path: ':id',
-        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
-      },
-    ],
-  },
-];
-```
-
 ## File: apps/frontend/src/app/layout/navbar/navbar.html
-
 ```html
 <!-- Navigation bar template with search, theme toggle, and user actions -->
 <div class="navbar bg-base-100 shadow-lg relative">
@@ -58208,7 +57644,6 @@ export const dashboardRoutes: Routes = [
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
-
 ```typescript
 //tsco: ignore
 
@@ -60898,8 +60333,496 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar.html
+## File: apps/frontend/src/app/dashboard.routes.ts
+```typescript
+import type { Routes } from '@angular/router';
+import { roleGuard } from './auth/role-guard';
+import {
+  companyRecordIdResolver,
+  householdRecordIdResolver,
+  personRecordIdResolver,
+} from './services/record-slug.resolver';
+import { unsavedChangesGuard } from './services/unsaved-changes-guard';
 
+export const dashboardRoutes: Routes = [
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'dashboard',
+    loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
+  },
+  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
+  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
+
+  {
+    path: 'people',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/persons/ui/persons-grid').then((m) => m.PersonsGrid),
+        data: { shouldReuse: true, key: 'persongridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/persons/ui/person-view').then((m) => m.PersonView),
+        // Slug-aware: the URL may carry /people/amira-hassan; the component's
+        // `id` input always receives the numeric id (route data wins over params).
+        resolve: { id: personRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/persons/ui/person-form').then((m) => m.PersonForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: personRecordIdResolver },
+      },
+    ],
+  },
+
+  {
+    path: 'households',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/households/ui/households-grid').then((m) => m.HouseholdsGrid),
+        data: { shouldReuse: true, key: 'householdsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/households/ui/household-view').then((m) => m.HouseholdView),
+        resolve: { id: householdRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/households/ui/household-form').then((m) => m.HouseholdForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: householdRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'duplicates',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicate-selection').then((m) => m.DuplicateSelectionComponent),
+      },
+      {
+        path: 'people',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-people').then((m) => m.PeopleDuplicatesComponent),
+      },
+      {
+        path: 'households',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-households').then((m) => m.HouseholdDuplicatesComponent),
+      },
+      {
+        path: 'companies',
+        loadComponent: () =>
+          import('./experiences/duplicates/duplicates-companies').then((m) => m.CompanyDuplicatesComponent),
+      },
+    ],
+  },
+  {
+    path: 'tags',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
+        data: { shouldReuse: true, key: 'tagsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-tag').then((m) => m.AddTag),
+      },
+    ],
+  },
+
+  {
+    path: 'issues',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
+        data: { shouldReuse: true, key: 'issuesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tags/ui/add-issue').then((m) => m.AddIssue),
+      },
+    ],
+  },
+
+  {
+    path: 'lists',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/lists/ui/lists-grid').then((m) => m.ListsGridComponent),
+        data: { shouldReuse: true, key: 'listsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'new' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/lists/ui/list-view').then((m) => m.ListView),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/lists/ui/list-form').then((m) => m.ListForm),
+        data: { mode: 'edit' },
+      },
+    ],
+  },
+
+  {
+    path: 'newsletters',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletters-grid').then((m) => m.NewslettersGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'newslettersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-add').then((m) => m.NewsletterAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () =>
+          import('./experiences/newsletters/ui/newsletter-detail').then((m) => m.NewsletterDetailComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'automations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/workflows/ui/workflows-grid').then((m) => m.WorkflowsGridComponent),
+        pathMatch: 'full',
+        data: { shouldReuse: true, key: 'workflowsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/workflows/ui/workflow-form').then((m) => m.WorkflowFormComponent),
+      },
+    ],
+  },
+  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
+  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
+
+  {
+    path: 'events',
+    children: [
+      {
+        path: '',
+        redirectTo: 'pages',
+        pathMatch: 'full',
+      },
+      {
+        path: 'shifts',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/shifts/ui/shifts-grid').then((m) => m.ShiftsGridComponent),
+            data: { shouldReuse: true, key: 'eventsgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/shifts/ui/shift-view').then((m) => m.ShiftViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/shifts/ui/shift-form').then((m) => m.ShiftFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+      {
+        path: 'pages',
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./experiences/events/ui/events-grid').then((m) => m.EventsGridComponent),
+            data: { shouldReuse: true, key: 'eventpagesgridroot' },
+          },
+          {
+            path: 'add',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./experiences/events/ui/event-view').then((m) => m.EventViewComponent),
+          },
+          {
+            path: ':id/edit',
+            loadComponent: () => import('./experiences/events/ui/event-form').then((m) => m.EventFormComponent),
+            canDeactivate: [unsavedChangesGuard],
+          },
+        ],
+      },
+    ],
+  },
+
+  {
+    path: 'donations',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/donations/ui/donations-grid').then((m) => m.DonationsGridComponent),
+        data: { shouldReuse: true, key: 'donationsgridroot' },
+      },
+      {
+        path: 'pledges',
+        loadComponent: () => import('./experiences/donations/ui/pledges-grid').then((m) => m.PledgesGridComponent),
+        data: { shouldReuse: true, key: 'pledgesgridroot' },
+      },
+    ],
+  },
+
+  {
+    path: 'inbox',
+    loadComponent: () => import('./experiences/emails/ui/email-client/email-client').then((m) => m.EmailClient),
+  },
+  {
+    path: 'tasks',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-list').then((m) => m.TasksList),
+        data: { shouldReuse: true, key: 'taskslistroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/tasks/ui/task-add').then((m) => m.TaskAddComponent),
+      },
+      // Must precede ':id' — otherwise the wildcard param route would swallow it.
+      {
+        path: 'board',
+        loadComponent: () => import('./experiences/tasks/ui/tasks-board').then((m) => m.TasksBoard),
+        data: { shouldReuse: true, key: 'tasksboardroot' },
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/tasks/ui/task-view').then((m) => m.TaskView),
+      },
+    ],
+  },
+  // Back-compat: old /board links (bookmarks, the `g b` shortcut chord) redirect to /tasks/board.
+  { path: 'board', redirectTo: 'tasks/board', pathMatch: 'full' },
+
+  {
+    path: 'teams',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/teams/ui/teams-grid').then((m) => m.TeamsGridComponent),
+        data: { shouldReuse: true, key: 'teamsgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'new' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/teams/ui/team-view').then((m) => m.TeamViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/teams/ui/team-form').then((m) => m.TeamFormComponent),
+        data: { mode: 'edit' },
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'users',
+    canActivate: [roleGuard],
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/users/ui/users-grid').then((m) => m.UsersGridComponent),
+        data: { shouldReuse: true, key: 'usersgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/users/ui/user-add').then((m) => m.UserAddComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/users/ui/user-view').then((m) => m.UserViewComponent),
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/users/ui/user-edit').then((m) => m.UserEditComponent),
+        canDeactivate: [unsavedChangesGuard],
+      },
+    ],
+  },
+  {
+    path: 'forms',
+    loadComponent: () => import('./experiences/forms/ui/forms-page').then((m) => m.FormsPageComponent),
+    data: { shouldReuse: true, key: 'formspageroot' },
+  },
+  {
+    path: 'donation-pages',
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-grid').then((m) => m.FundraisingGridComponent),
+        data: { shouldReuse: true, key: 'donationpagesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/forms/ui/form-view').then((m) => m.FormViewComponent),
+        data: { backRoute: '/donation-pages' },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () =>
+          import('./experiences/fundraising/ui/fundraising-form').then((m) => m.FundraisingFormComponent),
+      },
+    ],
+  },
+
+  {
+    path: 'settings',
+    children: [
+      { path: '', redirectTo: 'notifications', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'settings' },
+      },
+    ],
+  },
+  {
+    path: 'workspace',
+    canActivate: [roleGuard],
+    children: [
+      { path: '', redirectTo: 'organization', pathMatch: 'full' },
+      {
+        path: ':section',
+        loadComponent: () => import('./experiences/settings/settings-page').then((m) => m.SettingsPage),
+        data: { mode: 'workspace' },
+      },
+    ],
+  },
+  // Back-compat: old /configuration links (bookmarks, help articles pre-rename) redirect to /workspace
+  {
+    path: 'configuration',
+    redirectTo: '/workspace',
+    pathMatch: 'prefix',
+  },
+  {
+    path: 'billing',
+    redirectTo: '/workspace/billing',
+    pathMatch: 'full',
+  },
+  {
+    path: 'profile',
+    loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
+  },
+  {
+    path: 'imports',
+    loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
+  },
+  {
+    path: 'exports',
+    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
+  },
+  {
+    path: 'companies',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/companies/ui/companies-grid').then((m) => m.CompaniesGrid),
+        data: { shouldReuse: true, key: 'companiesgridroot' },
+      },
+      {
+        path: 'add',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/companies/ui/company-view').then((m) => m.CompanyView),
+        resolve: { id: companyRecordIdResolver },
+      },
+      {
+        path: ':id/edit',
+        loadComponent: () => import('./experiences/companies/ui/company-form').then((m) => m.CompanyForm),
+        canDeactivate: [unsavedChangesGuard],
+        resolve: { id: companyRecordIdResolver },
+      },
+    ],
+  },
+  {
+    path: 'files',
+    loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
+  },
+  {
+    path: 'activity',
+    loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
+  },
+  // Back-compat: old /activities links redirect to /activity.
+  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
+  {
+    path: 'help',
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./experiences/help/ui/help-home').then((m) => m.HelpHomePage),
+      },
+      {
+        path: ':id',
+        loadComponent: () => import('./experiences/help/ui/help-article').then((m) => m.HelpArticlePage),
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/layout/sidebar/sidebar.html
 ```html
 <ng-template #navLink let-nav>
   <a
@@ -60920,6 +60843,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
       {{ nav.name }} @if (nav.indicator) {
       <span class="indicator-item status status-primary"></span>
+      } @if (nav.badgeCount) {
+      <span
+        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
+        [attr.title]="nav.badgeCount + ' breaching SLA'"
+        >{{ nav.badgeCount }}</span
+      >
       }
     </span>
     @if (nav.shortcut && !isEffectivelyNarrow()) {
@@ -61017,12 +60946,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
 ```typescript
 import type { PcIconNameType } from '@icons/icons.index';
 
 export interface ISidebarItem {
   adminOnly?: boolean;
+  /** Live numeric badge (e.g. Tasks' SLA-breach count). Populated at runtime — never static data. */
+  badgeCount?: number | null;
   children?: ISidebarItem[];
   collapsed?: boolean;
   favourite?: boolean;
@@ -61082,11 +61012,12 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/tasks',
         icon: 'task',
         shortcut: 'k',
-        // TODO(badge): show SLA-breach count (spec §4). Needs a tenant-scoped
-        // `tasks.countSlaBreaches` query; no such endpoint yet.
+        // badgeCount is populated at runtime by Sidebar from `tasks.countSlaBreaches`
+        // (spec §4) — see sidebar.ts. Static data here is intentionally left unset.
       },
-      // Hidden: the board lives behind the Tasks page (swap button is Wave 1B),
-      // but the `g b` chord, the pin button and the help overlay keep working.
+      // Hidden: the board is reachable from the Tasks page via the header swap button
+      // (List <-> Board, both at /tasks and /tasks/board) — this entry only keeps the
+      // `g b` chord, the pin button and the help overlay working.
       {
         name: `Task board`,
         route: '/board',

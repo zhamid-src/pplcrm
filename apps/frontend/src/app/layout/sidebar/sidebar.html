@@ -17,6 +17,12 @@
     <span class="indicator pl-2 text-[13px] tracking-[0.03em]" [class.invisible]="isEffectivelyNarrow()">
       {{ nav.name }} @if (nav.indicator) {
       <span class="indicator-item status status-primary"></span>
+      } @if (nav.badgeCount) {
+      <span
+        class="badge badge-xs border-primary/20 bg-primary/10 text-primary ml-1 tabular-nums"
+        [attr.title]="nav.badgeCount + ' breaching SLA'"
+        >{{ nav.badgeCount }}</span
+      >
       }
     </span>
     @if (nav.shortcut && !isEffectivelyNarrow()) {

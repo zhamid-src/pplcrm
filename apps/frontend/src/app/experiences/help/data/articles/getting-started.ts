@@ -18,7 +18,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '**Dashboard** — your landing page: key numbers and service-level health at a glance. See [The dashboard and SLA health](/help/dashboard).',
-          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/board](/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
+          '**Work** — [Inbox](/inbox) for incoming email, [Tasks](/tasks) (the board lives at [/tasks/board](/tasks/board)), and [People](/people). People, Households, and Companies are three views of the same contacts — tabs under the People header switch between them.',
           '**Outreach** — [Newsletters](/newsletters) for outbound campaigns, [Lists](/lists) for reusable audiences, public-facing [Forms](/forms), [Donations](/donations), and [Fundraising](/donation-pages) pages.',
           '**Field** — [Events](/events/pages), [Teams](/teams), and volunteer [Shifts](/events/shifts).',
           '**Data** — [Import / export](/imports) (with [Exports](/exports)), the [Duplicates](/duplicates) finder, [Tags](/tags), [Issues](/issues), [Automations](/automations), and [Files](/files).',
@@ -270,7 +270,7 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
           { keys: ['g', 'e'], action: '[Events](/events/pages)' },
           { keys: ['g', 'r'], action: '[Fundraising](/donation-pages)' },
           { keys: ['g', 'k'], action: '[Tasks](/tasks)' },
-          { keys: ['g', 'b'], action: '[Task board](/board)' },
+          { keys: ['g', 'b'], action: '[Task board](/tasks/board)' },
           { keys: ['g', 'm'], action: '[Files](/files)' },
         ],
       },

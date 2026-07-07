@@ -1,7 +1,13 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnInit, inject, signal, viewChild } from '@angular/core';
 import { form, FormField, validateStandardSchema } from '@angular/forms/signals';
 import { ActivatedRoute, Router } from '@angular/router';
-import { IAuthUser, AddTaskObj } from '../../../../../../../libs/common/src';
+import {
+  IAuthUser,
+  AddTaskObj,
+  TASK_BOARD_STATUSES,
+  TASK_STATUSES,
+  TASK_STATUS_LABELS,
+} from '../../../../../../../libs/common/src';
 import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
@@ -11,6 +17,9 @@ import { UserService } from '../../../services/user.service';
 import { TasksService } from '../services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+/** The three due quick-picks the New task dialog offers (spec §4) — no freeform date. */
+type DueQuickPick = 'today' | 'tomorrow' | 'next_week' | null;
 
 @Component({
   selector: 'pc-task-add',
@@ -24,6 +33,7 @@ export class TaskAddComponent implements OnInit {
   private readonly tasks = inject(TasksService);
   private readonly userService = inject(UserService);
   private readonly teams = inject(TeamsService);
+  private readonly nameInput = viewChild<ElementRef<HTMLInputElement>>('nameInput');
 
   private _loading = createLoadingGate();
 
@@ -34,14 +44,18 @@ export class TaskAddComponent implements OnInit {
   protected readonly users = signal<IAuthUser[]>([]);
   protected readonly teamsList = signal<any[]>([]);
 
-  // Autocomplete lists for status and priority
+  // Autocomplete lists for priority and (advanced) status
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
+
+  /** Which of the three due quick-picks is selected — null means no due date. */
+  protected readonly duePick = signal<DueQuickPick>(null);
 
   protected readonly payload = signal({
     name: '',
     details: '',
-    status: 'todo' as 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived',
+    status: 'todo' as (typeof TASK_STATUSES)[number],
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     due_at: '',
     assigned_to: '',
@@ -95,6 +109,20 @@ export class TaskAddComponent implements OnInit {
     void this.router.navigate(['../'], { relativeTo: this.route });
   }
 
+  /** Today / Tomorrow / Next week (spec §4) — the only due-date choices in this dialog. */
+  protected pickDue(pick: Exclude<DueQuickPick, null>): void {
+    const next = this.duePick() === pick ? null : pick;
+    this.duePick.set(next);
+    this.payload.update((p) => ({ ...p, due_at: next ? this.dueDateFor(next) : '' }));
+  }
+
+  private dueDateFor(pick: Exclude<DueQuickPick, null>): string {
+    const days = pick === 'today' ? 0 : pick === 'tomorrow' ? 1 : 7;
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.toISOString().split('T')[0] ?? '';
+  }
+
   protected async submit(done?: (() => void) | Event) {
     if (done instanceof Event) {
       done.preventDefault();
@@ -102,6 +130,8 @@ export class TaskAddComponent implements OnInit {
 
     this.form().markAsTouched();
     if (this.form().invalid()) {
+      // Guide, don't error (§3): focus the first problem instead of a dead button.
+      this.nameInput()?.nativeElement.focus();
       return;
     }
 
@@ -111,13 +141,14 @@ export class TaskAddComponent implements OnInit {
 
     try {
       const taskData = this.toPayload();
-      await this.tasks.add(taskData);
+      const created = await this.tasks.add(taskData);
       this.tasks.triggerRefresh();
-      this.alertSvc.showSuccess('Task created successfully');
+      this.alertSvc.showSuccess(this.createdToastMessage(taskData));
       if (typeof done === 'function') {
         done();
       } else {
-        await this.router.navigate(['../'], { relativeTo: this.route });
+        // New card lands in To do with a flash (spec §4) — the list picks this up on init.
+        await this.router.navigate(['../'], { relativeTo: this.route, state: { flashId: created?.id } });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to create task';
@@ -127,6 +158,28 @@ export class TaskAddComponent implements OnInit {
       this.submitting.set(false);
       end();
     }
+  }
+
+  /** "Task created — "{title}" assigned to {name} / waiting for an owner, due today." (spec §4) */
+  private createdToastMessage(taskData: ReturnType<typeof this.toPayload>): string {
+    const assigneePart = taskData.assigned_to
+      ? `assigned to ${this.userName(taskData.assigned_to)}`
+      : 'waiting for an owner';
+    const duePick = this.duePick();
+    const duePart =
+      duePick === 'today'
+        ? ', due today'
+        : duePick === 'tomorrow'
+          ? ', due tomorrow'
+          : duePick === 'next_week'
+            ? ', due next week'
+            : '';
+    return `Task created — "${taskData.name}" ${assigneePart}${duePart}.`;
+  }
+
+  private userName(id: string): string {
+    const u = this.users().find((x) => String(x.id) === id);
+    return u ? `${u.first_name} ${u.last_name || ''}`.trim() : 'them';
   }
 
   private toPayload() {

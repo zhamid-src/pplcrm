@@ -1,7 +1,7 @@
 import { BaseRepository } from '../../lib/base.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import { sql } from 'kysely';
-import { calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import { calculateWorkingTimeMs, TASK_OPEN_STATUSES } from '../../../../../../libs/common/src';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export class DashboardController {
@@ -281,7 +281,7 @@ export class DashboardController {
 
     // Calculate Task SLA Breaches
     for (const task of tasks) {
-      const isOpenTask = task.status && ['todo', 'in_progress', 'blocked'].includes(task.status);
+      const isOpenTask = task.status && (TASK_OPEN_STATUSES as readonly string[]).includes(task.status);
       if (isOpenTask) {
         const workingTimeMs = calculateWorkingTimeMs(
           new Date(task.created_at),
@@ -651,7 +651,7 @@ export class DashboardController {
       .selectFrom('tasks')
       .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
       .where('tenant_id', '=', tenant_id)
-      .where('status', 'in', ['todo', 'in_progress', 'blocked'])
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
       .execute();
 
     const breachedTasksList: Array<{

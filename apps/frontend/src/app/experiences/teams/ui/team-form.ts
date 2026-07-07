@@ -414,9 +414,9 @@ export class TeamFormComponent implements OnInit {
         return 'badge-success text-success-content';
       case 'in_progress':
         return 'badge-info text-info-content';
-      case 'blocked':
+      case 'waiting':
         return 'badge-error text-error-content';
-      case 'canceled':
+      case 'archived':
         return 'badge-neutral text-neutral-content';
       default:
         return 'badge-ghost';

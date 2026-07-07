@@ -3,25 +3,21 @@ This file is a merged representation of a subset of the codebase, containing spe
 # File Summary
 
 ## Purpose
-
 This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
 It is designed to be easily consumable by AI systems for analysis, code review,
 or other automated processes.
 
 ## File Format
-
 The content is organized as follows:
-
 1. This summary section
 2. Repository information
 3. Directory structure
 4. Repository files (if enabled)
 5. Multiple file entries, each consisting of:
-   a. A header with the file path (## File: path/to/file)
-   b. The full contents of the file in a code block
+  a. A header with the file path (## File: path/to/file)
+  b. The full contents of the file in a code block
 
 ## Usage Guidelines
-
 - This file should be treated as read-only. Any changes should be made to the
   original repository files, not this packed version.
 - When processing this file, use the file path to distinguish
@@ -30,17 +26,15 @@ The content is organized as follows:
   the same level of security as you would the original repository.
 
 ## Notes
-
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: libs/**/\*, apps/**/_, scriptis/\*\*/_, apps/backend/src/\*_/_
-- Files matching these patterns are excluded: **/\*.test.ts, **/_.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, \*\*/_.picture, **/\*.png, **/_.jpg, \*\*/_.jpeg, **/\*.svg, **/_.ico, apps/frontend/**, apps/libs/**, libs/**, **/STRUCTURE.md, **/\_migrations/schema_dump.sql, **/_.spec.ts
+- Only files matching these patterns are included: libs/**/*, apps/**/*, scriptis/**/*, apps/backend/src/**/*
+- Files matching these patterns are excluded: **/*.test.ts, **/*.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, **/*.picture, **/*.png, **/*.jpg, **/*.jpeg, **/*.svg, **/*.ico, apps/frontend/**, apps/libs/**, libs/**, **/STRUCTURE.md, **/_migrations/schema_dump.sql, **/*.spec.ts
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
 
 # Directory Structure
-
 ```
 apps/
   backend/
@@ -52,6 +46,7 @@ apps/
         _migrations/
           0001_baseline.ts
           2026-07-07-record-slugs.ts
+          2026-07-07-tasks-status-normalization.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -344,9 +339,8 @@ apps/
 
 # Files
 
-## File: apps/backend/src/app/\_migrations/0001_baseline.ts
-
-```typescript
+## File: apps/backend/src/app/_migrations/0001_baseline.ts
+````typescript
 // tsco: ignore
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
@@ -409,11 +403,58 @@ export async function down(_db: Kysely<any>): Promise<void> {
   // We throw an error here to prevent accidental database wiping.
   throw new Error('This is a baseline migration and cannot be safely rolled back.');
 }
-```
+````
+
+## File: apps/backend/src/app/_migrations/2026-07-07-tasks-status-normalization.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Reconciles `tasks.status` to the spec §4 canonical vocabulary: todo, in_progress,
+ * waiting, done, archived. Two renames:
+ *
+ * - `blocked` -> `waiting` (matches the board's "Waiting" column and the card/row's
+ *   optional waiting-reason line).
+ * - `canceled` -> `archived` (this app already has exactly one "hidden, not coming
+ *   back to it" state — archived — reachable via the grid's Archived toggle; a
+ *   canceled task is that state in practice, so this collapses a second one that the
+ *   spec never asked for).
+ *
+ * Pre-ship: no production data to preserve (see pplcrm-migrations skill), so a data
+ * backfill + constraint swap in one migration is safe.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`UPDATE public.tasks SET status = 'waiting' WHERE status = 'blocked'`.execute(db);
+  await sql`UPDATE public.tasks SET status = 'archived' WHERE status = 'canceled'`.execute(db);
+  await sql`UPDATE public.task_subtasks SET status = 'waiting' WHERE status = 'blocked'`.execute(db);
+  await sql`UPDATE public.task_subtasks SET status = 'archived' WHERE status = 'canceled'`.execute(db);
+
+  await sql`ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS chk_tasks_status`.execute(db);
+  await sql`
+    ALTER TABLE public.tasks
+    ADD CONSTRAINT chk_tasks_status
+    CHECK (status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'waiting'::text, 'done'::text, 'archived'::text]))
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  // Best-effort only: `canceled` merged into `archived` and cannot be distinguished
+  // back out, so the down migration restores the old constraint and the `waiting` ->
+  // `blocked` rename, but archived rows stay archived rather than un-collapsing.
+  await sql`ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS chk_tasks_status`.execute(db);
+  await sql`
+    ALTER TABLE public.tasks
+    ADD CONSTRAINT chk_tasks_status
+    CHECK (status = ANY (ARRAY['todo'::text, 'in_progress'::text, 'blocked'::text, 'done'::text, 'canceled'::text, 'archived'::text]))
+  `.execute(db);
+  await sql`UPDATE public.tasks SET status = 'blocked' WHERE status = 'waiting'`.execute(db);
+  await sql`UPDATE public.task_subtasks SET status = 'blocked' WHERE status = 'waiting'`.execute(db);
+}
+````
 
 ## File: apps/backend/src/app/config/email-folders.config.ts
-
-```typescript
+````typescript
 import type { EmailFolderConfig } from '../../../../../libs/common/src';
 import { EMAIL_FOLDERS } from '../../../../../libs/common/src';
 
@@ -437,11 +478,10 @@ export function isVirtualFolder(folderId: string): boolean {
   const folder = getEmailFolderById(folderId);
   return folder?.is_virtual || false;
 }
-```
+````
 
 ## File: apps/backend/src/app/errors/app-errors.ts
-
-```typescript
+````typescript
 // Lightweight, transport-agnostic error types you can throw from controllers/services.
 export abstract class AppError extends Error {
   constructor(
@@ -510,11 +550,10 @@ export class UnauthorizedError extends AppError {
     super(message, 401, 'UNAUTHORIZED', data, opts);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/gis/boundaries.geojson
-
-```
+````
 {
   "type": "FeatureCollection",
   "features": [
@@ -580,11 +619,10 @@ export class UnauthorizedError extends AppError {
     }
   ]
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/gis/geocoding.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { isBlankAddress, isIncompleteAddress } from '../address-normalize';
@@ -815,11 +853,10 @@ export async function geocodeAndMapHousehold(householdId: string, tenantId: stri
 
   logger.info(`Geocoding & GIS mapping completed successfully for household ${householdId}. Status set to success.`);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/billing.handlers.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import type { JobPayloadOf } from '../job-payloads';
@@ -844,11 +881,10 @@ export async function handleCheckAllUsageLimits(db: Kysely<Models>): Promise<voi
   await checkAllUsageLimits(db);
   await scheduleNextRun(db, 'check_all_usage_limits', DAY_MS);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/sync.handlers.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { env } from '../../../../env';
@@ -963,11 +999,10 @@ async function queueUserSyncJobs(db: Kysely<Models>): Promise<void> {
     logger.error({ err }, 'Failed to queue tenant sync jobs');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/workflows.handlers.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../../logger';
@@ -1128,11 +1163,10 @@ export async function handleProcessDripWorkflows(db: Kysely<Models>): Promise<vo
   const delayMs = pendingEnrollments.length === ENROLLMENT_BATCH_SIZE ? 0 : TEN_MINUTES_MS;
   await scheduleNextRun(db, 'process_drip_workflows', delayMs);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/reschedule.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { JobType } from './job-payloads';
@@ -1160,11 +1194,10 @@ export async function scheduleNextRun(db: Kysely<Models>, type: JobType, delayMs
     })
     .execute();
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
-
-```typescript
+````typescript
 import { Client } from 'pg';
 import { env } from '../../../env';
 import { BillingController } from '../../modules/billing/controller';
@@ -1570,11 +1603,10 @@ export class WebhookEventWorker {
     return true;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/mail/newsletter-mail.service.ts
-
-```typescript
+````typescript
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
 import { logger } from '../../logger';
@@ -1694,11 +1726,10 @@ export class NewsletterEmailService {
     return deliveredCount;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/mail/sanitize-util.ts
-
-```typescript
+````typescript
 import DOMPurify from 'dompurify';
 import { JSDOM } from 'jsdom';
 
@@ -1709,11 +1740,10 @@ export function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return '';
   return purify.sanitize(html);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
-
-```typescript
+````typescript
 import { promises as dns } from 'dns';
 import { logger } from '../../logger';
 
@@ -2031,10 +2061,9 @@ export class SendGridWhitelabelService {
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/test-utils/db-test-isolation.ts
-
 ````typescript
 import type { ControlledTransaction, Transaction } from 'kysely';
 import { afterEach, beforeEach } from 'vitest';
@@ -2113,8 +2142,7 @@ export function useTestTransaction(): TestTransactionContext {
 ````
 
 ## File: apps/backend/src/app/lib/address-normalize.ts
-
-```typescript
+````typescript
 function norm(text?: string | null): string {
   const v = (text ?? '').toString().trim().toLowerCase();
   if (!v) return '';
@@ -2221,11 +2249,10 @@ export function isIncompleteAddress(input: {
 
   return !street1 || (!city && !zip);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/auth-util.ts
-
-```typescript
+````typescript
 import { createVerifier } from 'fast-jwt';
 import type { IAuthKeyPayload } from '../../../../../libs/common/src';
 import { env } from '../../env';
@@ -2258,11 +2285,10 @@ export async function verifyAuthToken(token: string | null): Promise<IAuthKeyPay
     throw new UnauthorizedError('Unauthorized: Invalid or expired token', undefined, { cause: err });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/common-passwords.ts
-
-```typescript
+````typescript
 export const COMMON_PASSWORDS = new Set([
   '123456',
   '123456789',
@@ -2369,11 +2395,10 @@ export const COMMON_PASSWORDS = new Set([
   '333333',
   '222222',
 ]);
-```
+````
 
 ## File: apps/backend/src/app/lib/crud-router.ts
-
-```typescript
+````typescript
 import { getAllOptions, idSchema, exportCsvInput, exportCsvResponse } from '../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure } from '../../trpc';
@@ -2433,11 +2458,10 @@ export function createCrudRouter<
       ),
   };
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/download-headers.ts
-
-```typescript
+````typescript
 // Helpers for safely emitting file-download response headers.
 //
 // Filenames are user-controlled (upload/email metadata) and must never be
@@ -2461,21 +2485,19 @@ export function attachmentDisposition(filename: string | null | undefined): stri
 
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/fastify.types.ts
-
-```typescript
+````typescript
 import type { FastifyRequest } from 'fastify';
 
 export type IdParam = FastifyRequest<{
   Params: { id: string };
 }>;
-```
+````
 
 ## File: apps/backend/src/app/lib/hibp.ts
-
-```typescript
+````typescript
 import { createHash } from 'crypto';
 
 // Fail open — returns 0 if HIBP API is unreachable, so an outage never blocks users
@@ -2497,11 +2519,10 @@ export async function getPwnedCount(password: string): Promise<number> {
     return 0;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/oauth-state.ts
-
-```typescript
+````typescript
 import { createHmac, timingSafeEqual } from 'crypto';
 
 import { env } from '../../env';
@@ -2569,11 +2590,10 @@ export function decodeOAuthState(raw: string | undefined | null): OAuthStatePayl
 
   return { userId: parsed.userId, tenantId: parsed.tenantId, returnTo: parsed.returnTo };
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/password-hash.ts
-
-```typescript
+````typescript
 import argon2 from 'argon2';
 
 const ARGON2_OPTIONS: argon2.Options = {
@@ -2590,11 +2610,10 @@ export async function hashPassword(password: string): Promise<string> {
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return argon2.verify(hash, password);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/storage.service.ts
-
-```typescript
+````typescript
 import { BlobServiceClient, BlobSASPermissions } from '@azure/storage-blob';
 import { env } from '../../env';
 import type { Readable } from 'stream';
@@ -2678,11 +2697,10 @@ export class StorageService {
     await blockBlobClient.deleteIfExists();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/token-hash.ts
-
-```typescript
+````typescript
 import { randomBytes, createHash } from 'crypto';
 
 export function generateToken(): string {
@@ -2692,11 +2710,10 @@ export function generateToken(): string {
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/user-activity.repo.ts
-
-```typescript
+````typescript
 import type { SelectQueryBuilder, Transaction } from 'kysely';
 
 import { BaseRepository } from './base.repo';
@@ -2947,11 +2964,10 @@ export type UserActivityType =
   | 'reopen'
   | 'send';
 import type { QueryParams } from './base.repo';
-```
+````
 
 ## File: apps/backend/src/app/lib/webauthn-challenges.ts
-
-```typescript
+````typescript
 const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 const store = new Map<string, { challenge: string; expiresAt: number }>();
@@ -2968,11 +2984,10 @@ export function consumeChallenge(key: string): string | null {
   if (Date.now() > entry.expiresAt) return null;
   return entry.challenge;
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/activity/controller.ts
-
-```typescript
+````typescript
 import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import { UserActivityRepo } from '../../lib/user-activity.repo';
@@ -3079,11 +3094,10 @@ export class ActivityController extends BaseController<'user_activity', UserActi
     } as any;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/activity/trpc.router.ts
-
-```typescript
+````typescript
 import { getAllOptions, exportCsvInput, exportCsvResponse } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
@@ -3113,11 +3127,10 @@ export const ActivityRouter = router({
     .output(exportCsvResponse)
     .mutation(({ input, ctx }) => activity.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/repositories/authusers.repo.ts
-
-```typescript
+````typescript
 import type { SelectQueryBuilder, Transaction, UpdateResult } from 'kysely';
 import { sql } from 'kysely';
 
@@ -3317,11 +3330,10 @@ export class AuthUsersRepo extends BaseRepository<'authusers'> {
 }
 
 type SelectEmailType = GetOperandType<'authusers', 'select', 'email'>;
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/repositories/tenants.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class TenantsRepo extends BaseRepository<'tenants'> {
@@ -3329,11 +3341,10 @@ export class TenantsRepo extends BaseRepository<'tenants'> {
     super('tenants');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/passkey.controller.ts
-
-```typescript
+````typescript
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -3595,11 +3606,10 @@ function getExpectedOrigins(): string[] {
 
 const rpID = env.webAuthnRpId;
 const rpName = env.webAuthnRpName;
-```
+````
 
 ## File: apps/backend/src/app/modules/billing/repositories/webhook-events.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class WebhookEventsRepo extends BaseRepository<'webhook_events'> {
@@ -3607,11 +3617,10 @@ export class WebhookEventsRepo extends BaseRepository<'webhook_events'> {
     super('webhook_events');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/billing/routes/billing-webhook.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { BillingController } from '../controller';
 import { logger } from '../../../logger';
@@ -3637,11 +3646,10 @@ const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default billingWebhookRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/billing/trpc.router.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { adminOrOwnerProcedure, router } from '../../../trpc';
 import { BillingController } from './controller';
@@ -3664,11 +3672,10 @@ export const BillingRouter = router({
 
   cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/dashboard/trpc.router.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { DashboardController } from './controller';
@@ -3676,7 +3683,8 @@ import { DashboardController } from './controller';
 const dashboard = new DashboardController();
 
 export const DashboardRouter = router({
-  getStats: authProcedure.query(({ ctx }) => dashboard.getStats(ctx.auth)),
+  getStats: authProcedure
+    .query(({ ctx }) => dashboard.getStats(ctx.auth)),
 
   getBreachedEmails: authProcedure
     .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
@@ -3686,11 +3694,10 @@ export const DashboardRouter = router({
     .input(z.object({ page: z.number().int().min(1), limit: z.number().int().min(1) }))
     .query(({ input, ctx }) => dashboard.getBreachedTasks(ctx.auth, input)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/donations/repositories/donations.repo.ts
-
-```typescript
+````typescript
 import type { Selectable } from 'kysely';
 
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -3789,11 +3796,10 @@ export class DonationsRepo extends BaseRepository<'donations'> {
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/donations/repositories/periods.repo.ts
-
-```typescript
+````typescript
 import type { Selectable } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository } from '../../../lib/base.repo';
@@ -3832,11 +3838,10 @@ export class DonationPeriodsRepo extends BaseRepository<'donation_periods'> {
     return row ?? null;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-attachments.repo.ts
-
-```typescript
+````typescript
 import { sql } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
@@ -3899,11 +3904,10 @@ export class EmailAttachmentsRepo extends BaseRepository<'email_attachments'> {
       .execute() as Promise<HasRow[]>;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-body.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class EmailBodiesRepo extends BaseRepository<'email_bodies'> {
@@ -3911,11 +3915,10 @@ export class EmailBodiesRepo extends BaseRepository<'email_bodies'> {
     super('email_bodies');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-comments.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class EmailCommentsRepo extends BaseRepository<'email_comments'> {
@@ -3927,11 +3930,10 @@ export class EmailCommentsRepo extends BaseRepository<'email_comments'> {
     return this.getManyBy('email_id', { tenant_id, value: email_id });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-drafts.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
 
@@ -3998,11 +4000,10 @@ export class EmailDraftsRepo extends BaseRepository<'email_drafts'> {
     return this.add({ row });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-headers.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class EmailHeadersRepo extends BaseRepository<'email_headers'> {
@@ -4018,11 +4019,10 @@ export class EmailHeadersRepo extends BaseRepository<'email_headers'> {
       .executeTakeFirst();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-recipients.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class EmailRecipientsRepo extends BaseRepository<'email_recipients'> {
@@ -4050,11 +4050,10 @@ export class EmailRecipientsRepo extends BaseRepository<'email_recipients'> {
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email-trash.repo.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
 
@@ -4127,11 +4126,10 @@ export class EmailTrashRepo extends BaseRepository<'email_trash'> {
     return Number(result?.numDeletedRows ?? 0) > 0;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/repositories/email.repo.ts
-
-```typescript
+````typescript
 import type { EmailStatus } from '../../../../../../../libs/common/src';
 import type { TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { SPECIAL_FOLDERS } from '../../../../../../../libs/common/src';
@@ -4474,11 +4472,10 @@ export class EmailRepo extends BaseRepository<'emails'> {
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/services/email-ingester.service.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { StorageService } from '../../../lib/storage.service';
@@ -4897,11 +4894,10 @@ export class EmailIngesterService {
     });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/events/repositories/events.repo.ts
-
-```typescript
+````typescript
 import type { SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import type { JoinedQueryParams } from '../../../lib/base.repo';
@@ -5199,11 +5195,10 @@ export class EventsRepo extends BaseRepository<'events'> {
     return { events_count: Number(result?.events_count ?? 0) };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/events/trpc.router.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import {
@@ -5255,7 +5250,9 @@ export const EventsRouter = router({
     .input(z.object({ id: idSchema, data: UpdateTicketTypeObj }))
     .mutation(({ input, ctx }) => ctrl.updateTicketType(input.id, input.data, ctx.auth)),
 
-  deleteTicketType: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
+  deleteTicketType: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => ctrl.deleteTicketType(input, ctx.auth)),
 
   // Registrations
   getRegistrationsForEvent: authProcedure
@@ -5281,13 +5278,14 @@ export const EventsRouter = router({
     .input(idSchema)
     .query(({ input, ctx }) => ctrl.getHistoryForPerson(input, ctx.auth)),
 
-  getStatsForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getEventStats(input, ctx.auth)),
+  getStatsForPerson: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getEventStats(input, ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/exports/repositories/exports.repo.ts
-
-```typescript
+````typescript
 import { ImportsRepo } from '../../imports/repositories/imports.repo';
 import { sql } from 'kysely';
 
@@ -5388,11 +5386,10 @@ export class ExportsRepo {
     });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/exports/controller.ts
-
-```typescript
+````typescript
 import { TRPCError } from '@trpc/server';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { QueueExportInputType } from '../../../../../../libs/common/src';
@@ -5534,11 +5531,10 @@ export class ExportsController {
     return this.repo;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/exports/trpc.router.ts
-
-```typescript
+````typescript
 import { queueExportInput, dataExportRecord } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
@@ -5559,11 +5555,10 @@ export const ExportsRouter = router({
     .output(z.object({ success: z.boolean() }))
     .mutation(({ input, ctx }) => exports_.deleteExport(input.id, ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/files/repositories/files.repo.ts
-
-```typescript
+````typescript
 import type { QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Transaction } from 'kysely';
@@ -5639,11 +5634,10 @@ export class FilesRepo extends BaseRepository<'files'> {
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/files/controller.ts
-
-```typescript
+````typescript
 import { BaseController } from '../../lib/base.controller';
 import { FilesRepo } from './repositories/files.repo';
 import { StorageService } from '../../lib/storage.service';
@@ -5731,11 +5725,10 @@ export class FilesController extends BaseController<'files', FilesRepo> {
     return anyDeleted;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/files/trpc.router.ts
-
-```typescript
+````typescript
 import { idSchema, getAllOptions } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
@@ -5781,11 +5774,10 @@ export const FilesRouter = router({
     .input(z.array(idSchema).min(1, 'At least one ID is required'))
     .mutation(({ input, ctx }) => files.deleteMany(ctx.auth.tenant_id, input, ctx.auth.user_id)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/google-sync/google-callback.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { GoogleOAuthService } from './google-oauth.service';
 import { env } from '../../../env';
@@ -5853,11 +5845,10 @@ const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 };
 
 export default googleSyncCallbackRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { GoogleOAuthService } from './google-oauth.service';
@@ -6203,11 +6194,10 @@ export class GoogleSyncService {
     return Buffer.from(base64, 'base64');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/google-sync/trpc.router.ts
-
-```typescript
+````typescript
 import { authProcedure, router } from '../../../trpc';
 import { GoogleOAuthService, NEEDS_FULL_SYNC } from './google-oauth.service';
 import { GoogleSyncService } from './google-sync.service';
@@ -6336,11 +6326,10 @@ export const GoogleSyncRouter = router({
   resetSync: resetSync(),
 });
 export type GoogleSyncRouterType = typeof GoogleSyncRouter;
-```
+````
 
 ## File: apps/backend/src/app/modules/households/repositories/map-households-tags.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import type { Transaction } from 'kysely';
@@ -6368,11 +6357,10 @@ export class MapHouseholdsTagsRepo extends BaseRepository<'map_households_tags'>
     return Number(res?.numDeletedRows ?? 0);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/imports/controller.ts
-
-```typescript
+````typescript
 import type { IAuthKeyPayload, ImportListItem } from '../../../../../../libs/common/src';
 
 import { BadRequestError, NotFoundError } from '../../errors/app-errors';
@@ -6566,11 +6554,10 @@ export class ImportsController extends BaseController<'data_imports', ImportsRep
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/imports/trpc.router.ts
-
-```typescript
+````typescript
 import { idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
@@ -6594,11 +6581,10 @@ export const ImportsRouter = router({
     )
     .mutation(({ input, ctx }) => imports.deleteImport(input, ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/lists/repositories/lists.repo.ts
-
-```typescript
+````typescript
 import type { SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
@@ -6840,11 +6826,10 @@ export class ListsRepo extends BaseRepository<'lists'> {
     return { rows, count: Number(total || 0) };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/lists/repositories/map-lists-households.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class MapListsHouseholdsRepo extends BaseRepository<'map_lists_households'> {
@@ -6852,11 +6837,10 @@ export class MapListsHouseholdsRepo extends BaseRepository<'map_lists_households
     super('map_lists_households');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/lists/repositories/map-lists-persons.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import type { Transaction } from 'kysely';
@@ -6875,11 +6859,10 @@ export class MapListsPersonsRepo extends BaseRepository<'map_lists_persons'> {
     return Number(res?.numDeletedRows ?? 0);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/lists/trpc.router.ts
-
-```typescript
+````typescript
 import { AddListObj, UpdateListObj, idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
@@ -6914,11 +6897,10 @@ export const ListsRouter = router({
 
   getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/ms-sync/ms-callback.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { MsOAuthService } from '../ms-sync/ms-oauth.service';
 import { env } from '../../../env';
@@ -6987,11 +6969,10 @@ const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default msSyncCallbackRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/ms-sync/ms-sync.service.ts
-
-```typescript
+````typescript
 import { Client } from '@microsoft/microsoft-graph-client';
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
@@ -7269,11 +7250,10 @@ export class MsSyncService {
     });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
-
-```typescript
+````typescript
 import { authProcedure, router } from '../../../trpc';
 import { MsOAuthService, NEEDS_FULL_SYNC } from './ms-oauth.service';
 import { MsSyncService } from './ms-sync.service';
@@ -7402,11 +7382,10 @@ export const MsSyncRouter = router({
   disconnect: disconnect(),
   resetSync: resetSync(),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/newsletters/repositories/newsletters.repo.ts
-
-```typescript
+````typescript
 import { sql } from 'kysely';
 
 import type { QueryParams } from '../../../lib/base.repo';
@@ -7545,11 +7524,10 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
     return { rows, count };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
-
-```typescript
+````typescript
 import { createPublicKey, createVerify } from 'crypto';
 import type { FastifyPluginCallback } from 'fastify';
 import { BaseRepository } from '../../../lib/base.repo';
@@ -7738,11 +7716,10 @@ const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) =>
 };
 
 export default newslettersWebhookRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/notifications/repositories/notifications.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Transaction } from 'kysely';
 import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -7809,11 +7786,10 @@ export class NotificationsRepo extends BaseRepository<'notifications'> {
     return this.add({ row }, trx);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/notifications/controller.ts
-
-```typescript
+````typescript
 import { BaseController } from '../../lib/base.controller';
 import { NotificationsRepo } from './repositories/notifications.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
@@ -7843,11 +7819,10 @@ export class NotificationsController extends BaseController<'notifications', Not
     });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/notifications/trpc.router.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { idSchema } from '../../../../../../libs/common/src';
 import { authProcedure, router } from '../../../trpc';
@@ -7873,11 +7848,10 @@ export const NotificationsRouter = router({
 
   markRead: authProcedure.input(idSchema).mutation(({ input, ctx }) => notifications.markRead(input, ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/person-connections/repositories/person-connections.repo.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -7949,11 +7923,10 @@ export class PersonConnectionsRepo extends BaseRepository<'person_connections'> 
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/person-connections/controller.ts
-
-```typescript
+````typescript
 import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import { PersonConnectionsRepo } from './repositories/person-connections.repo';
@@ -8064,11 +8037,10 @@ export class PersonConnectionsController extends BaseController<'person_connecti
     return { success: true };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/person-connections/trpc.router.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { idSchema, AddConnectionObj } from '../../../../../../libs/common/src';
@@ -8077,21 +8049,26 @@ import { PersonConnectionsController } from './controller';
 const ctrl = new PersonConnectionsController();
 
 export const PersonConnectionsRouter = router({
-  getForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getForPerson(input, ctx.auth)),
+  getForPerson: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.getForPerson(input, ctx.auth)),
 
-  countForPerson: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.countForPerson(input, ctx.auth)),
+  countForPerson: authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => ctrl.countForPerson(input, ctx.auth)),
 
   add: authProcedure
     .input(z.object({ person_id: idSchema, data: AddConnectionObj }))
     .mutation(({ input, ctx }) => ctrl.addConnection(input.person_id, input.data, ctx.auth)),
 
-  remove: authProcedure.input(idSchema).mutation(({ input, ctx }) => ctrl.removeConnection(input, ctx.auth)),
+  remove: authProcedure
+    .input(idSchema)
+    .mutation(({ input, ctx }) => ctrl.removeConnection(input, ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/persons/repositories/map-persons-tags.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import type { Transaction } from 'kysely';
@@ -8132,11 +8109,10 @@ export class MapPersonsTagRepo extends BaseRepository<'map_peoples_tags'> {
     return Number(res?.numDeletedRows ?? 0);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/persons/services/duplicate-maintenance.service.ts
-
-```typescript
+````typescript
 import { sql } from 'kysely';
 import { PersonsRepo } from '../repositories/persons.repo';
 
@@ -8418,11 +8394,10 @@ export class DuplicateMaintenanceService {
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/settings/repositories/settings.repo.ts
-
-```typescript
+````typescript
 import type { Insertable, OperandValueExpressionOrList } from 'kysely';
 import { sql } from 'kysely';
 
@@ -8470,11 +8445,10 @@ export class SettingsRepo extends BaseRepository<'settings'> {
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/settings/trpc.router.ts
-
-```typescript
+````typescript
 import { UpsertSettingsInputObj } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
@@ -8507,11 +8481,10 @@ export const SettingsRouter = router({
     .input(z.object({ domain: z.string().min(1) }))
     .mutation(({ ctx, input }) => settings.deleteVerifiedDomain(ctx.auth, input.domain)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/tags/repositories/tags.repo.ts
-
-```typescript
+````typescript
 import type { ReferenceExpression, SelectQueryBuilder, Transaction, Selectable } from 'kysely';
 import { sql } from 'kysely';
 
@@ -8808,11 +8781,10 @@ export class TagsRepo extends BaseRepository<'tags'> {
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tags/controller.ts
-
-```typescript
+````typescript
 import type { AddTagType, IAuthKeyPayload, UpdateTagType } from '../../../../../../libs/common/src';
 
 import { ConflictError } from '../../errors/app-errors';
@@ -8866,11 +8838,10 @@ export class TagsController extends BaseController<'tags', TagsRepo> {
     });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tags/system-tags.ts
-
-```typescript
+````typescript
 export const SYSTEM_TAG_NAMES = [
   'volunteer',
   'donor',
@@ -8886,7 +8857,9 @@ export const SYSTEM_TAG_NAMES = [
 
 const normalize = (value: string) => value.trim().toLowerCase();
 
-const canonicalNameMap = new Map<string, string>(SYSTEM_TAG_NAMES.map((name) => [normalize(name), name]));
+const canonicalNameMap = new Map<string, string>(
+  SYSTEM_TAG_NAMES.map((name) => [normalize(name), name]),
+);
 
 export const SYSTEM_TAG_SET = new Set<string>(canonicalNameMap.keys());
 
@@ -8916,11 +8889,10 @@ export const SYSTEM_TAG_SEED_DATA = SYSTEM_TAG_NAMES.map((name) => ({
   description: null as string | null,
   color: SYSTEM_TAG_COLOURS[name] ?? null,
 }));
-```
+````
 
 ## File: apps/backend/src/app/modules/tags/trpc.router.ts
-
-```typescript
+````typescript
 import { AddTagObj, UpdateTagObj } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
@@ -8946,11 +8918,10 @@ export const TagsRouter = router({
     )
     .query(({ input, ctx }) => tags.findByName(input, ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/repositories/task-attachments.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class TaskAttachmentsRepo extends BaseRepository<'task_attachments'> {
@@ -8958,11 +8929,10 @@ export class TaskAttachmentsRepo extends BaseRepository<'task_attachments'> {
     super('task_attachments');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/repositories/task-comments.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class TaskCommentsRepo extends BaseRepository<'task_comments'> {
@@ -8970,11 +8940,10 @@ export class TaskCommentsRepo extends BaseRepository<'task_comments'> {
     super('task_comments');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/repositories/task-subtasks.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class TaskSubtasksRepo extends BaseRepository<'task_subtasks'> {
@@ -8982,20 +8951,27 @@ export class TaskSubtasksRepo extends BaseRepository<'task_subtasks'> {
     super('task_subtasks');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/repositories/tasks.repo.ts
-
-```typescript
+````typescript
 import type { RawBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
 import type { QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Models, OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { TASK_OPEN_STATUSES } from '../../../../../../../libs/common/src';
 
 type TaskStatus = NonNullable<Models['tasks']['status']>;
 type TaskPriority = NonNullable<Models['tasks']['priority']>;
+
+/** A task open enough to count toward SLA-breach / count-sentence math (spec §4). */
+export interface OpenTaskForSla {
+  assigned_to: string | null;
+  created_at: Date;
+  id: string;
+}
 
 export class TasksRepo extends BaseRepository<'tasks'> {
   constructor() {
@@ -9020,6 +8996,49 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       .execute();
     const total = res?.[0]?.['total'] as unknown as number;
     return Number(total || 0);
+  }
+
+  /** Open tasks (todo/in_progress/waiting) with just enough columns to compute SLA breach. */
+  public async getOpenForSla(tenant_id: string): Promise<OpenTaskForSla[]> {
+    const rows = await this.getSelect()
+      .select(['id', 'created_at', 'assigned_to'])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .execute();
+    return rows.map((r) => ({
+      id: String(r.id),
+      created_at: r.created_at,
+      assigned_to: r.assigned_to == null ? null : String(r.assigned_to),
+    }));
+  }
+
+  public async countOpen(tenant_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
+  }
+
+  public async countOpenUnassigned(tenant_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .where('assigned_to', 'is', null)
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
+  }
+
+  public async countOpenAssignedTo(tenant_id: string, user_id: string): Promise<number> {
+    const res = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('tenant_id', '=', tenant_id)
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
+      .where('assigned_to', '=', user_id)
+      .execute();
+    return Number(res?.[0]?.['total'] ?? 0);
   }
 
   private buildTasksQueryBuilder(tenant_id: string, isArchived: boolean, options?: QueryParams<'tasks'>) {
@@ -9189,11 +9208,10 @@ export class TasksRepo extends BaseRepository<'tasks'> {
       .executeTakeFirst();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/attachments.controller.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { BaseController } from '../../lib/base.controller';
@@ -9228,11 +9246,10 @@ export class TaskAttachmentsController extends BaseController<'task_attachments'
     return attachment;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/comments.controller.ts
-
-```typescript
+````typescript
 import { env } from '../../../env';
 import { BaseController } from '../../lib/base.controller';
 import type { Transaction } from 'kysely';
@@ -9281,11 +9298,10 @@ export class TaskCommentsController extends BaseController<'task_comments', Task
     return this.add(row);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/subtasks.controller.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { BaseController } from '../../lib/base.controller';
@@ -9347,11 +9363,10 @@ export class TaskSubtasksController extends BaseController<'task_subtasks', Task
     return this.update({ tenant_id: input.tenant_id, id: input.id, row: input.row });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/trpc.router.ts
-
-```typescript
+````typescript
 import {
   AddTaskObj,
   UpdateTaskObj,
@@ -9396,6 +9411,8 @@ export const TasksRouter = router({
     }),
 
   count: authProcedure.query(({ ctx }) => tasks.getCount(ctx.auth.tenant_id)),
+  countSlaBreaches: authProcedure.query(({ ctx }) => tasks.countSlaBreaches(ctx.auth)),
+  getSummaryCounts: authProcedure.query(({ ctx }) => tasks.getSummaryCounts(ctx.auth)),
   delete: authProcedure
     .input(idSchema)
     .mutation(({ input, ctx }) => tasks.delete(ctx.auth.tenant_id, input, ctx.auth.user_id)),
@@ -9502,11 +9519,10 @@ export const TasksRouter = router({
       }),
     ),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/teams/repositories/map-teams-lists.repo.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 
 import { BaseRepository } from '../../../lib/base.repo';
@@ -9581,11 +9597,10 @@ export class MapTeamsListsRepo extends BaseRepository<'map_teams_lists'> {
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/teams/repositories/map-teams-persons.repo.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
 
@@ -9693,11 +9708,10 @@ export class MapTeamsPersonsRepo extends BaseRepository<'map_teams_persons'> {
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/teams/repositories/teams.repo.ts
-
-```typescript
+````typescript
 import type { SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
@@ -9860,11 +9874,10 @@ export class TeamsRepo extends BaseRepository<'teams'> {
       .executeTakeFirst();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/teams/controller.ts
-
-```typescript
+````typescript
 import type { AddTeamType, UpdateTeamType, getAllOptionsType } from '../../../../../../libs/common/src';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
 
@@ -10323,11 +10336,10 @@ export class TeamsController extends BaseController<'teams', TeamsRepo> {
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/teams/trpc.router.ts
-
-```typescript
+````typescript
 import { AddTeamObj, UpdateTeamObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
 
 import { z } from 'zod';
@@ -10378,11 +10390,10 @@ export const TeamsRouter = router({
   getForVolunteer: getForVolunteer(),
   getAssignedLists: getAssignedLists(),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/userprofiles/repositories/userprofiles.repo.ts
-
-```typescript
+````typescript
 import type { Selectable, Transaction } from 'kysely';
 
 import type { QueryParams } from '../../../lib/base.repo';
@@ -10404,11 +10415,10 @@ export class UserProfiles extends BaseRepository<'profiles'> {
     >;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/userprofiles/controller.ts
-
-```typescript
+````typescript
 import { UserProfiles } from './repositories/userprofiles.repo';
 import { BaseController } from '../../lib/base.controller';
 
@@ -10417,11 +10427,10 @@ export class UserProfilesController extends BaseController<'profiles', UserProfi
     super(new UserProfiles());
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/userprofiles/trpc.router.ts
-
-```typescript
+````typescript
 import { idSchema } from '../../../../../../libs/common/src';
 
 import { authProcedure, router } from '../../../trpc';
@@ -10438,11 +10447,10 @@ const user = new UserProfilesController();
 export const UserProfilesRouter = router({
   getById: getById(),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/users/trpc.router.ts
-
-```typescript
+````typescript
 import { UpdateAuthUserObj, idSchema } from '../../../../../../libs/common/src';
 
 import z from 'zod';
@@ -10471,11 +10479,10 @@ export const UsersRouter = router({
   getProfileById: getProfileById(),
   updateUserProfile: updateUserProfile(),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/volunteer-events/repositories/volunteer-events.repo.ts
-
-```typescript
+````typescript
 import type { SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import type { JoinedQueryParams } from '../../../lib/base.repo';
@@ -10723,11 +10730,10 @@ export class VolunteerEventsRepo extends BaseRepository<'volunteer_events'> {
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/volunteer-events/trpc.router.ts
-
-```typescript
+````typescript
 import {
   idSchema,
   getAllOptions,
@@ -10784,11 +10790,10 @@ export const VolunteerRouter = router({
 
   getVolunteerStats: authProcedure.input(idSchema).query(({ input, ctx }) => ctrl.getVolunteerStats(input, ctx.auth)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/workflows/repositories/workflow-enrollments.repo.ts
-
-```typescript
+````typescript
 import type { QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
 import type { Transaction } from 'kysely';
@@ -10843,11 +10848,10 @@ export class WorkflowEnrollmentsRepo extends BaseRepository<'workflow_enrollment
     }));
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/workflows/repositories/workflow-steps.repo.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../../lib/base.repo';
 
 export class WorkflowStepsRepo extends BaseRepository<'workflow_steps'> {
@@ -10855,11 +10859,10 @@ export class WorkflowStepsRepo extends BaseRepository<'workflow_steps'> {
     super('workflow_steps');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/workflows/repositories/workflows.repo.ts
-
-```typescript
+````typescript
 import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
@@ -10961,11 +10964,10 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/workflows/controller.ts
-
-```typescript
+````typescript
 import { BaseController } from '../../lib/base.controller';
 import { WorkflowsRepo } from './repositories/workflows.repo';
 import { WorkflowEnrollmentsRepo } from './repositories/workflow-enrollments.repo';
@@ -11347,11 +11349,10 @@ export class WorkflowsController extends BaseController<'workflows', WorkflowsRe
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/workflows/trpc.router.ts
-
-```typescript
+````typescript
 import { AddWorkflowObj, UpdateWorkflowObj, getAllOptions, idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
@@ -11403,11 +11404,10 @@ export const WorkflowsRouter = router({
       workflows.cancelEnrollment(ctx.auth.tenant_id, input.enrollmentId, ctx.auth.user_id),
     ),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/trpc.ts
-
-```typescript
+````typescript
 import { router } from '../../trpc';
 import { AuthRouter } from './auth/trpc.router';
 import { EmailsRouter } from './emails/trpc.router';
@@ -11523,11 +11523,10 @@ export { ExportsRouter } from './exports/trpc.router';
 export { UsersRouter } from './users/trpc.router';
 export { EventsRouter } from './events/trpc.router';
 export { PersonConnectionsRouter } from './person-connections/trpc.router';
-```
+````
 
 ## File: apps/backend/src/app/plugins/jsend-error-handler.plugin.ts
-
-```typescript
+````typescript
 import { jsend } from '../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
@@ -11634,11 +11633,10 @@ declare module 'fastify' {
 }
 
 export default fp(jsendPlugin);
-```
+````
 
 ## File: apps/backend/src/app/types/fastify-jsend.ts
-
-```typescript
+````typescript
 // apps/backend/src/types/fastify-jsend.d.ts
 import 'fastify';
 
@@ -11659,11 +11657,10 @@ declare module 'fastify' {
     ): FastifyReply;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/logger.ts
-
-```typescript
+````typescript
 import * as pino from 'pino';
 
 export const logger = pino.pino({
@@ -11671,11 +11668,10 @@ export const logger = pino.pino({
     target: 'pino-pretty',
   },
 });
-```
+````
 
 ## File: apps/backend/src/app/routes.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 
 import emailsApiRoute from './modules/emails/routes/emails-api.route';
@@ -11735,11 +11731,10 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   done();
 };
-```
+````
 
 ## File: apps/backend/src/context.ts
-
-```typescript
+````typescript
 import type { IAuthKeyPayload } from '../../../libs/common/src';
 import type { inferAsyncReturnType } from '@trpc/server';
 import type { CreateFastifyContextOptions } from '@trpc/server/adapters/fastify';
@@ -11770,11 +11765,10 @@ export async function createContext({ req, res }: CreateFastifyContextOptions) {
 
   return { req, res, auth: payload };
 }
-```
+````
 
 ## File: apps/backend/src/shutdown.ts
-
-```typescript
+````typescript
 import { logger } from './app/logger';
 
 export function onShutdown(handler: any, { timeout = 500 } = {}) {
@@ -11795,18 +11789,17 @@ export function onShutdown(handler: any, { timeout = 500 } = {}) {
     });
   }
 }
-```
+````
 
 ## File: apps/backend/src/test-assign5.js
-
-```javascript
+````javascript
 const { Pool } = require('pg');
 const pool = new Pool({
   user: 'pplcrm',
   database: 'pplcrm',
   password: '[REDACTED]',
   host: 'localhost',
-  port: 5432,
+  port: 5432
 });
 
 async function run() {
@@ -11815,110 +11808,32 @@ async function run() {
   process.exit(0);
 }
 run();
-```
+````
 
 ## File: apps/backend/src/test-trpc.js
-
-```javascript
+````javascript
 async function run() {
-  const loginRes = await fetch('http://localhost:3000/trpc/auth.login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'hello@pplcrm.com', password: 'password' }),
+  const loginRes = await fetch("http://localhost:3000/trpc/auth.login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "hello@pplcrm.com", password: "password" })
   });
-  console.log('Login status:', loginRes.status);
-
+  console.log("Login status:", loginRes.status);
+  
   // if this doesn't work, we don't have the password, we can't test via HTTP.
 }
 run();
-```
+````
 
 ## File: apps/backend/src/typings.d.ts
-
-```typescript
+````typescript
 interface BigInt {
   toJSON(): string;
 }
-```
-
-## File: apps/backend/eslint.config.cjs
-
-```javascript
-/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
-/* Node.js, Fastify, tRPC backend-specific rules only.                         */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-module.exports = [
-  /* Compose the root config so `nx lint backend` enforces the same
-   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
-   * as the pre-commit `eslint` invocation. Previously this file stood alone,
-   * which meant nx lint never saw those rules and plain `eslint` never saw
-   * `local/no-unscoped-db-query` below — two disjoint, non-overlapping
-   * checks. Confirmed zero new violations from this composition. */
-  ...require('../../eslint.config.cjs'),
-
-  /* Extend the base config */
-  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
-    ...cfg,
-    files: ['**/*.{ts,tsx,js,jsx}'],
-    rules: {
-      /* Fastify/tRPC specific style preferences */
-      'prefer-arrow-callback': 'warn',
-      'arrow-body-style': ['warn', 'as-needed'],
-    },
-  })),
-
-  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
-   *
-   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
-   * reaches an execute terminal without a .where('tenant_id', …) filter.
-   *
-   * Scoped to modules/** only — excludes:
-   *   - base.repo.ts          (tenant filtering is callers' responsibility)
-   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
-   *   - _migrations/**        (DDL; no runtime tenant scoping)
-   *   - *.spec.ts             (integration tests do their own scoped cleanup)
-   *   - kyselyinit*.ts        (migration runner)
-   * ─────────────────────────────────────────────────────────────────────── */
-  {
-    files: ['**/src/app/modules/**/*.ts'],
-    ignores: ['**/*.spec.ts'],
-    // `local` is already registered by the root config spread in above —
-    // redeclaring it here for the same file set throws
-    // "Cannot redefine plugin 'local'" under ESLint's flat config.
-    rules: {
-      'local/no-unscoped-db-query': [
-        'error',
-        {
-          // Tables where cross-tenant queries are intentional:
-          //   authusers - login by email, password reset by code (pre-auth, no tenant known yet)
-          //   sessions  - sign-out by session_id hash (no tenant in token)
-          //   tenants   - tenant lookup by id
-          //
-          // Removed 2026-07-04: `tags` (all module queries already scope tenant_id — the old
-          // "join-level scoping" note was wrong) and `ms_oauth_tokens`/`google_oauth_tokens`
-          // (migration 2026-06-26-email-sync-per-tenant re-keyed both on UNIQUE(tenant_id) and
-          // made user_id nullable, so "keyed by user_id" no longer held — these hold OAuth
-          // secrets and must be tenant-scoped). Adding a table here is a security decision:
-          // prove every current and future query on it is safe cross-tenant, not just quiet.
-          ignoreTables: ['authusers', 'sessions', 'tenants'],
-        },
-      ],
-    },
-  },
-];
-```
+````
 
 ## File: apps/backend/jest.config.ts
-
-```typescript
+````typescript
 import type { Config } from 'jest';
 
 const config: Config = {
@@ -11926,7 +11841,10 @@ const config: Config = {
   preset: '../../jest.preset.cjs',
   testEnvironment: 'node',
   transform: {
-    '^.+\\.[tj]s$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.spec.json', useESM: true, diagnostics: false }],
+    '^.+\\.[tj]s$': [
+      'ts-jest',
+      { tsconfig: '<rootDir>/tsconfig.spec.json', useESM: true, diagnostics: false },
+    ],
   },
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
@@ -11937,11 +11855,10 @@ const config: Config = {
 };
 
 export default config;
-```
+````
 
 ## File: apps/backend/project.json
-
-```json
+````json
 {
   "name": "backend",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
@@ -12034,11 +11951,10 @@ export default config;
     }
   }
 }
-```
+````
 
 ## File: apps/backend/tsconfig.app.json
-
-```json
+````json
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -12066,11 +11982,10 @@ export default config;
     "src/**/*.spec.jsx"
   ]
 }
-```
+````
 
 ## File: apps/backend/tsconfig.json
-
-```json
+````json
 {
   "extends": "../../tsconfig.base.json",
   "files": [],
@@ -12084,11 +11999,10 @@ export default config;
     }
   ]
 }
-```
+````
 
 ## File: apps/backend/tsconfig.spec.json
-
-```json
+````json
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -12111,11 +12025,10 @@ export default config;
     "src/**/*.d.ts"
   ]
 }
-```
+````
 
 ## File: apps/frontend-e2e/playwright.config.ts
-
-```typescript
+````typescript
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
@@ -12139,11 +12052,10 @@ export default defineConfig({
     },
   ],
 });
-```
+````
 
 ## File: apps/frontend-e2e/project.json
-
-```json
+````json
 {
   "name": "frontend-e2e",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
@@ -12158,11 +12070,10 @@ export default defineConfig({
     }
   }
 }
-```
+````
 
 ## File: apps/frontend-e2e/tsconfig.json
-
-```json
+````json
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
@@ -12172,11 +12083,10 @@ export default defineConfig({
   },
   "include": ["src/**/*.ts", "playwright.config.ts"]
 }
-```
+````
 
 ## File: apps/backend/scripts/setup-test-db.sh
-
-```bash
+````bash
 #!/usr/bin/env bash
 # =============================================================================
 # Provision the dedicated Vitest database (`pplcrm_test`), isolated from the dev
@@ -12237,11 +12147,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public
 SQL
 
 echo "pplcrm_test provisioned. Schema is built on the next 'nx test backend' run."
-```
+````
 
-## File: apps/backend/src/app/\_migrations/2026-07-07-record-slugs.ts
-
-```typescript
+## File: apps/backend/src/app/_migrations/2026-07-07-record-slugs.ts
+````typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
@@ -12331,11 +12240,10 @@ export async function down(db: Kysely<any>): Promise<void> {
     await sql`ALTER TABLE ${sql.table(table)} DROP COLUMN IF EXISTS slug`.execute(db);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/errors/to-trpc-errors.ts
-
-```typescript
+````typescript
 import { TRPCError } from '@trpc/server';
 
 import { AppError } from './app-errors';
@@ -12411,11 +12319,10 @@ export function toTRPCError(err: unknown): TRPCError {
     cause: err,
   });
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/deletions.handlers.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../../logger';
@@ -12558,11 +12465,10 @@ export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promi
 
   await scheduleNextRun(db, 'perform_scheduled_deletions', DAY_MS);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/export.handlers.ts
-
-```typescript
+````typescript
 import type { ExpressionBuilder, Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { Readable } from 'stream';
@@ -12802,11 +12708,10 @@ function getEntityFilterValues(entityFilter: string): string[] {
   }
   return [ent];
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -12923,11 +12828,268 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
     logger.error({ err: mailErr }, 'Failed to send import completion summary email');
   }
 }
-```
+````
+
+## File: apps/backend/src/app/lib/jobs/handlers/maintenance.handlers.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { fingerprintFull, fingerprintStreet } from '../../address-normalize';
+import { geocodeAndMapHousehold } from '../../gis/geocoding';
+import { logger } from '../../../logger';
+import { ActivityController } from '../../../modules/activity/controller';
+import { ListsController } from '../../../modules/lists/controller';
+import { DuplicateMaintenanceService } from '../../../modules/persons/services/duplicate-maintenance.service';
+import type { JobPayloadOf } from '../job-payloads';
+import { DAY_MS, scheduleNextRun } from '../reschedule';
+
+export async function handleRefreshList(payload: JobPayloadOf<'refresh_list'>): Promise<void> {
+  const listsController = new ListsController();
+  await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
+}
+
+export async function handleEnrichCompanyGoogle(
+  payload: JobPayloadOf<'enrich_company_google'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { CompaniesEnrichmentService } =
+    await import('../../../modules/companies/services/companies-enrichment.service');
+  const enrichmentSvc = new CompaniesEnrichmentService(db);
+  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
+}
+
+export async function handleRefreshCompaniesGoogle(
+  payload: JobPayloadOf<'refresh_companies_google'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const { CompaniesEnrichmentService } =
+    await import('../../../modules/companies/services/companies-enrichment.service');
+  const enrichmentSvc = new CompaniesEnrichmentService(db);
+  await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id ?? undefined);
+
+  // Only the global (cron-style) run reschedules itself.
+  if (!payload.tenant_id) {
+    await scheduleNextRun(db, 'refresh_companies_google', DAY_MS);
+  }
+}
+
+export async function handleCleanupActivities(db: Kysely<Models>): Promise<void> {
+  const activityController = new ActivityController();
+  await activityController.deleteOldActivities();
+
+  await scheduleNextRun(db, 'cleanup_activities', DAY_MS);
+}
+
+// P-3 (schema review 2026-07-06, §5): retention for the append-mostly tables
+// that otherwise grow without bound. user_activity and newsletter_events already
+// have their own prune jobs (cleanup_activities / prune_newsletter_events); this
+// covers the remaining three. Deletes run in bounded batches so a large backlog
+// never takes a long lock or a huge WAL spike.
+const RETENTION_BATCH = 5000;
+const COMPLETED_JOBS_RETENTION_DAYS = 30;
+const WEBHOOK_EVENTS_RETENTION_DAYS = 90;
+const EXPIRED_SESSION_GRACE_DAYS = 30;
+
+async function deleteInBatches(runOnce: () => Promise<bigint>): Promise<bigint> {
+  let total = 0n;
+  for (;;) {
+    const deleted = await runOnce();
+    total += deleted;
+    if (deleted < BigInt(RETENTION_BATCH)) break;
+  }
+  return total;
+}
+
+export async function handlePruneRetention(db: Kysely<Models>): Promise<void> {
+  // Completed/failed background jobs older than the retention window. The
+  // currently-'processing' retention job itself is never matched.
+  const prunedJobs = await deleteInBatches(async () => {
+    const res = await sql`
+      DELETE FROM background_jobs
+      WHERE ctid IN (
+        SELECT ctid FROM background_jobs
+        WHERE status IN ('completed', 'failed')
+          AND updated_at < now() - make_interval(days => ${COMPLETED_JOBS_RETENTION_DAYS})
+        LIMIT ${RETENTION_BATCH})
+    `.execute(db);
+    return res.numAffectedRows ?? 0n;
+  });
+
+  // Processed Stripe/webhook events past their retention window.
+  const prunedWebhooks = await deleteInBatches(async () => {
+    const res = await sql`
+      DELETE FROM webhook_events
+      WHERE ctid IN (
+        SELECT ctid FROM webhook_events
+        WHERE status = 'processed'
+          AND processed_at < now() - make_interval(days => ${WEBHOOK_EVENTS_RETENTION_DAYS})
+        LIMIT ${RETENTION_BATCH})
+    `.execute(db);
+    return res.numAffectedRows ?? 0n;
+  });
+
+  // Long-expired sessions (revocation/sign-out handles the live ones; this sweeps
+  // the rows that just linger). NULL expires_at means non-expiring — left alone.
+  const prunedSessions = await deleteInBatches(async () => {
+    const res = await sql`
+      DELETE FROM sessions
+      WHERE ctid IN (
+        SELECT ctid FROM sessions
+        WHERE expires_at IS NOT NULL
+          AND expires_at < now() - make_interval(days => ${EXPIRED_SESSION_GRACE_DAYS})
+        LIMIT ${RETENTION_BATCH})
+    `.execute(db);
+    return res.numAffectedRows ?? 0n;
+  });
+
+  logger.info(
+    {
+      prunedJobs: prunedJobs.toString(),
+      prunedWebhooks: prunedWebhooks.toString(),
+      prunedSessions: prunedSessions.toString(),
+    },
+    'Retention prune complete',
+  );
+
+  await scheduleNextRun(db, 'prune_retention', DAY_MS);
+}
+
+export async function handleRecomputeAllDuplicates(db: Kysely<Models>): Promise<void> {
+  const lastJob = await db
+    .selectFrom('background_jobs')
+    .select(['updated_at'])
+    .where('status', '=', 'completed')
+    .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
+    .orderBy('updated_at', 'desc')
+    .limit(1)
+    .executeTakeFirst();
+
+  const tenants = await db.selectFrom('tenants').select('id').execute();
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
+
+  for (const tenant of tenants) {
+    try {
+      let shouldRecompute = true;
+
+      if (lastRunTime) {
+        const personChanged = await db
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        const householdChanged = await db
+          .selectFrom('households')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        const companyChanged = await db
+          .selectFrom('companies')
+          .select('id')
+          .where('tenant_id', '=', String(tenant.id))
+          .where('updated_at', '>', lastRunTime)
+          .limit(1)
+          .executeTakeFirst();
+
+        if (!personChanged && !householdChanged && !companyChanged) {
+          shouldRecompute = false;
+        }
+      }
+
+      if (shouldRecompute) {
+        await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
+      }
+    } catch (tenantErr) {
+      logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
+    }
+  }
+
+  await scheduleNextRun(db, 'recompute_all_duplicates', DAY_MS);
+}
+
+export async function handleRecomputeAddressFingerprints(
+  payload: JobPayloadOf<'recompute_address_fingerprints'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  const tenantIds: string[] = [];
+  if (payload.tenant_id) {
+    tenantIds.push(payload.tenant_id);
+  } else {
+    const tenants = await db.selectFrom('tenants').select('id').execute();
+    for (const tenant of tenants) {
+      tenantIds.push(String(tenant.id));
+    }
+  }
+
+  for (const tenantId of tenantIds) {
+    try {
+      await recomputeTenantAddressFingerprints(tenantId, db);
+    } catch (tenantErr) {
+      logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
+    }
+  }
+
+  // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
+  if (!payload.tenant_id) {
+    await scheduleNextRun(db, 'recompute_address_fingerprints', DAY_MS);
+  }
+}
+
+export async function handleGeocodeHousehold(
+  payload: JobPayloadOf<'geocode_household'>,
+  db: Kysely<Models>,
+): Promise<void> {
+  await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
+}
+
+async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
+  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
+
+  for (const hh of households) {
+    const fp_street = fingerprintStreet({
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: hh.apt,
+      street_num: hh.street_num,
+      street1: hh.street1,
+      street2: hh.street2,
+      city: hh.city,
+      state: hh.state,
+      zip: hh.zip,
+      country: hh.country,
+    });
+
+    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
+      await db
+        .updateTable('households')
+        .set({
+          address_fp_street: fp_street,
+          address_fp_full: fp_full,
+          updated_at: new Date(),
+        })
+        .where('id', '=', hh.id)
+        .where('tenant_id', '=', tenantId)
+        .execute();
+    }
+  }
+
+  const maintenanceSvc = new DuplicateMaintenanceService();
+  await maintenanceSvc.recomputeAllDuplicates(tenantId);
+}
+````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/newsletter.handlers.ts
-
-```typescript
+````typescript
 import type { ExpressionBuilder, Kysely } from 'kysely';
 import { sql } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -13320,11 +13482,10 @@ function buildNewsletterFooter(address?: string, disclaimer?: string): { html: s
 
   return { html, text };
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/handlers/notifications.handlers.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -13700,7 +13861,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
         'authusers.first_name',
         'profiles.preferences as profile_preferences',
       ])
-      .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
+      .where('tasks.status', 'not in', ['done', 'archived'])
       .where('tasks.due_at', '<=', now)
       .orderBy('tasks.due_at', 'asc')
       .execute();
@@ -13749,11 +13910,10 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
     logger.error({ err }, 'Failed to check and notify due tasks');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/job-handlers.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import { z } from 'zod';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
@@ -13899,11 +14059,197 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
     }
   }
 }
-```
+````
+
+## File: apps/backend/src/app/lib/jobs/job-payloads.ts
+````typescript
+import { z } from 'zod';
+import type { ZapierEventType } from '../../modules/zapier/zapier.service';
+
+/**
+ * IDs are strings in the database, but historical job payloads may carry them
+ * as numbers (JSON round-trip of bigint columns). Normalize to string.
+ */
+const idSchema = z.union([z.string(), z.number()]).transform(String);
+
+/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
+const ZAPIER_EVENT_TYPES = [
+  'person_created',
+  'person_updated',
+  'person_deleted',
+  'person_tag_added',
+  'person_tag_removed',
+] as const satisfies readonly ZapierEventType[];
+
+const exportSortSchema = z.object({
+  colId: z.string().nullish(),
+  sort: z.string().nullish(),
+});
+
+const exportOptionsSchema = z.object({
+  userId: idSchema.nullish(),
+  entity: z.string().nullish(),
+  activity: z.string().nullish(),
+  searchStr: z.string().nullish(),
+  sortModel: z.array(exportSortSchema).nullish(),
+});
+
+export const jobPayloadSchema = z.discriminatedUnion('type', [
+  // ── Lists / companies / maintenance ─────────────────────────────────────
+  z.object({
+    type: z.literal('refresh_list'),
+    tenant_id: idSchema,
+    list_id: idSchema,
+    user_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('enrich_company_google'),
+    company_id: idSchema,
+    tenant_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('refresh_companies_google'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({ type: z.literal('cleanup_activities') }),
+  z.object({ type: z.literal('prune_retention') }),
+  z.object({ type: z.literal('recompute_all_duplicates') }),
+  z.object({
+    type: z.literal('recompute_address_fingerprints'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({
+    type: z.literal('geocode_household'),
+    household_id: idSchema,
+    tenant_id: idSchema,
+  }),
+
+  // ── External account sync ───────────────────────────────────────────────
+  z.object({ type: z.literal('schedule_sync_jobs') }),
+  z.object({
+    type: z.literal('google_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+  z.object({
+    type: z.literal('ms_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+
+  // ── Notifications & transactional email ─────────────────────────────────
+  z.object({
+    type: z.literal('send-form-notifications'),
+    eventId: idSchema,
+    tenantId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    mobile: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-shift-reminder'),
+    shiftId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-webform-notifications'),
+    formId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-event-registration-confirmation'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-event-reminder'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-transactional-email'),
+    to: z.string(),
+    subject: z.string().nullish(),
+    text: z.string().nullish(),
+    html: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-subscription-confirmation'),
+    email: z.string(),
+    firstName: z.string().nullish(),
+    confirmUrl: z.string(),
+  }),
+  z.object({ type: z.literal('check_due_tasks') }),
+
+  // ── Newsletters ──────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('send-newsletter'),
+    tenantId: idSchema,
+    newsletterId: idSchema,
+    userId: idSchema,
+    offset: z.number().nullish(),
+    deliveredCount: z.number().nullish(),
+  }),
+  z.object({ type: z.literal('prune_newsletter_events') }),
+
+  // ── Workflows & deletions ────────────────────────────────────────────────
+  z.object({ type: z.literal('process_drip_workflows') }),
+  z.object({ type: z.literal('perform_scheduled_deletions') }),
+
+  // ── Billing & integrations ───────────────────────────────────────────────
+  z.object({
+    type: z.literal('zapier_trigger'),
+    tenant_id: idSchema,
+    event_type: z.enum(ZAPIER_EVENT_TYPES),
+    data: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal('check_usage_limits'),
+    tenant_id: idSchema,
+  }),
+  z.object({ type: z.literal('check_all_usage_limits') }),
+
+  // ── Exports ──────────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('export_csv'),
+    export_id: idSchema,
+    tenant_id: idSchema,
+    table: z.string().nullish(),
+    entity: z.string().nullish(),
+    options: exportOptionsSchema.default({}),
+    columns: z.array(z.string()).nullish(),
+    user_id: idSchema.nullish(),
+    file_name: z.string().nullish(),
+  }),
+]);
+
+export type JobPayload = z.infer<typeof jobPayloadSchema>;
+export type JobType = JobPayload['type'];
+export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
+
+/**
+ * CSV imports are queued without a `type` discriminator (legacy shape) and are
+ * matched by the presence of `import_id` + `storage_key` instead.
+ */
+export const legacyImportJobSchema = z.object({
+  import_id: idSchema,
+  storage_key: z.string(),
+  tenant_id: idSchema,
+  user_id: idSchema,
+  source: z.string().nullish(),
+  skipped: z.union([z.string(), z.number()]).nullish(),
+  campaign_id: idSchema.nullish(),
+  tags: z.array(z.string()).nullish(),
+  file_name: z.string().nullish(),
+});
+
+export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
+````
 
 ## File: apps/backend/src/app/lib/mail/transactional-mail.service.ts
-
-```typescript
+````typescript
 import type { Kysely, Transaction } from 'kysely';
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
@@ -14116,11 +14462,10 @@ export class TransactionalEmailService {
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/csv-stream.ts
-
-```typescript
+````typescript
 import { Transform } from 'stream';
 
 import { escapeCsvCell } from './csv';
@@ -14159,11 +14504,10 @@ export class CsvTransformStream extends Transform {
     callback();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/csv.ts
-
-```typescript
+````typescript
 /**
  * Escape a single value for one CSV cell.
  *
@@ -14199,11 +14543,10 @@ export function rowsToCsv(rows: Array<Record<string, unknown>>, columns: string[
   const data = rows.map((row) => columns.map((col) => escapeCsvCell(row[col])).join(','));
   return [header, ...data].join('\n');
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/profile-preferences.ts
-
-```typescript
+````typescript
 import { ProfilePreferencesObj } from '../../../../../libs/common/src';
 import type { ProfilePreferencesType } from '../../../../../libs/common/src';
 
@@ -14244,11 +14587,10 @@ export function parseProfilePreferences(value: unknown): ProfilePreferencesType 
 export function notificationEnabled(preferences: unknown, key: NotificationPreferenceKey): boolean {
   return parseProfilePreferences(preferences)?.notifications?.[key] !== false;
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/public-tenant.ts
-
-```typescript
+````typescript
 import { RESERVED_SUBDOMAINS } from '@common';
 
 import { BaseRepository } from './base.repo';
@@ -14324,11 +14666,10 @@ export async function resolveTenantFromRequest(req: {
   if (!tenantSlug) return null;
   return resolveTenantBySlug(tenantSlug);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/rate-limiter.ts
-
-```typescript
+````typescript
 import { TooManyRequestsError } from '../errors/app-errors';
 
 // SECURITY-REVIEW 4.1 — single-instance assumption: this limiter keeps counters in a per-process
@@ -14367,11 +14708,10 @@ export function checkRateLimit(key: string, limit: number, windowMs: number): vo
     throw new TooManyRequestsError(`Too many requests. Retry in ${retryAfterSec} seconds.`, { retryAfterSec });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/secret-crypto.ts
-
-```typescript
+````typescript
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
 import { env } from '../../env';
 
@@ -14448,11 +14788,10 @@ export function decryptSecret(stored: string): string {
 
   return Buffer.concat([decipher.update(Buffer.from(ciphertextB64, 'base64')), decipher.final()]).toString('utf8');
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/signed-download.ts
-
-```typescript
+````typescript
 import { createSigner, createVerifier } from 'fast-jwt';
 import { env } from '../../env';
 import { UnauthorizedError } from '../errors/app-errors';
@@ -14545,11 +14884,10 @@ export function verifyEmailAttachmentToken(st: string, emailId: string): SignedE
   }
   return parsed as SignedEmailAttachmentPayload;
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/slug.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
@@ -14636,11 +14974,10 @@ export async function backfillMissingSlugs(db: Kysely<Models>, table: SluggedTab
     WHERE t.id = d.id
   `.execute(db);
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/tenant-context.ts
-
-```typescript
+````typescript
 import { AsyncLocalStorage } from 'async_hooks';
 
 /**
@@ -14683,11 +15020,10 @@ export function runWithTenant<T>(tenantId: string, fn: () => T): T {
 export function currentTenantId(): string {
   return storage.getStore()?.tenantId ?? '';
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/repositories/sessions.repo.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 
 import type { GetOperandType, Models } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -14730,11 +15066,10 @@ export class SessionsRepo extends BaseRepository<'sessions'> {
     return this.getUpdate(trx).set({ refresh_token }).where('user_id', '=', user_id).executeTakeFirst();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/auth-cookie.ts
-
-```typescript
+````typescript
 import '@fastify/cookie'; // FastifyReply.setCookie/clearCookie + FastifyRequest.cookies augmentation
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -14772,11 +15107,10 @@ export function setRefreshCookie(res: FastifyReply, refreshToken: string, expire
 export function clearRefreshCookie(res: FastifyReply): void {
   res.clearCookie(REFRESH_COOKIE, { path: '/' });
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/auth-tokens.ts
-
-```typescript
+````typescript
 import { createSigner } from 'fast-jwt';
 import type { Transaction } from 'kysely';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
@@ -14844,11 +15178,10 @@ export async function createTokens(
     throw new InternalError('Token creation failed', undefined, { cause: err });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/onboarding-seed.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { FORM_TEMPLATES, fieldsForTemplate } from '../../../../../../libs/common/src';
@@ -15176,11 +15509,10 @@ export async function seedOnboardingData(
     })
     .execute();
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/trpc.router.ts
-
-```typescript
+````typescript
 import {
   InviteAuthUserObj,
   Verify2FAObj,
@@ -15498,11 +15830,10 @@ export const AuthRouter = router({
   updatePasskeyName: updatePasskeyName(),
   dismissPasskeyPrompt: dismissPasskeyPrompt(),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/billing/controller.ts
-
-```typescript
+````typescript
 import { sql } from 'kysely';
 import Stripe from 'stripe';
 import { env } from '../../../env';
@@ -16029,11 +16360,10 @@ export class BillingController {
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/billing/usage-limits.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
@@ -16332,11 +16662,224 @@ export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<v
       .execute();
   }
 }
-```
+````
+
+## File: apps/backend/src/app/modules/companies/services/companies-enrichment.service.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { env } from '../../../../env';
+import { logger } from '../../../logger';
+
+export class CompaniesEnrichmentService {
+  constructor(private readonly db: Kysely<Models>) {}
+
+  public async enrichCompany(companyId: string, tenantId: string): Promise<void> {
+    const company = await this.db
+      .selectFrom('companies')
+      .selectAll()
+      .where('id', '=', companyId)
+      .where('tenant_id', '=', tenantId)
+      .executeTakeFirst();
+
+    if (!company) {
+      logger.warn(`Company enrichment skipped: Company ${companyId} not found.`);
+      return;
+    }
+
+    // Check if already enriched
+    let currentEnrichment: any = {};
+    if (company.enrichment) {
+      currentEnrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
+    }
+    if (currentEnrichment?.google_enriched) {
+      logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
+      return;
+    }
+
+    const apiKey = env.googleMapsApiKey;
+    const isMockOrTest = !apiKey || apiKey.includes('mock') || process.env['NODE_ENV'] === 'test';
+
+    let description: string | null = null;
+    let website: string | null = null;
+    let phone: string | null = null;
+    let industry: string | null = null;
+    let rawResult: any = null;
+
+    if (!isMockOrTest) {
+      try {
+        // Step 1: Text Search to find the Place ID
+        const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(company.name)}&key=${apiKey}`;
+        const searchRes = await fetch(searchUrl);
+        if (!searchRes.ok) {
+          throw new Error(`Google Places Text Search returned status ${searchRes.status}`);
+        }
+        const searchData: any = await searchRes.json();
+
+        if (searchData.status === 'OK' && searchData.results && searchData.results.length > 0) {
+          const firstResult = searchData.results[0];
+          const placeId = firstResult.place_id;
+
+          // Step 2: Fetch Place Details for that Place ID
+          const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,formatted_address,website,international_phone_number,formatted_phone_number,editorial_summary,types&key=${apiKey}`;
+          const detailsRes = await fetch(detailsUrl);
+          if (!detailsRes.ok) {
+            throw new Error(`Google Places Details returned status ${detailsRes.status}`);
+          }
+          const detailsData: any = await detailsRes.json();
+
+          if (detailsData.status === 'OK' && detailsData.result) {
+            const res = detailsData.result;
+            rawResult = res;
+            website = res.website || null;
+            phone = res.formatted_phone_number || res.international_phone_number || null;
+            description = res.editorial_summary?.overview || null;
+
+            if (res.types && res.types.length > 0) {
+              const rawType = res.types[0];
+              industry = rawType
+                .replace(/_/g, ' ')
+                .split(' ')
+                .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, `Google Places API enrichment failed for company ${companyId}`);
+        throw err;
+      }
+    } else {
+      // Mock enrichment for testing/dev
+      const cleanName = company.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      website = `https://www.${cleanName || 'company'}.com`;
+      phone = '+1 555-0199';
+      description = `Mock description for ${company.name} from Google Places.`;
+      industry = company.industry || 'Technology';
+      rawResult = { mock: true };
+      logger.info(`Mock Google enrichment completed for company ${companyId}`);
+    }
+
+    const updatedEnrichment = {
+      ...currentEnrichment,
+      google_enriched: true,
+      place_details: rawResult,
+    };
+
+    const updatePayload: any = {
+      enrichment: JSON.stringify(updatedEnrichment),
+      updated_at: new Date(),
+    };
+
+    if (!company.website || company.website.trim() === '') {
+      updatePayload.website = website;
+    }
+    if (!company.phone || company.phone.trim() === '') {
+      updatePayload.phone = phone;
+    }
+    if (!company.description || company.description.trim() === '') {
+      updatePayload.description = description;
+    }
+    if (!company.industry || company.industry.trim() === '') {
+      updatePayload.industry = industry;
+    }
+
+    await this.db
+      .updateTable('companies')
+      .set(updatePayload)
+      .where('id', '=', companyId)
+      .where('tenant_id', '=', tenantId)
+      .execute();
+  }
+
+  public async queueUnenrichedCompanies(tenantId?: string): Promise<number> {
+    let query = this.db
+      .selectFrom('companies')
+      .select(['id', 'tenant_id'])
+      .where((eb) => eb.or([eb('enrichment', 'is', null), sql<boolean>`enrichment->>'google_enriched' is null`]));
+
+    if (tenantId) {
+      query = query.where('tenant_id', '=', tenantId);
+    }
+
+    const unenriched = await query.execute();
+    if (unenriched.length === 0) return 0;
+
+    const values = unenriched.map((c) => ({
+      tenant_id: c.tenant_id,
+      queue: 'default',
+      status: 'pending',
+      payload: JSON.stringify({
+        type: 'enrich_company_google',
+        company_id: String(c.id),
+        tenant_id: String(c.tenant_id),
+      }),
+      run_at: new Date(),
+      max_attempts: 3,
+    }));
+
+    await this.db.insertInto('background_jobs').values(values).execute();
+
+    return unenriched.length;
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/companies/trpc.router.ts
+````typescript
+import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { CompaniesController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const companies = new CompaniesController();
+
+const CompanyInputSchema = CompanyInputObj;
+
+const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
+
+export const CompaniesRouter = router({
+  ...crud,
+
+  // Tenant-scoped slug resolution for /companies/:slug URLs (spec §1).
+  getBySlug: authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(CompanyInputSchema),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return companies.importRows(input, ctx.auth);
+    }),
+
+  getPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
+
+  mergeCompanies: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
+});
+````
 
 ## File: apps/backend/src/app/modules/donations/trpc.router.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import { DonationsController } from './controller';
@@ -16509,11 +17052,10 @@ export const DonationsRouter = router({
     controller.regenerateWebhookToken(ctx.auth.tenant_id, ctx.auth.user_id),
   ),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/trpc.router.ts
-
-```typescript
+````typescript
 import { folderIdSchema, idSchema, regularFolderIdSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
@@ -16725,11 +17267,10 @@ export const EmailsRouter = router({
   hasAttachmentByEmailIds: hasAttachmentByEmailIds(),
   getAttachmentsByEmailId: getAttachmentsByEmailId(),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/exports/routes/exports-download.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { ExportsRepo } from '../repositories/exports.repo';
@@ -16776,11 +17317,10 @@ const exportsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default exportsDownloadRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/files/routes/files.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { StorageService } from '../../../lib/storage.service';
 import { BaseRepository } from '../../../lib/base.repo';
@@ -16849,11 +17389,10 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default filesRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
-
-```typescript
+````typescript
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { decryptSecret, encryptSecret } from '../../lib/secret-crypto';
@@ -17117,11 +17656,10 @@ export class GoogleOAuthService {
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/households/routes/households.schema.ts
-
-```typescript
+````typescript
 const HouseholdsType = {
   id: { type: 'string' },
   tenant_id: { type: 'string' },
@@ -17182,11 +17720,10 @@ export const update = {
     response: { 201: households },
   },
 };
-```
+````
 
 ## File: apps/backend/src/app/modules/imports/repositories/imports.repo.ts
-
-```typescript
+````typescript
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
 
@@ -17385,11 +17922,10 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
     return new Date(0);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/lists/controller.ts
-
-```typescript
+````typescript
 import type {
   AddListType,
   IAuthKeyPayload,
@@ -17879,11 +18415,10 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
     return this.resolveCreatorAndUpdater(input.tenant_id, list);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
-
-```typescript
+````typescript
 import type { AuthorizationCodeRequest } from '@azure/msal-node';
 import { ConfidentialClientApplication } from '@azure/msal-node';
 import type { Kysely } from 'kysely';
@@ -18109,11 +18644,10 @@ export class MsOAuthService {
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
-
-```typescript
+````typescript
 import { AddMarketingEmailObj, UpdateMarketingEmailObj, idSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
@@ -18149,11 +18683,10 @@ export const NewslettersRouter = router({
     .input(sendTestSchema)
     .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/persons/routes/persons.schema.ts
-
-```typescript
+````typescript
 const PersonType = {
   id: { type: 'string' },
   tenant_id: { type: 'string' },
@@ -18223,11 +18756,10 @@ export const update = {
     response: { 201: person },
   },
 };
-```
+````
 
 ## File: apps/backend/src/app/modules/settings/controller.ts
-
-```typescript
+````typescript
 import { TRPCError } from '@trpc/server';
 import { createSigner, createVerifier } from 'fast-jwt';
 import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
@@ -18891,11 +19423,10 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     return updatedList;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/tasks/controller.ts
-
-```typescript
+````typescript
 import type {
   AddTaskType,
   ExportCsvInputType,
@@ -18924,6 +19455,8 @@ import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
 import { logger } from '../../logger';
+import { TASK_STATUSES, calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export class TasksController extends BaseController<'tasks', TasksRepo> {
   private mailService = new TransactionalEmailService();
@@ -18992,6 +19525,72 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
 
   public async getArchivedTasks(auth: IAuthKeyPayload, options?: getAllOptionsType) {
     return this.getRepo().getAllArchivedWithCount(auth.tenant_id, options as QueryParams<'tasks'>);
+  }
+
+  /** Working-hours SLA config for this tenant, with the same fallbacks used tenant-wide. */
+  private async loadSlaConfig(tenant_id: string): Promise<{
+    taskSlaHours: number;
+    workingDays: number[];
+    workingHoursStart: string;
+    workingHoursEnd: string;
+  }> {
+    const settingsRows = await new SettingsRepo().getAllForTenant(tenant_id);
+    const settingsMap = settingsRows.reduce<Record<string, unknown>>((acc, row) => {
+      acc[row.key] = row.value;
+      return acc;
+    }, {});
+
+    const workingDaysStr = String(settingsMap['sla.working_days'] ?? '1,2,3,4,5');
+    return {
+      taskSlaHours: Number(settingsMap['sla.tasks_hours'] ?? 24),
+      workingDays: workingDaysStr
+        .split(',')
+        .map((s) => Number(s.trim()))
+        .filter((n) => !isNaN(n)),
+      workingHoursStart: String(settingsMap['sla.working_hours_start'] ?? '09:00'),
+      workingHoursEnd: String(settingsMap['sla.working_hours_end'] ?? '17:00'),
+    };
+  }
+
+  /** Live count of open tasks past the working-hours SLA target — the sidebar badge (spec §4). */
+  public async countSlaBreaches(auth: IAuthKeyPayload): Promise<number> {
+    const { taskSlaHours, workingDays, workingHoursStart, workingHoursEnd } = await this.loadSlaConfig(
+      auth.tenant_id,
+    );
+    const taskSlaMs = taskSlaHours * 60 * 60 * 1000;
+    const now = new Date();
+
+    const openTasks = await this.getRepo().getOpenForSla(auth.tenant_id);
+    return openTasks.reduce((count, task) => {
+      const workingMs = calculateWorkingTimeMs(
+        new Date(task.created_at),
+        now,
+        workingDays,
+        workingHoursStart,
+        workingHoursEnd,
+      );
+      return workingMs > taskSlaMs ? count + 1 : count;
+    }, 0);
+  }
+
+  /**
+   * The count sentence's four numbers in one call (spec §4): "N open tasks · N breaching
+   * SLA · N assigned to you" (list) plus "N waiting for an owner" (board adds this one).
+   */
+  public async getSummaryCounts(auth: IAuthKeyPayload): Promise<{
+    assignedToMe: number;
+    openTotal: number;
+    slaBreaches: number;
+    unassigned: number;
+  }> {
+    const repo = this.getRepo();
+    const [openTotal, unassigned, assignedToMe, slaBreaches] = await Promise.all([
+      repo.countOpen(auth.tenant_id),
+      repo.countOpenUnassigned(auth.tenant_id),
+      repo.countOpenAssignedTo(auth.tenant_id, auth.user_id),
+      this.countSlaBreaches(auth),
+    ]);
+    return { openTotal, unassigned, assignedToMe, slaBreaches };
   }
 
   public async updateTask(id: string, row: UpdateTaskType, auth: IAuthKeyPayload) {
@@ -19198,7 +19797,7 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
         .toLowerCase()
         .trim()
         .replace(/[_\s-]+/g, '');
-    const validStatuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+    const validStatuses: readonly string[] = TASK_STATUSES;
     const validPriorities = ['low', 'medium', 'high', 'urgent'];
 
     // Map names to users for assigned_to
@@ -19316,11 +19915,10 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/web-forms/trpc.router.ts
-
-```typescript
+````typescript
 import {
   AddWebFormObj,
   CreateFormObj,
@@ -19378,11 +19976,10 @@ export const WebFormsRouter = router({
     .input(z.object({ id: z.string().uuid(), cursor: z.number().optional() }))
     .query(({ input, ctx }) => webForms.getFormSubmissions(input.id, ctx.auth.tenant_id, input.cursor)),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { z } from 'zod';
 import { ZapierService } from './zapier.service';
@@ -19597,11 +20194,10 @@ const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default zapierInboundRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/zapier/zapier.service.ts
-
-```typescript
+````typescript
 import crypto from 'crypto';
 import { BaseRepository } from '../../lib/base.repo';
 import { hashToken } from '../../lib/token-hash';
@@ -19759,11 +20355,10 @@ export class ZapierService {
     return row ? String(row.tenant_id) : null;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/zapier/zapier.trpc.router.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 import { authProcedure, router } from '../../../trpc';
 import type { ZapierEventType } from './zapier.service';
@@ -19802,11 +20397,10 @@ export const ZapierRouter = router({
     .input(z.object({ event_type: eventTypeSchema }))
     .mutation(({ input, ctx }) => zapierService.unsubscribe(ctx.auth.tenant_id, input.event_type as ZapierEventType)),
 });
-```
+````
 
 ## File: apps/backend/src/app/plugins/security-headers.ts
-
-```typescript
+````typescript
 import type { FastifyHelmetOptions } from '@fastify/helmet';
 
 /**
@@ -19849,11 +20443,10 @@ export const helmetOptions: FastifyHelmetOptions = {
   crossOriginEmbedderPolicy: false,
   referrerPolicy: { policy: 'no-referrer' },
 };
-```
+````
 
 ## File: apps/backend/src/app/kyselyinit.ts
-
-```typescript
+````typescript
 import { promises as fs } from 'fs';
 import { FileMigrationProvider, Kysely, Migrator, PostgresDialect, sql } from 'kysely';
 import path from 'path';
@@ -19958,11 +20551,10 @@ const isMain =
 if (isMain) {
   void migrateToLatest();
 }
-```
+````
 
 ## File: apps/backend/src/test-setup/global-setup.ts
-
-```typescript
+````typescript
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20071,11 +20663,10 @@ export default async function setup(): Promise<void> {
     await db.destroy();
   }
 }
-```
+````
 
 ## File: apps/backend/src/main.ts
-
-```typescript
+````typescript
 import { env } from './env';
 
 import { migrateToLatest } from './app/kyselyinit';
@@ -20110,11 +20701,84 @@ onShutdown(async () => {
   logger.info('Closing DB…');
   await server.close();
 });
-```
+````
+
+## File: apps/backend/eslint.config.cjs
+````javascript
+/* ---------------------- apps/backend/eslint.config.cjs ---------------------- */
+/* Node.js, Fastify, tRPC backend-specific rules only.                         */
+
+const { FlatCompat } = require('@eslint/eslintrc');
+const js = require('@eslint/js');
+
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+  recommendedConfig: js.configs.recommended,
+});
+
+module.exports = [
+  /* Compose the root config so `nx lint backend` enforces the same
+   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
+   * as the pre-commit `eslint` invocation. Previously this file stood alone,
+   * which meant nx lint never saw those rules and plain `eslint` never saw
+   * `local/no-unscoped-db-query` below — two disjoint, non-overlapping
+   * checks. Confirmed zero new violations from this composition. */
+  ...require('../../eslint.config.cjs'),
+
+  /* Extend the base config */
+  ...compat.config({ extends: ['plugin:@nx/javascript'] }).map((cfg) => ({
+    ...cfg,
+    files: ['**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      /* Fastify/tRPC specific style preferences */
+      'prefer-arrow-callback': 'warn',
+      'arrow-body-style': ['warn', 'as-needed'],
+    },
+  })),
+
+  /* ── Tenant-isolation lint rule ────────────────────────────────────────────
+   *
+   * Flags any Kysely query chain (selectFrom / updateTable / deleteFrom) that
+   * reaches an execute terminal without a .where('tenant_id', …) filter.
+   *
+   * Scoped to modules/** only — excludes:
+   *   - base.repo.ts          (tenant filtering is callers' responsibility)
+   *   - job-handlers.ts       (per-tenant loops; tenant_id used inside trx)
+   *   - _migrations/**        (DDL; no runtime tenant scoping)
+   *   - *.spec.ts             (integration tests do their own scoped cleanup)
+   *   - kyselyinit*.ts        (migration runner)
+   * ─────────────────────────────────────────────────────────────────────── */
+  {
+    files: ['**/src/app/modules/**/*.ts'],
+    ignores: ['**/*.spec.ts'],
+    // `local` is already registered by the root config spread in above —
+    // redeclaring it here for the same file set throws
+    // "Cannot redefine plugin 'local'" under ESLint's flat config.
+    rules: {
+      'local/no-unscoped-db-query': [
+        'error',
+        {
+          // Tables where cross-tenant queries are intentional:
+          //   authusers - login by email, password reset by code (pre-auth, no tenant known yet)
+          //   sessions  - sign-out by session_id hash (no tenant in token)
+          //   tenants   - tenant lookup by id
+          //
+          // Removed 2026-07-04: `tags` (all module queries already scope tenant_id — the old
+          // "join-level scoping" note was wrong) and `ms_oauth_tokens`/`google_oauth_tokens`
+          // (migration 2026-06-26-email-sync-per-tenant re-keyed both on UNIQUE(tenant_id) and
+          // made user_id nullable, so "keyed by user_id" no longer held — these hold OAuth
+          // secrets and must be tenant-scoped). Adding a table here is a security decision:
+          // prove every current and future query on it is safe cross-tenant, not just quiet.
+          ignoreTables: ['authusers', 'sessions', 'tenants'],
+        },
+      ],
+    },
+  },
+];
+````
 
 ## File: apps/backend/scripts/setup-db-roles.sql
-
-```sql
+````sql
 -- =============================================================================
 -- S-2 (schema review 2026-07-06 §6): least-privilege database role split.
 --
@@ -20196,461 +20860,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO pplcrm_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO pplcrm_app;
-```
-
-## File: apps/backend/src/app/lib/jobs/handlers/maintenance.handlers.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { fingerprintFull, fingerprintStreet } from '../../address-normalize';
-import { geocodeAndMapHousehold } from '../../gis/geocoding';
-import { logger } from '../../../logger';
-import { ActivityController } from '../../../modules/activity/controller';
-import { ListsController } from '../../../modules/lists/controller';
-import { DuplicateMaintenanceService } from '../../../modules/persons/services/duplicate-maintenance.service';
-import type { JobPayloadOf } from '../job-payloads';
-import { DAY_MS, scheduleNextRun } from '../reschedule';
-
-export async function handleRefreshList(payload: JobPayloadOf<'refresh_list'>): Promise<void> {
-  const listsController = new ListsController();
-  await listsController.executeListRefresh(payload.tenant_id, payload.list_id, payload.user_id);
-}
-
-export async function handleEnrichCompanyGoogle(
-  payload: JobPayloadOf<'enrich_company_google'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const { CompaniesEnrichmentService } =
-    await import('../../../modules/companies/services/companies-enrichment.service');
-  const enrichmentSvc = new CompaniesEnrichmentService(db);
-  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id, payload.force ?? false);
-}
-
-export async function handleRefreshCompaniesGoogle(
-  payload: JobPayloadOf<'refresh_companies_google'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const { CompaniesEnrichmentService } =
-    await import('../../../modules/companies/services/companies-enrichment.service');
-  const enrichmentSvc = new CompaniesEnrichmentService(db);
-  await enrichmentSvc.queueUnenrichedCompanies(payload.tenant_id ?? undefined);
-
-  // Only the global (cron-style) run reschedules itself.
-  if (!payload.tenant_id) {
-    await scheduleNextRun(db, 'refresh_companies_google', DAY_MS);
-  }
-}
-
-export async function handleCleanupActivities(db: Kysely<Models>): Promise<void> {
-  const activityController = new ActivityController();
-  await activityController.deleteOldActivities();
-
-  await scheduleNextRun(db, 'cleanup_activities', DAY_MS);
-}
-
-// P-3 (schema review 2026-07-06, §5): retention for the append-mostly tables
-// that otherwise grow without bound. user_activity and newsletter_events already
-// have their own prune jobs (cleanup_activities / prune_newsletter_events); this
-// covers the remaining three. Deletes run in bounded batches so a large backlog
-// never takes a long lock or a huge WAL spike.
-const RETENTION_BATCH = 5000;
-const COMPLETED_JOBS_RETENTION_DAYS = 30;
-const WEBHOOK_EVENTS_RETENTION_DAYS = 90;
-const EXPIRED_SESSION_GRACE_DAYS = 30;
-
-async function deleteInBatches(runOnce: () => Promise<bigint>): Promise<bigint> {
-  let total = 0n;
-  for (;;) {
-    const deleted = await runOnce();
-    total += deleted;
-    if (deleted < BigInt(RETENTION_BATCH)) break;
-  }
-  return total;
-}
-
-export async function handlePruneRetention(db: Kysely<Models>): Promise<void> {
-  // Completed/failed background jobs older than the retention window. The
-  // currently-'processing' retention job itself is never matched.
-  const prunedJobs = await deleteInBatches(async () => {
-    const res = await sql`
-      DELETE FROM background_jobs
-      WHERE ctid IN (
-        SELECT ctid FROM background_jobs
-        WHERE status IN ('completed', 'failed')
-          AND updated_at < now() - make_interval(days => ${COMPLETED_JOBS_RETENTION_DAYS})
-        LIMIT ${RETENTION_BATCH})
-    `.execute(db);
-    return res.numAffectedRows ?? 0n;
-  });
-
-  // Processed Stripe/webhook events past their retention window.
-  const prunedWebhooks = await deleteInBatches(async () => {
-    const res = await sql`
-      DELETE FROM webhook_events
-      WHERE ctid IN (
-        SELECT ctid FROM webhook_events
-        WHERE status = 'processed'
-          AND processed_at < now() - make_interval(days => ${WEBHOOK_EVENTS_RETENTION_DAYS})
-        LIMIT ${RETENTION_BATCH})
-    `.execute(db);
-    return res.numAffectedRows ?? 0n;
-  });
-
-  // Long-expired sessions (revocation/sign-out handles the live ones; this sweeps
-  // the rows that just linger). NULL expires_at means non-expiring — left alone.
-  const prunedSessions = await deleteInBatches(async () => {
-    const res = await sql`
-      DELETE FROM sessions
-      WHERE ctid IN (
-        SELECT ctid FROM sessions
-        WHERE expires_at IS NOT NULL
-          AND expires_at < now() - make_interval(days => ${EXPIRED_SESSION_GRACE_DAYS})
-        LIMIT ${RETENTION_BATCH})
-    `.execute(db);
-    return res.numAffectedRows ?? 0n;
-  });
-
-  logger.info(
-    {
-      prunedJobs: prunedJobs.toString(),
-      prunedWebhooks: prunedWebhooks.toString(),
-      prunedSessions: prunedSessions.toString(),
-    },
-    'Retention prune complete',
-  );
-
-  await scheduleNextRun(db, 'prune_retention', DAY_MS);
-}
-
-export async function handleRecomputeAllDuplicates(db: Kysely<Models>): Promise<void> {
-  const lastJob = await db
-    .selectFrom('background_jobs')
-    .select(['updated_at'])
-    .where('status', '=', 'completed')
-    .where(sql`payload->>'type'`, '=', 'recompute_all_duplicates')
-    .orderBy('updated_at', 'desc')
-    .limit(1)
-    .executeTakeFirst();
-
-  const tenants = await db.selectFrom('tenants').select('id').execute();
-  const maintenanceSvc = new DuplicateMaintenanceService();
-  const lastRunTime = lastJob?.updated_at ? new Date(lastJob.updated_at) : null;
-
-  for (const tenant of tenants) {
-    try {
-      let shouldRecompute = true;
-
-      if (lastRunTime) {
-        const personChanged = await db
-          .selectFrom('persons')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        const householdChanged = await db
-          .selectFrom('households')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        const companyChanged = await db
-          .selectFrom('companies')
-          .select('id')
-          .where('tenant_id', '=', String(tenant.id))
-          .where('updated_at', '>', lastRunTime)
-          .limit(1)
-          .executeTakeFirst();
-
-        if (!personChanged && !householdChanged && !companyChanged) {
-          shouldRecompute = false;
-        }
-      }
-
-      if (shouldRecompute) {
-        await maintenanceSvc.recomputeAllDuplicates(String(tenant.id));
-      }
-    } catch (tenantErr) {
-      logger.error({ err: tenantErr }, `Failed to recompute duplicates for tenant ${tenant.id}`);
-    }
-  }
-
-  await scheduleNextRun(db, 'recompute_all_duplicates', DAY_MS);
-}
-
-export async function handleRecomputeAddressFingerprints(
-  payload: JobPayloadOf<'recompute_address_fingerprints'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  const tenantIds: string[] = [];
-  if (payload.tenant_id) {
-    tenantIds.push(payload.tenant_id);
-  } else {
-    const tenants = await db.selectFrom('tenants').select('id').execute();
-    for (const tenant of tenants) {
-      tenantIds.push(String(tenant.id));
-    }
-  }
-
-  for (const tenantId of tenantIds) {
-    try {
-      await recomputeTenantAddressFingerprints(tenantId, db);
-    } catch (tenantErr) {
-      logger.error({ err: tenantErr }, `Failed to recompute address fingerprints for tenant ${tenantId}`);
-    }
-  }
-
-  // Schedule next run 24 hours later if periodic/cron-like (no tenant_id)
-  if (!payload.tenant_id) {
-    await scheduleNextRun(db, 'recompute_address_fingerprints', DAY_MS);
-  }
-}
-
-export async function handleGeocodeHousehold(
-  payload: JobPayloadOf<'geocode_household'>,
-  db: Kysely<Models>,
-): Promise<void> {
-  await geocodeAndMapHousehold(payload.household_id, payload.tenant_id, db);
-}
-
-async function recomputeTenantAddressFingerprints(tenantId: string, db: Kysely<Models>): Promise<void> {
-  const households = await db.selectFrom('households').selectAll().where('tenant_id', '=', tenantId).execute();
-
-  for (const hh of households) {
-    const fp_street = fingerprintStreet({
-      street_num: hh.street_num,
-      street1: hh.street1,
-      street2: hh.street2,
-    });
-    const fp_full = fingerprintFull({
-      apt: hh.apt,
-      street_num: hh.street_num,
-      street1: hh.street1,
-      street2: hh.street2,
-      city: hh.city,
-      state: hh.state,
-      zip: hh.zip,
-      country: hh.country,
-    });
-
-    if (hh.address_fp_street !== fp_street || hh.address_fp_full !== fp_full) {
-      await db
-        .updateTable('households')
-        .set({
-          address_fp_street: fp_street,
-          address_fp_full: fp_full,
-          updated_at: new Date(),
-        })
-        .where('id', '=', hh.id)
-        .where('tenant_id', '=', tenantId)
-        .execute();
-    }
-  }
-
-  const maintenanceSvc = new DuplicateMaintenanceService();
-  await maintenanceSvc.recomputeAllDuplicates(tenantId);
-}
-```
-
-## File: apps/backend/src/app/lib/jobs/job-payloads.ts
-
-```typescript
-import { z } from 'zod';
-import type { ZapierEventType } from '../../modules/zapier/zapier.service';
-
-/**
- * IDs are strings in the database, but historical job payloads may carry them
- * as numbers (JSON round-trip of bigint columns). Normalize to string.
- */
-const idSchema = z.union([z.string(), z.number()]).transform(String);
-
-/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
-const ZAPIER_EVENT_TYPES = [
-  'person_created',
-  'person_updated',
-  'person_deleted',
-  'person_tag_added',
-  'person_tag_removed',
-] as const satisfies readonly ZapierEventType[];
-
-const exportSortSchema = z.object({
-  colId: z.string().nullish(),
-  sort: z.string().nullish(),
-});
-
-const exportOptionsSchema = z.object({
-  userId: idSchema.nullish(),
-  entity: z.string().nullish(),
-  activity: z.string().nullish(),
-  searchStr: z.string().nullish(),
-  sortModel: z.array(exportSortSchema).nullish(),
-});
-
-export const jobPayloadSchema = z.discriminatedUnion('type', [
-  // ── Lists / companies / maintenance ─────────────────────────────────────
-  z.object({
-    type: z.literal('refresh_list'),
-    tenant_id: idSchema,
-    list_id: idSchema,
-    user_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('enrich_company_google'),
-    company_id: idSchema,
-    tenant_id: idSchema,
-    // A user-triggered "Re-check Google" re-runs the lookup even when the
-    // company was already enriched; the auto-queue on first load does not.
-    force: z.boolean().optional(),
-  }),
-  z.object({
-    type: z.literal('refresh_companies_google'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({ type: z.literal('cleanup_activities') }),
-  z.object({ type: z.literal('prune_retention') }),
-  z.object({ type: z.literal('recompute_all_duplicates') }),
-  z.object({
-    type: z.literal('recompute_address_fingerprints'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({
-    type: z.literal('geocode_household'),
-    household_id: idSchema,
-    tenant_id: idSchema,
-  }),
-
-  // ── External account sync ───────────────────────────────────────────────
-  z.object({ type: z.literal('schedule_sync_jobs') }),
-  z.object({
-    type: z.literal('google_sync'),
-    tenantId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-  z.object({
-    type: z.literal('ms_sync'),
-    tenantId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-
-  // ── Notifications & transactional email ─────────────────────────────────
-  z.object({
-    type: z.literal('send-form-notifications'),
-    eventId: idSchema,
-    tenantId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    mobile: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-shift-reminder'),
-    shiftId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-webform-notifications'),
-    formId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-event-registration-confirmation'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-event-reminder'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-transactional-email'),
-    to: z.string(),
-    subject: z.string().nullish(),
-    text: z.string().nullish(),
-    html: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-subscription-confirmation'),
-    email: z.string(),
-    firstName: z.string().nullish(),
-    confirmUrl: z.string(),
-  }),
-  z.object({ type: z.literal('check_due_tasks') }),
-
-  // ── Newsletters ──────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('send-newsletter'),
-    tenantId: idSchema,
-    newsletterId: idSchema,
-    userId: idSchema,
-    offset: z.number().nullish(),
-    deliveredCount: z.number().nullish(),
-  }),
-  z.object({ type: z.literal('prune_newsletter_events') }),
-
-  // ── Workflows & deletions ────────────────────────────────────────────────
-  z.object({ type: z.literal('process_drip_workflows') }),
-  z.object({ type: z.literal('perform_scheduled_deletions') }),
-
-  // ── Billing & integrations ───────────────────────────────────────────────
-  z.object({
-    type: z.literal('zapier_trigger'),
-    tenant_id: idSchema,
-    event_type: z.enum(ZAPIER_EVENT_TYPES),
-    data: z.record(z.string(), z.unknown()).default({}),
-  }),
-  z.object({
-    type: z.literal('check_usage_limits'),
-    tenant_id: idSchema,
-  }),
-  z.object({ type: z.literal('check_all_usage_limits') }),
-
-  // ── Exports ──────────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('export_csv'),
-    export_id: idSchema,
-    tenant_id: idSchema,
-    table: z.string().nullish(),
-    entity: z.string().nullish(),
-    options: exportOptionsSchema.default({}),
-    columns: z.array(z.string()).nullish(),
-    user_id: idSchema.nullish(),
-    file_name: z.string().nullish(),
-  }),
-]);
-
-export type JobPayload = z.infer<typeof jobPayloadSchema>;
-export type JobType = JobPayload['type'];
-export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
-
-/**
- * CSV imports are queued without a `type` discriminator (legacy shape) and are
- * matched by the presence of `import_id` + `storage_key` instead.
- */
-export const legacyImportJobSchema = z.object({
-  import_id: idSchema,
-  storage_key: z.string(),
-  tenant_id: idSchema,
-  user_id: idSchema,
-  source: z.string().nullish(),
-  skipped: z.union([z.string(), z.number()]).nullish(),
-  campaign_id: idSchema.nullish(),
-  tags: z.array(z.string()).nullish(),
-  file_name: z.string().nullish(),
-});
-
-export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
-```
+````
 
 ## File: apps/backend/src/app/lib/jobs/worker.ts
-
-```typescript
+````typescript
 import { sql } from 'kysely';
 import { Client } from 'pg';
 
@@ -21463,11 +21676,10 @@ export class BackgroundJobWorker {
     this.scheduleDrain(0);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/mail/mentions-util.ts
-
-```typescript
+````typescript
 import { logger } from '../../logger';
 import { notificationEnabled } from '../profile-preferences';
 import { TransactionalEmailService } from './transactional-mail.service';
@@ -21527,11 +21739,10 @@ export async function processMentions(
     logger.error({ err: error }, 'Failed to process comment mentions');
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/base.controller.ts
-
-```typescript
+````typescript
 import { TRPCError } from '@trpc/server';
 
 import type {
@@ -21922,11 +22133,10 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/lib/rest-auth.ts
-
-```typescript
+````typescript
 import type { FastifyRequest } from 'fastify';
 
 import type { IAuthKeyPayload } from '../../../../../libs/common/src';
@@ -22035,11 +22245,10 @@ export async function authenticateRest(
 
   return { ok: true, auth: { tenant_id: payload.tenant_id, user_id: payload.user_id, role, verified } };
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/companies/repositories/companies.repo.ts
-
-```typescript
+````typescript
 import type { Selectable, Transaction } from 'kysely';
 import { sql } from 'kysely';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -22284,237 +22493,316 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
       .executeTakeFirst();
   }
 }
-```
+````
 
-## File: apps/backend/src/app/modules/companies/services/companies-enrichment.service.ts
+## File: apps/backend/src/app/modules/companies/controller.ts
+````typescript
+import { BaseController } from '../../lib/base.controller';
+import { CompaniesRepo } from './repositories/companies.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
+import { ImportsRepo } from '../imports/repositories/imports.repo';
+import { StorageService } from '../../lib/storage.service';
+import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
 
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { env } from '../../../../env';
-import { logger } from '../../../logger';
-
-export class CompaniesEnrichmentService {
-  constructor(private readonly db: Kysely<Models>) {}
-
-  public async enrichCompany(companyId: string, tenantId: string, force = false): Promise<void> {
-    const company = await this.db
-      .selectFrom('companies')
-      .selectAll()
-      .where('id', '=', companyId)
-      .where('tenant_id', '=', tenantId)
-      .executeTakeFirst();
-
-    if (!company) {
-      logger.warn(`Company enrichment skipped: Company ${companyId} not found.`);
-      return;
-    }
-
-    // Check if already enriched. A user-triggered "Re-check Google" (force)
-    // re-runs the lookup; the first-load auto-queue does not.
-    let currentEnrichment: any = {};
-    if (company.enrichment) {
-      currentEnrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
-    }
-    if (!force && currentEnrichment?.google_enriched) {
-      logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
-      return;
-    }
-
-    const apiKey = env.googleMapsApiKey;
-    const isMockOrTest = !apiKey || apiKey.includes('mock') || process.env['NODE_ENV'] === 'test';
-
-    let description: string | null = null;
-    let website: string | null = null;
-    let phone: string | null = null;
-    let industry: string | null = null;
-    let rawResult: any = null;
-
-    if (!isMockOrTest) {
-      try {
-        // Step 1: Text Search to find the Place ID
-        const searchUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(company.name)}&key=${apiKey}`;
-        const searchRes = await fetch(searchUrl);
-        if (!searchRes.ok) {
-          throw new Error(`Google Places Text Search returned status ${searchRes.status}`);
-        }
-        const searchData: any = await searchRes.json();
-
-        if (searchData.status === 'OK' && searchData.results && searchData.results.length > 0) {
-          const firstResult = searchData.results[0];
-          const placeId = firstResult.place_id;
-
-          // Step 2: Fetch Place Details for that Place ID
-          const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=name,formatted_address,website,international_phone_number,formatted_phone_number,editorial_summary,types&key=${apiKey}`;
-          const detailsRes = await fetch(detailsUrl);
-          if (!detailsRes.ok) {
-            throw new Error(`Google Places Details returned status ${detailsRes.status}`);
-          }
-          const detailsData: any = await detailsRes.json();
-
-          if (detailsData.status === 'OK' && detailsData.result) {
-            const res = detailsData.result;
-            rawResult = res;
-            website = res.website || null;
-            phone = res.formatted_phone_number || res.international_phone_number || null;
-            description = res.editorial_summary?.overview || null;
-
-            if (res.types && res.types.length > 0) {
-              const rawType = res.types[0];
-              industry = rawType
-                .replace(/_/g, ' ')
-                .split(' ')
-                .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ');
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, `Google Places API enrichment failed for company ${companyId}`);
-        throw err;
-      }
-    } else {
-      // Mock enrichment for testing/dev
-      const cleanName = company.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      website = `https://www.${cleanName || 'company'}.com`;
-      phone = '+1 555-0199';
-      description = `Mock description for ${company.name} from Google Places.`;
-      industry = company.industry || 'Technology';
-      rawResult = { mock: true };
-      logger.info(`Mock Google enrichment completed for company ${companyId}`);
-    }
-
-    const updatedEnrichment = {
-      ...currentEnrichment,
-      google_enriched: true,
-      place_details: rawResult,
-    };
-
-    const updatePayload: any = {
-      enrichment: JSON.stringify(updatedEnrichment),
-      updated_at: new Date(),
-    };
-
-    if (!company.website || company.website.trim() === '') {
-      updatePayload.website = website;
-    }
-    if (!company.phone || company.phone.trim() === '') {
-      updatePayload.phone = phone;
-    }
-    if (!company.description || company.description.trim() === '') {
-      updatePayload.description = description;
-    }
-    if (!company.industry || company.industry.trim() === '') {
-      updatePayload.industry = industry;
-    }
-
-    await this.db
-      .updateTable('companies')
-      .set(updatePayload)
-      .where('id', '=', companyId)
-      .where('tenant_id', '=', tenantId)
-      .execute();
+export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
+  constructor() {
+    super(new CompaniesRepo());
   }
 
-  public async queueUnenrichedCompanies(tenantId?: string): Promise<number> {
-    let query = this.db
-      .selectFrom('companies')
-      .select(['id', 'tenant_id'])
-      .where((eb) => eb.or([eb('enrichment', 'is', null), sql<boolean>`enrichment->>'google_enriched' is null`]));
+  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
+  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
+    const rowObj = row as Record<string, unknown>;
+    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
+      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
+      );
+    }
+    return super.add(row, trx);
+  }
 
-    if (tenantId) {
-      query = query.where('tenant_id', '=', tenantId);
+  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'companies', 'update'>;
+  }) {
+    const row = input.row as Record<string, unknown>;
+    if ('name' in row) {
+      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+      );
+    }
+    return super.update(input);
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
+    const company = (await super.getOneById(input)) as any;
+    if (company) {
+      let enrichment: any = {};
+      if (company.enrichment) {
+        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
+      }
+      if (!enrichment || !enrichment.google_enriched) {
+        await this.getRepo()
+          .db.insertInto('background_jobs')
+          .values({
+            tenant_id: input.tenant_id,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'enrich_company_google',
+              company_id: String(company.id),
+              tenant_id: String(input.tenant_id),
+            }),
+            run_at: new Date(),
+            max_attempts: 3,
+          })
+          .execute()
+          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
+      }
+    }
+    return company;
+  }
+
+  public addCompany(payload: any, auth: IAuthKeyPayload) {
+    const row = {
+      name: payload.name,
+      description: payload.description ?? null,
+      website: payload.website ?? null,
+      email: payload.email ?? null,
+      phone: payload.phone ?? null,
+      industry: payload.industry ?? null,
+      notes: payload.notes ?? null,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'companies', 'insert'>;
+    return this.add(row);
+  }
+
+  public updateCompany(id: string, row: any, auth: IAuthKeyPayload) {
+    const rowWithUpdatedBy = {
+      ...row,
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'companies', 'update'>;
+    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
+  }
+
+  public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
+    return this.getAllWithCounts(auth.tenant_id, options);
+  }
+
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
+  }
+
+  private readonly importsRepo = new ImportsRepo();
+  private readonly storageService = new StorageService();
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeCompanies({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        name: string;
+        description?: string | null;
+        website?: string | null;
+        email?: string | null;
+        phone?: string | null;
+        industry?: string | null;
+        notes?: string | null;
+      }>;
+      skipped?: number;
+      file_name?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-Companies-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'companies',
+      tag_name: null,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as any;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
     }
 
-    const unenriched = await query.execute();
-    if (unenriched.length === 0) return 0;
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
 
-    const values = unenriched.map((c) => ({
-      tenant_id: c.tenant_id,
-      queue: 'default',
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      } as any,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          skipped: skippedFromClient,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          source: 'companies',
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
       status: 'pending',
-      payload: JSON.stringify({
-        type: 'enrich_company_google',
-        company_id: String(c.id),
-        tenant_id: String(c.tenant_id),
-      }),
-      run_at: new Date(),
-      max_attempts: 3,
-    }));
+    } as any;
+  }
 
-    await this.db.insertInto('background_jobs').values(values).execute();
+  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
+    const results = { inserted: 0, errors: 0, skipped: 0 };
+    const errorMessages: string[] = [];
 
-    return unenriched.length;
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Filter valid rows upfront
+      const validRows: any[] = [];
+      for (const raw of chunk) {
+        if (!raw.name || !raw.name.trim()) {
+          results.skipped += 1;
+        } else {
+          validRows.push(raw);
+        }
+      }
+
+      if (validRows.length > 0) {
+        try {
+          // 2. Batch insert all valid company rows in one statement
+          const companyRows = validRows.map((raw) => ({
+            tenant_id,
+            createdby_id: user_id,
+            updatedby_id: user_id,
+            name: raw.name.trim(),
+            description: raw.description ?? null,
+            website: raw.website ?? null,
+            email: raw.email ?? null,
+            phone: raw.phone ?? null,
+            industry: raw.industry ?? null,
+            notes: raw.notes ?? null,
+            file_id: import_id,
+          }));
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              await (trx as any).insertInto('companies').values(companyRows).execute();
+            });
+          results.inserted += validRows.length;
+        } catch (err) {
+          results.errors += validRows.length;
+          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
+        }
+      }
+
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill company slugs after import');
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      errorMessages,
+    };
   }
 }
-```
-
-## File: apps/backend/src/app/modules/companies/trpc.router.ts
-
-```typescript
-import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { CompaniesController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const companies = new CompaniesController();
-
-const CompanyInputSchema = CompanyInputObj;
-
-const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
-
-export const CompaniesRouter = router({
-  ...crud,
-
-  // Tenant-scoped slug resolution for /companies/:slug URLs (spec §1).
-  getBySlug: authProcedure
-    .input(z.string().trim().min(1).max(200))
-    .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
-
-  // §7 "Enrich" / "Re-check Google" — queues a Google Places lookup job.
-  enrich: authProcedure
-    .input(z.object({ id: idSchema, force: z.boolean().optional() }))
-    .mutation(({ input, ctx }) => companies.queueEnrichment(input.id, ctx.auth, input.force ?? false)),
-
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(CompanyInputSchema),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return companies.importRows(input, ctx.auth);
-    }),
-
-  getPotentialDuplicates: authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
-
-  mergeCompanies: authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
-});
-```
+````
 
 ## File: apps/backend/src/app/modules/dashboard/controller.ts
-
-```typescript
+````typescript
 import { BaseRepository } from '../../lib/base.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import { sql } from 'kysely';
-import { calculateWorkingTimeMs } from '../../../../../../libs/common/src';
+import { calculateWorkingTimeMs, TASK_OPEN_STATUSES } from '../../../../../../libs/common/src';
 import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export class DashboardController {
@@ -22794,7 +23082,7 @@ export class DashboardController {
 
     // Calculate Task SLA Breaches
     for (const task of tasks) {
-      const isOpenTask = task.status && ['todo', 'in_progress', 'blocked'].includes(task.status);
+      const isOpenTask = task.status && (TASK_OPEN_STATUSES as readonly string[]).includes(task.status);
       if (isOpenTask) {
         const workingTimeMs = calculateWorkingTimeMs(
           new Date(task.created_at),
@@ -23164,7 +23452,7 @@ export class DashboardController {
       .selectFrom('tasks')
       .select(['id', 'name', 'status', 'created_at', 'completed_at', 'assigned_to'])
       .where('tenant_id', '=', tenant_id)
-      .where('status', 'in', ['todo', 'in_progress', 'blocked'])
+      .where('status', 'in', [...TASK_OPEN_STATUSES])
       .execute();
 
     const breachedTasksList: Array<{
@@ -23211,11 +23499,10 @@ export class DashboardController {
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/donations/repositories/pledges.repo.ts
-
-```typescript
+````typescript
 import type { Selectable } from 'kysely';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { BaseRepository } from '../../../lib/base.repo';
@@ -23278,11 +23565,10 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
     return Number(result?.total || 0);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import Stripe from 'stripe';
 import { env } from '../../../../env';
@@ -23389,11 +23675,10 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default donationsWebhookRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/donations/controller.ts
-
-```typescript
+````typescript
 import crypto from 'crypto';
 import Stripe from 'stripe';
 import { TRPCError } from '@trpc/server';
@@ -24213,11 +24498,10 @@ export class DonationsController extends BaseController<'donations', DonationsRe
     return record;
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/emails/controller.ts
-
-```typescript
+````typescript
 import { env } from '../../../env';
 import { getAllEmailFolders } from '../../config/email-folders.config';
 import { AppError, BadRequestError, InternalError, NotFoundError } from '../../errors/app-errors';
@@ -24780,11 +25064,10 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/events/controller.ts
-
-```typescript
+````typescript
 import { TRPCError } from '@trpc/server';
 import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
@@ -25568,11 +25851,10 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     return { success: true };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/households/controller.ts
-
-```typescript
+````typescript
 import type {
   ExportCsvInputType,
   ExportCsvResponseType,
@@ -26003,11 +26285,10 @@ export class HouseholdsController extends BaseController<'households', Household
       .execute();
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/households/trpc.router.ts
-
-```typescript
+````typescript
 import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
 
 import { z } from 'zod';
@@ -26101,11 +26382,10 @@ export const HouseholdsRouter = router({
     households.recomputeAddressFingerprints(ctx.auth.tenant_id),
   ),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/newsletters/controller.ts
-
-```typescript
+````typescript
 import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import type { Transaction } from 'kysely';
@@ -26543,11 +26823,10 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/persons/controller.ts
-
-```typescript
+````typescript
 import type {
   ExportCsvInputType,
   ExportCsvResponseType,
@@ -26794,11 +27073,10 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     return super.exportCsv(input, auth);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/persons/trpc.router.ts
-
-```typescript
+````typescript
 import {
   UpdatePersonsObj,
   exportCsvInput,
@@ -27058,11 +27336,10 @@ export const PersonsRouter = router({
   mergePersons: mergePersons(),
   moveEntireHousehold: moveEntireHousehold(),
 });
-```
+````
 
 ## File: apps/backend/src/app/modules/volunteer-events/controller.ts
-
-```typescript
+````typescript
 import { BaseController } from '../../lib/base.controller';
 import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
@@ -28018,11 +28295,10 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
     throw new Error('No campaign found for this tenant.');
   }
 }
-```
+````
 
 ## File: apps/backend/vite.config.ts
-
-```typescript
+````typescript
 /// <reference types='vitest' />
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -28082,1084 +28358,10 @@ export default defineConfig(() => ({
     },
   },
 }));
-```
-
-## File: apps/backend/src/app/modules/companies/controller.ts
-
-```typescript
-import { BaseController } from '../../lib/base.controller';
-import { CompaniesRepo } from './repositories/companies.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
-import { slugifyRecordName } from '../../../../../../libs/common/src';
-import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
-import { ImportsRepo } from '../imports/repositories/imports.repo';
-import { StorageService } from '../../lib/storage.service';
-import { TRPCError } from '@trpc/server';
-import { logger } from '../../logger';
-
-export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
-  constructor() {
-    super(new CompaniesRepo());
-  }
-
-  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
-  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
-    const rowObj = row as Record<string, unknown>;
-    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
-      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
-        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
-      );
-    }
-    return super.add(row, trx);
-  }
-
-  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'companies', 'update'>;
-  }) {
-    const row = input.row as Record<string, unknown>;
-    if ('name' in row) {
-      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
-        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
-      );
-    }
-    return super.update(input);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
-    const company = (await super.getOneById(input)) as any;
-    if (company) {
-      let enrichment: any = {};
-      if (company.enrichment) {
-        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
-      }
-      if (!enrichment || !enrichment.google_enriched) {
-        await this.getRepo()
-          .db.insertInto('background_jobs')
-          .values({
-            tenant_id: input.tenant_id,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'enrich_company_google',
-              company_id: String(company.id),
-              tenant_id: String(input.tenant_id),
-            }),
-            run_at: new Date(),
-            max_attempts: 3,
-          })
-          .execute()
-          .catch((err) => logger.error({ err }, 'Failed to queue google enrichment job on getOneById'));
-      }
-    }
-    return company;
-  }
-
-  /**
-   * Queue a Google Places enrichment lookup for one company (§7 "Enrich" /
-   * "Re-check Google" button). Transactional-outbox: verify the company is in
-   * the tenant, then insert the background job. `force` re-runs even if the
-   * company was already enriched.
-   */
-  public async queueEnrichment(id: string, auth: IAuthKeyPayload, force = false): Promise<{ queued: boolean }> {
-    const company = await this.getRepo()
-      .db.selectFrom('companies')
-      .select('id')
-      .where('id', '=', id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!company) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Company not found' });
-    }
-
-    await this.getRepo()
-      .db.insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'enrich_company_google',
-          company_id: String(id),
-          tenant_id: String(auth.tenant_id),
-          force,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
-
-    return { queued: true };
-  }
-
-  public addCompany(payload: any, auth: IAuthKeyPayload) {
-    const row = {
-      name: payload.name,
-      description: payload.description ?? null,
-      website: payload.website ?? null,
-      email: payload.email ?? null,
-      phone: payload.phone ?? null,
-      industry: payload.industry ?? null,
-      notes: payload.notes ?? null,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'companies', 'insert'>;
-    return this.add(row);
-  }
-
-  public updateCompany(id: string, row: any, auth: IAuthKeyPayload) {
-    const rowWithUpdatedBy = {
-      ...row,
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'companies', 'update'>;
-    return this.update({ tenant_id: auth.tenant_id, id, row: rowWithUpdatedBy });
-  }
-
-  public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
-    return this.getAllWithCounts(auth.tenant_id, options);
-  }
-
-  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
-  }
-
-  private readonly importsRepo = new ImportsRepo();
-  private readonly storageService = new StorageService();
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async mergeCompanies(target_id: string, source_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().mergeCompanies({
-      tenant_id: auth.tenant_id,
-      target_id,
-      source_id,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        name: string;
-        description?: string | null;
-        website?: string | null;
-        email?: string | null;
-        phone?: string | null;
-        industry?: string | null;
-        notes?: string | null;
-      }>;
-      skipped?: number;
-      file_name?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-Companies-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'companies',
-      tag_name: null,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as any;
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id as any, id: importRecordId as any });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-      } as any,
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          skipped: skippedFromClient,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-          source: 'companies',
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      status: 'pending',
-    } as any;
-  }
-
-  public async processImportRows(import_id: string, tenant_id: string, user_id: string, skipped: number, rows: any[]) {
-    const results = { inserted: 0, errors: 0, skipped: 0 };
-    const errorMessages: string[] = [];
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Filter valid rows upfront
-      const validRows: any[] = [];
-      for (const raw of chunk) {
-        if (!raw.name || !raw.name.trim()) {
-          results.skipped += 1;
-        } else {
-          validRows.push(raw);
-        }
-      }
-
-      if (validRows.length > 0) {
-        try {
-          // 2. Batch insert all valid company rows in one statement
-          const companyRows = validRows.map((raw) => ({
-            tenant_id,
-            createdby_id: user_id,
-            updatedby_id: user_id,
-            name: raw.name.trim(),
-            description: raw.description ?? null,
-            website: raw.website ?? null,
-            email: raw.email ?? null,
-            phone: raw.phone ?? null,
-            industry: raw.industry ?? null,
-            notes: raw.notes ?? null,
-            file_id: import_id,
-          }));
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              await (trx as any).insertInto('companies').values(companyRows).execute();
-            });
-          results.inserted += validRows.length;
-        } catch (err) {
-          results.errors += validRows.length;
-          errorMessages.push(err instanceof Error && err.message ? err.message : String(err));
-        }
-      }
-
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-    }
-
-    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
-    try {
-      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
-    } catch (err) {
-      logger.error({ err }, 'Failed to backfill company slugs after import');
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      errorMessages,
-    };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
-
-```typescript
-import { Client } from '@microsoft/microsoft-graph-client';
-import crypto from 'crypto';
-import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
-import type { FastifyPluginCallback } from 'fastify';
-import { env } from '../../../../env';
-import { authenticateRest } from '../../../lib/rest-auth';
-import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
-import { BaseRepository } from '../../../lib/base.repo';
-import { attachmentDisposition } from '../../../lib/download-headers';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-import { StorageService } from '../../../lib/storage.service';
-import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
-
-function buildRawMime(options: {
-  fromName: string;
-  fromEmail: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  html: string;
-  attachments: { filename: string; content: Buffer; contentType: string }[];
-}): Buffer {
-  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
-  const headers: string[] = [];
-
-  const safeFromName = options.fromName.replace(/"/g, '\\"');
-  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
-  headers.push(`To: ${options.to.join(', ')}`);
-  if (options.cc.length > 0) {
-    headers.push(`Cc: ${options.cc.join(', ')}`);
-  }
-  if (options.bcc.length > 0) {
-    headers.push(`Bcc: ${options.bcc.join(', ')}`);
-  }
-
-  const base64Subject = Buffer.from(options.subject).toString('base64');
-  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
-
-  headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-  headers.push('');
-
-  const bodyParts: string[] = [];
-
-  bodyParts.push(`--${boundary}`);
-  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
-  bodyParts.push(`Content-Transfer-Encoding: base64`);
-  bodyParts.push('');
-  bodyParts.push(Buffer.from(options.html).toString('base64'));
-  bodyParts.push('');
-
-  for (const att of options.attachments) {
-    bodyParts.push(`--${boundary}`);
-    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Transfer-Encoding: base64`);
-    bodyParts.push('');
-    bodyParts.push(att.content.toString('base64'));
-    bodyParts.push('');
-  }
-
-  bodyParts.push(`--${boundary}--`);
-
-  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
-  return Buffer.from(rawMimeString, 'utf-8');
-}
-
-const storageService = new StorageService();
-
-let _oauthSvc: MsOAuthService | null = null;
-
-function getOAuthService(db: any) {
-  if (!_oauthSvc) {
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-export async function saveLocalEmail(
-  db: any,
-  tenantId: string,
-  userId: string,
-  fromEmail: string,
-  fromName: string,
-  toList: string[],
-  ccList: string[],
-  bccList: string[],
-  subject: string,
-  html: string,
-  uploadedFiles: any[],
-  previewKey: string,
-) {
-  return db.transaction().execute(async (trx: any) => {
-    // 1. Insert into emails table (Outbox)
-    const createdEmail = await trx
-      .insertInto('emails')
-      .values({
-        tenant_id: tenantId,
-        folder_id: ALL_FOLDERS.OUTBOX,
-        from_email: fromEmail,
-        to_email: toList.join(', '),
-        subject: subject,
-        preview: previewKey,
-        assigned_to: userId,
-        is_favourite: false,
-        deleted_at: null,
-        status: 'open',
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    const emailId = String(createdEmail.id);
-
-    // 2. Insert html into email_bodies
-    await trx
-      .insertInto('email_bodies')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        body_html: html,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 3. Insert files and email_attachments metadata
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const uFile = uploadedFiles[i];
-      let fileId: string;
-
-      // Persist (or reuse, via sha256 dedup) the file row, then link the
-      // attachment to it so downloads can resolve the stored blob.
-      const existingFile = await trx
-        .selectFrom('files')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('sha256_hex', '=', uFile.sha256_hex)
-        .executeTakeFirst();
-
-      if (existingFile) {
-        fileId = String(existingFile.id);
-      } else {
-        const fileResult = await trx
-          .insertInto('files')
-          .values({
-            tenant_id: tenantId,
-            filename: uFile.filename,
-            mime_type: uFile.content_type,
-            size_bytes: uFile.size_bytes,
-            storage_key: uFile.storage_key,
-            sha256_hex: uFile.sha256_hex,
-            uploaded_by: userId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        fileId = String(fileResult.id);
-      }
-
-      await trx
-        .insertInto('email_attachments')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          filename: uFile.filename,
-          content_type: uFile.content_type,
-          size_bytes: uFile.size_bytes,
-          cid: uFile.cid,
-          is_inline: uFile.is_inline,
-          pos: i + 1,
-          file_id: fileId,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-    }
-
-    // 4. Insert headers
-    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
-    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-
-    await trx
-      .insertInto('email_headers')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        headers_json: JSON.stringify({ internetMessageId }),
-        raw_headers: rawHeaders,
-        date_sent: new Date(),
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 5. Insert recipients
-    const recipientRows: any[] = [];
-    toList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'to',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    ccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'cc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    bccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'bcc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-
-    if (recipientRows.length > 0) {
-      await trx.insertInto('email_recipients').values(recipientRows).execute();
-    }
-
-    return createdEmail;
-  });
-}
-
-const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Send composed email
-  fastify.post('/send', async (req: any, reply) => {
-    // Mutating endpoint: enforce session revocation and block read-only viewers.
-    const authResult = await authenticateRest(req, { requireWrite: true });
-    if (!authResult.ok) {
-      return reply.status(authResult.status).send({ error: authResult.error });
-    }
-
-    const tenantId = authResult.auth.tenant_id;
-    const userId = authResult.auth.user_id;
-    const db = (BaseRepository as any)['_db'];
-
-    // Retrieve sender user details
-    const user = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', userId)
-      .executeTakeFirst();
-
-    if (!user) {
-      return reply.status(401).send({ error: 'Unauthorized: User not found' });
-    }
-
-    const fromEmail = user.email;
-    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
-
-    // Parse multipart request parts
-    const parts = req.parts();
-    const fields: any = {};
-    const files: any[] = [];
-
-    for await (const part of parts) {
-      if (part.file) {
-        const buffer = await part.toBuffer();
-        files.push({
-          filename: part.filename,
-          fieldname: part.fieldname,
-          mimetype: part.mimetype,
-          buffer,
-        });
-      } else {
-        fields[part.fieldname] = part.value;
-      }
-    }
-
-    // Parse recipient lists and content fields
-    const toList = fields.to ? JSON.parse(fields.to) : [];
-    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
-    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
-    const subject = fields.subject || '';
-    const html = sanitizeHtml(fields.html || '');
-
-    // Upload attachment files to storage outside transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
-
-    for (const file of files) {
-      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
-      const fileUUID = crypto.randomUUID();
-      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
-
-      await storageService.upload(storage_key, file.buffer, file.mimetype);
-
-      uploadedFiles.push({
-        filename: file.filename,
-        content_type: file.mimetype,
-        size_bytes: file.buffer.length,
-        storage_key,
-        sha256_hex,
-        cid: null,
-        is_inline: false,
-      });
-    }
-
-    // Check if user has connected Microsoft and/or Google accounts
-    const msToken = await db
-      .selectFrom('ms_oauth_tokens')
-      .select(['user_id', 'ms_email'])
-      .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const googleToken = await db
-      .selectFrom('google_oauth_tokens')
-      .select(['user_id', 'google_email'])
-      .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const hasMsConnected = !!msToken;
-    const hasGoogleConnected = !!googleToken;
-
-    // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasGoogleConnected) {
-      return reply.status(400).send({
-        status: 'error',
-        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
-      });
-    }
-
-    // Save outbound email to database under Outbox folder '10' initially
-    const fallbackPreview =
-      html
-        .replace(/<[^>]*>/g, '')
-        .substring(0, 100)
-        .trim() || '';
-    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
-    try {
-      emailRow = await saveLocalEmail(
-        db,
-        tenantId,
-        userId,
-        fromEmail,
-        fromName,
-        toList,
-        ccList,
-        bccList,
-        subject,
-        html,
-        uploadedFiles,
-        fallbackPreview,
-      );
-    } catch (err) {
-      fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
-    }
-
-    // Determine send method prioritizing matching address
-    let sendMethod: 'ms' | 'google' = 'ms';
-    if (hasMsConnected && hasGoogleConnected) {
-      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
-        sendMethod = 'google';
-      } else {
-        sendMethod = 'ms';
-      }
-    } else if (hasMsConnected) {
-      sendMethod = 'ms';
-    } else if (hasGoogleConnected) {
-      sendMethod = 'google';
-    }
-
-    // Dispatch the email synchronously
-    try {
-      if (sendMethod === 'ms') {
-        const oauthSvc = getOAuthService(db);
-        let msDraftId: string | null = null;
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-          const client = Client.init({
-            authProvider: (done) => done(null, accessToken),
-          });
-
-          const msDraftMessage: any = {
-            subject: subject,
-            body: {
-              contentType: 'html',
-              content: html,
-            },
-            toRecipients: toList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            ccRecipients: ccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            bccRecipients: bccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-          };
-
-          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
-          msDraftId = createdDraft.id;
-          const graphInternetMessageId = createdDraft.internetMessageId;
-
-          // Update local email preview/dedupe key to `ms:${msDraftId}`
-          await db
-            .updateTable('emails')
-            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          if (graphInternetMessageId) {
-            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-            await db
-              .updateTable('email_headers')
-              .set({
-                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
-                raw_headers: rawHeaders,
-                updated_at: new Date(),
-              })
-              .where('tenant_id', '=', tenantId)
-              .where('email_id', '=', String(emailRow.id))
-              .execute();
-          }
-
-          // Upload attachments
-          for (const file of files) {
-            await client.api(`/me/messages/${msDraftId}/attachments`).post({
-              '@odata.type': '#microsoft.graph.fileAttachment',
-              name: file.filename,
-              contentType: file.mimetype,
-              contentBytes: file.buffer.toString('base64'),
-            });
-          }
-
-          // Send draft
-          await client.api(`/me/messages/${msDraftId}/send`).post({});
-
-          // Move local email to Sent on success
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          // Trigger background sync to get folders/Sent items synchronized
-          const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
-          // Clean up local email
-          await db
-            .deleteFrom('emails')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
-            400,
-          );
-        }
-      } else if (sendMethod === 'google') {
-        const oauthSvc = new GoogleOAuthService(db, {
-          clientId: env.googleClientId ?? '',
-          clientSecret: env.googleClientSecret ?? '',
-          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-        });
-
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-
-          const rawMessageBuffer = buildRawMime({
-            fromName,
-            fromEmail,
-            to: toList,
-            cc: ccList,
-            bcc: bccList,
-            subject,
-            html,
-            attachments: files.map((file) => ({
-              filename: file.filename,
-              content: file.buffer,
-              contentType: file.mimetype,
-            })),
-          });
-
-          const rawBase64Url = rawMessageBuffer
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-
-          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              raw: rawBase64Url,
-            }),
-          });
-
-          if (!gmailRes.ok) {
-            const errText = await gmailRes.text();
-            throw new Error(`Gmail API send failed: ${errText}`);
-          }
-
-          const gmailData: any = await gmailRes.json();
-          const googleMsgId = gmailData.id;
-
-          await db
-            .updateTable('emails')
-            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
-          await db
-            .updateTable('emails')
-            .set({
-              // Revert to Drafts so the user can retry (was '4' = Spam, a bug)
-              folder_id: ALL_FOLDERS.DRAFTS,
-              updated_at: new Date(),
-            })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
-            400,
-          );
-        }
-      }
-    } catch (err) {
-      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
-      // Clean up local email
-      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
-    }
-  });
-
-  // Download attachment by ID
-  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    const { id, attachmentId } = req.params;
-
-    // Auth: a short-lived token scoped to this one email (embeddable link, no
-    // session JWT in the URL) or the app's Authorization header (session-gated).
-    let tenantId: string;
-    if (req.query.st) {
-      try {
-        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
-      } catch (_err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-      }
-    } else {
-      const authResult = await authenticateRest(req);
-      if (!authResult.ok) {
-        return reply.status(authResult.status).send({ error: authResult.error });
-      }
-      tenantId = authResult.auth.tenant_id;
-    }
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachmentId)
-      .where('email_id', '=', id)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', attachmentDisposition(file.filename));
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to download attachment' });
-    }
-  });
-
-  // Serve inline attachment by CID
-  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    const { id, cid } = req.params;
-
-    // Auth: a short-lived token scoped to this one email (for inline <img> in the
-    // rendered body) or the app's Authorization header (session-gated).
-    let tenantId: string;
-    if (req.query.st) {
-      try {
-        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
-      } catch (_err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-      }
-    } else {
-      const authResult = await authenticateRest(req);
-      if (!authResult.ok) {
-        return reply.status(authResult.status).send({ error: authResult.error });
-      }
-      tenantId = authResult.auth.tenant_id;
-    }
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', '=', id)
-      .where('cid', '=', cid)
-      .where('is_inline', '=', true)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Inline attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      // Private: inline attachments are tenant-scoped and token-gated.
-      reply.header('Cache-Control', 'private, max-age=31536000');
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to load inline image' });
-    }
-  });
-
-  done();
-};
-
-export default emailsApiRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { TRPCError } from '@trpc/server';
 
@@ -29240,11 +28442,10 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 };
 
 export default eventsPublicRoute;
-```
+````
 
 ## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
-
-```typescript
+````typescript
 import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
@@ -30001,11 +29202,10 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/persons/services/persons.service.ts
-
-```typescript
+````typescript
 import { env } from '../../../../env';
 import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
 import { slugifyRecordName } from '../../../../../../../libs/common/src';
@@ -31189,11 +30389,10 @@ export class PersonsService {
     return token.charAt(0).toUpperCase() + token.slice(1);
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { TRPCError } from '@trpc/server';
 
@@ -31290,11 +30489,741 @@ const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => 
 };
 
 export default volunteerEventsPublicRoute;
-```
+````
+
+## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+````typescript
+import { Client } from '@microsoft/microsoft-graph-client';
+import crypto from 'crypto';
+import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
+import type { FastifyPluginCallback } from 'fastify';
+import { env } from '../../../../env';
+import { authenticateRest } from '../../../lib/rest-auth';
+import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
+import { BaseRepository } from '../../../lib/base.repo';
+import { attachmentDisposition } from '../../../lib/download-headers';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { StorageService } from '../../../lib/storage.service';
+import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../google-sync/google-sync.service';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
+
+function buildRawMime(options: {
+  fromName: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments: { filename: string; content: Buffer; contentType: string }[];
+}): Buffer {
+  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+  const headers: string[] = [];
+
+  const safeFromName = options.fromName.replace(/"/g, '\\"');
+  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
+  headers.push(`To: ${options.to.join(', ')}`);
+  if (options.cc.length > 0) {
+    headers.push(`Cc: ${options.cc.join(', ')}`);
+  }
+  if (options.bcc.length > 0) {
+    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+  }
+
+  const base64Subject = Buffer.from(options.subject).toString('base64');
+  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
+
+  headers.push(`MIME-Version: 1.0`);
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(`--${boundary}`);
+  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
+  bodyParts.push(`Content-Transfer-Encoding: base64`);
+  bodyParts.push('');
+  bodyParts.push(Buffer.from(options.html).toString('base64'));
+  bodyParts.push('');
+
+  for (const att of options.attachments) {
+    bodyParts.push(`--${boundary}`);
+    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Transfer-Encoding: base64`);
+    bodyParts.push('');
+    bodyParts.push(att.content.toString('base64'));
+    bodyParts.push('');
+  }
+
+  bodyParts.push(`--${boundary}--`);
+
+  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
+  return Buffer.from(rawMimeString, 'utf-8');
+}
+
+const storageService = new StorageService();
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService(db: any) {
+  if (!_oauthSvc) {
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+export async function saveLocalEmail(
+  db: any,
+  tenantId: string,
+  userId: string,
+  fromEmail: string,
+  fromName: string,
+  toList: string[],
+  ccList: string[],
+  bccList: string[],
+  subject: string,
+  html: string,
+  uploadedFiles: any[],
+  previewKey: string,
+) {
+  return db.transaction().execute(async (trx: any) => {
+    // 1. Insert into emails table (Outbox)
+    const createdEmail = await trx
+      .insertInto('emails')
+      .values({
+        tenant_id: tenantId,
+        folder_id: ALL_FOLDERS.OUTBOX,
+        from_email: fromEmail,
+        to_email: toList.join(', '),
+        subject: subject,
+        preview: previewKey,
+        assigned_to: userId,
+        is_favourite: false,
+        deleted_at: null,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const emailId = String(createdEmail.id);
+
+    // 2. Insert html into email_bodies
+    await trx
+      .insertInto('email_bodies')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        body_html: html,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 3. Insert files and email_attachments metadata
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const uFile = uploadedFiles[i];
+      let fileId: string;
+
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
+      const existingFile = await trx
+        .selectFrom('files')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('sha256_hex', '=', uFile.sha256_hex)
+        .executeTakeFirst();
+
+      if (existingFile) {
+        fileId = String(existingFile.id);
+      } else {
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: tenantId,
+            filename: uFile.filename,
+            mime_type: uFile.content_type,
+            size_bytes: uFile.size_bytes,
+            storage_key: uFile.storage_key,
+            sha256_hex: uFile.sha256_hex,
+            uploaded_by: userId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        fileId = String(fileResult.id);
+      }
+
+      await trx
+        .insertInto('email_attachments')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          filename: uFile.filename,
+          content_type: uFile.content_type,
+          size_bytes: uFile.size_bytes,
+          cid: uFile.cid,
+          is_inline: uFile.is_inline,
+          pos: i + 1,
+          file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+
+    // 4. Insert headers
+    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
+    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+
+    await trx
+      .insertInto('email_headers')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        headers_json: JSON.stringify({ internetMessageId }),
+        raw_headers: rawHeaders,
+        date_sent: new Date(),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 5. Insert recipients
+    const recipientRows: any[] = [];
+    toList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'to',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    ccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'cc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    bccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'bcc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+
+    if (recipientRows.length > 0) {
+      await trx.insertInto('email_recipients').values(recipientRows).execute();
+    }
+
+    return createdEmail;
+  });
+}
+
+const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Send composed email
+  fastify.post('/send', async (req: any, reply) => {
+    // Mutating endpoint: enforce session revocation and block read-only viewers.
+    const authResult = await authenticateRest(req, { requireWrite: true });
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
+    }
+
+    const tenantId = authResult.auth.tenant_id;
+    const userId = authResult.auth.user_id;
+    const db = (BaseRepository as any)['_db'];
+
+    // Retrieve sender user details
+    const user = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Unauthorized: User not found' });
+    }
+
+    const fromEmail = user.email;
+    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
+
+    // Parse multipart request parts
+    const parts = req.parts();
+    const fields: any = {};
+    const files: any[] = [];
+
+    for await (const part of parts) {
+      if (part.file) {
+        const buffer = await part.toBuffer();
+        files.push({
+          filename: part.filename,
+          fieldname: part.fieldname,
+          mimetype: part.mimetype,
+          buffer,
+        });
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    // Parse recipient lists and content fields
+    const toList = fields.to ? JSON.parse(fields.to) : [];
+    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
+    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
+    const subject = fields.subject || '';
+    const html = sanitizeHtml(fields.html || '');
+
+    // Upload attachment files to storage outside transaction
+    const uploadedFiles: Array<{
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      storage_key: string;
+      sha256_hex: string;
+      cid: string | null;
+      is_inline: boolean;
+    }> = [];
+
+    for (const file of files) {
+      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
+      const fileUUID = crypto.randomUUID();
+      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
+
+      await storageService.upload(storage_key, file.buffer, file.mimetype);
+
+      uploadedFiles.push({
+        filename: file.filename,
+        content_type: file.mimetype,
+        size_bytes: file.buffer.length,
+        storage_key,
+        sha256_hex,
+        cid: null,
+        is_inline: false,
+      });
+    }
+
+    // Check if user has connected Microsoft and/or Google accounts
+    const msToken = await db
+      .selectFrom('ms_oauth_tokens')
+      .select(['user_id', 'ms_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const googleToken = await db
+      .selectFrom('google_oauth_tokens')
+      .select(['user_id', 'google_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const hasMsConnected = !!msToken;
+    const hasGoogleConnected = !!googleToken;
+
+    // Fail immediately if no send method is configured
+    if (!hasMsConnected && !hasGoogleConnected) {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
+      });
+    }
+
+    // Save outbound email to database under Outbox folder '10' initially
+    const fallbackPreview =
+      html
+        .replace(/<[^>]*>/g, '')
+        .substring(0, 100)
+        .trim() || '';
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
+    }
+
+    // Determine send method prioritizing matching address
+    let sendMethod: 'ms' | 'google' = 'ms';
+    if (hasMsConnected && hasGoogleConnected) {
+      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
+        sendMethod = 'google';
+      } else {
+        sendMethod = 'ms';
+      }
+    } else if (hasMsConnected) {
+      sendMethod = 'ms';
+    } else if (hasGoogleConnected) {
+      sendMethod = 'google';
+    }
+
+    // Dispatch the email synchronously
+    try {
+      if (sendMethod === 'ms') {
+        const oauthSvc = getOAuthService(db);
+        let msDraftId: string | null = null;
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+          const client = Client.init({
+            authProvider: (done) => done(null, accessToken),
+          });
+
+          const msDraftMessage: any = {
+            subject: subject,
+            body: {
+              contentType: 'html',
+              content: html,
+            },
+            toRecipients: toList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            ccRecipients: ccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            bccRecipients: bccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+          };
+
+          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
+          msDraftId = createdDraft.id;
+          const graphInternetMessageId = createdDraft.internetMessageId;
+
+          // Update local email preview/dedupe key to `ms:${msDraftId}`
+          await db
+            .updateTable('emails')
+            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          if (graphInternetMessageId) {
+            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+            await db
+              .updateTable('email_headers')
+              .set({
+                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
+                raw_headers: rawHeaders,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('email_id', '=', String(emailRow.id))
+              .execute();
+          }
+
+          // Upload attachments
+          for (const file of files) {
+            await client.api(`/me/messages/${msDraftId}/attachments`).post({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.filename,
+              contentType: file.mimetype,
+              contentBytes: file.buffer.toString('base64'),
+            });
+          }
+
+          // Send draft
+          await client.api(`/me/messages/${msDraftId}/send`).post({});
+
+          // Move local email to Sent on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          // Trigger background sync to get folders/Sent items synchronized
+          const syncSvc = new MsSyncService(db, oauthSvc);
+          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
+            400,
+          );
+        }
+      } else if (sendMethod === 'google') {
+        const oauthSvc = new GoogleOAuthService(db, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+
+          const rawMessageBuffer = buildRawMime({
+            fromName,
+            fromEmail,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject,
+            html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          const rawBase64Url = rawMessageBuffer
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: rawBase64Url,
+            }),
+          });
+
+          if (!gmailRes.ok) {
+            const errText = await gmailRes.text();
+            throw new Error(`Gmail API send failed: ${errText}`);
+          }
+
+          const gmailData: any = await gmailRes.json();
+          const googleMsgId = gmailData.id;
+
+          await db
+            .updateTable('emails')
+            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
+          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
+          await db
+            .updateTable('emails')
+            .set({
+              // Revert to Drafts so the user can retry (was '4' = Spam, a bug)
+              folder_id: ALL_FOLDERS.DRAFTS,
+              updated_at: new Date(),
+            })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
+            400,
+          );
+        }
+      }
+    } catch (err) {
+      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
+      // Clean up local email
+      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
+    }
+  });
+
+  // Download attachment by ID
+  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
+    const { id, attachmentId } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (embeddable link, no
+    // session JWT in the URL) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachmentId)
+      .where('email_id', '=', id)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to download attachment' });
+    }
+  });
+
+  // Serve inline attachment by CID
+  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
+    const { id, cid } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (for inline <img> in the
+    // rendered body) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', '=', id)
+      .where('cid', '=', cid)
+      .where('is_inline', '=', true)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Inline attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      // Private: inline attachments are tenant-scoped and token-gated.
+      reply.header('Cache-Control', 'private, max-age=31536000');
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to load inline image' });
+    }
+  });
+
+  done();
+};
+
+export default emailsApiRoute;
+````
 
 ## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
-
-```typescript
+````typescript
 import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
@@ -32075,11 +32004,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     });
   }
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
-
-```typescript
+````typescript
 import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
 import { sql } from 'kysely';
 
@@ -32251,11 +32179,10 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/fastify.server.ts
-
-```typescript
+````typescript
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
@@ -32365,11 +32292,10 @@ export class FastifyServer {
     }
   }
 }
-```
+````
 
 ## File: apps/backend/src/trpc.ts
-
-```typescript
+````typescript
 // tsco:ignore
 //
 import { TRPCError, initTRPC } from '@trpc/server';
@@ -32558,11 +32484,10 @@ export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
   }
   return opts.next({ ctx });
 });
-```
+````
 
-## File: apps/backend/src/app/\_migrations/schema.sql
-
-```sql
+## File: apps/backend/src/app/_migrations/schema.sql
+````sql
 --
 -- PostgreSQL database dump
 --
@@ -32601,7 +32526,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner:
+-- Name: EXTENSION pg_trgm; Type: COMMENT; Schema: -; Owner: 
 --
 
 COMMENT ON EXTENSION pg_trgm IS 'text similarity measurement and index searching based on trigrams';
@@ -32615,7 +32540,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner:
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: 
 --
 
 COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
@@ -40683,11 +40608,10 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public GRANT SELECT,INS
 --
 
 \unrestrict PdhMgW15yoOGkfvhi9OHOzvlFqivKLBZmLPSF587hGo1WywFij4P80p3lhhB6hn
-```
+````
 
 ## File: apps/backend/src/app/lib/base.repo.ts
-
-```typescript
+````typescript
 // tsco:ignore
 
 import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
@@ -41374,11 +41298,10 @@ export function ref<TTable extends keyof Models, TColumn extends keyof Models[TT
 ): ReferenceExpression<Models, TTable> {
   return `${String(table)}.${String(column)}` as ReferenceExpression<Models, TTable>;
 }
-```
+````
 
 ## File: apps/backend/src/app/modules/auth/controller.ts
-
-```typescript
+````typescript
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { createSigner } from 'fast-jwt';
 import type { QueryResult, Transaction } from 'kysely';
@@ -43375,11 +43298,10 @@ const IDLE_TIMEOUT_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 const REMEMBER_ME_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
-```
+````
 
 ## File: apps/backend/src/app/modules/web-forms/controller.ts
-
-```typescript
+````typescript
 import type {
   AddWebFormType,
   CreateFormType,
@@ -44500,11 +44422,10 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     };
   }
 }
-```
+````
 
 ## File: apps/backend/src/env.ts
-
-```typescript
+````typescript
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -44656,11 +44577,10 @@ export const env = {
   webAuthnRpId: parsedEnv.WEBAUTHN_RP_ID,
   webAuthnRpName: parsedEnv.WEBAUTHN_RP_NAME,
 };
-```
+````
 
 ## File: apps/backend/src/app/modules/web-forms/routes/web-forms-public.route.ts
-
-```typescript
+````typescript
 import type { FastifyPluginCallback } from 'fastify';
 import { WebFormsController } from '../controller';
 import formBody from '@fastify/formbody';
@@ -45620,4 +45540,4 @@ const renderFormHtml = (
 </html>
 `;
 };
-```
+````

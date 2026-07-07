@@ -415,7 +415,8 @@ export interface Tasks extends RecordType {
   name: string;
   details?: string;
   due_at: Timestamp | null;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived' | null;
+  /** Canonical vocabulary: TASK_STATUSES in libs/common/src/lib/schemas/tasks.schema.ts. */
+  status: 'todo' | 'in_progress' | 'waiting' | 'done' | 'archived' | null;
   priority: 'low' | 'medium' | 'high' | 'urgent' | null;
   completed_at: Timestamp | null;
   position: number | null;
