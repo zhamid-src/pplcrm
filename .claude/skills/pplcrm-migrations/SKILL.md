@@ -62,13 +62,16 @@ For column additions, use idempotent `ADD COLUMN IF NOT EXISTS` / `DROP COLUMN I
 
 There is **no `kysely-codegen`**. The `Models` interface is maintained manually in `libs/common/src/lib/kysely.models.ts`; its header comment states the rule: "When adding a new table … Add a model and add it to the interface Models." So a migration that adds/changes a table is not finished until you add/edit the corresponding model interface and register it in the `Models` map. Without this, Kysely queries against the new table won't type-check.
 
-## Regenerating the schema baseline (`schema.sql`)
+## The schema baseline (`schema.sql`) — do NOT regenerate it
 
-`0001_baseline.ts` bootstraps a **fresh** database by executing `schema.sql`; it does not run on databases that already have the schema. Regenerate it only after significant schema changes so new/fresh databases start current.
+`0001_baseline.ts` bootstraps a **fresh** database by executing `schema.sql`; it does not run on databases that already have the schema.
 
-- **There is no script that does this** — it is a manual, schema-only dump: `pg_dump --schema-only` of a fully-migrated database, written to `apps/backend/src/app/_migrations/schema.sql`.
-- The loader in `0001_baseline.ts` tolerates/strips at run time: psql `\` meta-commands, the `search_path` `set_config` line, PG17-only `transaction_timeout`, and any `kysely_migration`/`kysely_migration_lock` DDL. You don't need to hand-edit those out — the loader filters them — but do **not** add data (no `COPY`/`INSERT`); schema only.
-- Do not delete or renumber applied migration files when regenerating; the baseline coexists with the dated files.
+**Do not refresh this file with a current `pg_dump`** (despite what CLAUDE.md §5 still says). The baseline does NOT mark the dated migrations as applied — on a fresh DB, Kysely runs `0001_baseline` and then **every dated migration on top of it**. The dated migrations were written against the old snapshot; replaying them over a _current_ snapshot collides on the first non-idempotent statement (and several committed migrations, e.g. `2026-06-26-email-sync`, are not idempotent — the fresh-build path is in fact already known-broken even with the old snapshot; see the schema-review remediation session notes, 2026-07-06). The baseline is therefore an **intentionally-old snapshot**: bring fresh databases current by accreting idempotent dated migrations, not by refreshing the snapshot.
+
+- If the fresh-build path is ever properly repaired (baseline that also seeds `kysely_migration` rows, or a fully idempotent migration chain), regeneration is a manual `pg_dump --schema-only` of a fully-migrated database written to `apps/backend/src/app/_migrations/schema.sql` — schema only, no `COPY`/`INSERT`.
+- The loader in `0001_baseline.ts` tolerates/strips at run time: psql `\` meta-commands, the `search_path` `set_config` line, PG17-only `transaction_timeout`, and any `kysely_migration`/`kysely_migration_lock` DDL.
+- Never delete or renumber applied migration files; the baseline coexists with the dated files.
+- Consequence for readers: `schema.sql` does NOT reflect current columns/tables — trust `libs/common/src/lib/kysely.models.ts` and the dated migrations (or a live `psql \d`) for current shape.
 
 ## Non-goals
 

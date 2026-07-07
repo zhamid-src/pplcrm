@@ -21,6 +21,7 @@ import type {
 import type { QueryParams } from '../../lib/base.repo';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { notificationEnabled } from '../../lib/profile-preferences';
 import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
@@ -66,24 +67,11 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           const assignee = await this.getRepo()
             .db.selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
             .where('authusers.id', '=', assignedTo)
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            let optedIn = true;
-            const profileJson = assignee.profile_json;
-            if (profileJson) {
-              try {
-                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-                if (json?.notifications?.task_assigned === false) {
-                  optedIn = false;
-                }
-              } catch (e) {
-                logger.error({ err: e }, 'Failed to parse profile json in addTask');
-              }
-            }
-
-            if (optedIn) {
+            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
               await this.mailService.sendMail({
                 to: assignee.email,
                 subject: `New Task Assigned: ${payload.name}`,
@@ -132,24 +120,11 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           const assignee = await this.getRepo()
             .db.selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
             .where('authusers.id', '=', assignedTo)
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            let optedIn = true;
-            const profileJson = assignee.profile_json;
-            if (profileJson) {
-              try {
-                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-                if (json?.notifications?.task_assigned === false) {
-                  optedIn = false;
-                }
-              } catch (e) {
-                logger.error({ err: e }, 'Failed to parse profile json in updateTask');
-              }
-            }
-
-            if (optedIn) {
+            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
               await this.mailService.sendMail({
                 to: assignee.email,
                 subject: `Task Assigned: ${updated.name}`,

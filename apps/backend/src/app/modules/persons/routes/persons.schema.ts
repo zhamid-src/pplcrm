@@ -19,7 +19,6 @@ const PersonType = {
   state: { type: 'string' },
   zip: { type: 'string' },
   country: { type: 'string' },
-  json: { type: 'string' },
   linkedin: { type: 'string' },
   twitter: { type: 'string' },
   facebook: { type: 'string' },

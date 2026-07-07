@@ -296,43 +296,19 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
     }
 
-    // Fetch all newsletters that are sent
-    const newsletters = await this.getRepo()
+    // Sent newsletters that targeted this list — an indexed join on
+    // map_newsletters_lists (FK-backed), instead of the old fetch-everything
+    // JS filter over the legacy JSONB target_lists document.
+    const targetedNewsletters = await this.getRepo()
       .db.selectFrom('newsletters')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('status', '=', 'sent')
+      .innerJoin('map_newsletters_lists', 'map_newsletters_lists.newsletter_id', 'newsletters.id')
+      .selectAll('newsletters')
+      .where('newsletters.tenant_id', '=', auth.tenant_id)
+      .where('newsletters.status', '=', 'sent')
+      .where('map_newsletters_lists.tenant_id', '=', auth.tenant_id)
+      .where('map_newsletters_lists.list_id', '=', id)
+      .where('map_newsletters_lists.mode', '=', 'include')
       .execute();
-
-    // Filter newsletters in JS where their target_lists matches this list
-    const targetedNewsletters = newsletters.filter((n) => {
-      if (!n.target_lists) return false;
-      // After migration 2026-07-01-a-schema-improvements, target_lists is a jsonb column returned as a parsed object.
-      // Support legacy string values too (pre-migration rows or test data).
-      let parsed: unknown = n.target_lists;
-      if (typeof parsed === 'string') {
-        try {
-          parsed = JSON.parse(parsed);
-        } catch {
-          /* fall through */
-        }
-      }
-      if (Array.isArray(parsed)) {
-        return parsed.includes(id);
-      }
-      if (parsed && typeof parsed === 'object') {
-        const obj = parsed as Record<string, unknown>;
-        const include = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-        return include.includes(id);
-      }
-      if (typeof parsed === 'string') {
-        return parsed
-          .split(',')
-          .map((s) => s.trim())
-          .includes(id);
-      }
-      return false;
-    });
 
     // Compute aggregated metrics
     const totalNewsletters = targetedNewsletters.length;

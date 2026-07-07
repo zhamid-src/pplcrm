@@ -32,6 +32,7 @@ import type {
   dataExportRecord,
   sortModelItem,
   InviteAuthUserObj,
+  ProfilePreferencesObj,
   UpdateAuthUserObj,
   Verify2FAObj,
   ImportListItemObj,
@@ -134,6 +135,8 @@ export type UpdateListType = z.infer<typeof UpdateListObj>;
 export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
 
 export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
+
+export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
 
 export type AddTaskType = z.infer<typeof AddTaskObj>;
 export type TasksType = z.infer<typeof TasksObj>;

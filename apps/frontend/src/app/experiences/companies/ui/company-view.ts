@@ -85,17 +85,17 @@ export class CompanyView {
   });
 
   protected readonly isEnriched = computed(() => {
-    const rawJson = this.company()?.json;
-    if (!rawJson) return false;
+    const rawEnrichment = this.company()?.enrichment;
+    if (!rawEnrichment) return false;
 
-    let json = null;
+    let enrichment = null;
 
     try {
-      json = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
+      enrichment = typeof rawEnrichment === 'string' ? JSON.parse(rawEnrichment) : rawEnrichment;
     } catch {
       return false;
     }
-    return !!json.google_enriched;
+    return !!enrichment.google_enriched;
   });
 
   constructor() {

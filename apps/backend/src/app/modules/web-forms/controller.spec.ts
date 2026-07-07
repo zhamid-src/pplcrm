@@ -149,6 +149,19 @@ describe('WebFormsController Integration', () => {
       })
       .execute();
 
+    // List targeting is read from map_web_forms_lists (the controller write
+    // paths keep it in sync; this spec inserts the form row directly).
+    await db
+      .insertInto('map_web_forms_lists')
+      .values({
+        tenant_id: tenantId,
+        web_form_id: formId,
+        list_id: listId,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
     // 3. Submit the form
     const payload = {
       email: 'visitor@example.com',

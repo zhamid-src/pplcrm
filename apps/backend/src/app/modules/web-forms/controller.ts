@@ -57,7 +57,12 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     };
-    return this.add(row as any);
+    const created = await this.add(row as any);
+    const createdId = (created as Record<string, unknown> | undefined)?.['id'];
+    if (createdId != null && payload.target_lists?.length) {
+      await this.syncTargetLists(auth, String(createdId), payload.target_lists);
+    }
+    return created;
   }
 
   public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
@@ -93,11 +98,15 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       });
     }
 
-    return this.update({
+    const updated = await this.update({
       tenant_id: auth.tenant_id,
       id,
       row,
     });
+    if (payload.target_lists !== undefined) {
+      await this.syncTargetLists(auth, id, payload.target_lists ?? []);
+    }
+    return updated;
   }
 
   public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
@@ -535,21 +544,16 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           }
         }
 
-        // Add target lists
-        const targetLists: string[] = Array.isArray(form.target_lists)
-          ? form.target_lists
-          : JSON.parse((form.target_lists as any) || '[]');
-        for (const listId of targetLists) {
-          if (!listId) continue;
-          const listExists = await trx
-            .selectFrom('lists')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', listId)
-            .executeTakeFirst();
-
-          if (!listExists) continue;
-
+        // Add target lists. map_web_forms_lists is the source of truth — its
+        // FKs guarantee every row points at a live list (no dangling-id skip
+        // needed, unlike the legacy JSONB target_lists document).
+        const targetListRows = await trx
+          .selectFrom('map_web_forms_lists')
+          .select('list_id')
+          .where('tenant_id', '=', tenantId)
+          .where('web_form_id', '=', formId)
+          .execute();
+        for (const { list_id: listId } of targetListRows) {
           const inList = await trx
             .selectFrom('map_lists_persons')
             .select('person_id')
@@ -934,7 +938,52 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     }
 
     const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
+    if (patch.target_lists !== undefined) {
+      await this.syncTargetLists(auth, id, patch.target_lists ?? []);
+    }
     return this.normalizeForm(updated);
+  }
+
+  /**
+   * Replace the form's map_web_forms_lists rows (the source of truth for list
+   * targeting — the JSONB target_lists column is still dual-written during
+   * the transition, but nothing reads it for behavior anymore). Ids that
+   * don't resolve to a live list in the tenant are dropped.
+   */
+  private async syncTargetLists(auth: IAuthKeyPayload, formId: string, listIds: string[]): Promise<void> {
+    const db = this.getRepo().db;
+    const candidates = [...new Set(listIds.map((id) => String(id)))].filter((id) => /^\d+$/.test(id));
+    let liveIds: string[] = [];
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = rows.map((r) => String(r.id));
+    }
+
+    await db
+      .deleteFrom('map_web_forms_lists')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('web_form_id', '=', formId)
+      .execute();
+
+    if (liveIds.length > 0) {
+      await db
+        .insertInto('map_web_forms_lists')
+        .values(
+          liveIds.map((list_id) => ({
+            tenant_id: auth.tenant_id,
+            web_form_id: formId,
+            list_id,
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          })),
+        )
+        .execute();
+    }
   }
 
   public publishForm(id: string, auth: IAuthKeyPayload) {

@@ -6,6 +6,7 @@ import type { Models } from '../../../../../../../libs/common/src/lib/kysely.mod
 import { logger } from '../../../logger';
 import { ExportsRepo } from '../../../modules/exports/repositories/exports.repo';
 import { CsvTransformStream } from '../../csv-stream';
+import { notificationEnabled } from '../../profile-preferences';
 import { StorageService } from '../../storage.service';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import type { JobPayloadOf } from '../job-payloads';
@@ -157,27 +158,13 @@ export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: K
         const user = await db
           .selectFrom('authusers')
           .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+          .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
           .where('authusers.id', '=', payload.user_id)
           .executeTakeFirst();
 
         if (user) {
-          let emailOptedIn = true;
-          let inAppOptedIn = true;
-          const profileJson = user.profile_json;
-          if (profileJson) {
-            try {
-              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-              if (json?.notifications?.export_ready === false) {
-                emailOptedIn = false;
-              }
-              if (json?.notifications?.export_ready_in_app === false) {
-                inAppOptedIn = false;
-              }
-            } catch (e) {
-              logger.error({ err: e }, 'Failed to parse profile json for export notifications');
-            }
-          }
+          const emailOptedIn = notificationEnabled(user.profile_preferences, 'export_ready');
+          const inAppOptedIn = notificationEnabled(user.profile_preferences, 'export_ready_in_app');
 
           const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
           const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);

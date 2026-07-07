@@ -179,4 +179,3 @@ export const phoneSchema = (fieldName: string) =>
   z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
 
 export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
-export const jsonSchema = z.string().trim().max(50000, 'JSON is too long').nullable().optional();
