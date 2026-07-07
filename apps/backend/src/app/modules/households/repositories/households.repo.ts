@@ -202,13 +202,16 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         )
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
           return qb.where(
             sql<boolean>`(
-              LOWER(households.city) LIKE ${text} OR
-              LOWER(households.street1) LIKE ${text} OR
-              LOWER(households.street2) LIKE ${text} OR
-              LOWER(households.notes) LIKE ${text} OR
-              LOWER(tags.name) LIKE ${text}
+              households.city ILIKE ${text} OR
+              households.street1 ILIKE ${text} OR
+              households.street2 ILIKE ${text} OR
+              households.notes ILIKE ${text} OR
+              tags.name ILIKE ${text}
             )`,
           );
         });
