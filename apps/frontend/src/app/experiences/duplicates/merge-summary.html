@@ -16,6 +16,9 @@
         Manage Duplicate {{ title() }}
       </h1>
       <p class="text-sm text-base-content/60 mt-1">{{ description() }}</p>
+      @if (!isLoading() && !isEmpty() && sweepSentence()) {
+      <p class="text-sm text-base-content/50 mt-1 tabular-nums">{{ sweepSentence() }}</p>
+      }
     </div>
   </div>
 
@@ -30,8 +33,11 @@
       <div class="w-20 h-20 rounded-full bg-success/15 flex items-center justify-center mb-4 animate-bounce">
         <pc-icon name="check-circle" class="text-success" [size]="10"></pc-icon>
       </div>
-      <h2 class="card-title text-xl font-bold text-success">Clean Database!</h2>
-      <p class="text-base-content/60 mt-2">No potential duplicate {{ title() | lowercase }} were found.</p>
+      <h2 class="card-title text-xl font-bold text-success">No duplicates waiting</h2>
+      <p class="text-base-content/60 mt-2 max-w-sm">
+        The sweep runs nightly at 3:00 AM. Imports catch most duplicates on the way in — this queue is for what slips
+        through.
+      </p>
       <div class="card-actions mt-6">
         <a [routerLink]="['/', entityRoute()]" class="btn btn-primary">Go to {{ title() }}</a>
       </div>
@@ -52,13 +58,13 @@
       ({{ totalGroups() }} duplicate groups total)
     </div>
     <div class="join">
-      <button class="join-item btn btn-outline btn-sm gap-1" [disabled]="currentPage() === 1" (click)="onPrev.emit()">
+      <button class="join-item btn btn-outline btn-sm gap-1" [disabled]="currentPage() === 1" (click)="prev.emit()">
         <pc-icon name="chevron-left" [size]="4"></pc-icon> Previous
       </button>
       <button
         class="join-item btn btn-outline btn-sm gap-1"
         [disabled]="currentPage() >= totalPages()"
-        (click)="onNext.emit()"
+        (click)="next.emit()"
       >
         Next <pc-icon name="chevron-right" [size]="4"></pc-icon>
       </button>

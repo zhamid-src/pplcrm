@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
 import { PersonsService } from '@experiences/persons/services/persons-service';
+import { DuplicatesService } from './services/duplicates-service';
 import { PeopleDuplicatesComponent } from './duplicates-people';
 
 const person1 = {
@@ -12,6 +13,9 @@ const person1 = {
   first_name: 'John',
   last_name: 'Doe',
   email: 'john@example.com',
+  mobile: null,
+  ward: null,
+  tags: [],
   created_at: '2024-01-01T00:00:00Z',
 };
 
@@ -20,6 +24,9 @@ const person2 = {
   first_name: 'Johnny',
   last_name: 'Doe',
   email: 'john@example.com',
+  mobile: null,
+  ward: null,
+  tags: [],
   created_at: '2024-02-01T00:00:00Z',
 };
 
@@ -29,11 +36,12 @@ describe('PeopleDuplicatesComponent', () => {
   let mockPersonsSvc: any;
   let mockAlertSvc: any;
   let mockDialogSvc: any;
+  let mockDuplicatesSvc: any;
 
   beforeEach(async () => {
     mockPersonsSvc = {
       getPotentialDuplicates: vi.fn().mockResolvedValue({
-        groups: [{ reason: 'Same email', persons: [person1, person2] }],
+        groups: [{ reason: 'Same email', group_key: 'gk1', persons: [person1, person2] }],
         total: 1,
       }),
       mergePersons: vi.fn().mockResolvedValue({ id: 'p1' }),
@@ -48,10 +56,17 @@ describe('PeopleDuplicatesComponent', () => {
       confirm: vi.fn().mockResolvedValue(true),
     };
 
+    mockDuplicatesSvc = {
+      getSweepInfo: vi.fn().mockResolvedValue({ lastSweepAt: null, queueCount: 1 }),
+      countQueue: vi.fn().mockResolvedValue(1),
+      dismissGroup: vi.fn().mockResolvedValue(undefined),
+    };
+
     await TestBed.configureTestingModule({
       imports: [PeopleDuplicatesComponent],
       providers: [
         provideRouter([]),
+        { provide: DuplicatesService, useValue: mockDuplicatesSvc },
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
@@ -142,7 +157,7 @@ describe('PeopleDuplicatesComponent', () => {
 
   it('should advance and reload on nextPage while respecting totalPages bounds', async () => {
     mockPersonsSvc.getPotentialDuplicates.mockResolvedValue({
-      groups: [{ reason: 'Same email', persons: [person1, person2] }],
+      groups: [{ reason: 'Same email', group_key: 'gk1', persons: [person1, person2] }],
       total: 25,
     });
 

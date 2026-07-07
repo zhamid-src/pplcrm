@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
 import { HouseholdsService } from '@experiences/households/services/households-service';
+import { DuplicatesService } from './services/duplicates-service';
 import { HouseholdDuplicatesComponent } from './duplicates-households';
 
 const household1 = {
@@ -37,11 +38,12 @@ describe('HouseholdDuplicatesComponent', () => {
   let mockHouseholdsSvc: any;
   let mockAlertSvc: any;
   let mockDialogSvc: any;
+  let mockDuplicatesSvc: any;
 
   beforeEach(async () => {
     mockHouseholdsSvc = {
       getPotentialDuplicates: vi.fn().mockResolvedValue({
-        groups: [{ reason: 'Same address', households: [household1, household2] }],
+        groups: [{ reason: 'Same address', group_key: 'gk1', households: [household1, household2] }],
         total: 1,
       }),
       mergeHouseholds: vi.fn().mockResolvedValue({ id: 'h1' }),
@@ -49,6 +51,11 @@ describe('HouseholdDuplicatesComponent', () => {
 
     mockAlertSvc = { showError: vi.fn(), showSuccess: vi.fn() };
     mockDialogSvc = { confirm: vi.fn().mockResolvedValue(true) };
+    mockDuplicatesSvc = {
+      getSweepInfo: vi.fn().mockResolvedValue({ lastSweepAt: null, queueCount: 1 }),
+      countQueue: vi.fn().mockResolvedValue(1),
+      dismissGroup: vi.fn().mockResolvedValue(undefined),
+    };
 
     await TestBed.configureTestingModule({
       imports: [HouseholdDuplicatesComponent],
@@ -57,6 +64,7 @@ describe('HouseholdDuplicatesComponent', () => {
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
+        { provide: DuplicatesService, useValue: mockDuplicatesSvc },
       ],
     }).compileComponents();
 
