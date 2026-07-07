@@ -3,7 +3,7 @@
 import { TRPCError, initTRPC } from '@trpc/server';
 import { ZodError } from 'zod';
 import type { Context } from './context';
-import { toTRPCError } from './app/errors/to-trpc-errors';
+import { isAppErrorLike, toTRPCError } from './app/errors/to-trpc-errors';
 import superjson from 'superjson';
 import { logger } from './app/logger';
 import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
@@ -66,11 +66,24 @@ const trpc = initTRPC.context<Context>().create({
 export const middleware = trpc.middleware;
 
 const errorMappingMiddleware = middleware(async (opts) => {
+  // tRPC v11 middleware: a downstream throw does NOT reject `next()` — it resolves to a
+  // `{ ok: false, error }` result whose `error` is already a TRPCError (default code
+  // INTERNAL_SERVER_ERROR) wrapping the original throw as `.cause`. So we can't rely on
+  // try/catch here; we inspect the result and remap AppErrors from the cause, preserving
+  // their intended status (e.g. UnauthorizedError -> 401, not a generic 500). The try/catch
+  // is kept as a safety net in case a future path throws synchronously.
+  let result: Awaited<ReturnType<typeof opts.next>>;
   try {
-    return await opts.next();
+    result = await opts.next();
   } catch (err) {
     throw toTRPCError(err);
   }
+
+  if (!result.ok && isAppErrorLike(result.error.cause)) {
+    throw toTRPCError(result.error.cause);
+  }
+
+  return result;
 });
 
 export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
