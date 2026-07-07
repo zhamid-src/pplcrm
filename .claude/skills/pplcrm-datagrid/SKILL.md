@@ -46,6 +46,30 @@ between the header and the toolbar — the People grain tabs (`pc-grain-tabs` in
 `shared/components/grain-tabs/`, switching /people ↔ /households ↔ /companies) project there
 on all three People-grain grids.
 
+## Filter entry points: the chip row, not the toolbar
+
+The filter **entry points** live in the **filter-chip row** in `datagrid.html` (rendered when
+`showToolbar()` and any of `allowFilter()/showTagFilter()/showIssueFilter()/showListFilter()`),
+**not** in the desktop toolbar. The row is: a muted funnel marker · the active `filterChips()`
+(soft-primary `bg-primary/10` pills with an ✕, removed via `removeFilterChip`) · `Clear all` ·
+then four always-present **dashed-border pills** — `+ Add filter`, `Tags`, `Issues`, `Lists`.
+The Tags/Issues/Lists pills are DaisyUI `<details class="dropdown">` hosting the same
+`pc-dg-filter-dropdown` + `pc-multiselect-filter`/`pc-singleselect-filter` pickers the toolbar
+used to own, bound to the grid's `selectedTags/selectedIssues/selectedListId` + toggle methods.
+`+ Add filter` is a quick field→operator→value popover that writes one entry into the shared
+`filterValues` model (`applyAddFilter`) — the same model column/panel filters use, so it lands
+as one removable `kind:'column'` chip; it does **not** fork a parallel filter representation.
+
+The **desktop toolbar** (`ui/datagrid-toolbar.html`) is now a single rounded/bordered button
+group — Refresh · Undo · Redo · │ · Import/Export · │ · Filter-funnel (`onToggleFilters`, tinted
+via `anyFilterActive()`) · Filter-panel (query builder) · │ · Columns · Archive — with the solid
+`+ Add {noun}` button **outside** the group. The Tags/Issues/Lists icon buttons were removed from
+the desktop toolbar (the mobile toolbar still has its own combined filter dropdown).
+
+The All/Donors/Volunteers segmented control (`narrowTypeOptions`/`showNarrowTypeFilter`) is still
+a shared capability but is **no longer wired on the People grid** — donor/volunteer are tag
+filters. To re-enable a segmented control on some grid, pass `[narrowTypeOptions]`.
+
 ## Columns: `ColumnDef` in `grid-defaults.ts`
 
 `{ field, headerName, editable }` is the common case. Also supported: `valueFormatter`
