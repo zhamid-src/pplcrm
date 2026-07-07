@@ -59,6 +59,15 @@ Every procedure is wrapped by `errorMappingMiddleware` (`trpc.ts`), which catche
 
 By actual usage, the codes thrown across `modules/**` are dominated by `BAD_REQUEST`, `NOT_FOUND`, and `INTERNAL_SERVER_ERROR`, then `TOO_MANY_REQUESTS`, `FORBIDDEN`, `CONFLICT`, `UNAUTHORIZED` (grep `code: '...'` over `modules/`).
 
+### `UNAUTHORIZED` vs `FORBIDDEN` — do not mix these up (client contract)
+
+This distinction is load-bearing, not stylistic. The frontend treats **`UNAUTHORIZED` as "the session is dead"** and force-signs-the-user-out (`errorLink` in `apps/frontend/src/app/services/api/trpc-service.ts` calls `ErrorService.redirectToSignIn()` on any `UNAUTHORIZED`, even when the caller passed `skipErrorHandler`). So:
+
+- **`UNAUTHORIZED` / `UnauthorizedError` (401) = _not authenticated_ only** — missing/invalid/expired token, revoked or expired session, bad sign-in credentials, failed passkey/2FA challenge, email-not-verified during auth. The auth+session middleware in `trpc.ts` (`isAuthed`) is the canonical producer.
+- **`FORBIDDEN` / `ForbiddenError` (403) = _authenticated but not allowed_** — every role/permission/ownership check. "Viewers can't make changes", "only admins or owners", "admins can't demote an owner", "you don't have permission to …". The `adminOrOwnerProcedure` and the viewer-mutation gate in `trpc.ts` are the models.
+
+**Throwing `UNAUTHORIZED` for a permission failure will log the user out instead of showing "you don't have permission".** If you're denying an action based on _who the user is_ (role, ownership, plan), it is always `FORBIDDEN`. Reserve `UNAUTHORIZED` for _whether the user is signed in at all_.
+
 Real example, `teams/controller.ts` (`addTeam`):
 
 ```ts

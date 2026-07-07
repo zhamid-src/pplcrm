@@ -53,6 +53,15 @@ export class ErrorService {
     this.alerts.showError(getUserErrorMessage(error, 'Something went wrong, please try again'));
   }
 
+  /**
+   * Sign the user out and send them to /signin. Called for any 401/UNAUTHORIZED — including on
+   * requests that pass `skipErrorHandler` (that flag suppresses the error toast, not the sign-out).
+   * No-ops on public pages and de-dupes rapid calls, so probes and public routes stay put.
+   */
+  public redirectToSignIn(): void {
+    this.redirect();
+  }
+
   private redirect(): boolean {
     // Guests belong on public pages (reset links, public forms, subscription confirmation). A stray
     // 401/UNAUTHORIZED there must not bounce them to /signin — let the caller surface the error.

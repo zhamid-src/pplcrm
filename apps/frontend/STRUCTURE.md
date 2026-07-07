@@ -410,6 +410,7 @@ apps/
           theme/
             theme-service.ts
         routing/
+          public-routes.ts
           route-reuse-strategy.ts
         services/
           api/
@@ -3283,200 +3284,6 @@ function toNum(n: unknown): number | undefined {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
-
-import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
-import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
-import { environment } from '../../../../environments/environment';
-import { TRPCService } from '../../../services/api/trpc-service';
-import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
-
-@Service()
-export class EmailsService extends TRPCService<'emails' | 'email_list'> {
-  public addComment(id: string, author_id: string, comment: string) {
-    return this.api.emails.addComment.mutate({ id, author_id, comment });
-  }
-
-  public assign(id: string, user_id: string | null, assigned_to_name?: string | null) {
-    return this.api.emails.assign.mutate({ id, user_id, assigned_to_name: assigned_to_name ?? undefined });
-  }
-
-  public delete(id: string) {
-    return this.api.emails.delete.mutate(id);
-  }
-
-  public deleteComment(email_id: string, comment_id: string) {
-    return this.api.emails.deleteComment.mutate({ email_id, comment_id });
-  }
-
-  public deleteDraft(id: string) {
-    return this.api.emails.deleteDraft.mutate({ id });
-  }
-
-  public deleteMany(ids: string[]) {
-    return this.api.emails.deleteMany.mutate(ids);
-  }
-
-  public getAllAttachments(id: string, options?: { includeInline: boolean }) {
-    return this.api.emails.getAllAttachments.query({ email_id: id, options });
-  }
-
-  public getAttachmentsByEmailId(id: string) {
-    return this.api.emails.getAttachmentsByEmailId.query(id);
-  }
-
-  public getDraft(id: string) {
-    return this.api.emails.getDraft.query(id) as Promise<EmailDraftType>;
-  }
-
-  public getEmailBody(id: string) {
-    return this.api.emails.getEmailBody.query(id);
-  }
-
-  public getEmailHeader(id: string) {
-    return this.api.emails.getEmailHeader.query(id);
-  }
-
-  public getEmailWithHeaders(id: string) {
-    return this.api.emails.getEmailWithHeaders.query(id);
-  }
-
-  public getActivities(emailId: string) {
-    return this.api.emails.getActivities.query(emailId);
-  }
-
-  // TODO: paging and infinite scrolling
-  public getEmails(folderId: string, limit?: number, offset?: number) {
-    return this.api.emails.getEmails.query({ folderId, limit, offset });
-  }
-
-  public getFolders() {
-    return this.api.emails.getFolders.query();
-  }
-
-  public getFoldersWithCounts() {
-    return this.api.emails.getFoldersWithCounts.query();
-  }
-
-  public hasAttachment(id: string) {
-    return this.api.emails.hasAttachment.query(id);
-  }
-
-  public async hasAttachmentByEmailIds(ids: string[]): Promise<Partial<Record<string, boolean>>> {
-    const rows: HasRow[] = await this.api.emails.hasAttachmentByEmailIds.query(ids);
-    const map: Record<string, boolean> = {};
-    for (const r of rows) map[String(r.email_id)] = !!r.has;
-    return map;
-  }
-
-  public restoreFromTrash(ids: string[]): Promise<number> {
-    return this.api.emails.restoreFromTrash.mutate(ids);
-  }
-
-  public moveToFolder(id: string, folderId: string) {
-    return this.api.emails.moveToFolder.mutate({ id, folderId });
-  }
-
-  public saveDraft(input: DraftPayload) {
-    return this.api.emails.saveDraft.mutate(input);
-  }
-
-  // Fetch/FormData fallback
-  public async sendEmail(input: ComposePayload): Promise<EmailType> {
-    const fd = new FormData();
-    fd.set('to', JSON.stringify(input.to));
-    fd.set('cc', JSON.stringify(input.cc));
-    fd.set('bcc', JSON.stringify(input.bcc));
-    fd.set('subject', input.subject);
-    fd.set('html', input.html);
-    input.attachments.forEach((f) => fd.append('attachments', f, f.name));
-
-    const token = this.tokenService.getAuthToken();
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-
-    const res = await fetch(`${environment.apiUrl}/api/emails/send`, { method: 'POST', body: fd, headers });
-    const json = (await res.json()) as JSend<EmailType>;
-    return jsend.unwrap(json);
-  }
-
-  public setFavourite(id: string, favourite: boolean) {
-    return this.api.emails.setFavourite.mutate({ id, favourite });
-  }
-
-  public setStatus(id: string, status: EmailStatus) {
-    return this.api.emails.setStatus.mutate({ id, status });
-  }
-
-  public setEmailReadStatus(id: string, isRead: boolean) {
-    return this.api.emails.setEmailReadStatus.mutate({ id, isRead });
-  }
-
-  public async syncEmails(): Promise<{ inserted: number }> {
-    let msResult = { inserted: 0 };
-    let googleResult = { inserted: 0 };
-    let msConnected = false;
-    let googleConnected = false;
-
-    // Check MS connection status
-    try {
-      const msStatus = await this.api.msSync.getConnectionStatus.query();
-      if (msStatus?.connected) {
-        msConnected = true;
-        msResult = await (
-          this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
-        )(undefined, { context: { skipErrorHandler: true } });
-      }
-    } catch (e) {
-      console.error('MS sync failed:', e);
-    }
-
-    // Check Google connection status
-    try {
-      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
-      if (googleStatus?.connected) {
-        googleConnected = true;
-        googleResult = await (
-          this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
-        )(undefined, { context: { skipErrorHandler: true } });
-      }
-    } catch (e) {
-      console.error('Google sync failed:', e);
-    }
-
-    if (!msConnected && !googleConnected) {
-      throw new Error('No email accounts connected');
-    }
-
-    return { inserted: msResult.inserted + googleResult.inserted };
-  }
-
-  public getConnectionStatus() {
-    return this.api.msSync.getConnectionStatus.query();
-  }
-
-  public async isAnySyncing(): Promise<boolean> {
-    let isSyncing = false;
-    try {
-      const msStatus = await this.api.msSync.getConnectionStatus.query();
-      if (msStatus?.syncing) isSyncing = true;
-    } catch (_e) {
-      // ignore
-    }
-    try {
-      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
-      if (googleStatus?.syncing) isSyncing = true;
-    } catch (_e) {
-      // ignore
-    }
-    return isSyncing;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
 
 ```typescript
@@ -5457,6 +5264,366 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
 
   public recomputeAddressFingerprints(): Promise<void> {
     return this.api.households.recomputeAddressFingerprints.mutate();
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../services/households-service';
+
+@Component({
+  selector: 'pc-households-grid',
+  imports: [DataGrid, CsvImportComponent, FormsModule],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [showToolbar]="!inline()"
+        title="Households"
+        i18n-title
+        description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
+        [listId]="listId()"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [confirmDeleteOverride]="onConfirmDeleteBind"
+        [rowCanSelect]="rowCanSelectFn"
+        (importCSV)="openImportDialog()"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-home"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+
+    <!-- Reusable CSV Importer for Households -->
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Households from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    >
+      <div pc-import-extras class="grid gap-2">
+        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
+        <input
+          class="input input-bordered"
+          placeholder="Comma separated e.g. neighborhood, parish"
+          i18n-placeholder
+          [(ngModel)]="tagsInput"
+        />
+      </div>
+    </pc-csv-importer>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: HouseholdsService },
+    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
+  ],
+})
+export class HouseholdsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly householdsService = inject(HouseholdsService);
+
+  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+
+  public inline = input<boolean>(false);
+
+  protected readonly mappableFields: string[] = [
+    'street_num',
+    'apt',
+    'street1',
+    'street2',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'home_phone',
+    'notes',
+  ];
+
+  protected autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      homephone: 'home_phone',
+      phone: 'home_phone',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  };
+
+  protected col: ColDef[] = [
+    {
+      field: 'persons_count',
+      headerName: 'People',
+      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+    },
+    { field: 'street_num', headerName: 'Street Number', editable: true },
+    { field: 'apt', headerName: 'Apt', editable: true },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: true,
+      valueFormatter: (params: any) =>
+        params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
+    },
+    { field: 'street2', headerName: 'Street 2', editable: true },
+    { field: 'city', headerName: 'City', editable: true },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      hide: true,
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    { field: 'state', headerName: 'State/Province', editable: true },
+    { field: 'zip', headerName: 'Zip/Province', editable: true },
+    { field: 'country', headerName: 'Country', editable: true },
+    { field: 'district', headerName: 'District / Riding', editable: false, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, minWidth: 180 },
+    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
+    { field: 'home_phone', headerName: 'Home phone', editable: true },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+  public listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
+
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  // Importer state
+  protected importerOpen = signal(false);
+  protected tagsInput = '';
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadTagOptions();
+    await this.loadIssueOptions();
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected openEditOnDoubleClick(event: any) {
+    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
+      id: string;
+      persons_count?: number | string | null;
+      is_placeholder?: boolean;
+    }>;
+
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
+    if (selected.some((r) => r.is_placeholder)) {
+      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
+      return true;
+    }
+
+    // Collect IDs for households that have people
+    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
+    const householdIds = selected.map((r) => r.id);
+
+    if (populated.length > 0) {
+      // Fetch person IDs for all households-with-people so we can act on them
+      const personIdArrays = await Promise.all(
+        populated.map(async (h) => {
+          try {
+            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
+            return people.map((p) => p.id);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const personIds = personIdArrays.flat();
+      const peopleCount = personIds.length;
+
+      // Show the 3-option dialog and wait for user's choice
+      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+        title: 'Households have people',
+        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+        variant: 'warning',
+        choices: [
+          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+        ],
+        cancelText: 'Cancel',
+      });
+
+      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
+
+      if (choice === 'keep-people') {
+        // Detach each person from their household (moves to blank household)
+        await Promise.all(
+          personIds.map((pid) =>
+            this.personsSvc.removeHousehold(pid).catch(() => {
+              // best-effort; continue
+            }),
+          ),
+        );
+      } else if (choice === 'delete-people') {
+        // Delete all people in those households first
+        if (personIds.length) {
+          try {
+            await this.personsSvc.deleteMany(personIds);
+          } catch {
+            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
+            return true;
+          }
+        }
+      }
+
+      // Now delete the households themselves
+      try {
+        await this.householdsService.deleteMany(householdIds);
+        this.alertSvc.showSuccess('Households deleted successfully.');
+      } catch {
+        this.alertSvc.showError('Failed to delete one or more households.');
+      }
+      return true;
+    } else {
+      // No people attached — delegate to the standard flow
+      return false;
+    }
+  }
+
+  protected onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }) {
+    // Backend households import endpoint not implemented yet; show informative summary
+    const diag = 'Households import is not available yet.';
+    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });
+    this.importerOpen.set(false);
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    this.importerOpen.set(true);
   }
 }
 ```
@@ -13816,6 +13983,81 @@ export class TeamsGridComponent {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthUserDetail,
+  IAuthUserRecord,
+  InviteAuthUserType,
+  UpdateAuthUserType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Service()
+export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
+  protected override readonly endpointName = 'authusers';
+
+  public add(row: InviteAuthUserType) {
+    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public addMany(_rows: InviteAuthUserType[]) {
+    return Promise.resolve([]);
+  }
+
+  public attachTag(_id: string, _tag_name: string) {
+    return Promise.resolve();
+  }
+
+  public count(): Promise<number> {
+    return this.api.authusers.count.query();
+  }
+
+  public detachTag(_id: string, _tag_name: string) {
+    return Promise.resolve(false);
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
+      rows: Record<string, unknown>[];
+      count: number;
+    }>;
+  }
+
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public getById(id: string) {
+    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
+  }
+
+  public getTags(_id: string) {
+    return Promise.resolve([]);
+  }
+
+  public update(id: string, data: UpdateAuthUserType) {
+    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
+  }
+
+  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
+    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
+  }
+
+  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return Promise.reject(new Error('User export is not available'));
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/workflows/services/workflows-service.ts
 
 ```typescript
@@ -15060,6 +15302,90 @@ export class CustomRouteReuseStrategy implements RouteReuseStrategy {
 }
 ```
 
+## File: apps/frontend/src/app/services/api/abstract-api.service.ts
+
+```typescript
+import { signal, Service } from '@angular/core';
+import {
+  DataExportRecordType,
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  getAllOptionsType,
+  QueueExportInputType,
+} from '../../../../../../libs/common/src';
+import { TRPCService } from './trpc-service';
+import { TRPCClient } from '@trpc/client';
+import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+
+import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+
+@Service()
+export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
+  protected abstract readonly endpointName: keyof TRPCClient<TRPCRouter>;
+
+  public readonly refreshCount = signal(0);
+
+  public triggerRefresh() {
+    this.refreshCount.update((n) => n + 1);
+  }
+  public abstract add(row: U, options?: unknown): Promise<Partial<T> | unknown>;
+
+  public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
+
+  public abstract attachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
+
+  public abstract count(): Promise<number>;
+
+  public async delete(id: string): Promise<boolean> {
+    const endpoint = this.api[this.endpointName] as {
+      delete: { mutate: (id: string) => Promise<unknown> };
+    };
+    if (!endpoint) {
+      throw new Error(`Endpoint for "${String(this.endpointName)}" not found on tRPC client.`);
+    }
+    return (await endpoint.delete.mutate(id)) !== null;
+  }
+
+  public async deleteMany(ids: string[]): Promise<boolean> {
+    const endpoint = this.api[this.endpointName] as {
+      delete: { mutate: (id: string) => Promise<unknown> };
+      deleteMany?: { mutate: (ids: string[]) => Promise<unknown> };
+    };
+    if (!endpoint) {
+      throw new Error(`Endpoint for "${String(this.endpointName)}" not found on tRPC client.`);
+    }
+    if ('deleteMany' in endpoint && endpoint.deleteMany) {
+      return (await endpoint.deleteMany.mutate(ids)) !== null;
+    }
+    const results = await Promise.all(ids.map((id) => this.delete(id)));
+    return results.every(Boolean);
+  }
+
+  public abstract detachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
+
+  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: Record<string, unknown>[]; count: number }>;
+
+  public abstract getAllArchived(
+    options?: getAllOptionsType,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }>;
+
+  public abstract getById(id: string): Promise<unknown>;
+
+  public abstract getTags(id: string, type?: 'tag' | 'issue'): Promise<string[]>;
+
+  public abstract update(id: string, data: U, options?: unknown): Promise<Partial<T>[] | unknown>;
+
+  public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
+
+  public queueExport(input: QueueExportInputType): Promise<DataExportRecordType> {
+    const exportsEndpoint = this.api.exports as {
+      queue: { mutate: (input: QueueExportInputType) => Promise<DataExportRecordType> };
+    };
+    return exportsEndpoint.queue.mutate(input);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/services/api/api-error.ts
 
 ```typescript
@@ -15499,6 +15825,988 @@ export class UserService extends TRPCService<any> {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/editing.controller.ts
+
+```typescript
+import { Injectable, inject } from '@angular/core';
+import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import { GridStoreService } from '../services/grid-store.service';
+import { DataGridUtilsService } from '../services/utils.service';
+import type { GridRow } from '../types';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
+
+@Injectable()
+export class EditingController {
+  private readonly store = inject(GridStoreService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly utilsSvc = inject(DataGridUtilsService);
+  private readonly gridSvc = inject(AbstractAPIService);
+
+  private get grid(): DataGrid<keyof Models, unknown> {
+    return this.store.grid as unknown as DataGrid<keyof Models, unknown>;
+  }
+
+  public coerceEditingValue(col: { cellDataType?: string }, raw: unknown): unknown {
+    const t = String(col?.cellDataType || '').toLowerCase();
+    if (t === 'number' || t === 'numeric') {
+      const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').trim());
+      return isNaN(n) ? null : n;
+    }
+    if (t === 'date' || t === 'datetime' || t === 'dateonly') {
+      const v = String(raw ?? '').trim();
+      return v.length > 10 ? v.slice(0, 10) : v;
+    }
+    if (t === 'color' || t === 'colour') {
+      const v = String(raw ?? '').trim();
+      const pattern = /^#([0-9a-fA-F]{6})$/;
+      return pattern.test(v) ? v.toLowerCase() : null;
+    }
+    return raw;
+  }
+
+  public async commitSingleCell(row: GridRow, col: ColDef, currentValue: unknown): Promise<boolean> {
+    if (!col.field) return false;
+    const id = this.grid.toId(row);
+    if (!id) return false;
+    const key = col.field;
+    const prev = row[key];
+    // If a valueSetter is provided on the col, let it handle assignment/normalization
+    let changed = false;
+    const before: Record<string, unknown> = { ...row };
+    if (typeof col.valueSetter === 'function') {
+      try {
+        const didSet = col.valueSetter({ data: row, newValue: currentValue, value: prev, colDef: col });
+        changed = !!didSet;
+      } catch {
+        changed = false;
+      }
+    } else {
+      const equal = prev === currentValue || (prev == null && (currentValue == null || currentValue === ''));
+      changed = !equal;
+      if (changed) Object.assign(row, { [key]: currentValue });
+    }
+    if (!changed) return true;
+    try {
+      if (this.shouldBlockEdit(row, key)) {
+        void this.grid.undoMgr.undo();
+        this.alertSvc.showError('Editing this field is blocked');
+        Object.assign(row, { [key]: before[key] });
+        return false;
+      }
+      const payload = this.utilsSvc.createPayload(row, key);
+      const edited = await this.gridSvc
+        .update(id, payload)
+        .then(() => true)
+        .catch(() => false);
+      if (!edited) {
+        void this.grid.undoMgr.undo();
+        Object.assign(row, { [key]: before[key] });
+        this.alertSvc.showError('Update failed');
+        return false;
+      }
+      this.grid.updateEditedRowInCaches(id, col.field, currentValue, before[key]);
+      this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+      this.alertSvc.showSuccess('Row updated');
+      return true;
+    } catch {
+      Object.assign(row, { [key]: before[key] });
+      this.alertSvc.showError('Update failed');
+      return false;
+    }
+  }
+
+  public shouldBlockEdit(row: GridRow, key: string): boolean {
+    return !!(row && typeof row === 'object' && 'deletable' in row && row['deletable'] === false && key === 'name');
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/fetch.controller.ts
+
+```typescript
+import { inject, Injectable } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
+import { DataGridDataService } from '../services/data.service';
+import { GridStoreService } from '../services/grid-store.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
+import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
+
+@Injectable()
+export class FetchController {
+  private readonly gridSvc = inject(AbstractAPIService);
+  private readonly dataSvc = inject(DataGridDataService);
+  private readonly store = inject(GridStoreService);
+  private readonly alertSvc = inject(AlertService);
+
+  private get grid(): DataGrid<keyof Models, unknown> {
+    return this.store.grid as unknown as DataGrid<keyof Models, unknown>;
+  }
+
+  async loadPage(index: number, append?: boolean): Promise<void> {
+    const end = this.grid._loading.begin();
+    try {
+      const pageSize = this.store.pageSize();
+      const startRow = index * pageSize;
+      const endRow = startRow + pageSize;
+      const options = this.dataSvc.buildGetAllOptions({
+        searchStr: this.grid.searchTerm(),
+        startRow,
+        endRow,
+        tags: this.grid.selectedTags(),
+        issues: this.grid.selectedIssues(),
+        filterModel: this.grid.buildFilterModel(),
+        sortState: this.store.sorting() as unknown as Array<{ id: string; desc?: boolean }>,
+        sortCol: this.grid.sortCol(),
+        sortDir: this.grid.sortDir(),
+        includeArchived: this.grid.archiveMode(),
+        advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
+        listId: this.grid.activeListId(),
+      });
+      const data = this.grid.archiveMode()
+        ? await this.gridSvc.getAllArchived(options)
+        : await this.gridSvc.getAll(options);
+      const incoming = data.rows ?? [];
+      if (append && this.store.rows().length > 0) {
+        const next = [...this.store.rows(), ...incoming];
+        this.store.rows.set(next);
+        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+      } else {
+        this.store.rows.set(incoming);
+        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+      }
+      this.grid.totalCountAll.set(data.count ?? this.store.rows().length);
+      this.store.pageIndex.set(index);
+    } catch {
+      this.alertSvc.showError(this.grid.config.messages.loadFailed);
+    } finally {
+      end();
+    }
+  }
+
+  async selectAllMatching(): Promise<{ ids: string[]; count: number }> {
+    const options: getAllOptionsType = {
+      searchStr: this.grid.searchTerm(),
+      tags: this.grid.selectedTags(),
+      issues: this.grid.selectedIssues(),
+      advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
+      listId: this.grid.activeListId() ?? undefined,
+    };
+    const { rows } = this.grid.archiveMode()
+      ? await this.gridSvc.getAllArchived(options)
+      : await this.gridSvc.getAll(options);
+    const rowCanSelect = this.grid.rowCanSelect();
+    const filteredRows = rowCanSelect ? (rows ?? []).filter(rowCanSelect) : (rows ?? []);
+    const ids = filteredRows.map((r) => this.grid.toId(r)).filter(Boolean);
+    return { ids, count: filteredRows.length };
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/keyboard.controller.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class KeyboardController {
+  handleCellKeydown(
+    ev: KeyboardEvent,
+    helpers: {
+      getColDefById: (id: string) => ColDef | undefined;
+      isEditable: (col: ColDef) => boolean;
+      startEdit: (row: GridRow, col: ColDef) => void;
+      rows: () => GridRow[];
+    },
+  ) {
+    const td = (ev.target as HTMLElement).closest('td') as HTMLElement | null;
+    if (!td) return;
+    const tr = td.parentElement as HTMLElement | null;
+    if (!tr) return;
+    const colId = td.getAttribute('data-col-id') || '';
+    if (!colId) return;
+    const key = ev.key;
+    if (key === 'Enter') {
+      ev.preventDefault();
+      const rowId = tr.getAttribute('data-row-id') || '';
+      if (!rowId) return;
+      const col = helpers.getColDefById(colId);
+      if (!col) return;
+      const row = helpers.rows().find((r) => String(r?.['id']) === rowId);
+      if (!row) return;
+      if (helpers.isEditable(col)) helpers.startEdit(row, col);
+      return;
+    }
+    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+    ev.preventDefault();
+    if (key === 'ArrowDown' || key === 'ArrowUp') {
+      const dir = key === 'ArrowDown' ? 1 : -1;
+      let rowEl: HTMLElement | null = tr;
+      while (rowEl) {
+        rowEl =
+          dir > 0
+            ? (rowEl.nextElementSibling as HTMLElement | null)
+            : (rowEl.previousElementSibling as HTMLElement | null);
+        if (!rowEl) break;
+        const nextTd = rowEl.querySelector(`td[data-col-id="${colId}"]`) as HTMLElement | null;
+        if (nextTd) {
+          nextTd.focus({ preventScroll: false });
+          break;
+        }
+      }
+    } else {
+      const cells = Array.from(tr.querySelectorAll('td')) as HTMLElement[];
+      const idx = cells.findIndex((c) => c === td);
+      const nextIdx = key === 'ArrowRight' ? idx + 1 : idx - 1;
+      const nextTd = cells[nextIdx];
+      if (nextTd) nextTd.focus({ preventScroll: false });
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/pinning.controller.ts
+
+```typescript
+import { Injectable, inject, signal, effect } from '@angular/core';
+import type { Table } from '@tanstack/table-core';
+import { DataGridColumnsService } from '../services/columns.service';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class PinningController {
+  private readonly columnsSvc = inject(DataGridColumnsService);
+
+  private headerWidthMap = new Map<string, number>();
+  readonly pinnedLeftOffsets = signal<Record<string, number>>({});
+  readonly pinnedRightOffsets = signal<Record<string, number>>({});
+  private tsTable: Table<GridRow> | null = null;
+  private headerWidthVer = signal(0);
+  private pinStateVer = signal(0);
+  private initialized = false;
+  private getColWidth: ((id: string) => number | null) | null = null;
+  private getSelectionWidth: (() => number) | null = null;
+  private getPinState: (() => { left: string[]; right: string[] }) | null = null;
+
+  constructor() {
+    // Create effect within injection context
+    effect(() => {
+      // Touch versions/signals to create dependencies
+      void this.headerWidthVer();
+      void this.pinStateVer();
+      if (!this.initialized || !this.getSelectionWidth || !this.getColWidth || !this.getPinState) return;
+      const sel = this.getSelectionWidth();
+      const pin = this.getPinState();
+      const { left, right } = this.columnsSvc.computePinOffsets({
+        pinned: { left: pin.left || [], right: pin.right || [] },
+        getColWidth: (id) => (this.getColWidth ? this.getColWidth(id) : null),
+        headerWidthMap: this.headerWidthMap,
+        selectionStickyWidth: sel,
+      });
+      this.pinnedLeftOffsets.set(left);
+      this.pinnedRightOffsets.set(right);
+    });
+  }
+
+  attachTable(tsTable: Table<GridRow> | undefined) {
+    this.tsTable = tsTable ?? null;
+  }
+
+  init(opts: {
+    getColWidth: (id: string) => number | null;
+    getSelectionWidth: () => number;
+    getPinState: () => { left: string[]; right: string[] };
+  }) {
+    if (this.initialized) return;
+    this.initialized = true;
+    this.getColWidth = opts.getColWidth;
+    this.getSelectionWidth = opts.getSelectionWidth;
+    this.getPinState = opts.getPinState;
+    // Kick the effect now that getters are set
+    this.notifyPinStateChanged();
+  }
+
+  notifyPinStateChanged() {
+    this.pinStateVer.update((x) => x + 1);
+  }
+
+  measureHeaderWidths(table: HTMLTableElement): { selectionWidth: number | null; headerMap: Map<string, number> } {
+    const measured = this.columnsSvc.measureHeaderWidths(table);
+    this.headerWidthMap = measured.headerMap;
+    this.headerWidthVer.update((x) => x + 1);
+    return { selectionWidth: measured.selectionWidth, headerMap: measured.headerMap };
+  }
+
+  updatePinOffsets(
+    tsTable: Table<GridRow> | undefined,
+    getColWidth: (id: string) => number | null,
+    selectionStickyWidth: number,
+  ) {
+    const table = tsTable ?? this.tsTable;
+    const pin = table?.getState().columnPinning || { left: [], right: [] };
+    const { left, right } = this.columnsSvc.computePinOffsets({
+      pinned: { left: Array.isArray(pin.left) ? pin.left : [], right: Array.isArray(pin.right) ? pin.right : [] },
+      getColWidth,
+      headerWidthMap: this.headerWidthMap,
+      selectionStickyWidth,
+    });
+    this.pinnedLeftOffsets.set(left);
+    this.pinnedRightOffsets.set(right);
+  }
+
+  leftOffsetPx(id: string): number {
+    return this.pinnedLeftOffsets()[id] || 0;
+  }
+  rightOffsetPx(id: string): number {
+    return this.pinnedRightOffsets()[id] || 0;
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/reorder.controller.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { Header, Table } from '@tanstack/table-core';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class ReorderController {
+  private dragColId: string | null = null;
+  private suppressHeaderDrag: () => boolean = () => false;
+  private requestPersist: () => void = () => undefined;
+
+  configure(opts: { suppressHeaderDrag: () => boolean; requestPersist: () => void }) {
+    this.suppressHeaderDrag = opts.suppressHeaderDrag;
+    this.requestPersist = opts.requestPersist;
+  }
+
+  onDragOver(ev: DragEvent) {
+    ev.preventDefault();
+    try {
+      ev.dataTransfer!.dropEffect = 'move';
+    } catch {}
+  }
+
+  onDragStart(h: Header<GridRow, unknown>, ev: DragEvent) {
+    if (this.suppressHeaderDrag()) {
+      try {
+        ev.preventDefault();
+      } catch {}
+      ev.stopPropagation();
+      return;
+    }
+    const id = String(h?.column?.id || '');
+    this.dragColId = id;
+    try {
+      ev.dataTransfer?.setData('text/plain', id);
+      ev.dataTransfer!.effectAllowed = 'move';
+    } catch {}
+  }
+
+  onDrop(h: Header<GridRow, unknown>, ev: DragEvent, tsTable: Table<GridRow> | undefined) {
+    ev.preventDefault();
+    const src = ev.dataTransfer?.getData('text/plain') || this.dragColId;
+    const tgt = String(h?.column?.id || '');
+    if (!src || !tgt || src === tgt) return;
+    const leaves = tsTable?.getAllLeafColumns?.() || [];
+    const order: string[] = leaves.map((c) => String(c.id));
+    const from = order.indexOf(String(src));
+    const to = order.indexOf(String(tgt));
+    if (from < 0 || to < 0) return;
+    order.splice(to, 0, ...order.splice(from, 1));
+    tsTable?.setOptions?.((prev) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
+    this.requestPersist();
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/resizing.controller.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { HeaderRef } from '../types';
+
+@Injectable()
+export class ResizingController {
+  private _colStartX = 0;
+  private _colStartW = 0;
+  private _selStartX = 0;
+  private _selStartW = 48;
+
+  beginHeaderResize(
+    h: HeaderRef,
+    clientX: number,
+    getColWidth: (id: string) => number | null,
+    applySize: (col: HeaderRef['column'], id: string, w: number) => void,
+    onDone: () => void,
+  ) {
+    const col = h?.column;
+    if (!col) return;
+    const id = String(col.id || '');
+    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || getColWidth(id) || 100);
+    this._colStartX = clientX;
+    this._colStartW = startW;
+    const move = (e: MouseEvent) => {
+      const dx = e.clientX - this._colStartX;
+      const w = Math.max(40, Math.floor(this._colStartW + dx));
+      applySize(col, id, w);
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      onDone();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  beginHeaderResizeTouch(
+    h: HeaderRef,
+    clientX: number,
+    getColWidth: (id: string) => number | null,
+    applySize: (col: HeaderRef['column'], id: string, w: number) => void,
+    onDone: () => void,
+  ) {
+    const col = h?.column;
+    if (!col) return;
+    const id = String(col.id || '');
+    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || getColWidth(id) || 100);
+    this._colStartX = clientX;
+    this._colStartW = startW;
+    const move = (e: TouchEvent) => {
+      const dx = (e.touches?.[0]?.clientX ?? 0) - this._colStartX;
+      const w = Math.max(40, Math.floor(this._colStartW + dx));
+      applySize(col, id, w);
+    };
+    const up = () => {
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', up);
+      onDone();
+    };
+    window.addEventListener('touchmove', move);
+    window.addEventListener('touchend', up);
+  }
+
+  beginSelectionResize(clientX: number, startWidth: number, setWidth: (w: number) => void, onDone: () => void) {
+    this._selStartX = clientX;
+    this._selStartW = startWidth;
+    const move = (e: MouseEvent) => {
+      const dx = e.clientX - this._selStartX;
+      const w = Math.max(32, this._selStartW + dx);
+      setWidth(Math.round(w));
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      onDone();
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  }
+
+  beginSelectionResizeTouch(clientX: number, startWidth: number, setWidth: (w: number) => void, onDone: () => void) {
+    this._selStartX = clientX;
+    this._selStartW = startWidth;
+    const move = (e: TouchEvent) => {
+      const dx = (e.touches?.[0]?.clientX ?? 0) - this._selStartX;
+      const w = Math.max(32, this._selStartW + dx);
+      setWidth(Math.round(w));
+    };
+    const up = () => {
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', up);
+      onDone();
+    };
+    window.addEventListener('touchmove', move);
+    window.addEventListener('touchend', up);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/controllers/virtualizer.controller.ts
+
+```typescript
+import { Injectable, inject, effect, signal } from '@angular/core';
+import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
+import type { Row, Table } from '@tanstack/table-core';
+import { GridStoreService } from '../services/grid-store.service';
+import type { GridRow } from '../types';
+
+@Injectable()
+export class VirtualizerController {
+  private readonly store = inject(GridStoreService);
+
+  private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
+  private scrollerEl: HTMLDivElement | null = null;
+  private rowHeight = 36;
+  private fetchingNext = false;
+  private canNextFn: (() => boolean) | null = null;
+  private isLoadingFn: (() => boolean) | null = null;
+  private nextPageFn: (() => Promise<void>) | null = null;
+  private tsTable: Table<GridRow> | null = null;
+
+  // Local viewport tracking used for fallback calculations
+  readonly viewportH = signal(0);
+
+  constructor() {
+    // Keep virtualizer count in sync with rows length
+    effect(() => {
+      const count = this.store.rows().length;
+      if (this.virtualizer) this.virtualizer.setOptions({ ...this.virtualizer.options, count });
+    });
+  }
+
+  attach(scroller: HTMLDivElement, rowHeight: number) {
+    this.scrollerEl = scroller;
+    this.rowHeight = rowHeight;
+    this.viewportH.set(scroller.clientHeight || 0);
+    this.virtualizer = new Virtualizer<HTMLDivElement, Element>({
+      count: this.store.rows().length,
+      getScrollElement: () => scroller,
+      estimateSize: () => this.rowHeight,
+      overscan: 6,
+      scrollToFn: elementScroll,
+      observeElementRect,
+      observeElementOffset,
+    });
+  }
+
+  attachTable(tsTable: Table<GridRow> | undefined) {
+    this.tsTable = tsTable ?? null;
+  }
+
+  configurePaging(opts: { canNext: () => boolean; isLoading: () => boolean; nextPage: () => Promise<void> }) {
+    this.canNextFn = opts.canNext;
+    this.isLoadingFn = opts.isLoading;
+    this.nextPageFn = opts.nextPage;
+  }
+
+  detach() {
+    this.virtualizer = undefined;
+    this.scrollerEl = null;
+    this.tsTable = null;
+  }
+
+  setCount(n: number) {
+    if (this.virtualizer) {
+      this.virtualizer.setOptions({ ...this.virtualizer.options, count: n });
+    }
+  }
+
+  onScroll(event: Event) {
+    const el = event.target as HTMLElement;
+    this.viewportH.set(el.clientHeight || this.viewportH());
+    this.virtualizer?.scrollToOffset?.(el.scrollTop || 0);
+    // Infinite append: when near bottom, fetch next page if available
+    try {
+      if (this.canNextFn && this.isLoadingFn && this.nextPageFn) {
+        if (this.canNextFn() && !this.isLoadingFn() && !this.fetchingNext) {
+          const nearBottom = this.endIndex() > this.store.rows().length - 10;
+          if (nearBottom) {
+            this.fetchingNext = true;
+            void this.nextPageFn().finally(() => (this.fetchingNext = false));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  startIndex(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length && items[0]) return items[0].index;
+    // Fallback before virtualizer initializes
+    const sc = this.scrollerEl;
+    const top = sc?.scrollTop || 0;
+    return Math.max(0, Math.floor(top / this.rowHeight));
+  }
+
+  endIndex(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length && items[items.length - 1]) return items[items.length - 1]!.index + 1;
+    return Math.min(this.store.rows().length, this.startIndex() + this.visibleCount());
+  }
+
+  topPadHeight(): number {
+    const v = this.virtualizer;
+    if (v) {
+      const items = v.getVirtualItems();
+      if (items.length && items[0]) return items[0].start;
+    }
+    return this.startIndex() * this.rowHeight;
+  }
+
+  bottomPadHeight(): number {
+    const v = this.virtualizer;
+    if (v) {
+      const items = v.getVirtualItems();
+      const total = v.getTotalSize();
+      const renderedEnd = items.length ? items[items.length - 1].end : 0;
+      return Math.max(0, total - renderedEnd);
+    }
+    const total = this.store.rows().length * this.rowHeight;
+    const rendered = this.topPadHeight() + (this.endIndex() - this.startIndex()) * this.rowHeight;
+    return Math.max(0, total - rendered);
+  }
+
+  visibleTableRows(): Row<GridRow>[] {
+    const all = this.tsTable?.getRowModel().rows || [];
+    const start = this.startIndex();
+    const end = this.endIndex();
+    return all.slice(start, end);
+  }
+
+  visibleCount(): number {
+    const items = this.virtualizer?.getVirtualItems() ?? [];
+    if (items.length) return items.length;
+    const vp = this.viewportH() || 0;
+    return Math.max(1, Math.ceil(vp / this.rowHeight) + 6);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/directives/editable-cell.directive.ts
+
+```typescript
+import { Directive, ElementRef, inject, input } from '@angular/core';
+import { EditingController } from '../controllers/editing.controller';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+
+@Directive({
+  selector: '[pcEditable]',
+  host: {
+    '(click)': 'onClick()',
+    '(keydown.enter)': 'onEnter()',
+    '(keydown.esc)': 'onEsc()',
+    '(focusout)': 'onFocusOut($event)',
+    '(mousedown)': 'onMouseDown()',
+    '(document:mouseup)': 'onMouseUp()',
+  },
+})
+export class EditableCellDirective {
+  private readonly editing = inject(EditingController);
+  private readonly host = inject(ElementRef<HTMLElement>);
+  private _isEditing = false;
+  private isMouseDownInside = false;
+
+  private get isEditing(): boolean {
+    const p = this.pcEditable();
+    if (p && typeof p.isEditingCell === 'function') {
+      return p.isEditingCell();
+    }
+    return this._isEditing;
+  }
+
+  private set isEditing(val: boolean) {
+    this._isEditing = val;
+  }
+
+  public readonly pcEditable = input.required<{
+    row: GridRow;
+    col: ColDef;
+    toId(r: unknown): string;
+    coerce(col: ColDef, raw: unknown): unknown;
+    value(): unknown; // current editingValue()
+    setEditingCell: (v: { id: string; field: string } | null) => void;
+    setEditingValue: (v: unknown) => void;
+    getCellValue(row: GridRow, col: ColDef): unknown;
+    getEditingDisplayValue(row: GridRow, col: ColDef): unknown;
+    createPayload(row: GridRow, key: string): Partial<GridRow>;
+    applyEdit(id: string, data: Partial<GridRow>): Promise<boolean>;
+    updateEditedRow(id: string, field: string | undefined, v: unknown): void;
+    updateWindow: (s: number, e: number) => void;
+    startIndex: () => number;
+    endIndex: () => number;
+    showSuccess: (m: string) => void;
+    showError: (m: string) => void;
+    undo: () => void;
+    customCommit?(currentValue: unknown): Promise<unknown>;
+    isEditable?: () => boolean;
+    isEditingCell?: () => boolean;
+  }>();
+
+  protected onMouseDown() {
+    this.isMouseDownInside = true;
+  }
+
+  protected onMouseUp() {
+    this.isMouseDownInside = false;
+  }
+
+  protected onClick() {
+    const p = this.pcEditable();
+    if (typeof p.isEditable === 'function' && !p.isEditable()) return;
+    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = p;
+    if (!col?.field) return;
+    // Respect col.editable for parity with grid logic
+    if (!col?.editable) return;
+    const id = toId(row);
+    if (!id) return;
+    try {
+      const cur = getEditingDisplayValue ? getEditingDisplayValue(row, col) : getCellValue(row, col);
+      const cloned = Array.isArray(cur) ? [...cur] : cur;
+      setEditingValue(cloned);
+    } catch {}
+    setEditingCell({ id, field: col.field });
+    this.isEditing = true;
+  }
+
+  protected async onEnter() {
+    if (!this.isEditing) return;
+    await this.commit();
+  }
+
+  protected onEsc() {
+    if (!this.isEditing) return;
+    this.isEditing = false;
+    this.pcEditable().setEditingCell(null);
+  }
+
+  // Commit only when focus leaves the cell subtree
+  protected async onFocusOut(ev: FocusEvent) {
+    if (!this.isEditing) return;
+    if (this.isMouseDownInside) return;
+    const container = this.host.nativeElement;
+    const next = ev.relatedTarget as Node | null;
+    if (next && container.contains(next)) return;
+    await this.commit();
+  }
+
+  private async commit() {
+    const p = this.pcEditable();
+    if (!p?.col?.field) return;
+    const currentValue = p.coerce(p.col, p.value());
+    if (typeof p.customCommit === 'function') {
+      await p.customCommit(currentValue);
+    } else {
+      await this.editing.commitSingleCell(p.row, p.col, currentValue);
+    }
+    p.setEditingCell(null);
+    this.isEditing = false;
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/directives/header-reorder.directive.ts
+
+```typescript
+import { Directive, inject, input } from '@angular/core';
+import type { Header } from '@tanstack/table-core';
+import { DataGrid } from '../datagrid';
+import type { GridRow } from '../types';
+
+@Directive({
+  selector: '[pcHeaderReorder]',
+  host: {
+    '(dragstart)': 'onDragStart($event)',
+    '(dragover)': 'onDragOver($event)',
+    '(drop)': 'onDrop($event)',
+  },
+})
+export class HeaderReorderDirective {
+  public readonly header = input<Header<GridRow, unknown> | undefined>(undefined, { alias: 'pcHeaderReorder' });
+
+  private readonly grid = inject(DataGrid);
+
+  protected onDragStart(ev: DragEvent) {
+    try {
+      this.grid.onHeaderDragStart(this.header(), ev);
+    } catch {}
+  }
+
+  protected onDragOver(ev: DragEvent) {
+    try {
+      this.grid.onHeaderDragOver(this.header(), ev);
+    } catch {}
+  }
+
+  protected onDrop(ev: DragEvent) {
+    try {
+      this.grid.onHeaderDrop(this.header(), ev);
+    } catch {}
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/directives/header-resize.directive.ts
+
+```typescript
+import { Directive, ElementRef, inject, input } from '@angular/core';
+import type { Table } from '@tanstack/table-core';
+import { ResizingController } from '../controllers/resizing.controller';
+import { PinningController } from '../controllers/pinning.controller';
+import type { GridRow, HeaderRef } from '../types';
+
+@Directive({
+  selector: '[pcHeaderResize]',
+  host: {
+    '(mousedown)': 'onMouseDown($event)',
+    '(touchstart)': 'onTouchStart($event)',
+    '(dragstart)': 'onDragStart($event)',
+    '(dblclick)': 'onDoubleClick($event)',
+  },
+})
+export class HeaderResizeDirective {
+  private readonly resizing = inject(ResizingController);
+  private readonly pinning = inject(PinningController);
+  private readonly hostEl = inject(ElementRef) as ElementRef<HTMLElement>;
+
+  public readonly pcHeaderResize = input.required<{
+    header: HeaderRef; // TanStack header ref
+    getColWidth: (id: string) => number | null;
+    setWidth: (col: HeaderRef['column'], id: string, px: number) => void;
+    requestPersist: () => void;
+    selectionWidth: () => number;
+    setSuppressHeaderDrag: (v: boolean) => void;
+  }>();
+
+  protected onMouseDown(ev: MouseEvent) {
+    ev.stopPropagation();
+    if (ev.detail > 1) return; // let double-click handler manage autosize
+    const cfg = this.pcHeaderResize();
+    const h = cfg.header;
+    // prevent column drag while resizing
+    try {
+      cfg.setSuppressHeaderDrag(true);
+    } catch {}
+    this.resizing.beginHeaderResize(
+      h,
+      ev.clientX,
+      cfg.getColWidth,
+      (col, id, w) => {
+        cfg.setWidth(col, id, w);
+        this.pinning.updatePinOffsets(
+          h?.table as Table<GridRow> | undefined,
+          (cid) => cfg.getColWidth(cid) ?? 0,
+          cfg.selectionWidth(),
+        );
+      },
+      () => {
+        try {
+          cfg.requestPersist();
+        } catch {}
+        try {
+          cfg.setSuppressHeaderDrag(false);
+        } catch {}
+      },
+    );
+  }
+
+  protected onTouchStart(ev: TouchEvent) {
+    ev.stopPropagation();
+    const x = ev.touches?.[0]?.clientX ?? 0;
+    const cfg = this.pcHeaderResize();
+    const h = cfg.header;
+    try {
+      cfg.setSuppressHeaderDrag(true);
+    } catch {}
+    this.resizing.beginHeaderResizeTouch(
+      h,
+      x,
+      cfg.getColWidth,
+      (col, id, w) => {
+        cfg.setWidth(col, id, w);
+        this.pinning.updatePinOffsets(
+          h?.table as Table<GridRow> | undefined,
+          (cid) => cfg.getColWidth(cid) ?? 0,
+          cfg.selectionWidth(),
+        );
+      },
+      () => {
+        try {
+          cfg.requestPersist();
+        } catch {}
+        try {
+          cfg.setSuppressHeaderDrag(false);
+        } catch {}
+      },
+    );
+  }
+
+  protected onDragStart(ev: DragEvent) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+
+  protected onDoubleClick(ev: MouseEvent) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const width = this.measureHeaderAutoWidth();
+    if (width == null) return;
+    this.applyWidth(Math.max(40, Math.round(width)));
+  }
+
+  private applyWidth(nextWidth: number) {
+    const cfg = this.pcHeaderResize();
+    const header = cfg.header;
+    const col = header?.column;
+    const id = col?.id == null ? '' : String(col.id);
+    if (!id || !col) return;
+
+    cfg.setWidth(col, id, nextWidth);
+    this.pinning.updatePinOffsets(
+      header?.table as Table<GridRow> | undefined,
+      (cid) => cfg.getColWidth(cid) ?? 0,
+      cfg.selectionWidth(),
+    );
+    try {
+      cfg.requestPersist();
+    } catch {}
+  }
+
+  private measureHeaderAutoWidth(): number | null {
+    const headerEl = this.hostEl.nativeElement.closest('th');
+    if (!headerEl) return null;
+
+    const doc = headerEl.ownerDocument;
+    const content = headerEl.querySelector<HTMLElement>('[data-header-content]');
+    if (!content) return null;
+
+    const clone = content.cloneNode(true) as HTMLElement;
+    clone.style.position = 'absolute';
+    clone.style.visibility = 'hidden';
+    clone.style.pointerEvents = 'none';
+    clone.style.flex = '0 0 auto';
+    clone.style.width = 'auto';
+    clone.style.height = 'auto';
+    clone.style.maxWidth = 'unset';
+    clone.style.whiteSpace = 'nowrap';
+    clone.style.left = '-9999px';
+    clone.style.top = '0';
+
+    const labelClone = clone.querySelector<HTMLElement>('[data-header-label]');
+    if (labelClone) {
+      labelClone.style.flex = '0 0 auto';
+      labelClone.style.whiteSpace = 'nowrap';
+    }
+
+    doc.body.appendChild(clone);
+    const contentWidth = clone.getBoundingClientRect().width;
+    clone.remove();
+    if (contentWidth <= 0) return null;
+
+    const view = doc.defaultView;
+    const style = view ? view.getComputedStyle(headerEl) : null;
+    const paddingLeft = style ? parseFloat(style.paddingLeft || '0') : 0;
+    const paddingRight = style ? parseFloat(style.paddingRight || '0') : 0;
+    const borderLeft = style ? parseFloat(style.borderLeftWidth || '0') : 0;
+    const borderRight = style ? parseFloat(style.borderRightWidth || '0') : 0;
+
+    // add a small buffer so content does not feel cramped next to the resizer
+    const buffer = 8;
+
+    return contentWidth + paddingLeft + paddingRight + borderLeft + borderRight + buffer;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/directives/resize-handle.directive.ts
 
 ```typescript
@@ -15527,6 +16835,175 @@ export class StickyPinDirective {
   public readonly z = input(0, { alias: 'pcStickyZ' });
   public readonly bg = input(true, { alias: 'pcStickyBg' });
 }
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
+import type { AlertService } from '@uxcommon/components/alerts/alert-service';
+import type { loadingGate } from '@uxcommon/loading-gate';
+
+import { DataGridConfig } from '../datagrid.tokens';
+import type { GridRow } from '../types';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridActionsService {
+  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
+    const { messages } = ctx.config;
+
+    const selectedCount = ctx.getSelectedRows()?.length ?? 0;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : ctx.config.messages.deleteConfirmMessage;
+
+    const ok = await ctx.dialogs.confirm({
+      title: messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: messages.deleteConfirmVariant,
+      icon: messages.deleteConfirmIcon,
+      confirmText: messages.deleteConfirmText,
+      cancelText: messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return;
+
+    const rows = ctx.getSelectedRows();
+    if (!rows.length) {
+      ctx.alertSvc.showError(messages.deleteNoneSelected);
+      return;
+    }
+
+    const isNonDeletable = (row: Record<string, unknown>) => {
+      if (!('deletable' in row)) return false;
+      const value = (row as { deletable?: unknown }).deletable;
+      if (typeof value === 'boolean') return value === false;
+      if (typeof value === 'string') {
+        const normalized = value.trim().toLowerCase();
+        return normalized === 'false' || normalized === '0';
+      }
+      if (typeof value === 'number') return value === 0;
+      return false;
+    };
+
+    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
+    const containsNonDeletable = deletableRows.length !== rows.length;
+    if (containsNonDeletable) {
+      ctx.alertSvc.showError(messages.deleteSystemValues);
+      return;
+    }
+    if (!deletableRows.length) {
+      return;
+    }
+
+    const end = ctx._loading.begin();
+    try {
+      const ids = deletableRows.map((r) => r.id);
+      const ok2 = await ctx.gridSvc.deleteMany(ids);
+      if (!ok2) {
+        ctx.alertSvc.showError(messages.deleteFailed);
+        return;
+      }
+      ctx.alertSvc.showSuccess(messages.deleteSuccess);
+    } finally {
+      end();
+    }
+  }
+
+  public async doExportCsv(deps: {
+    dialogs: ConfirmDialogService;
+    alertSvc: AlertService;
+    config: DataGridConfig;
+    getRowsForExport?: () => GridRow[];
+    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
+    queueFullExport?: () => Promise<void>;
+    displayedCount?: number;
+    totalCount?: number;
+  }) {
+    const { messages } = deps.config;
+
+    const displayedCount = deps.displayedCount ?? 0;
+    const totalCount = deps.totalCount ?? displayedCount;
+    const hasAllRowsVisible = totalCount <= displayedCount;
+
+    let exportAllData = false;
+    if (!hasAllRowsVisible) {
+      const parts: string[] = [];
+      if (totalCount > 0 && displayedCount > 0) {
+        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
+      }
+      parts.push(messages.exportMessage);
+      parts.push(messages.exportNavigateWarning);
+      const wantsAll = await deps.dialogs.confirm({
+        title: messages.exportTitle,
+        message: parts.filter(Boolean).join('\n\n'),
+        variant: 'info',
+        icon: messages.exportIcon,
+        confirmText: messages.exportConfirmText,
+        cancelText: messages.exportCancelText,
+        allowBackdropClose: false,
+      });
+      exportAllData = wantsAll === true;
+    }
+
+    // --- "All rows" path: queue background job, return immediately ---
+    if (exportAllData) {
+      if (deps.queueFullExport) {
+        try {
+          await deps.queueFullExport();
+          deps.alertSvc.showSuccess('Export queued! Visit the Exports page to download when ready.');
+        } catch {
+          deps.alertSvc.showError(messages.exportFailed);
+        }
+        return;
+      }
+      // fallback: no queue callback, fall through to synchronous path
+    }
+
+    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
+    if (!deps.getRowsForExport) return;
+
+    try {
+      const rows = deps.getRowsForExport();
+      if (!rows.length) {
+        deps.alertSvc.showInfo('No rows to export.');
+        return;
+      }
+      const rowCount = rows.length;
+      const headers = Object.keys(rows[0]!);
+      const escape = (v: unknown) => {
+        const s = v == null ? '' : String(v);
+        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const csv = [headers.join(',')].concat(rows.map((r) => headers.map((h) => escape(r[h])).join(','))).join('\n');
+
+      const fileName = messages.exportFileName || 'export.csv';
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
+    } catch {
+      deps.alertSvc.showError(messages.exportFailed);
+    }
+  }
+}
+
+type DeleteCtx = {
+  _loading: loadingGate;
+  alertSvc: AlertService;
+  config: DataGridConfig;
+  dialogs: ConfirmDialogService;
+  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
+
+  getSelectedRows: () => (Partial<GridRow> & { id: string })[];
+};
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/services/columns.service.ts
@@ -15593,6 +17070,203 @@ export class DataGridColumnsService {
       if (w > max) max = w;
     });
     return Math.max(0, max);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/data.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridDataService {
+  computeTotalPages(totalCountAll: number, pageSize: number): number {
+    const size = pageSize || 1;
+    return Math.max(1, Math.ceil((totalCountAll || 0) / size));
+  }
+
+  buildGetAllOptions(args: {
+    searchStr: string;
+    startRow: number;
+    endRow: number;
+    tags: string[];
+    issues?: string[];
+    filterModel: Record<string, unknown>;
+    sortState: Array<{ id: string; desc?: boolean }>;
+    sortCol: string | null;
+    sortDir: 'asc' | 'desc' | null;
+    includeArchived?: boolean;
+    advancedFilterModel?: NonNullable<getAllOptionsType>['advancedFilterModel'];
+    listId?: string | null;
+  }): Partial<getAllOptionsType> {
+    const {
+      searchStr,
+      startRow,
+      endRow,
+      tags,
+      issues,
+      filterModel,
+      sortState,
+      sortCol,
+      sortDir,
+      includeArchived,
+      advancedFilterModel,
+      listId,
+    } = args;
+    return {
+      searchStr,
+      startRow,
+      endRow,
+      tags,
+      issues,
+      filterModel,
+      includeArchived,
+      advancedFilterModel,
+      listId: listId ?? undefined,
+      sortModel:
+        sortState && sortState.length
+          ? sortState.map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
+          : sortCol && sortDir
+            ? [{ colId: sortCol, sort: sortDir }]
+            : [],
+    } satisfies Partial<getAllOptionsType>;
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/filters.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+
+export type Op =
+  | 'contains'
+  | 'equals'
+  | 'in'
+  | 'isEmpty'
+  | 'isNotEmpty'
+  | 'notContains'
+  | 'notEquals'
+  | 'startsWith'
+  | 'endsWith';
+
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+export interface SelectEditorOptions {
+  choices: SelectOption[];
+  multiple: boolean;
+  size?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+@Injectable({ providedIn: 'root' })
+export class DataGridFiltersService {
+  buildFilterModel(raw: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(raw)) {
+      if (v === undefined || v === null) continue;
+      if (isRecord(v) && 'value' in v) {
+        const op = v['op'] ?? 'contains';
+        const sv = String(v['value'] ?? '').trim();
+        if (op === 'isEmpty' || op === 'isNotEmpty') {
+          out[k] = { type: 'text', op, value: '' };
+        } else {
+          if (!sv) continue;
+          out[k] = { type: 'text', op, value: sv };
+        }
+      } else {
+        const sv = String(v).trim();
+        if (!sv) continue;
+        out[k] = { type: 'text', op: 'contains', value: sv };
+      }
+    }
+    return out;
+  }
+
+  getSelectEditorOptions(col: ColDef): SelectEditorOptions | null {
+    const cfg = this.resolveEditorConfig(col);
+    if (!cfg) return null;
+    const rawValues = Array.isArray(cfg['values']) ? (cfg['values'] as unknown[]) : [];
+    const labels = Array.isArray(cfg['labels']) ? (cfg['labels'] as unknown[]) : null;
+    const choices: SelectOption[] = [];
+    for (let i = 0; i < rawValues.length; i++) {
+      const entry = rawValues[i];
+      const fallbackLabel = labels && labels.length > i ? labels[i] : undefined;
+      if (entry && typeof entry === 'object') {
+        const obj = entry as Record<string, unknown>;
+        const value = 'value' in obj ? obj['value'] : entry;
+        const labelCandidate = 'label' in obj ? obj['label'] : 'name' in obj ? obj['name'] : fallbackLabel;
+        const valueStr = value != null ? String(value) : '';
+        const labelStr = labelCandidate != null ? String(labelCandidate) : valueStr;
+        choices.push({ value: valueStr, label: labelStr });
+      } else {
+        const valueStr = entry != null ? String(entry) : '';
+        const labelStr = fallbackLabel != null ? String(fallbackLabel) : valueStr;
+        choices.push({ value: valueStr, label: labelStr });
+      }
+    }
+    const multiple = !!cfg['multiple'];
+    if (!choices.length && !multiple) return null;
+    const sizeRaw = cfg['size'] ?? cfg['listSize'] ?? cfg['rows'] ?? cfg['lines'];
+    const parsed = Number(sizeRaw);
+    const size = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : multiple ? 5 : undefined;
+    return { choices, multiple, size };
+  }
+
+  getFilterOptionsForCol(col: ColDef): string[] | null {
+    const options = this.getSelectEditorOptions(col);
+    if (!options || !options.choices.length) return null;
+    return options.choices.map((c) => c.label);
+  }
+
+  getFilterValue(filterValues: Record<string, unknown>, field: string): string {
+    const fv = filterValues[field];
+    if (isRecord(fv) && !Array.isArray(fv) && 'value' in fv) return String(fv['value'] ?? '');
+    return fv ? String(fv) : '';
+  }
+
+  getFilterArray(filterValues: Record<string, unknown>, field: string): string[] {
+    const fv = filterValues[field];
+    if (isRecord(fv) && !Array.isArray(fv) && Array.isArray(fv['value'])) return fv['value'] as string[];
+    if (Array.isArray(fv)) return fv as string[];
+    const single = this.getFilterValue(filterValues, field);
+    return single ? [single] : [];
+  }
+
+  inlineFilterLabel(filterValues: Record<string, unknown>, field: string): string {
+    const arr = this.getFilterArray(filterValues, field);
+    if (!arr.length) return 'All';
+    if (arr.length === 1) return arr[0]!;
+    return `${arr.length} selected`;
+  }
+
+  preparePanelFilters(current: Record<string, unknown>): Record<string, { op: string; value: unknown }> {
+    const panel: Record<string, { op: string; value: unknown }> = {};
+    for (const [k, v] of Object.entries(current)) {
+      if (isRecord(v) && 'op' in v && 'value' in v) panel[k] = { op: String(v['op']), value: v['value'] };
+      else panel[k] = { op: 'contains', value: v };
+    }
+    return panel;
+  }
+
+  private resolveEditorConfig(col: ColDef): Record<string, unknown> | null {
+    const cep = col?.cellEditorParams;
+    if (!cep) return null;
+    try {
+      const resolved = typeof cep === 'function' ? (cep as () => unknown)() : cep;
+      return isRecord(resolved) ? resolved : null;
+    } catch {
+      return null;
+    }
   }
 }
 ```
@@ -15709,6 +17383,274 @@ export class GridAdvancedFilterService {
     });
     this.showAdvancedFilterBuilder.set(false);
     doRefresh();
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/grid-store.service.ts
+
+```typescript
+import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
+import type { Table } from '@tanstack/table-core';
+import type { GridHost, GridRow, GridSnapshot } from '../types';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+@Injectable()
+export class GridStoreService {
+  public grid?: GridHost;
+  readonly rows = signal<GridRow[]>([]);
+  readonly sorting = signal<unknown[]>([]);
+  readonly colVisibility = signal<Record<string, boolean>>({});
+  readonly colWidths = signal<Record<string, number>>({});
+  readonly filterValues = signal<Record<string, unknown>>({});
+  readonly panelFilters = signal<Record<string, { op: string; value: unknown }>>({});
+  readonly selectedIdSet = linkedSignal<Record<string, unknown>, Set<string>>({
+    source: () => this.filterValues(),
+    computation: () => new Set<string>(),
+  });
+  readonly allSelected = linkedSignal<Record<string, unknown>, boolean>({
+    source: () => this.filterValues(),
+    computation: () => false,
+  });
+  readonly allSelectedIdSet = linkedSignal<Record<string, unknown>, Set<string>>({
+    source: () => this.filterValues(),
+    computation: () => new Set<string>(),
+  });
+  readonly allSelectedIds = linkedSignal<Record<string, unknown>, string[]>({
+    source: () => this.filterValues(),
+    computation: () => [],
+  });
+  readonly allSelectedCount = linkedSignal<Record<string, unknown>, number>({
+    source: () => this.filterValues(),
+    computation: () => 0,
+  });
+  readonly selectionStickyWidth = signal<number>(48);
+  readonly pageIndex = signal<number>(0);
+  readonly pageSize = signal<number>(25);
+
+  readonly displayedCount = computed(() => this.rows().length);
+
+  readonly editCommitCount = signal<number>(0);
+  private _lastSnapshot: GridSnapshot | null = null;
+
+  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: unknown, newValue: unknown) {
+    let rowsCopy: GridRow[] = [];
+    try {
+      rowsCopy = JSON.parse(JSON.stringify(this.rows() || [])) as GridRow[];
+    } catch {
+      rowsCopy = (this.rows() || []).map((r) => {
+        const copy: GridRow = { ...r };
+        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
+        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
+        return copy;
+      });
+    }
+
+    const getRowId = this._getRowId || ((r: GridRow) => String(r?.['id'] || ''));
+    rowsCopy = rowsCopy.map((r) => {
+      if (getRowId(r) === id) {
+        return { ...r, [field]: prevValue };
+      }
+      return r;
+    });
+
+    this._lastSnapshot = {
+      rows: rowsCopy,
+      selectedIdSet: new Set(this.selectedIdSet()),
+      filterValues: { ...this.filterValues() },
+      sorting: [...this.sorting()],
+      pageIndex: this.pageIndex(),
+      pageSize: this.pageSize(),
+      editMeta: {
+        id,
+        field,
+        prevValue,
+        newValue,
+      },
+    };
+    this.editCommitCount.update((c) => c + 1);
+  }
+
+  private _persistKey = signal<string>('');
+  private _persistTick = signal<number>(0);
+  private _table: Table<GridRow> | null = null;
+  private _getRowId: ((row: GridRow) => string) | null = null;
+
+  constructor() {
+    effect(() => {
+      const count = this.editCommitCount();
+      if (count === 0) return;
+
+      untracked(() => {
+        if (this._lastSnapshot && this.grid?.undoMgr) {
+          this.grid.undoMgr.pushUndo(this._lastSnapshot);
+          this._lastSnapshot = null;
+        }
+      });
+    });
+
+    effect(() => {
+      const key = this._persistKey();
+      this.sorting();
+      this.colVisibility();
+      this.filterValues();
+      this.selectionStickyWidth();
+      this.colWidths();
+      this.pageSize();
+      this._persistTick();
+      if (!key) return;
+      try {
+        const state = this._table?.getState();
+        const st = {
+          sorting: state?.sorting as unknown[] | undefined,
+          columnVisibility: state?.columnVisibility,
+          columnPinning: state?.columnPinning,
+          columnSizing: state?.columnSizing,
+          columnOrder: state?.columnOrder,
+        };
+        const data = {
+          sorting: st.sorting || this.sorting(),
+          visibility: st.columnVisibility || this.colVisibility(),
+          pinning: st.columnPinning || { left: [], right: [] },
+          sizing: st.columnSizing || this.colWidths(),
+          order: st.columnOrder || [],
+          filters: this.filterValues() || {},
+          selectionWidth: this.selectionStickyWidth(),
+          pageSize: this.pageSize(),
+        };
+        localStorage.setItem(key, JSON.stringify(data));
+      } catch {}
+    });
+
+    // Attempt to load persisted state whenever key changes
+    effect(() => {
+      const key = this._persistKey();
+      if (!key) return;
+      this._loadFromStorage(key);
+    });
+
+    effect(() => {
+      const v = this.colVisibility();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
+        } catch {}
+      }
+    });
+
+    // Sync sorting state
+    effect(() => {
+      const s = this.sorting();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev) => ({
+            ...prev,
+            state: { ...prev.state, sorting: s as unknown as typeof prev.state.sorting },
+          }));
+        } catch {}
+      }
+    });
+
+    // Sync column sizing
+    effect(() => {
+      const sizing = this.colWidths();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
+        } catch {}
+      }
+    });
+
+    // Sync data
+    effect(() => {
+      const r = this.rows();
+      if (this._table) {
+        try {
+          this._table.setOptions((prev) => ({ ...prev, data: r }));
+        } catch {}
+      }
+    });
+
+    // Sync row selection map for current rows
+    effect(() => {
+      const rows = this.rows();
+      const ids = this.selectedIdSet();
+      if (!this._table || !this._getRowId) return;
+      try {
+        const map: Record<string, boolean> = {};
+        for (const r of rows) {
+          const id = this._getRowId(r);
+          if (id && ids.has(id)) map[id] = true;
+        }
+        this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
+      } catch {}
+    });
+  }
+
+  setPersistKey(key: string) {
+    this._persistKey.set(key || '');
+  }
+
+  attachTable(table: Table<GridRow> | undefined) {
+    this._table = table ?? null;
+  }
+
+  setGetRowId(fn: (row: GridRow) => string) {
+    this._getRowId = fn;
+  }
+
+  requestPersist() {
+    this._persistTick.update((v) => (v + 1) | 0);
+  }
+
+  loadState() {
+    const key = this._persistKey();
+    if (!key) return;
+    this._loadFromStorage(key);
+  }
+
+  private _loadFromStorage(key: string) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      type Persisted = {
+        sorting?: unknown[];
+        visibility?: Record<string, boolean>;
+        filters?: Record<string, unknown>;
+        selectionWidth?: number;
+        sizing?: Record<string, number>;
+        pinning?: { left: string[]; right: string[] };
+        order?: string[];
+        pageSize?: number;
+      };
+      const parsed: unknown = JSON.parse(raw || '{}');
+      const data: Persisted = isRecord(parsed) ? parsed : {};
+      if (data.sorting) this.sorting.set(data.sorting);
+      if (data.visibility) this.colVisibility.set({ ...untracked(() => this.colVisibility()), ...data.visibility });
+      if (data.filters) this.filterValues.set(data.filters);
+      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
+      if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
+      const sizing = data.sizing || {};
+      queueMicrotask(() => {
+        if (this._table) {
+          this._table.setOptions((prev) => ({
+            ...prev,
+            state: {
+              ...prev.state,
+              sorting: (data.sorting as unknown as typeof prev.state.sorting) || prev.state?.sorting,
+              columnVisibility: data.visibility || prev.state?.columnVisibility,
+              columnPinning: data.pinning || prev.state?.columnPinning,
+              columnSizing: sizing || prev.state?.columnSizing,
+              columnOrder: data.order || prev.state?.columnOrder,
+            },
+          }));
+        }
+        this.colWidths.set({ ...(sizing || {}) });
+      });
+    } catch {}
   }
 }
 ```
@@ -15910,6 +17852,259 @@ export class DataGridSelectionService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/services/table.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+import {
+  createTable,
+  getCoreRowModel,
+  type Updater,
+  type SortingState,
+  type Table,
+  type TableState,
+  type ColumnDef as TSColumnDef,
+} from '@tanstack/table-core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+
+@Injectable({ providedIn: 'root' })
+export class DataGridTableService {
+  updateTableWindow(
+    table: Table<GridRow> | undefined,
+    rows: GridRow[],
+    start: number,
+    end: number,
+    rowSelection: Record<string, boolean>,
+    sortCol: string | null,
+    sortDir: 'asc' | 'desc' | null,
+  ) {
+    const data = rows.slice(start, end);
+    if (!table) return;
+    table.setOptions((prev) => ({
+      ...prev,
+      data,
+      state: {
+        ...prev.state,
+        rowSelection,
+        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
+      },
+    }));
+  }
+
+  setTableData(
+    table: Table<GridRow> | undefined,
+    rows: GridRow[],
+    rowSelection: Record<string, boolean>,
+    sortCol: string | null,
+    sortDir: 'asc' | 'desc' | null,
+  ) {
+    if (!table) return;
+    table.setOptions((prev) => ({
+      ...prev,
+      data: rows,
+      state: {
+        ...prev.state,
+        rowSelection,
+        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
+      },
+    }));
+  }
+
+  createGridTable(params: {
+    rows: GridRow[];
+    columns: TSColumnDef<GridRow, unknown>[];
+    getRowId: (row: GridRow) => string;
+    state: Partial<TableState>;
+    onStateChange: () => void;
+    onSortingChange: (updater: Updater<SortingState>) => void;
+    onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => void;
+    onColumnSizingChange: (updater: Updater<Record<string, number>>) => void;
+  }): Table<GridRow> {
+    return createTable({
+      data: params.rows,
+      columns: params.columns,
+      getCoreRowModel: getCoreRowModel(),
+      getRowId: params.getRowId,
+      // not in the formal type, supported by our usage
+      enableColumnResizing: true as unknown as boolean,
+      state: params.state,
+      initialState: {
+        columnPinning: { left: [], right: [] },
+        columnSizing: {},
+      },
+      onStateChange: params.onStateChange,
+      renderFallbackValue: null as unknown,
+      onSortingChange: params.onSortingChange,
+      onRowSelectionChange: params.onRowSelectionChange,
+      columnResizeMode: 'onChange',
+      onColumnSizingChange: params.onColumnSizingChange,
+    });
+  }
+
+  buildTsColumns(colDefs: ColDef[]): TSColumnDef<GridRow, unknown>[] {
+    return colDefs
+      .filter((c) => !!c.field)
+      .map((c) => ({
+        id: c.field as string,
+        header: c.headerName || (c.field as string),
+        accessorFn: (row: GridRow) => row?.[c.field as string],
+        enableSorting: true,
+        enableResizing: true,
+      })) as unknown as TSColumnDef<GridRow, unknown>[];
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/tag-options.service.ts
+
+```typescript
+import { Injectable, inject } from '@angular/core';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { TagPaletteService } from '@experiences/tags/ui/tag-palette.service';
+
+@Injectable({ providedIn: 'root' })
+export class TagOptionsService {
+  private readonly tagsSvc = inject(TagsService);
+  private readonly tagPaletteSvc = inject(TagPaletteService);
+
+  public readonly tagNames: string[] = [];
+  public readonly issueNames: string[] = [];
+
+  private tagPending: Promise<string[]> | null = null;
+  private issuePending: Promise<string[]> | null = null;
+
+  async invalidate(type?: 'tag' | 'issue'): Promise<void> {
+    if (!type || type === 'tag') {
+      this.tagPending = null;
+      await this.load('tag');
+    }
+    if (!type || type === 'issue') {
+      this.issuePending = null;
+      await this.load('issue');
+    }
+  }
+
+  async getTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
+    const live = type === 'issue' ? this.issueNames : this.tagNames;
+    if (live.length > 0) return live;
+    await this.load(type);
+    return live;
+  }
+
+  private async load(type: 'tag' | 'issue'): Promise<void> {
+    const isPending = type === 'issue' ? this.issuePending : this.tagPending;
+    if (isPending) {
+      await isPending;
+      return;
+    }
+
+    const live = type === 'issue' ? this.issueNames : this.tagNames;
+
+    const promise = this.fetchTagNames(type)
+      .then((names) => {
+        // Mutate in-place so all external references stay valid
+        live.splice(0, live.length, ...names);
+        if (type === 'issue') this.issuePending = null;
+        else this.tagPending = null;
+        void this.tagPaletteSvc.ensurePalette();
+        return names;
+      })
+      .catch(() => {
+        if (type === 'issue') this.issuePending = null;
+        else this.tagPending = null;
+        return [] as string[];
+      });
+
+    if (type === 'issue') this.issuePending = promise;
+    else this.tagPending = promise;
+
+    await promise;
+  }
+
+  private async fetchTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
+    try {
+      const { rows } = await this.tagsSvc.getAll({ limit: 1000, offset: 0, orderBy: ['name'], type });
+      const names = Array.isArray(rows)
+        ? rows
+            .map((row) => (row?.['name'] != null ? String(row['name']).trim() : ''))
+            .filter((name): name is string => name.length > 0)
+        : [];
+      const seen = new Set<string>();
+      const unique: string[] = [];
+      for (const name of names) {
+        if (seen.has(name)) continue;
+        seen.add(name);
+        unique.push(name);
+      }
+      unique.sort((a, b) => a.localeCompare(b));
+      return unique;
+    } catch {
+      return [];
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/utils.service.ts
+
+```typescript
+import { Injectable } from '@angular/core';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+@Injectable({ providedIn: 'root' })
+export class DataGridUtilsService {
+  bucketByRoute(nodes: unknown[]): Map<string, unknown[]> {
+    const map = new Map<string, unknown[]>();
+    for (const n of nodes) {
+      const routeArr = isRecord(n) && Array.isArray(n['route']) ? n['route'] : [];
+      const key = JSON.stringify(routeArr);
+      const list = map.get(key) ?? [];
+      if (isRecord(n) && n['data']) list.push(n['data']);
+      map.set(key, list);
+    }
+    return map;
+  }
+
+  createPayload<T>(row: Partial<T>, key: keyof T): Partial<T> {
+    return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
+  }
+
+  tagsToString(tags: string[]): string {
+    if (!tags || !Array.isArray(tags)) return '';
+    return tags
+      .filter((t) => typeof t === 'string' && t.trim().length > 0)
+      .map((t) => {
+        const trimmed = t.trim();
+        return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+      })
+      .join(', ');
+  }
+
+  tagArrayEquals(tagsA: string[], tagsB: string[]): number {
+    return (tagsA ?? []).toString().localeCompare((tagsB ?? []).toString());
+  }
+
+  normalizeTagSelection(value: unknown): string[] {
+    const input = Array.isArray(value) ? value : value == null ? [] : [value];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const entry of input) {
+      if (entry == null) continue;
+      const tag = typeof entry === 'string' ? entry.trim() : String(entry).trim();
+      if (!tag) continue;
+      if (seen.has(tag)) continue;
+      seen.add(tag);
+      result.push(tag);
+    }
+    return result;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/state/grid-context.service.ts
 
 ```typescript
@@ -15932,6 +18127,73 @@ export class GridContextService {
 
   // Helpers
   readonly hasAnyFilter = computed(() => Object.keys(this.store.filterValues() || {}).length > 0);
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
+
+```typescript
+import { Component, computed, input } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
+
+/**
+ * Column visibility dropdown shared by the mobile and desktop toolbars.
+ * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
+ * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ *
+ * The grid is passed in as an input rather than injected: as projected
+ * content it does not reliably resolve the same `DataGrid` instance.
+ *
+ * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
+ * in after init, so as an isolated component this would render once and stay
+ * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
+ * signal) to recompute once the columns are populated.
+ */
+@Component({
+  selector: 'pc-dg-columns-dropdown',
+  template: `
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
+      </li>
+      @for (col of cols(); track col.field) {
+        @if (col.field) {
+          <li>
+            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
+                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
+              />
+              <span class="label-text">{{ col.headerName || col.field }}</span>
+            </label>
+          </li>
+        }
+      }
+    </ul>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridColumnsDropdownComponent {
+  public readonly grid = input.required<DataGrid<keyof Models, unknown>>();
+
+  protected readonly cols = computed<ColDef[]>(() => {
+    // Establish a reactive dependency on the colVisibility signal so the list
+    // recomputes once the (non-signal) column defs are populated after init.
+    this.grid().getColVisibilityMap();
+    return this.grid().getColDefsForToolbar();
+  });
 }
 ```
 
@@ -15982,6 +18244,115 @@ export class DataGridFilterDropdownComponent {
   public title = input.required<string>();
   public active = input(false);
   public clear = output<void>();
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
+
+```html
+<div class="fixed inset-0 z-40">
+  <div class="absolute inset-0 bg-black/30" (click)="closePanel.emit()"></div>
+  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 flex flex-col">
+    <!-- Pinned Header Area -->
+    <div class="shrink-0">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="text-lg font-semibold">Filters</h3>
+        <button class="btn btn-ghost btn-sm px-2" (click)="closePanel.emit()">
+          <pc-icon name="chevron-right"></pc-icon>
+        </button>
+      </div>
+      <div class="flex justify-between items-center mb-3">
+        <span class="text-sm opacity-70">Combine column filters and operators.</span>
+        <button
+          class="btn btn-link btn-xs text-primary font-bold p-0 no-underline hover:underline flex items-center gap-0.5"
+          [disabled]="hasActiveFilters()"
+          (click)="!hasActiveFilters() && openAdvanced.emit()"
+        >
+          Advanced Filter &gt;
+        </button>
+      </div>
+
+      <!-- Apply / Clear buttons pinned at top -->
+      <div class="flex gap-2 mb-1">
+        <button class="btn btn-primary btn-sm flex-1" (click)="apply.emit()">Apply</button>
+        <button class="btn btn-outline btn-sm flex-1" (click)="clear.emit()">Clear</button>
+      </div>
+
+      <div class="divider my-3"></div>
+    </div>
+
+    <!-- Scrollable Fields Area -->
+    <div class="flex-1 overflow-y-auto space-y-3 pr-1">
+      @for (field of panelFields(); track field) {
+      <div class="form-control">
+        <label class="label py-0"><span class="label-text font-medium">{{ labelFor()(field) }}</span></label>
+        <div class="flex gap-2 mt-1">
+          <select
+            class="select select-bordered select-xs w-28"
+            (change)="changeOp.emit({ field, op: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.op || 'contains'"
+          >
+            <option value="contains">contains</option>
+            <option value="notContains">does not contain</option>
+            <option value="equals">equals</option>
+            <option value="notEquals">does not equal</option>
+            <option value="startsWith">starts with</option>
+            <option value="endsWith">ends with</option>
+            <option value="isEmpty">is empty</option>
+            <option value="isNotEmpty">is not empty</option>
+          </select>
+          @let filterOp = $any(panelFilters())[field]?.op; @if (filterOp !== 'isEmpty' && filterOp !== 'isNotEmpty') {
+          @if (optionsFor()(field)?.length) {
+          <select
+            class="select select-bordered select-xs flex-1"
+            (change)="changeValue.emit({ field, value: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.value || ''"
+          >
+            <option value="">Any</option>
+            @for (opt of optionsFor()(field)!; track opt) {
+            <option [value]="opt">{{ opt }}</option>
+            }
+          </select>
+          } @else {
+          <input
+            class="input input-bordered input-xs flex-1"
+            type="text"
+            placeholder="Value"
+            (input)="changeValue.emit({ field, value: $any($event.target).value })"
+            [value]="$any(panelFilters())[field]?.value || ''"
+          />
+          } }
+        </div>
+      </div>
+      }
+    </div>
+  </aside>
+</div>
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+
+@Component({
+  selector: 'pc-dg-filter-panel',
+  imports: [Icon],
+  templateUrl: 'datagrid-filter-panel.html',
+})
+export class DataGridFilterPanelComponent {
+  public apply = output<void>();
+  public changeOp = output<{ field: string; op: string }>();
+  public changeValue = output<{ field: string; value: unknown }>();
+  public clear = output<void>();
+  public closePanel = output<void>();
+  public openAdvanced = output<void>();
+  public hasActiveFilters = input<boolean>(false);
+  public labelFor = input<(field: string) => string>((f) => f);
+  public optionsFor = input<(field: string) => string[] | null>((_f) => null);
+  public panelFields = input<string[]>([]);
+  public panelFilters = input<Record<string, { op: string; value: unknown }>>({});
 }
 ```
 
@@ -16112,6 +18483,74 @@ export class DataGridFilterSectionComponent {
   </th>
   } }
 </tr>
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-inline-filters-row.ts
+
+```typescript
+import { Component, computed, inject, input } from '@angular/core';
+import type { Header } from '@tanstack/table-core';
+
+import { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { GridRow } from '../types';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+@Component({
+  selector: 'pc-dg-inline-filters-row',
+  templateUrl: 'datagrid-inline-filters-row.html',
+})
+export class DataGridInlineFiltersRowComponent {
+  private readonly grid: DataGrid<keyof Models, unknown> | null = inject(DataGrid, { optional: true });
+
+  public clearHeaderFilter = input<(field: string) => void>((f) => this.grid?.clearHeaderFilter(f));
+  public enableSelection = input<boolean>(true);
+  public getColDefById = input<(id: string) => ColDef | undefined>((id) => this.grid?.getColDefById(id));
+  public getFilterOptionsForCol = input<(col: ColDef) => string[] | null>(
+    (c) => this.grid?.getFilterOptionsForCol(c) ?? null,
+  );
+  public getFilterValue = input<(field: string) => string>((f) => this.grid?.getFilterValue(f) ?? '');
+  public inlineFilterLabel = input<(field: string) => string>((f) => this.grid?.inlineFilterLabel?.(f) ?? '');
+  public isOptionChecked = input<(field: string, option: string) => boolean>(
+    (f, o) => !!this.grid?.isOptionChecked(f, o),
+  );
+  public leafHeaders = input<Header<GridRow, unknown>[]>([]);
+  public leftOffsetPx = input.required<(colId: string) => number>();
+  public onHeaderFilterInput = input<(field: string, value: unknown) => void>((f, v) =>
+    this.grid?.onHeaderFilterInput(f, v),
+  );
+  public onToggleFilterOption = input<(field: string, option: string, checked: boolean) => void>((f, o, c) =>
+    this.grid?.onToggleFilterOption(f, o, c),
+  );
+  public pinState = input.required<(h: Header<GridRow, unknown>) => 'left' | 'right' | false>();
+  public rightOffsetPx = input.required<(colId: string) => number>();
+  public selectionStickyWidth = input<number>(48);
+
+  public readonly colWidths = computed<Record<string, number>>(() => this.grid?.colWidths?.() ?? {});
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
+
+```typescript
+import { Component, input } from '@angular/core';
+import type { GridRow } from '../types';
+
+@Component({
+  // eslint-disable-next-line @angular-eslint/component-selector
+  selector: 'tr[pc-dg-row]',
+  template: '',
+})
+export class DataGridRowComponent {
+  row = input<GridRow>();
+  enableSelection = input<boolean>(true);
+  selectionStickyWidth = input<number>(48);
+  allSelected = input<boolean>(false);
+  allSelectedIdSet = input<Set<string>>(new Set());
+  toId = input<(row: GridRow) => string>((r) => String(r?.['id'] ?? ''));
+  onRowCheckboxChange = input<(row: GridRow, checked: boolean) => void>((_r, _c) => undefined);
+  onMouseOverRow = input<(row: GridRow) => void>((_r) => undefined);
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/multiselect-filter.ts
@@ -16382,6 +18821,260 @@ export class GridActionComponent {
     if (detailsEl && detailsEl.hasAttribute('open') && !this.el.nativeElement.contains(event.target)) {
       detailsEl.removeAttribute('open');
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/types.ts
+
+```typescript
+export type SortDir = 'asc' | 'desc' | 'none';
+
+/** Row shape served by the grid APIs: a dynamic record keyed by column field. */
+export type GridRow = Record<string, unknown>;
+
+export interface HeaderRef {
+  column: {
+    id: string;
+    getIsSorted?: () => 'asc' | 'desc' | false;
+    toggleSorting?: (desc?: boolean, multi?: boolean) => void;
+    clearSorting?: () => void;
+    pin?: (side: 'left' | 'right' | false) => void;
+    getIsPinned?: () => 'left' | 'right' | false;
+    getSize?: () => number;
+    setSize?: (px: number) => void;
+  };
+  table?: unknown;
+}
+
+/** Undo/redo snapshot of grid state, captured before/after an edit commits. */
+export interface GridSnapshot {
+  rows: GridRow[];
+  selectedIdSet: Set<string>;
+  filterValues: Record<string, unknown>;
+  sorting: unknown[];
+  pageIndex: number;
+  pageSize: number;
+  editMeta?: {
+    id: string;
+    field: string;
+    prevValue: unknown;
+    newValue: unknown;
+  };
+}
+
+/** Minimal shape of DataGrid that GridStoreService/UndoManager depend on (avoids importing DataGrid directly). */
+export interface GridHost {
+  undoMgr: { pushUndo(snapshot: GridSnapshot): void };
+  store: {
+    rows: { (): GridRow[]; set: (rows: GridRow[]) => void };
+    selectedIdSet: { (): Set<string>; set: (ids: Set<string>) => void };
+    filterValues: { (): Record<string, unknown>; set: (v: Record<string, unknown>) => void };
+    sorting: { (): unknown[]; set: (v: unknown[]) => void };
+    pageIndex: { (): number; set: (v: number) => void };
+    pageSize: { (): number; set: (v: number) => void };
+  };
+  gridSvc: { update(id: string, data: unknown): Promise<unknown> };
+  alertSvc: { showError(msg: string): void };
+  updateTableWindow(start: number, end: number): void;
+  startIndex(): number;
+  endIndex(): number;
+  triggerCellFlash(rowId: string, field: string): void;
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
+
+```typescript
+import { computed, signal } from '@angular/core';
+import type { GridHost, GridRow, GridSnapshot } from './types';
+
+export class UndoManager {
+  private readonly isOperating = signal(false);
+
+  private readonly undoStack = signal<GridSnapshot[]>([]);
+  private readonly redoStack = signal<GridSnapshot[]>([]);
+  private grid: GridHost | null = null;
+
+  public readonly canRedo = computed(() => this.redoStack().length > 0 && !this.isOperating());
+  public readonly canUndo = computed(() => this.undoStack().length > 0 && !this.isOperating());
+
+  public getRedoSize(): number {
+    return this.redoStack().length;
+  }
+
+  public getUndoSize(): number {
+    return this.undoStack().length;
+  }
+
+  public initialize(api: GridHost): void {
+    this.grid = api;
+    this.isOperating.set(false);
+  }
+
+  public pushUndo(snapshot: GridSnapshot): void {
+    this.undoStack.update((s) => {
+      const next = [...s, snapshot];
+      return next.length > 50 ? next.slice(1) : next;
+    });
+    this.redoStack.set([]);
+  }
+
+  public async redo() {
+    const redoStack = this.redoStack();
+    if (this.isOperating() || redoStack.length === 0 || !this.grid) return;
+
+    const target = redoStack[redoStack.length - 1];
+    if (!target) return;
+
+    this.isOperating.set(true);
+    try {
+      this.redoStack.update((s) => s.slice(0, -1));
+
+      const current = this.captureCurrentState();
+      if (current && target.editMeta) {
+        current.editMeta = target.editMeta;
+      }
+      if (current) {
+        this.undoStack.update((s) => {
+          const next = [...s, current];
+          return next.length > 50 ? next.slice(1) : next;
+        });
+      }
+
+      await this.applySnapshot(target, 'redo');
+    } finally {
+      this.isOperating.set(false);
+    }
+  }
+
+  public async undo() {
+    const undoStack = this.undoStack();
+    if (this.isOperating() || undoStack.length === 0 || !this.grid) return;
+
+    const target = undoStack[undoStack.length - 1];
+    if (!target) return;
+
+    this.isOperating.set(true);
+    try {
+      this.undoStack.update((s) => s.slice(0, -1));
+
+      const current = this.captureCurrentState();
+      if (current && target.editMeta) {
+        current.editMeta = target.editMeta;
+      }
+      if (current) {
+        this.redoStack.update((s) => {
+          const next = [...s, current];
+          return next.length > 50 ? next.slice(1) : next;
+        });
+      }
+
+      await this.applySnapshot(target, 'undo');
+    } finally {
+      this.isOperating.set(false);
+    }
+  }
+
+  private captureCurrentState(): GridSnapshot | null {
+    const store = this.grid?.store;
+    if (!store) return null;
+
+    let rowsCopy: GridRow[] = [];
+    try {
+      rowsCopy = JSON.parse(JSON.stringify(store.rows() || [])) as GridRow[];
+    } catch {
+      rowsCopy = (store.rows() || []).map((r) => {
+        const copy: GridRow = { ...r };
+        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
+        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
+        return copy;
+      });
+    }
+
+    return {
+      rows: rowsCopy,
+      selectedIdSet: new Set(store.selectedIdSet()),
+      filterValues: { ...store.filterValues() },
+      sorting: [...store.sorting()],
+      pageIndex: store.pageIndex(),
+      pageSize: store.pageSize(),
+    };
+  }
+
+  private async applySnapshot(target: GridSnapshot, actionType: 'undo' | 'redo') {
+    if (!this.grid || !this.grid.store) return;
+    const store = this.grid.store;
+    const flashedCells: { id: string; field: string }[] = [];
+
+    if (target.editMeta) {
+      try {
+        const { id, field, prevValue, newValue } = target.editMeta;
+        const valToSet = actionType === 'undo' ? prevValue : newValue;
+        const payload = { [field]: valToSet };
+        await this.grid.gridSvc.update(id, payload);
+        flashedCells.push({ id: String(id), field });
+      } catch (err) {
+        console.error(`Failed to update backend on ${actionType}:`, err);
+        if (this.grid.alertSvc) {
+          this.grid.alertSvc.showError('Reverting changes on the server failed');
+        }
+      }
+    } else {
+      try {
+        const currentRows = store.rows() || [];
+        const diffs = this.findRowsDiff(currentRows, target.rows);
+        for (const diff of diffs) {
+          const payload = { [diff.field]: diff.newValue };
+          await this.grid.gridSvc.update(diff.id, payload);
+          flashedCells.push({ id: String(diff.id), field: diff.field });
+        }
+      } catch (err) {
+        console.error(`Failed to update backend on ${actionType} fallback:`, err);
+      }
+    }
+
+    store.rows.set(target.rows);
+    store.selectedIdSet.set(target.selectedIdSet);
+    store.filterValues.set(target.filterValues);
+    store.sorting.set(target.sorting);
+    store.pageIndex.set(target.pageIndex);
+    store.pageSize.set(target.pageSize);
+
+    this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
+
+    for (const item of flashedCells) {
+      if (typeof this.grid.triggerCellFlash === 'function') {
+        this.grid.triggerCellFlash(item.id, item.field);
+      }
+    }
+  }
+
+  private findRowsDiff(
+    oldRows: GridRow[],
+    newRows: GridRow[],
+  ): { id: string; field: string; prevValue: unknown; newValue: unknown }[] {
+    const diffs: { id: string; field: string; prevValue: unknown; newValue: unknown }[] = [];
+    const oldMap = new Map<string, GridRow>();
+    for (const r of oldRows) {
+      if (r && r['id']) oldMap.set(String(r['id']), r);
+    }
+    for (const r of newRows) {
+      if (!r || !r['id']) continue;
+      const idStr = String(r['id']);
+      const oldRow = oldMap.get(idStr);
+      if (oldRow) {
+        for (const key of Object.keys(r)) {
+          if (key === 'id') continue;
+          const val1 = oldRow[key];
+          const val2 = r[key];
+          if (JSON.stringify(val1) !== JSON.stringify(val2)) {
+            diffs.push({ id: idStr, field: key, prevValue: val1, newValue: val2 });
+          }
+        }
+      }
+    }
+    return diffs;
   }
 }
 ```
@@ -19553,6 +22246,200 @@ export function computeEmailSla(inputs: SlaInputs, now: Date = new Date()): SlaP
   const dueIn = Math.max(1, Math.ceil(remaining));
   const tone: SlaTone = remaining <= target * WARNING_REMAINING_FRACTION ? 'warning' : 'neutral';
   return { text: `First response due in ${dueIn}h · ${targetLabel}h SLA`, tone };
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import { EmailStatus, JSend, jsend } from '../../../../../../../libs/common/src';
+
+import { HasRow } from '../../../../../../../libs/common/src/lib/emails';
+import { EmailDraftType, EmailType } from '../../../../../../../libs/common/src/lib/models';
+import { environment } from '../../../../environments/environment';
+import { TRPCService } from '../../../services/api/trpc-service';
+import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
+
+@Service()
+export class EmailsService extends TRPCService<'emails' | 'email_list'> {
+  public addComment(id: string, author_id: string, comment: string) {
+    return this.api.emails.addComment.mutate({ id, author_id, comment });
+  }
+
+  public assign(id: string, user_id: string | null, assigned_to_name?: string | null) {
+    return this.api.emails.assign.mutate({ id, user_id, assigned_to_name: assigned_to_name ?? undefined });
+  }
+
+  public delete(id: string) {
+    return this.api.emails.delete.mutate(id);
+  }
+
+  public deleteComment(email_id: string, comment_id: string) {
+    return this.api.emails.deleteComment.mutate({ email_id, comment_id });
+  }
+
+  public deleteDraft(id: string) {
+    return this.api.emails.deleteDraft.mutate({ id });
+  }
+
+  public deleteMany(ids: string[]) {
+    return this.api.emails.deleteMany.mutate(ids);
+  }
+
+  public getAllAttachments(id: string, options?: { includeInline: boolean }) {
+    return this.api.emails.getAllAttachments.query({ email_id: id, options });
+  }
+
+  public getAttachmentsByEmailId(id: string) {
+    return this.api.emails.getAttachmentsByEmailId.query(id);
+  }
+
+  public getDraft(id: string) {
+    return this.api.emails.getDraft.query(id) as Promise<EmailDraftType>;
+  }
+
+  public getEmailBody(id: string) {
+    return this.api.emails.getEmailBody.query(id);
+  }
+
+  public getEmailHeader(id: string) {
+    return this.api.emails.getEmailHeader.query(id);
+  }
+
+  public getEmailWithHeaders(id: string) {
+    return this.api.emails.getEmailWithHeaders.query(id);
+  }
+
+  public getActivities(emailId: string) {
+    return this.api.emails.getActivities.query(emailId);
+  }
+
+  // TODO: paging and infinite scrolling
+  public getEmails(folderId: string, limit?: number, offset?: number) {
+    return this.api.emails.getEmails.query({ folderId, limit, offset });
+  }
+
+  public getFolders() {
+    return this.api.emails.getFolders.query();
+  }
+
+  public getFoldersWithCounts() {
+    return this.api.emails.getFoldersWithCounts.query();
+  }
+
+  public hasAttachment(id: string) {
+    return this.api.emails.hasAttachment.query(id);
+  }
+
+  public async hasAttachmentByEmailIds(ids: string[]): Promise<Partial<Record<string, boolean>>> {
+    const rows: HasRow[] = await this.api.emails.hasAttachmentByEmailIds.query(ids);
+    const map: Record<string, boolean> = {};
+    for (const r of rows) map[String(r.email_id)] = !!r.has;
+    return map;
+  }
+
+  public restoreFromTrash(ids: string[]): Promise<number> {
+    return this.api.emails.restoreFromTrash.mutate(ids);
+  }
+
+  public moveToFolder(id: string, folderId: string) {
+    return this.api.emails.moveToFolder.mutate({ id, folderId });
+  }
+
+  public saveDraft(input: DraftPayload) {
+    return this.api.emails.saveDraft.mutate(input);
+  }
+
+  // Fetch/FormData fallback
+  public async sendEmail(input: ComposePayload): Promise<EmailType> {
+    const fd = new FormData();
+    fd.set('to', JSON.stringify(input.to));
+    fd.set('cc', JSON.stringify(input.cc));
+    fd.set('bcc', JSON.stringify(input.bcc));
+    fd.set('subject', input.subject);
+    fd.set('html', input.html);
+    input.attachments.forEach((f) => fd.append('attachments', f, f.name));
+
+    const token = this.tokenService.getAuthToken();
+    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+    const res = await fetch(`${environment.apiUrl}/api/emails/send`, { method: 'POST', body: fd, headers });
+    const json = (await res.json()) as JSend<EmailType>;
+    return jsend.unwrap(json);
+  }
+
+  public setFavourite(id: string, favourite: boolean) {
+    return this.api.emails.setFavourite.mutate({ id, favourite });
+  }
+
+  public setStatus(id: string, status: EmailStatus) {
+    return this.api.emails.setStatus.mutate({ id, status });
+  }
+
+  public setEmailReadStatus(id: string, isRead: boolean) {
+    return this.api.emails.setEmailReadStatus.mutate({ id, isRead });
+  }
+
+  public async syncEmails(): Promise<{ inserted: number }> {
+    let msResult = { inserted: 0 };
+    let googleResult = { inserted: 0 };
+    let msConnected = false;
+    let googleConnected = false;
+
+    // Check MS connection status
+    try {
+      const msStatus = await this.api.msSync.getConnectionStatus.query();
+      if (msStatus?.connected) {
+        msConnected = true;
+        msResult = await (
+          this.api.msSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
+        )(undefined, { context: { skipErrorHandler: true } });
+      }
+    } catch (e) {
+      console.error('MS sync failed:', e);
+    }
+
+    // Check Google connection status
+    try {
+      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
+      if (googleStatus?.connected) {
+        googleConnected = true;
+        googleResult = await (
+          this.api.googleSync.syncNow.mutate as unknown as (input: any, opts?: any) => Promise<{ inserted: number }>
+        )(undefined, { context: { skipErrorHandler: true } });
+      }
+    } catch (e) {
+      console.error('Google sync failed:', e);
+    }
+
+    if (!msConnected && !googleConnected) {
+      throw new Error('No email accounts connected');
+    }
+
+    return { inserted: msResult.inserted + googleResult.inserted };
+  }
+
+  public getConnectionStatus() {
+    return this.api.msSync.getConnectionStatus.query();
+  }
+
+  public async isAnySyncing(): Promise<boolean> {
+    let isSyncing = false;
+    try {
+      const msStatus = await this.api.msSync.getConnectionStatus.query();
+      if (msStatus?.syncing) isSyncing = true;
+    } catch (_e) {
+      // ignore
+    }
+    try {
+      const googleStatus = await this.api.googleSync.getConnectionStatus.query();
+      if (googleStatus?.syncing) isSyncing = true;
+    } catch (_e) {
+      // ignore
+    }
+    return isSyncing;
+  }
 }
 ```
 
@@ -23442,366 +26329,6 @@ export class HelpRichText {
   public readonly text = input.required<string>();
 
   protected readonly segments = computed(() => parseHelpInline(this.text()));
-}
-```
-
-## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { HouseholdsService } from '../services/households-service';
-
-@Component({
-  selector: 'pc-households-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [showToolbar]="!inline()"
-        title="Households"
-        i18n-title
-        description="Manage household groups, track shared addresses, and organize family relationships."
-        i18n-description
-        [listId]="listId()"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [confirmDeleteOverride]="onConfirmDeleteBind"
-        [rowCanSelect]="rowCanSelectFn"
-        (importCSV)="openImportDialog()"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-home"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-
-    <!-- Reusable CSV Importer for Households -->
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Households from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    >
-      <div pc-import-extras class="grid gap-2">
-        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
-        <input
-          class="input input-bordered"
-          placeholder="Comma separated e.g. neighborhood, parish"
-          i18n-placeholder
-          [(ngModel)]="tagsInput"
-        />
-      </div>
-    </pc-csv-importer>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
-  ],
-})
-export class HouseholdsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly householdsService = inject(HouseholdsService);
-
-  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
-
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
-
-  public inline = input<boolean>(false);
-
-  protected readonly mappableFields: string[] = [
-    'street_num',
-    'apt',
-    'street1',
-    'street2',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'home_phone',
-    'notes',
-  ];
-
-  protected autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      homephone: 'home_phone',
-      phone: 'home_phone',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  };
-
-  protected col: ColDef[] = [
-    {
-      field: 'persons_count',
-      headerName: 'People',
-      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
-    },
-    { field: 'street_num', headerName: 'Street Number', editable: true },
-    { field: 'apt', headerName: 'Apt', editable: true },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: true,
-      valueFormatter: (params: any) =>
-        params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
-    },
-    { field: 'street2', headerName: 'Street 2', editable: true },
-    { field: 'city', headerName: 'City', editable: true },
-    {
-      field: 'tags',
-      headerName: 'Tags',
-      hide: true,
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    { field: 'state', headerName: 'State/Province', editable: true },
-    { field: 'zip', headerName: 'Zip/Province', editable: true },
-    { field: 'country', headerName: 'Country', editable: true },
-    { field: 'district', headerName: 'District / Riding', editable: false, minWidth: 140 },
-    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, minWidth: 180 },
-    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
-    { field: 'home_phone', headerName: 'Home phone', editable: true },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-  public listId = input<string | null>(null);
-  public showHeader = input<boolean>(true);
-
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
-  // Importer state
-  protected importerOpen = signal(false);
-  protected tagsInput = '';
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected openEditOnDoubleClick(event: any) {
-    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
-      id: string;
-      persons_count?: number | string | null;
-      is_placeholder?: boolean;
-    }>;
-
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
-    if (selected.some((r) => r.is_placeholder)) {
-      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
-      return true;
-    }
-
-    // Collect IDs for households that have people
-    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
-    const householdIds = selected.map((r) => r.id);
-
-    if (populated.length > 0) {
-      // Fetch person IDs for all households-with-people so we can act on them
-      const personIdArrays = await Promise.all(
-        populated.map(async (h) => {
-          try {
-            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
-            return people.map((p) => p.id);
-          } catch {
-            return [];
-          }
-        }),
-      );
-      const personIds = personIdArrays.flat();
-      const peopleCount = personIds.length;
-
-      // Show the 3-option dialog and wait for user's choice
-      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-        title: 'Households have people',
-        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-        variant: 'warning',
-        choices: [
-          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-        ],
-        cancelText: 'Cancel',
-      });
-
-      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
-
-      if (choice === 'keep-people') {
-        // Detach each person from their household (moves to blank household)
-        await Promise.all(
-          personIds.map((pid) =>
-            this.personsSvc.removeHousehold(pid).catch(() => {
-              // best-effort; continue
-            }),
-          ),
-        );
-      } else if (choice === 'delete-people') {
-        // Delete all people in those households first
-        if (personIds.length) {
-          try {
-            await this.personsSvc.deleteMany(personIds);
-          } catch {
-            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
-            return true;
-          }
-        }
-      }
-
-      // Now delete the households themselves
-      try {
-        await this.householdsService.deleteMany(householdIds);
-        this.alertSvc.showSuccess('Households deleted successfully.');
-      } catch {
-        this.alertSvc.showError('Failed to delete one or more households.');
-      }
-      return true;
-    } else {
-      // No people attached — delegate to the standard flow
-      return false;
-    }
-  }
-
-  protected onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }) {
-    // Backend households import endpoint not implemented yet; show informative summary
-    const diag = 'Households import is not available yet.';
-    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });
-    this.importerOpen.set(false);
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    this.importerOpen.set(true);
-  }
 }
 ```
 
@@ -29078,81 +31605,6 @@ export class TaskView {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  InviteAuthUserType,
-  UpdateAuthUserType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Service()
-export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuthUserType> {
-  protected override readonly endpointName = 'authusers';
-
-  public add(row: InviteAuthUserType) {
-    return (this.api.authusers.invite.mutate as unknown as (input: any, opts?: any) => Promise<IAuthUserRecord>)(row, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public addMany(_rows: InviteAuthUserType[]) {
-    return Promise.resolve([]);
-  }
-
-  public attachTag(_id: string, _tag_name: string) {
-    return Promise.resolve();
-  }
-
-  public count(): Promise<number> {
-    return this.api.authusers.count.query();
-  }
-
-  public detachTag(_id: string, _tag_name: string) {
-    return Promise.resolve(false);
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.api.authusers.getAllWithCounts.query(options, { signal: this.ac.signal }) as Promise<{
-      rows: Record<string, unknown>[];
-      count: number;
-    }>;
-  }
-
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public getById(id: string) {
-    return this.api.authusers.getById.query(id) as Promise<IAuthUserDetail>;
-  }
-
-  public getTags(_id: string) {
-    return Promise.resolve([]);
-  }
-
-  public update(id: string, data: UpdateAuthUserType) {
-    return this.api.authusers.update.mutate({ id, data }) as Promise<IAuthUserRecord>;
-  }
-
-  public adminTriggerPasswordReset(id: string): Promise<{ success: boolean }> {
-    return this.api.authusers.adminTriggerPasswordReset.mutate({ id }) as Promise<{ success: boolean }>;
-  }
-
-  public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return Promise.reject(new Error('User export is not available'));
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
 
 ```typescript
@@ -30329,87 +32781,53 @@ export class ThemeService {
 }
 ```
 
-## File: apps/frontend/src/app/services/api/abstract-api.service.ts
+## File: apps/frontend/src/app/routing/public-routes.ts
 
 ```typescript
-import { signal, Service } from '@angular/core';
-import {
-  DataExportRecordType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  getAllOptionsType,
-  QueueExportInputType,
-} from '../../../../../../libs/common/src';
-import { TRPCService } from './trpc-service';
-import { TRPCClient } from '@trpc/client';
-import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+/**
+ * Routes reachable without an authenticated session. A stray UNAUTHORIZED/401 from a background
+ * query on one of these pages must NOT evict the visitor to /signin — the whole point of a reset
+ * link, public form, or subscription-confirmation page is that guests land on it. Keep this in sync
+ * with the public (unguarded) entries in app.routes.ts.
+ *
+ * Prefixes ending in '/' match a path segment family (e.g. '/f/' → '/f/:slug'); the rest match the
+ * exact path or a deeper child of it.
+ */
+export const PUBLIC_ROUTE_PREFIXES = [
+  '/signin',
+  '/signup',
+  '/resetpassword',
+  '/new-password',
+  '/verify-sender-email',
+  '/verify-email',
+  '/confirm-subscription',
+  '/cancel-deletion',
+  '/resume-account',
+  '/volunteer',
+  '/f/',
+  '/e/',
+  '/v/',
+] as const;
 
-import { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+export function isPublicRoute(url: string): boolean {
+  const path = url.split(/[?#]/)[0] ?? url;
+  return PUBLIC_ROUTE_PREFIXES.some((prefix) =>
+    prefix.endsWith('/') ? path.startsWith(prefix) : path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
 
-@Service()
-export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPCService<T> {
-  protected abstract readonly endpointName: keyof TRPCClient<TRPCRouter>;
-
-  public readonly refreshCount = signal(0);
-
-  public triggerRefresh() {
-    this.refreshCount.update((n) => n + 1);
-  }
-  public abstract add(row: U, options?: unknown): Promise<Partial<T> | unknown>;
-
-  public abstract addMany(rows: U[]): Promise<Partial<T>[] | unknown>;
-
-  public abstract attachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
-
-  public abstract count(): Promise<number>;
-
-  public async delete(id: string): Promise<boolean> {
-    const endpoint = this.api[this.endpointName] as {
-      delete: { mutate: (id: string) => Promise<unknown> };
-    };
-    if (!endpoint) {
-      throw new Error(`Endpoint for "${String(this.endpointName)}" not found on tRPC client.`);
-    }
-    return (await endpoint.delete.mutate(id)) !== null;
-  }
-
-  public async deleteMany(ids: string[]): Promise<boolean> {
-    const endpoint = this.api[this.endpointName] as {
-      delete: { mutate: (id: string) => Promise<unknown> };
-      deleteMany?: { mutate: (ids: string[]) => Promise<unknown> };
-    };
-    if (!endpoint) {
-      throw new Error(`Endpoint for "${String(this.endpointName)}" not found on tRPC client.`);
-    }
-    if ('deleteMany' in endpoint && endpoint.deleteMany) {
-      return (await endpoint.deleteMany.mutate(ids)) !== null;
-    }
-    const results = await Promise.all(ids.map((id) => this.delete(id)));
-    return results.every(Boolean);
-  }
-
-  public abstract detachTag(id: string, tag_name: string, type?: 'tag' | 'issue'): Promise<unknown>;
-
-  public abstract getAll(options?: getAllOptionsType): Promise<{ rows: Record<string, unknown>[]; count: number }>;
-
-  public abstract getAllArchived(
-    options?: getAllOptionsType,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }>;
-
-  public abstract getById(id: string): Promise<unknown>;
-
-  public abstract getTags(id: string, type?: 'tag' | 'issue'): Promise<string[]>;
-
-  public abstract update(id: string, data: U, options?: unknown): Promise<Partial<T>[] | unknown>;
-
-  public abstract exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType>;
-
-  public queueExport(input: QueueExportInputType): Promise<DataExportRecordType> {
-    const exportsEndpoint = this.api.exports as {
-      queue: { mutate: (input: QueueExportInputType) => Promise<DataExportRecordType> };
-    };
-    return exportsEndpoint.queue.mutate(input);
-  }
+/**
+ * Whether the visitor is currently on a public page, robust to app-startup timing.
+ *
+ * During `provideAppInitializer` the Angular Router has not yet processed the deep link, so
+ * `Router.url` is still '/', even though the browser address bar already holds e.g. '/new-password'.
+ * The startup `currentUser()` probe 401s for a guest at exactly that moment, so a check against
+ * `Router.url` alone would wrongly bounce a guest off a public page. Trust either source.
+ */
+export function isCurrentRoutePublic(routerUrl: string): boolean {
+  if (isPublicRoute(routerUrl)) return true;
+  if (typeof window === 'undefined') return false;
+  return isPublicRoute(window.location.pathname);
 }
 ```
 
@@ -30599,173 +33017,6 @@ export class TokenService {
 const PERSISTENCE_KEY = 'pc-persistence';
 ```
 
-## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
-
-```typescript
-import type { Router } from '@angular/router';
-import type { TRPCLink } from '@trpc/client';
-import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
-import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
-import superjson from 'superjson';
-
-import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-import { environment } from '../../../environments/environment';
-import type { TokenService } from './token-service';
-
-interface JwtPayload {
-  exp?: number;
-
-  [key: string]: unknown;
-}
-
-type NextLink = (op: Operation) => ObservableLike;
-
-/* ------------------------------------------------------------------ */
-/* Local helper types                                                 */
-/* ------------------------------------------------------------------ */
-type ObservableLike<T = unknown, E = unknown> = {
-  subscribe(args: Observer<T, E>): Unsubscribable;
-};
-
-/* ------------------------------------------------------------------ */
-/* Core helpers                                                       */
-/* ------------------------------------------------------------------ */
-
-function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
-  next(op).subscribe({
-    next: (value) => observer.next(value),
-    error: (err) => observer.error(err),
-    complete: () => observer.complete(),
-  });
-}
-
-let activeRefreshPromise: Promise<string> | null = null;
-
-/**
- * Mint a fresh access token from the HttpOnly refresh cookie (SECURITY-REVIEW.md 2.1). No token is
- * read from JS/storage — the browser attaches the cookie because the refresh client sends
- * credentials. Concurrent callers share one in-flight request. Rejects if the cookie is missing or
- * the session is gone.
- */
-function performRefresh(tokenSvc: TokenService): Promise<string> {
-  if (activeRefreshPromise) return activeRefreshPromise;
-
-  activeRefreshPromise = (async () => {
-    try {
-      const payload = await trpcRetryClient.auth.renewAuthToken.mutate();
-      tokenSvc.setAuthToken(payload.auth_token);
-      return payload.auth_token;
-    } finally {
-      activeRefreshPromise = null;
-    }
-  })();
-
-  return activeRefreshPromise;
-}
-
-/**
- * Attempt a silent re-auth on a cold page load: the in-memory access token is gone but the refresh
- * cookie may still be valid. Returns the new token, or null for a genuine guest. Never throws.
- */
-export async function silentRefresh(tokenSvc: TokenService): Promise<string | null> {
-  try {
-    return await performRefresh(tokenSvc);
-  } catch {
-    tokenSvc.clearAll();
-    return null;
-  }
-}
-
-async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
-  const authToken = tokenSvc.getAuthToken();
-  // No in-memory token → treat as guest. Startup already ran silentRefresh, so we don't re-probe the
-  // refresh endpoint on every guest request.
-  if (!authToken) return null;
-
-  // Still valid → use it. Expired → swap it for a fresh one via the refresh cookie.
-  return isTokenExpired(authToken) ? performRefresh(tokenSvc) : authToken;
-}
-
-function handleRefreshFailure(
-  err: unknown,
-  tokenSvc: TokenService,
-  router: Router,
-  observer: Observer<unknown, unknown>,
-): void {
-  tokenSvc.clearAll();
-  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
-  observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
-}
-
-function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
-  if (!token) return true;
-
-  const payload = parseJwt(token);
-  if (!payload?.exp) return true;
-
-  const now = Math.floor(Date.now() / 1000);
-  return payload.exp < now + leewaySeconds;
-}
-
-function parseJwt(token: string): JwtPayload | null {
-  try {
-    const [, payload = ''] = token.split('.');
-    // JWT payloads are base64url-encoded and unpadded; atob only accepts
-    // standard base64, so convert the alphabet and restore padding first.
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-    return JSON.parse(atob(padded)) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Public TRPC link                                                   */
-/* ------------------------------------------------------------------ */
-
-export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
-  return () => {
-    return ({ op, next }: { op: Operation; next: NextLink }) =>
-      observable<unknown, unknown>((observer) => {
-        void (async () => {
-          try {
-            const authToken = await getValidAuthToken(tokenSvc);
-
-            // Guest user — just forward.
-            if (!authToken) {
-              forwardOp(op, next, observer);
-              return;
-            }
-
-            // Authenticated user — forward with (possibly refreshed) token.
-            forwardOp(op, next, observer);
-          } catch (err) {
-            handleRefreshFailure(err, tokenSvc, router, observer);
-          }
-        })();
-
-        // No teardown logic needed.
-        return;
-      });
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* Dedicated client for token refreshes only                          */
-/* ------------------------------------------------------------------ */
-const trpcRetryClient = createTRPCClient<TRPCRouter>({
-  links: [
-    httpLink({
-      url: environment.apiUrl,
-      transformer: superjson,
-      // Send the HttpOnly refresh cookie with the renew call.
-      fetch: (input, init) => globalThis.fetch(input, { ...init, credentials: 'include' }),
-    }),
-  ],
-});
-```
-
 ## File: apps/frontend/src/app/services/api/user-message.ts
 
 ```typescript
@@ -30794,89 +33045,6 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
     return error.message;
   }
   return fallback;
-}
-```
-
-## File: apps/frontend/src/app/services/error.service.ts
-
-```typescript
-import { inject, Service } from '@angular/core';
-import { Router } from '@angular/router';
-import { JSendServerError } from '../../../../../libs/common/src';
-import { TRPCClientError } from '@trpc/client';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ApiError } from './api/api-error';
-import { getUserErrorMessage } from './api/user-message';
-
-import { TokenService } from './api/token-service';
-
-@Service()
-export class ErrorService {
-  private readonly alerts = inject(AlertService);
-  private readonly router = inject(Router);
-  private readonly tokenSvc = inject(TokenService);
-
-  private lastRedirect = 0;
-
-  public handle(error: unknown): void {
-    console.error('ErrorService.handle:', error);
-    // Handle JSend server errors produced by the HTTP interceptor
-    if (error instanceof JSendServerError) {
-      if (!this.redirectFromStatus(error.statusCode)) {
-        this.alerts.showError(error.messageText);
-      }
-      return;
-    }
-
-    if (error instanceof TRPCClientError) {
-      const code = error.data?.code;
-      if (!this.redirectFromCode(code)) {
-        this.alerts.showError(error.message);
-      }
-      return;
-    }
-
-    if (error instanceof ApiError) {
-      const original = error.originalError;
-      if (original instanceof TRPCClientError) {
-        const code = original.data?.code;
-        if (!this.redirectFromCode(code)) {
-          this.alerts.showError(error.message);
-        }
-        return;
-      }
-      this.alerts.showError(error.message);
-      return;
-    }
-
-    // Uncaught exceptions land here via GlobalErrorHandler — never show their
-    // raw message (e.g. a TypeError) to the user; the console has the details.
-    this.alerts.showError(getUserErrorMessage(error, 'Something went wrong, please try again'));
-  }
-
-  private redirect(): boolean {
-    const now = Date.now();
-    if (now - this.lastRedirect < 3000) return false;
-    this.lastRedirect = now;
-
-    this.tokenSvc.clearAll();
-    const returnUrl = this.router.url;
-    void this.router.navigate(['/signin'], { queryParams: { returnUrl } });
-    return true;
-  }
-
-  private redirectFromCode(code?: string): boolean {
-    if (code === 'UNAUTHORIZED' && !this.router.url.startsWith('/signin') && !this.router.url.startsWith('/signup')) {
-      this.redirect();
-      return true;
-    }
-    return false;
-  }
-
-  private redirectFromStatus(status?: number): boolean {
-    if (status === 401) return this.redirect();
-    return false;
-  }
 }
 ```
 
@@ -31502,1744 +33670,98 @@ function joinWithAnd(items: string[]): string {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/editing.controller.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
 
 ```typescript
-import { Injectable, inject } from '@angular/core';
-import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import type { DataGrid } from '../datagrid';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import { GridStoreService } from '../services/grid-store.service';
-import { DataGridUtilsService } from '../services/utils.service';
-import type { GridRow } from '../types';
-import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
-
-@Injectable()
-export class EditingController {
-  private readonly store = inject(GridStoreService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly utilsSvc = inject(DataGridUtilsService);
-  private readonly gridSvc = inject(AbstractAPIService);
-
-  private get grid(): DataGrid<keyof Models, unknown> {
-    return this.store.grid as unknown as DataGrid<keyof Models, unknown>;
-  }
-
-  public coerceEditingValue(col: { cellDataType?: string }, raw: unknown): unknown {
-    const t = String(col?.cellDataType || '').toLowerCase();
-    if (t === 'number' || t === 'numeric') {
-      const n = typeof raw === 'number' ? raw : parseFloat(String(raw ?? '').trim());
-      return isNaN(n) ? null : n;
-    }
-    if (t === 'date' || t === 'datetime' || t === 'dateonly') {
-      const v = String(raw ?? '').trim();
-      return v.length > 10 ? v.slice(0, 10) : v;
-    }
-    if (t === 'color' || t === 'colour') {
-      const v = String(raw ?? '').trim();
-      const pattern = /^#([0-9a-fA-F]{6})$/;
-      return pattern.test(v) ? v.toLowerCase() : null;
-    }
-    return raw;
-  }
-
-  public async commitSingleCell(row: GridRow, col: ColDef, currentValue: unknown): Promise<boolean> {
-    if (!col.field) return false;
-    const id = this.grid.toId(row);
-    if (!id) return false;
-    const key = col.field;
-    const prev = row[key];
-    // If a valueSetter is provided on the col, let it handle assignment/normalization
-    let changed = false;
-    const before: Record<string, unknown> = { ...row };
-    if (typeof col.valueSetter === 'function') {
-      try {
-        const didSet = col.valueSetter({ data: row, newValue: currentValue, value: prev, colDef: col });
-        changed = !!didSet;
-      } catch {
-        changed = false;
-      }
-    } else {
-      const equal = prev === currentValue || (prev == null && (currentValue == null || currentValue === ''));
-      changed = !equal;
-      if (changed) Object.assign(row, { [key]: currentValue });
-    }
-    if (!changed) return true;
-    try {
-      if (this.shouldBlockEdit(row, key)) {
-        void this.grid.undoMgr.undo();
-        this.alertSvc.showError('Editing this field is blocked');
-        Object.assign(row, { [key]: before[key] });
-        return false;
-      }
-      const payload = this.utilsSvc.createPayload(row, key);
-      const edited = await this.gridSvc
-        .update(id, payload)
-        .then(() => true)
-        .catch(() => false);
-      if (!edited) {
-        void this.grid.undoMgr.undo();
-        Object.assign(row, { [key]: before[key] });
-        this.alertSvc.showError('Update failed');
-        return false;
-      }
-      this.grid.updateEditedRowInCaches(id, col.field, currentValue, before[key]);
-      this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-      this.alertSvc.showSuccess('Row updated');
-      return true;
-    } catch {
-      Object.assign(row, { [key]: before[key] });
-      this.alertSvc.showError('Update failed');
-      return false;
-    }
-  }
-
-  public shouldBlockEdit(row: GridRow, key: string): boolean {
-    return !!(row && typeof row === 'object' && 'deletable' in row && row['deletable'] === false && key === 'name');
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/fetch.controller.ts
-
-```typescript
-import { inject, Injectable } from '@angular/core';
-import type { DataGrid } from '../datagrid';
-import { AbstractAPIService } from '@frontend/services/api/abstract-api.service';
-import { DataGridDataService } from '../services/data.service';
-import { GridStoreService } from '../services/grid-store.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
-import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
-
-@Injectable()
-export class FetchController {
-  private readonly gridSvc = inject(AbstractAPIService);
-  private readonly dataSvc = inject(DataGridDataService);
-  private readonly store = inject(GridStoreService);
-  private readonly alertSvc = inject(AlertService);
-
-  private get grid(): DataGrid<keyof Models, unknown> {
-    return this.store.grid as unknown as DataGrid<keyof Models, unknown>;
-  }
-
-  async loadPage(index: number, append?: boolean): Promise<void> {
-    const end = this.grid._loading.begin();
-    try {
-      const pageSize = this.store.pageSize();
-      const startRow = index * pageSize;
-      const endRow = startRow + pageSize;
-      const options = this.dataSvc.buildGetAllOptions({
-        searchStr: this.grid.searchTerm(),
-        startRow,
-        endRow,
-        tags: this.grid.selectedTags(),
-        issues: this.grid.selectedIssues(),
-        filterModel: this.grid.buildFilterModel(),
-        sortState: this.store.sorting() as unknown as Array<{ id: string; desc?: boolean }>,
-        sortCol: this.grid.sortCol(),
-        sortDir: this.grid.sortDir(),
-        includeArchived: this.grid.archiveMode(),
-        advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
-        listId: this.grid.activeListId(),
-      });
-      const data = this.grid.archiveMode()
-        ? await this.gridSvc.getAllArchived(options)
-        : await this.gridSvc.getAll(options);
-      const incoming = data.rows ?? [];
-      if (append && this.store.rows().length > 0) {
-        const next = [...this.store.rows(), ...incoming];
-        this.store.rows.set(next);
-        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-      } else {
-        this.store.rows.set(incoming);
-        this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-      }
-      this.grid.totalCountAll.set(data.count ?? this.store.rows().length);
-      this.store.pageIndex.set(index);
-    } catch {
-      this.alertSvc.showError(this.grid.config.messages.loadFailed);
-    } finally {
-      end();
-    }
-  }
-
-  async selectAllMatching(): Promise<{ ids: string[]; count: number }> {
-    const options: getAllOptionsType = {
-      searchStr: this.grid.searchTerm(),
-      tags: this.grid.selectedTags(),
-      issues: this.grid.selectedIssues(),
-      advancedFilterModel: this.grid.externalAdvancedFilterModel() || this.grid.advFilter.buildModel(),
-      listId: this.grid.activeListId() ?? undefined,
-    };
-    const { rows } = this.grid.archiveMode()
-      ? await this.gridSvc.getAllArchived(options)
-      : await this.gridSvc.getAll(options);
-    const rowCanSelect = this.grid.rowCanSelect();
-    const filteredRows = rowCanSelect ? (rows ?? []).filter(rowCanSelect) : (rows ?? []);
-    const ids = filteredRows.map((r) => this.grid.toId(r)).filter(Boolean);
-    return { ids, count: filteredRows.length };
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/keyboard.controller.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { GridRow } from '../types';
-
-@Injectable()
-export class KeyboardController {
-  handleCellKeydown(
-    ev: KeyboardEvent,
-    helpers: {
-      getColDefById: (id: string) => ColDef | undefined;
-      isEditable: (col: ColDef) => boolean;
-      startEdit: (row: GridRow, col: ColDef) => void;
-      rows: () => GridRow[];
-    },
-  ) {
-    const td = (ev.target as HTMLElement).closest('td') as HTMLElement | null;
-    if (!td) return;
-    const tr = td.parentElement as HTMLElement | null;
-    if (!tr) return;
-    const colId = td.getAttribute('data-col-id') || '';
-    if (!colId) return;
-    const key = ev.key;
-    if (key === 'Enter') {
-      ev.preventDefault();
-      const rowId = tr.getAttribute('data-row-id') || '';
-      if (!rowId) return;
-      const col = helpers.getColDefById(colId);
-      if (!col) return;
-      const row = helpers.rows().find((r) => String(r?.['id']) === rowId);
-      if (!row) return;
-      if (helpers.isEditable(col)) helpers.startEdit(row, col);
-      return;
-    }
-    if (key !== 'ArrowDown' && key !== 'ArrowUp' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
-    ev.preventDefault();
-    if (key === 'ArrowDown' || key === 'ArrowUp') {
-      const dir = key === 'ArrowDown' ? 1 : -1;
-      let rowEl: HTMLElement | null = tr;
-      while (rowEl) {
-        rowEl =
-          dir > 0
-            ? (rowEl.nextElementSibling as HTMLElement | null)
-            : (rowEl.previousElementSibling as HTMLElement | null);
-        if (!rowEl) break;
-        const nextTd = rowEl.querySelector(`td[data-col-id="${colId}"]`) as HTMLElement | null;
-        if (nextTd) {
-          nextTd.focus({ preventScroll: false });
-          break;
-        }
-      }
-    } else {
-      const cells = Array.from(tr.querySelectorAll('td')) as HTMLElement[];
-      const idx = cells.findIndex((c) => c === td);
-      const nextIdx = key === 'ArrowRight' ? idx + 1 : idx - 1;
-      const nextTd = cells[nextIdx];
-      if (nextTd) nextTd.focus({ preventScroll: false });
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/pinning.controller.ts
-
-```typescript
-import { Injectable, inject, signal, effect } from '@angular/core';
-import type { Table } from '@tanstack/table-core';
-import { DataGridColumnsService } from '../services/columns.service';
-import type { GridRow } from '../types';
-
-@Injectable()
-export class PinningController {
-  private readonly columnsSvc = inject(DataGridColumnsService);
-
-  private headerWidthMap = new Map<string, number>();
-  readonly pinnedLeftOffsets = signal<Record<string, number>>({});
-  readonly pinnedRightOffsets = signal<Record<string, number>>({});
-  private tsTable: Table<GridRow> | null = null;
-  private headerWidthVer = signal(0);
-  private pinStateVer = signal(0);
-  private initialized = false;
-  private getColWidth: ((id: string) => number | null) | null = null;
-  private getSelectionWidth: (() => number) | null = null;
-  private getPinState: (() => { left: string[]; right: string[] }) | null = null;
-
-  constructor() {
-    // Create effect within injection context
-    effect(() => {
-      // Touch versions/signals to create dependencies
-      void this.headerWidthVer();
-      void this.pinStateVer();
-      if (!this.initialized || !this.getSelectionWidth || !this.getColWidth || !this.getPinState) return;
-      const sel = this.getSelectionWidth();
-      const pin = this.getPinState();
-      const { left, right } = this.columnsSvc.computePinOffsets({
-        pinned: { left: pin.left || [], right: pin.right || [] },
-        getColWidth: (id) => (this.getColWidth ? this.getColWidth(id) : null),
-        headerWidthMap: this.headerWidthMap,
-        selectionStickyWidth: sel,
-      });
-      this.pinnedLeftOffsets.set(left);
-      this.pinnedRightOffsets.set(right);
-    });
-  }
-
-  attachTable(tsTable: Table<GridRow> | undefined) {
-    this.tsTable = tsTable ?? null;
-  }
-
-  init(opts: {
-    getColWidth: (id: string) => number | null;
-    getSelectionWidth: () => number;
-    getPinState: () => { left: string[]; right: string[] };
-  }) {
-    if (this.initialized) return;
-    this.initialized = true;
-    this.getColWidth = opts.getColWidth;
-    this.getSelectionWidth = opts.getSelectionWidth;
-    this.getPinState = opts.getPinState;
-    // Kick the effect now that getters are set
-    this.notifyPinStateChanged();
-  }
-
-  notifyPinStateChanged() {
-    this.pinStateVer.update((x) => x + 1);
-  }
-
-  measureHeaderWidths(table: HTMLTableElement): { selectionWidth: number | null; headerMap: Map<string, number> } {
-    const measured = this.columnsSvc.measureHeaderWidths(table);
-    this.headerWidthMap = measured.headerMap;
-    this.headerWidthVer.update((x) => x + 1);
-    return { selectionWidth: measured.selectionWidth, headerMap: measured.headerMap };
-  }
-
-  updatePinOffsets(
-    tsTable: Table<GridRow> | undefined,
-    getColWidth: (id: string) => number | null,
-    selectionStickyWidth: number,
-  ) {
-    const table = tsTable ?? this.tsTable;
-    const pin = table?.getState().columnPinning || { left: [], right: [] };
-    const { left, right } = this.columnsSvc.computePinOffsets({
-      pinned: { left: Array.isArray(pin.left) ? pin.left : [], right: Array.isArray(pin.right) ? pin.right : [] },
-      getColWidth,
-      headerWidthMap: this.headerWidthMap,
-      selectionStickyWidth,
-    });
-    this.pinnedLeftOffsets.set(left);
-    this.pinnedRightOffsets.set(right);
-  }
-
-  leftOffsetPx(id: string): number {
-    return this.pinnedLeftOffsets()[id] || 0;
-  }
-  rightOffsetPx(id: string): number {
-    return this.pinnedRightOffsets()[id] || 0;
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/reorder.controller.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import type { Header, Table } from '@tanstack/table-core';
-import type { GridRow } from '../types';
-
-@Injectable()
-export class ReorderController {
-  private dragColId: string | null = null;
-  private suppressHeaderDrag: () => boolean = () => false;
-  private requestPersist: () => void = () => undefined;
-
-  configure(opts: { suppressHeaderDrag: () => boolean; requestPersist: () => void }) {
-    this.suppressHeaderDrag = opts.suppressHeaderDrag;
-    this.requestPersist = opts.requestPersist;
-  }
-
-  onDragOver(ev: DragEvent) {
-    ev.preventDefault();
-    try {
-      ev.dataTransfer!.dropEffect = 'move';
-    } catch {}
-  }
-
-  onDragStart(h: Header<GridRow, unknown>, ev: DragEvent) {
-    if (this.suppressHeaderDrag()) {
-      try {
-        ev.preventDefault();
-      } catch {}
-      ev.stopPropagation();
-      return;
-    }
-    const id = String(h?.column?.id || '');
-    this.dragColId = id;
-    try {
-      ev.dataTransfer?.setData('text/plain', id);
-      ev.dataTransfer!.effectAllowed = 'move';
-    } catch {}
-  }
-
-  onDrop(h: Header<GridRow, unknown>, ev: DragEvent, tsTable: Table<GridRow> | undefined) {
-    ev.preventDefault();
-    const src = ev.dataTransfer?.getData('text/plain') || this.dragColId;
-    const tgt = String(h?.column?.id || '');
-    if (!src || !tgt || src === tgt) return;
-    const leaves = tsTable?.getAllLeafColumns?.() || [];
-    const order: string[] = leaves.map((c) => String(c.id));
-    const from = order.indexOf(String(src));
-    const to = order.indexOf(String(tgt));
-    if (from < 0 || to < 0) return;
-    order.splice(to, 0, ...order.splice(from, 1));
-    tsTable?.setOptions?.((prev) => ({ ...prev, state: { ...prev.state, columnOrder: order } }));
-    this.requestPersist();
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/resizing.controller.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import type { HeaderRef } from '../types';
-
-@Injectable()
-export class ResizingController {
-  private _colStartX = 0;
-  private _colStartW = 0;
-  private _selStartX = 0;
-  private _selStartW = 48;
-
-  beginHeaderResize(
-    h: HeaderRef,
-    clientX: number,
-    getColWidth: (id: string) => number | null,
-    applySize: (col: HeaderRef['column'], id: string, w: number) => void,
-    onDone: () => void,
-  ) {
-    const col = h?.column;
-    if (!col) return;
-    const id = String(col.id || '');
-    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || getColWidth(id) || 100);
-    this._colStartX = clientX;
-    this._colStartW = startW;
-    const move = (e: MouseEvent) => {
-      const dx = e.clientX - this._colStartX;
-      const w = Math.max(40, Math.floor(this._colStartW + dx));
-      applySize(col, id, w);
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      onDone();
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  }
-
-  beginHeaderResizeTouch(
-    h: HeaderRef,
-    clientX: number,
-    getColWidth: (id: string) => number | null,
-    applySize: (col: HeaderRef['column'], id: string, w: number) => void,
-    onDone: () => void,
-  ) {
-    const col = h?.column;
-    if (!col) return;
-    const id = String(col.id || '');
-    const startW = Number((typeof col.getSize === 'function' ? col.getSize() : undefined) || getColWidth(id) || 100);
-    this._colStartX = clientX;
-    this._colStartW = startW;
-    const move = (e: TouchEvent) => {
-      const dx = (e.touches?.[0]?.clientX ?? 0) - this._colStartX;
-      const w = Math.max(40, Math.floor(this._colStartW + dx));
-      applySize(col, id, w);
-    };
-    const up = () => {
-      window.removeEventListener('touchmove', move);
-      window.removeEventListener('touchend', up);
-      onDone();
-    };
-    window.addEventListener('touchmove', move);
-    window.addEventListener('touchend', up);
-  }
-
-  beginSelectionResize(clientX: number, startWidth: number, setWidth: (w: number) => void, onDone: () => void) {
-    this._selStartX = clientX;
-    this._selStartW = startWidth;
-    const move = (e: MouseEvent) => {
-      const dx = e.clientX - this._selStartX;
-      const w = Math.max(32, this._selStartW + dx);
-      setWidth(Math.round(w));
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      onDone();
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  }
-
-  beginSelectionResizeTouch(clientX: number, startWidth: number, setWidth: (w: number) => void, onDone: () => void) {
-    this._selStartX = clientX;
-    this._selStartW = startWidth;
-    const move = (e: TouchEvent) => {
-      const dx = (e.touches?.[0]?.clientX ?? 0) - this._selStartX;
-      const w = Math.max(32, this._selStartW + dx);
-      setWidth(Math.round(w));
-    };
-    const up = () => {
-      window.removeEventListener('touchmove', move);
-      window.removeEventListener('touchend', up);
-      onDone();
-    };
-    window.addEventListener('touchmove', move);
-    window.addEventListener('touchend', up);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/controllers/virtualizer.controller.ts
-
-```typescript
-import { Injectable, inject, effect, signal } from '@angular/core';
-import { Virtualizer, elementScroll, observeElementOffset, observeElementRect } from '@tanstack/virtual-core';
-import type { Row, Table } from '@tanstack/table-core';
-import { GridStoreService } from '../services/grid-store.service';
-import type { GridRow } from '../types';
-
-@Injectable()
-export class VirtualizerController {
-  private readonly store = inject(GridStoreService);
-
-  private virtualizer: Virtualizer<HTMLDivElement, Element> | undefined;
-  private scrollerEl: HTMLDivElement | null = null;
-  private rowHeight = 36;
-  private fetchingNext = false;
-  private canNextFn: (() => boolean) | null = null;
-  private isLoadingFn: (() => boolean) | null = null;
-  private nextPageFn: (() => Promise<void>) | null = null;
-  private tsTable: Table<GridRow> | null = null;
-
-  // Local viewport tracking used for fallback calculations
-  readonly viewportH = signal(0);
-
-  constructor() {
-    // Keep virtualizer count in sync with rows length
-    effect(() => {
-      const count = this.store.rows().length;
-      if (this.virtualizer) this.virtualizer.setOptions({ ...this.virtualizer.options, count });
-    });
-  }
-
-  attach(scroller: HTMLDivElement, rowHeight: number) {
-    this.scrollerEl = scroller;
-    this.rowHeight = rowHeight;
-    this.viewportH.set(scroller.clientHeight || 0);
-    this.virtualizer = new Virtualizer<HTMLDivElement, Element>({
-      count: this.store.rows().length,
-      getScrollElement: () => scroller,
-      estimateSize: () => this.rowHeight,
-      overscan: 6,
-      scrollToFn: elementScroll,
-      observeElementRect,
-      observeElementOffset,
-    });
-  }
-
-  attachTable(tsTable: Table<GridRow> | undefined) {
-    this.tsTable = tsTable ?? null;
-  }
-
-  configurePaging(opts: { canNext: () => boolean; isLoading: () => boolean; nextPage: () => Promise<void> }) {
-    this.canNextFn = opts.canNext;
-    this.isLoadingFn = opts.isLoading;
-    this.nextPageFn = opts.nextPage;
-  }
-
-  detach() {
-    this.virtualizer = undefined;
-    this.scrollerEl = null;
-    this.tsTable = null;
-  }
-
-  setCount(n: number) {
-    if (this.virtualizer) {
-      this.virtualizer.setOptions({ ...this.virtualizer.options, count: n });
-    }
-  }
-
-  onScroll(event: Event) {
-    const el = event.target as HTMLElement;
-    this.viewportH.set(el.clientHeight || this.viewportH());
-    this.virtualizer?.scrollToOffset?.(el.scrollTop || 0);
-    // Infinite append: when near bottom, fetch next page if available
-    try {
-      if (this.canNextFn && this.isLoadingFn && this.nextPageFn) {
-        if (this.canNextFn() && !this.isLoadingFn() && !this.fetchingNext) {
-          const nearBottom = this.endIndex() > this.store.rows().length - 10;
-          if (nearBottom) {
-            this.fetchingNext = true;
-            void this.nextPageFn().finally(() => (this.fetchingNext = false));
-          }
-        }
-      }
-    } catch {}
-  }
-
-  startIndex(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length && items[0]) return items[0].index;
-    // Fallback before virtualizer initializes
-    const sc = this.scrollerEl;
-    const top = sc?.scrollTop || 0;
-    return Math.max(0, Math.floor(top / this.rowHeight));
-  }
-
-  endIndex(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length && items[items.length - 1]) return items[items.length - 1]!.index + 1;
-    return Math.min(this.store.rows().length, this.startIndex() + this.visibleCount());
-  }
-
-  topPadHeight(): number {
-    const v = this.virtualizer;
-    if (v) {
-      const items = v.getVirtualItems();
-      if (items.length && items[0]) return items[0].start;
-    }
-    return this.startIndex() * this.rowHeight;
-  }
-
-  bottomPadHeight(): number {
-    const v = this.virtualizer;
-    if (v) {
-      const items = v.getVirtualItems();
-      const total = v.getTotalSize();
-      const renderedEnd = items.length ? items[items.length - 1].end : 0;
-      return Math.max(0, total - renderedEnd);
-    }
-    const total = this.store.rows().length * this.rowHeight;
-    const rendered = this.topPadHeight() + (this.endIndex() - this.startIndex()) * this.rowHeight;
-    return Math.max(0, total - rendered);
-  }
-
-  visibleTableRows(): Row<GridRow>[] {
-    const all = this.tsTable?.getRowModel().rows || [];
-    const start = this.startIndex();
-    const end = this.endIndex();
-    return all.slice(start, end);
-  }
-
-  visibleCount(): number {
-    const items = this.virtualizer?.getVirtualItems() ?? [];
-    if (items.length) return items.length;
-    const vp = this.viewportH() || 0;
-    return Math.max(1, Math.ceil(vp / this.rowHeight) + 6);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/directives/editable-cell.directive.ts
-
-```typescript
-import { Directive, ElementRef, inject, input } from '@angular/core';
-import { EditingController } from '../controllers/editing.controller';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { GridRow } from '../types';
-
-@Directive({
-  selector: '[pcEditable]',
-  host: {
-    '(click)': 'onClick()',
-    '(keydown.enter)': 'onEnter()',
-    '(keydown.esc)': 'onEsc()',
-    '(focusout)': 'onFocusOut($event)',
-    '(mousedown)': 'onMouseDown()',
-    '(document:mouseup)': 'onMouseUp()',
-  },
-})
-export class EditableCellDirective {
-  private readonly editing = inject(EditingController);
-  private readonly host = inject(ElementRef<HTMLElement>);
-  private _isEditing = false;
-  private isMouseDownInside = false;
-
-  private get isEditing(): boolean {
-    const p = this.pcEditable();
-    if (p && typeof p.isEditingCell === 'function') {
-      return p.isEditingCell();
-    }
-    return this._isEditing;
-  }
-
-  private set isEditing(val: boolean) {
-    this._isEditing = val;
-  }
-
-  public readonly pcEditable = input.required<{
-    row: GridRow;
-    col: ColDef;
-    toId(r: unknown): string;
-    coerce(col: ColDef, raw: unknown): unknown;
-    value(): unknown; // current editingValue()
-    setEditingCell: (v: { id: string; field: string } | null) => void;
-    setEditingValue: (v: unknown) => void;
-    getCellValue(row: GridRow, col: ColDef): unknown;
-    getEditingDisplayValue(row: GridRow, col: ColDef): unknown;
-    createPayload(row: GridRow, key: string): Partial<GridRow>;
-    applyEdit(id: string, data: Partial<GridRow>): Promise<boolean>;
-    updateEditedRow(id: string, field: string | undefined, v: unknown): void;
-    updateWindow: (s: number, e: number) => void;
-    startIndex: () => number;
-    endIndex: () => number;
-    showSuccess: (m: string) => void;
-    showError: (m: string) => void;
-    undo: () => void;
-    customCommit?(currentValue: unknown): Promise<unknown>;
-    isEditable?: () => boolean;
-    isEditingCell?: () => boolean;
-  }>();
-
-  protected onMouseDown() {
-    this.isMouseDownInside = true;
-  }
-
-  protected onMouseUp() {
-    this.isMouseDownInside = false;
-  }
-
-  protected onClick() {
-    const p = this.pcEditable();
-    if (typeof p.isEditable === 'function' && !p.isEditable()) return;
-    const { row, col, toId, setEditingCell, setEditingValue, getCellValue, getEditingDisplayValue } = p;
-    if (!col?.field) return;
-    // Respect col.editable for parity with grid logic
-    if (!col?.editable) return;
-    const id = toId(row);
-    if (!id) return;
-    try {
-      const cur = getEditingDisplayValue ? getEditingDisplayValue(row, col) : getCellValue(row, col);
-      const cloned = Array.isArray(cur) ? [...cur] : cur;
-      setEditingValue(cloned);
-    } catch {}
-    setEditingCell({ id, field: col.field });
-    this.isEditing = true;
-  }
-
-  protected async onEnter() {
-    if (!this.isEditing) return;
-    await this.commit();
-  }
-
-  protected onEsc() {
-    if (!this.isEditing) return;
-    this.isEditing = false;
-    this.pcEditable().setEditingCell(null);
-  }
-
-  // Commit only when focus leaves the cell subtree
-  protected async onFocusOut(ev: FocusEvent) {
-    if (!this.isEditing) return;
-    if (this.isMouseDownInside) return;
-    const container = this.host.nativeElement;
-    const next = ev.relatedTarget as Node | null;
-    if (next && container.contains(next)) return;
-    await this.commit();
-  }
-
-  private async commit() {
-    const p = this.pcEditable();
-    if (!p?.col?.field) return;
-    const currentValue = p.coerce(p.col, p.value());
-    if (typeof p.customCommit === 'function') {
-      await p.customCommit(currentValue);
-    } else {
-      await this.editing.commitSingleCell(p.row, p.col, currentValue);
-    }
-    p.setEditingCell(null);
-    this.isEditing = false;
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/directives/header-reorder.directive.ts
-
-```typescript
-import { Directive, inject, input } from '@angular/core';
-import type { Header } from '@tanstack/table-core';
+import { Component, computed, inject } from '@angular/core';
 import { DataGrid } from '../datagrid';
-import type { GridRow } from '../types';
-
-@Directive({
-  selector: '[pcHeaderReorder]',
-  host: {
-    '(dragstart)': 'onDragStart($event)',
-    '(dragover)': 'onDragOver($event)',
-    '(drop)': 'onDrop($event)',
-  },
-})
-export class HeaderReorderDirective {
-  public readonly header = input<Header<GridRow, unknown> | undefined>(undefined, { alias: 'pcHeaderReorder' });
-
-  private readonly grid = inject(DataGrid);
-
-  protected onDragStart(ev: DragEvent) {
-    try {
-      this.grid.onHeaderDragStart(this.header(), ev);
-    } catch {}
-  }
-
-  protected onDragOver(ev: DragEvent) {
-    try {
-      this.grid.onHeaderDragOver(this.header(), ev);
-    } catch {}
-  }
-
-  protected onDrop(ev: DragEvent) {
-    try {
-      this.grid.onHeaderDrop(this.header(), ev);
-    } catch {}
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/directives/header-resize.directive.ts
-
-```typescript
-import { Directive, ElementRef, inject, input } from '@angular/core';
-import type { Table } from '@tanstack/table-core';
-import { ResizingController } from '../controllers/resizing.controller';
-import { PinningController } from '../controllers/pinning.controller';
-import type { GridRow, HeaderRef } from '../types';
-
-@Directive({
-  selector: '[pcHeaderResize]',
-  host: {
-    '(mousedown)': 'onMouseDown($event)',
-    '(touchstart)': 'onTouchStart($event)',
-    '(dragstart)': 'onDragStart($event)',
-    '(dblclick)': 'onDoubleClick($event)',
-  },
-})
-export class HeaderResizeDirective {
-  private readonly resizing = inject(ResizingController);
-  private readonly pinning = inject(PinningController);
-  private readonly hostEl = inject(ElementRef) as ElementRef<HTMLElement>;
-
-  public readonly pcHeaderResize = input.required<{
-    header: HeaderRef; // TanStack header ref
-    getColWidth: (id: string) => number | null;
-    setWidth: (col: HeaderRef['column'], id: string, px: number) => void;
-    requestPersist: () => void;
-    selectionWidth: () => number;
-    setSuppressHeaderDrag: (v: boolean) => void;
-  }>();
-
-  protected onMouseDown(ev: MouseEvent) {
-    ev.stopPropagation();
-    if (ev.detail > 1) return; // let double-click handler manage autosize
-    const cfg = this.pcHeaderResize();
-    const h = cfg.header;
-    // prevent column drag while resizing
-    try {
-      cfg.setSuppressHeaderDrag(true);
-    } catch {}
-    this.resizing.beginHeaderResize(
-      h,
-      ev.clientX,
-      cfg.getColWidth,
-      (col, id, w) => {
-        cfg.setWidth(col, id, w);
-        this.pinning.updatePinOffsets(
-          h?.table as Table<GridRow> | undefined,
-          (cid) => cfg.getColWidth(cid) ?? 0,
-          cfg.selectionWidth(),
-        );
-      },
-      () => {
-        try {
-          cfg.requestPersist();
-        } catch {}
-        try {
-          cfg.setSuppressHeaderDrag(false);
-        } catch {}
-      },
-    );
-  }
-
-  protected onTouchStart(ev: TouchEvent) {
-    ev.stopPropagation();
-    const x = ev.touches?.[0]?.clientX ?? 0;
-    const cfg = this.pcHeaderResize();
-    const h = cfg.header;
-    try {
-      cfg.setSuppressHeaderDrag(true);
-    } catch {}
-    this.resizing.beginHeaderResizeTouch(
-      h,
-      x,
-      cfg.getColWidth,
-      (col, id, w) => {
-        cfg.setWidth(col, id, w);
-        this.pinning.updatePinOffsets(
-          h?.table as Table<GridRow> | undefined,
-          (cid) => cfg.getColWidth(cid) ?? 0,
-          cfg.selectionWidth(),
-        );
-      },
-      () => {
-        try {
-          cfg.requestPersist();
-        } catch {}
-        try {
-          cfg.setSuppressHeaderDrag(false);
-        } catch {}
-      },
-    );
-  }
-
-  protected onDragStart(ev: DragEvent) {
-    ev.preventDefault();
-    ev.stopPropagation();
-  }
-
-  protected onDoubleClick(ev: MouseEvent) {
-    ev.preventDefault();
-    ev.stopPropagation();
-    const width = this.measureHeaderAutoWidth();
-    if (width == null) return;
-    this.applyWidth(Math.max(40, Math.round(width)));
-  }
-
-  private applyWidth(nextWidth: number) {
-    const cfg = this.pcHeaderResize();
-    const header = cfg.header;
-    const col = header?.column;
-    const id = col?.id == null ? '' : String(col.id);
-    if (!id || !col) return;
-
-    cfg.setWidth(col, id, nextWidth);
-    this.pinning.updatePinOffsets(
-      header?.table as Table<GridRow> | undefined,
-      (cid) => cfg.getColWidth(cid) ?? 0,
-      cfg.selectionWidth(),
-    );
-    try {
-      cfg.requestPersist();
-    } catch {}
-  }
-
-  private measureHeaderAutoWidth(): number | null {
-    const headerEl = this.hostEl.nativeElement.closest('th');
-    if (!headerEl) return null;
-
-    const doc = headerEl.ownerDocument;
-    const content = headerEl.querySelector<HTMLElement>('[data-header-content]');
-    if (!content) return null;
-
-    const clone = content.cloneNode(true) as HTMLElement;
-    clone.style.position = 'absolute';
-    clone.style.visibility = 'hidden';
-    clone.style.pointerEvents = 'none';
-    clone.style.flex = '0 0 auto';
-    clone.style.width = 'auto';
-    clone.style.height = 'auto';
-    clone.style.maxWidth = 'unset';
-    clone.style.whiteSpace = 'nowrap';
-    clone.style.left = '-9999px';
-    clone.style.top = '0';
-
-    const labelClone = clone.querySelector<HTMLElement>('[data-header-label]');
-    if (labelClone) {
-      labelClone.style.flex = '0 0 auto';
-      labelClone.style.whiteSpace = 'nowrap';
-    }
-
-    doc.body.appendChild(clone);
-    const contentWidth = clone.getBoundingClientRect().width;
-    clone.remove();
-    if (contentWidth <= 0) return null;
-
-    const view = doc.defaultView;
-    const style = view ? view.getComputedStyle(headerEl) : null;
-    const paddingLeft = style ? parseFloat(style.paddingLeft || '0') : 0;
-    const paddingRight = style ? parseFloat(style.paddingRight || '0') : 0;
-    const borderLeft = style ? parseFloat(style.borderLeftWidth || '0') : 0;
-    const borderRight = style ? parseFloat(style.borderRightWidth || '0') : 0;
-
-    // add a small buffer so content does not feel cramped next to the resizer
-    const buffer = 8;
-
-    return contentWidth + paddingLeft + paddingRight + borderLeft + borderRight + buffer;
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/actions.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import type { ConfirmDialogService } from '@frontend/services/shared-dialog.service';
-import type { AlertService } from '@uxcommon/components/alerts/alert-service';
-import type { loadingGate } from '@uxcommon/loading-gate';
-
-import { DataGridConfig } from '../datagrid.tokens';
-import type { GridRow } from '../types';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridActionsService {
-  public async confirmDeleteAndRun(ctx: DeleteCtx): Promise<void> {
-    const { messages } = ctx.config;
-
-    const selectedCount = ctx.getSelectedRows()?.length ?? 0;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : ctx.config.messages.deleteConfirmMessage;
-
-    const ok = await ctx.dialogs.confirm({
-      title: messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: messages.deleteConfirmVariant,
-      icon: messages.deleteConfirmIcon,
-      confirmText: messages.deleteConfirmText,
-      cancelText: messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return;
-
-    const rows = ctx.getSelectedRows();
-    if (!rows.length) {
-      ctx.alertSvc.showError(messages.deleteNoneSelected);
-      return;
-    }
-
-    const isNonDeletable = (row: Record<string, unknown>) => {
-      if (!('deletable' in row)) return false;
-      const value = (row as { deletable?: unknown }).deletable;
-      if (typeof value === 'boolean') return value === false;
-      if (typeof value === 'string') {
-        const normalized = value.trim().toLowerCase();
-        return normalized === 'false' || normalized === '0';
-      }
-      if (typeof value === 'number') return value === 0;
-      return false;
-    };
-
-    const deletableRows = rows.filter((row) => !isNonDeletable(row as Record<string, unknown>));
-    const containsNonDeletable = deletableRows.length !== rows.length;
-    if (containsNonDeletable) {
-      ctx.alertSvc.showError(messages.deleteSystemValues);
-      return;
-    }
-    if (!deletableRows.length) {
-      return;
-    }
-
-    const end = ctx._loading.begin();
-    try {
-      const ids = deletableRows.map((r) => r.id);
-      const ok2 = await ctx.gridSvc.deleteMany(ids);
-      if (!ok2) {
-        ctx.alertSvc.showError(messages.deleteFailed);
-        return;
-      }
-      ctx.alertSvc.showSuccess(messages.deleteSuccess);
-    } finally {
-      end();
-    }
-  }
-
-  public async doExportCsv(deps: {
-    dialogs: ConfirmDialogService;
-    alertSvc: AlertService;
-    config: DataGridConfig;
-    getRowsForExport?: () => GridRow[];
-    requestFullExport?: () => Promise<{ csv: string; fileName?: string; rowCount?: number }>;
-    queueFullExport?: () => Promise<void>;
-    displayedCount?: number;
-    totalCount?: number;
-  }) {
-    const { messages } = deps.config;
-
-    const displayedCount = deps.displayedCount ?? 0;
-    const totalCount = deps.totalCount ?? displayedCount;
-    const hasAllRowsVisible = totalCount <= displayedCount;
-
-    let exportAllData = false;
-    if (!hasAllRowsVisible) {
-      const parts: string[] = [];
-      if (totalCount > 0 && displayedCount > 0) {
-        parts.push(`Only ${displayedCount} of ${totalCount} rows are currently displayed.`);
-      }
-      parts.push(messages.exportMessage);
-      parts.push(messages.exportNavigateWarning);
-      const wantsAll = await deps.dialogs.confirm({
-        title: messages.exportTitle,
-        message: parts.filter(Boolean).join('\n\n'),
-        variant: 'info',
-        icon: messages.exportIcon,
-        confirmText: messages.exportConfirmText,
-        cancelText: messages.exportCancelText,
-        allowBackdropClose: false,
-      });
-      exportAllData = wantsAll === true;
-    }
-
-    // --- "All rows" path: queue background job, return immediately ---
-    if (exportAllData) {
-      if (deps.queueFullExport) {
-        try {
-          await deps.queueFullExport();
-          deps.alertSvc.showSuccess('Export queued! Visit the Exports page to download when ready.');
-        } catch {
-          deps.alertSvc.showError(messages.exportFailed);
-        }
-        return;
-      }
-      // fallback: no queue callback, fall through to synchronous path
-    }
-
-    // --- "Displayed rows" path: synchronous, in-memory, direct download ---
-    if (!deps.getRowsForExport) return;
-
-    try {
-      const rows = deps.getRowsForExport();
-      if (!rows.length) {
-        deps.alertSvc.showInfo('No rows to export.');
-        return;
-      }
-      const rowCount = rows.length;
-      const headers = Object.keys(rows[0]!);
-      const escape = (v: unknown) => {
-        const s = v == null ? '' : String(v);
-        return s.includes(',') || s.includes('"') || s.includes('\n') ? '"' + s.replace(/"/g, '""') + '"' : s;
-      };
-      const csv = [headers.join(',')].concat(rows.map((r) => headers.map((h) => escape(r[h])).join(','))).join('\n');
-
-      const fileName = messages.exportFileName || 'export.csv';
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      deps.alertSvc.showSuccess(`${messages.exportReady} (${rowCount} rows)`);
-    } catch {
-      deps.alertSvc.showError(messages.exportFailed);
-    }
-  }
-}
-
-type DeleteCtx = {
-  _loading: loadingGate;
-  alertSvc: AlertService;
-  config: DataGridConfig;
-  dialogs: ConfirmDialogService;
-  gridSvc: { deleteMany: (ids: string[]) => Promise<boolean> };
-
-  getSelectedRows: () => (Partial<GridRow> & { id: string })[];
-};
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/data.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import type { getAllOptionsType } from '../../../../../../../../libs/common/src';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridDataService {
-  computeTotalPages(totalCountAll: number, pageSize: number): number {
-    const size = pageSize || 1;
-    return Math.max(1, Math.ceil((totalCountAll || 0) / size));
-  }
-
-  buildGetAllOptions(args: {
-    searchStr: string;
-    startRow: number;
-    endRow: number;
-    tags: string[];
-    issues?: string[];
-    filterModel: Record<string, unknown>;
-    sortState: Array<{ id: string; desc?: boolean }>;
-    sortCol: string | null;
-    sortDir: 'asc' | 'desc' | null;
-    includeArchived?: boolean;
-    advancedFilterModel?: NonNullable<getAllOptionsType>['advancedFilterModel'];
-    listId?: string | null;
-  }): Partial<getAllOptionsType> {
-    const {
-      searchStr,
-      startRow,
-      endRow,
-      tags,
-      issues,
-      filterModel,
-      sortState,
-      sortCol,
-      sortDir,
-      includeArchived,
-      advancedFilterModel,
-      listId,
-    } = args;
-    return {
-      searchStr,
-      startRow,
-      endRow,
-      tags,
-      issues,
-      filterModel,
-      includeArchived,
-      advancedFilterModel,
-      listId: listId ?? undefined,
-      sortModel:
-        sortState && sortState.length
-          ? sortState.map((s) => ({ colId: s.id, sort: s.desc ? 'desc' : 'asc' }))
-          : sortCol && sortDir
-            ? [{ colId: sortCol, sort: sortDir }]
-            : [],
-    } satisfies Partial<getAllOptionsType>;
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/filters.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-
-export type Op =
-  | 'contains'
-  | 'equals'
-  | 'in'
-  | 'isEmpty'
-  | 'isNotEmpty'
-  | 'notContains'
-  | 'notEquals'
-  | 'startsWith'
-  | 'endsWith';
-
-export interface SelectOption {
-  value: string;
-  label: string;
-}
-
-export interface SelectEditorOptions {
-  choices: SelectOption[];
-  multiple: boolean;
-  size?: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-@Injectable({ providedIn: 'root' })
-export class DataGridFiltersService {
-  buildFilterModel(raw: Record<string, unknown>): Record<string, unknown> {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(raw)) {
-      if (v === undefined || v === null) continue;
-      if (isRecord(v) && 'value' in v) {
-        const op = v['op'] ?? 'contains';
-        const sv = String(v['value'] ?? '').trim();
-        if (op === 'isEmpty' || op === 'isNotEmpty') {
-          out[k] = { type: 'text', op, value: '' };
-        } else {
-          if (!sv) continue;
-          out[k] = { type: 'text', op, value: sv };
-        }
-      } else {
-        const sv = String(v).trim();
-        if (!sv) continue;
-        out[k] = { type: 'text', op: 'contains', value: sv };
-      }
-    }
-    return out;
-  }
-
-  getSelectEditorOptions(col: ColDef): SelectEditorOptions | null {
-    const cfg = this.resolveEditorConfig(col);
-    if (!cfg) return null;
-    const rawValues = Array.isArray(cfg['values']) ? (cfg['values'] as unknown[]) : [];
-    const labels = Array.isArray(cfg['labels']) ? (cfg['labels'] as unknown[]) : null;
-    const choices: SelectOption[] = [];
-    for (let i = 0; i < rawValues.length; i++) {
-      const entry = rawValues[i];
-      const fallbackLabel = labels && labels.length > i ? labels[i] : undefined;
-      if (entry && typeof entry === 'object') {
-        const obj = entry as Record<string, unknown>;
-        const value = 'value' in obj ? obj['value'] : entry;
-        const labelCandidate = 'label' in obj ? obj['label'] : 'name' in obj ? obj['name'] : fallbackLabel;
-        const valueStr = value != null ? String(value) : '';
-        const labelStr = labelCandidate != null ? String(labelCandidate) : valueStr;
-        choices.push({ value: valueStr, label: labelStr });
-      } else {
-        const valueStr = entry != null ? String(entry) : '';
-        const labelStr = fallbackLabel != null ? String(fallbackLabel) : valueStr;
-        choices.push({ value: valueStr, label: labelStr });
-      }
-    }
-    const multiple = !!cfg['multiple'];
-    if (!choices.length && !multiple) return null;
-    const sizeRaw = cfg['size'] ?? cfg['listSize'] ?? cfg['rows'] ?? cfg['lines'];
-    const parsed = Number(sizeRaw);
-    const size = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : multiple ? 5 : undefined;
-    return { choices, multiple, size };
-  }
-
-  getFilterOptionsForCol(col: ColDef): string[] | null {
-    const options = this.getSelectEditorOptions(col);
-    if (!options || !options.choices.length) return null;
-    return options.choices.map((c) => c.label);
-  }
-
-  getFilterValue(filterValues: Record<string, unknown>, field: string): string {
-    const fv = filterValues[field];
-    if (isRecord(fv) && !Array.isArray(fv) && 'value' in fv) return String(fv['value'] ?? '');
-    return fv ? String(fv) : '';
-  }
-
-  getFilterArray(filterValues: Record<string, unknown>, field: string): string[] {
-    const fv = filterValues[field];
-    if (isRecord(fv) && !Array.isArray(fv) && Array.isArray(fv['value'])) return fv['value'] as string[];
-    if (Array.isArray(fv)) return fv as string[];
-    const single = this.getFilterValue(filterValues, field);
-    return single ? [single] : [];
-  }
-
-  inlineFilterLabel(filterValues: Record<string, unknown>, field: string): string {
-    const arr = this.getFilterArray(filterValues, field);
-    if (!arr.length) return 'All';
-    if (arr.length === 1) return arr[0]!;
-    return `${arr.length} selected`;
-  }
-
-  preparePanelFilters(current: Record<string, unknown>): Record<string, { op: string; value: unknown }> {
-    const panel: Record<string, { op: string; value: unknown }> = {};
-    for (const [k, v] of Object.entries(current)) {
-      if (isRecord(v) && 'op' in v && 'value' in v) panel[k] = { op: String(v['op']), value: v['value'] };
-      else panel[k] = { op: 'contains', value: v };
-    }
-    return panel;
-  }
-
-  private resolveEditorConfig(col: ColDef): Record<string, unknown> | null {
-    const cep = col?.cellEditorParams;
-    if (!cep) return null;
-    try {
-      const resolved = typeof cep === 'function' ? (cep as () => unknown)() : cep;
-      return isRecord(resolved) ? resolved : null;
-    } catch {
-      return null;
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/tag-options.service.ts
-
-```typescript
-import { Injectable, inject } from '@angular/core';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { TagPaletteService } from '@experiences/tags/ui/tag-palette.service';
-
-@Injectable({ providedIn: 'root' })
-export class TagOptionsService {
-  private readonly tagsSvc = inject(TagsService);
-  private readonly tagPaletteSvc = inject(TagPaletteService);
-
-  public readonly tagNames: string[] = [];
-  public readonly issueNames: string[] = [];
-
-  private tagPending: Promise<string[]> | null = null;
-  private issuePending: Promise<string[]> | null = null;
-
-  async invalidate(type?: 'tag' | 'issue'): Promise<void> {
-    if (!type || type === 'tag') {
-      this.tagPending = null;
-      await this.load('tag');
-    }
-    if (!type || type === 'issue') {
-      this.issuePending = null;
-      await this.load('issue');
-    }
-  }
-
-  async getTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
-    const live = type === 'issue' ? this.issueNames : this.tagNames;
-    if (live.length > 0) return live;
-    await this.load(type);
-    return live;
-  }
-
-  private async load(type: 'tag' | 'issue'): Promise<void> {
-    const isPending = type === 'issue' ? this.issuePending : this.tagPending;
-    if (isPending) {
-      await isPending;
-      return;
-    }
-
-    const live = type === 'issue' ? this.issueNames : this.tagNames;
-
-    const promise = this.fetchTagNames(type)
-      .then((names) => {
-        // Mutate in-place so all external references stay valid
-        live.splice(0, live.length, ...names);
-        if (type === 'issue') this.issuePending = null;
-        else this.tagPending = null;
-        void this.tagPaletteSvc.ensurePalette();
-        return names;
-      })
-      .catch(() => {
-        if (type === 'issue') this.issuePending = null;
-        else this.tagPending = null;
-        return [] as string[];
-      });
-
-    if (type === 'issue') this.issuePending = promise;
-    else this.tagPending = promise;
-
-    await promise;
-  }
-
-  private async fetchTagNames(type: 'tag' | 'issue' = 'tag'): Promise<string[]> {
-    try {
-      const { rows } = await this.tagsSvc.getAll({ limit: 1000, offset: 0, orderBy: ['name'], type });
-      const names = Array.isArray(rows)
-        ? rows
-            .map((row) => (row?.['name'] != null ? String(row['name']).trim() : ''))
-            .filter((name): name is string => name.length > 0)
-        : [];
-      const seen = new Set<string>();
-      const unique: string[] = [];
-      for (const name of names) {
-        if (seen.has(name)) continue;
-        seen.add(name);
-        unique.push(name);
-      }
-      unique.sort((a, b) => a.localeCompare(b));
-      return unique;
-    } catch {
-      return [];
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/utils.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-@Injectable({ providedIn: 'root' })
-export class DataGridUtilsService {
-  bucketByRoute(nodes: unknown[]): Map<string, unknown[]> {
-    const map = new Map<string, unknown[]>();
-    for (const n of nodes) {
-      const routeArr = isRecord(n) && Array.isArray(n['route']) ? n['route'] : [];
-      const key = JSON.stringify(routeArr);
-      const list = map.get(key) ?? [];
-      if (isRecord(n) && n['data']) list.push(n['data']);
-      map.set(key, list);
-    }
-    return map;
-  }
-
-  createPayload<T>(row: Partial<T>, key: keyof T): Partial<T> {
-    return row[key] !== undefined ? ({ [key]: row[key] } as Partial<T>) : {};
-  }
-
-  tagsToString(tags: string[]): string {
-    if (!tags || !Array.isArray(tags)) return '';
-    return tags
-      .filter((t) => typeof t === 'string' && t.trim().length > 0)
-      .map((t) => {
-        const trimmed = t.trim();
-        return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-      })
-      .join(', ');
-  }
-
-  tagArrayEquals(tagsA: string[], tagsB: string[]): number {
-    return (tagsA ?? []).toString().localeCompare((tagsB ?? []).toString());
-  }
-
-  normalizeTagSelection(value: unknown): string[] {
-    const input = Array.isArray(value) ? value : value == null ? [] : [value];
-    const seen = new Set<string>();
-    const result: string[] = [];
-    for (const entry of input) {
-      if (entry == null) continue;
-      const tag = typeof entry === 'string' ? entry.trim() : String(entry).trim();
-      if (!tag) continue;
-      if (seen.has(tag)) continue;
-      seen.add(tag);
-      result.push(tag);
-    }
-    return result;
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-import type { DataGrid } from '../datagrid';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
-
-/**
- * Column visibility dropdown shared by the mobile and desktop toolbars.
- * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
- * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
- *
- * The grid is passed in as an input rather than injected: as projected
- * content it does not reliably resolve the same `DataGrid` instance.
- *
- * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
- * in after init, so as an isolated component this would render once and stay
- * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
- * signal) to recompute once the columns are populated.
- */
-@Component({
-  selector: 'pc-dg-columns-dropdown',
-  template: `
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
-      </li>
-      @for (col of cols(); track col.field) {
-        @if (col.field) {
-          <li>
-            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
-                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
-              />
-              <span class="label-text">{{ col.headerName || col.field }}</span>
-            </label>
-          </li>
-        }
-      }
-    </ul>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class DataGridColumnsDropdownComponent {
-  public readonly grid = input.required<DataGrid<keyof Models, unknown>>();
-
-  protected readonly cols = computed<ColDef[]>(() => {
-    // Establish a reactive dependency on the colVisibility signal so the list
-    // recomputes once the (non-signal) column defs are populated after init.
-    this.grid().getColVisibilityMap();
-    return this.grid().getColDefsForToolbar();
-  });
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.html
-
-```html
-<div class="fixed inset-0 z-40">
-  <div class="absolute inset-0 bg-black/30" (click)="closePanel.emit()"></div>
-  <aside class="absolute right-0 top-0 h-full w-[360px] max-w-[90vw] bg-base-100 shadow-xl p-4 flex flex-col">
-    <!-- Pinned Header Area -->
-    <div class="shrink-0">
-      <div class="flex items-center justify-between mb-2">
-        <h3 class="text-lg font-semibold">Filters</h3>
-        <button class="btn btn-ghost btn-sm px-2" (click)="closePanel.emit()">
-          <pc-icon name="chevron-right"></pc-icon>
-        </button>
-      </div>
-      <div class="flex justify-between items-center mb-3">
-        <span class="text-sm opacity-70">Combine column filters and operators.</span>
-        <button
-          class="btn btn-link btn-xs text-primary font-bold p-0 no-underline hover:underline flex items-center gap-0.5"
-          [disabled]="hasActiveFilters()"
-          (click)="!hasActiveFilters() && openAdvanced.emit()"
-        >
-          Advanced Filter &gt;
-        </button>
-      </div>
-
-      <!-- Apply / Clear buttons pinned at top -->
-      <div class="flex gap-2 mb-1">
-        <button class="btn btn-primary btn-sm flex-1" (click)="apply.emit()">Apply</button>
-        <button class="btn btn-outline btn-sm flex-1" (click)="clear.emit()">Clear</button>
-      </div>
-
-      <div class="divider my-3"></div>
-    </div>
-
-    <!-- Scrollable Fields Area -->
-    <div class="flex-1 overflow-y-auto space-y-3 pr-1">
-      @for (field of panelFields(); track field) {
-      <div class="form-control">
-        <label class="label py-0"><span class="label-text font-medium">{{ labelFor()(field) }}</span></label>
-        <div class="flex gap-2 mt-1">
-          <select
-            class="select select-bordered select-xs w-28"
-            (change)="changeOp.emit({ field, op: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.op || 'contains'"
-          >
-            <option value="contains">contains</option>
-            <option value="notContains">does not contain</option>
-            <option value="equals">equals</option>
-            <option value="notEquals">does not equal</option>
-            <option value="startsWith">starts with</option>
-            <option value="endsWith">ends with</option>
-            <option value="isEmpty">is empty</option>
-            <option value="isNotEmpty">is not empty</option>
-          </select>
-          @let filterOp = $any(panelFilters())[field]?.op; @if (filterOp !== 'isEmpty' && filterOp !== 'isNotEmpty') {
-          @if (optionsFor()(field)?.length) {
-          <select
-            class="select select-bordered select-xs flex-1"
-            (change)="changeValue.emit({ field, value: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.value || ''"
-          >
-            <option value="">Any</option>
-            @for (opt of optionsFor()(field)!; track opt) {
-            <option [value]="opt">{{ opt }}</option>
-            }
-          </select>
-          } @else {
-          <input
-            class="input input-bordered input-xs flex-1"
-            type="text"
-            placeholder="Value"
-            (input)="changeValue.emit({ field, value: $any($event.target).value })"
-            [value]="$any(panelFilters())[field]?.value || ''"
-          />
-          } }
-        </div>
-      </div>
-      }
-    </div>
-  </aside>
-</div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-panel.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
 import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
 
 @Component({
-  selector: 'pc-dg-filter-panel',
-  imports: [Icon],
-  templateUrl: 'datagrid-filter-panel.html',
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
 })
-export class DataGridFilterPanelComponent {
-  public apply = output<void>();
-  public changeOp = output<{ field: string; op: string }>();
-  public changeValue = output<{ field: string; value: unknown }>();
-  public clear = output<void>();
-  public closePanel = output<void>();
-  public openAdvanced = output<void>();
-  public hasActiveFilters = input<boolean>(false);
-  public labelFor = input<(field: string) => string>((f) => f);
-  public optionsFor = input<(field: string) => string[] | null>((_f) => null);
-  public panelFields = input<string[]>([]);
-  public panelFilters = input<Record<string, { op: string; value: unknown }>>({});
-}
-```
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-inline-filters-row.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import type { Header } from '@tanstack/table-core';
-
-import { DataGrid } from '../datagrid';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { GridRow } from '../types';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-@Component({
-  selector: 'pc-dg-inline-filters-row',
-  templateUrl: 'datagrid-inline-filters-row.html',
-})
-export class DataGridInlineFiltersRowComponent {
-  private readonly grid: DataGrid<keyof Models, unknown> | null = inject(DataGrid, { optional: true });
-
-  public clearHeaderFilter = input<(field: string) => void>((f) => this.grid?.clearHeaderFilter(f));
-  public enableSelection = input<boolean>(true);
-  public getColDefById = input<(id: string) => ColDef | undefined>((id) => this.grid?.getColDefById(id));
-  public getFilterOptionsForCol = input<(col: ColDef) => string[] | null>(
-    (c) => this.grid?.getFilterOptionsForCol(c) ?? null,
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
   );
-  public getFilterValue = input<(field: string) => string>((f) => this.grid?.getFilterValue(f) ?? '');
-  public inlineFilterLabel = input<(field: string) => string>((f) => this.grid?.inlineFilterLabel?.(f) ?? '');
-  public isOptionChecked = input<(field: string, option: string) => boolean>(
-    (f, o) => !!this.grid?.isOptionChecked(f, o),
-  );
-  public leafHeaders = input<Header<GridRow, unknown>[]>([]);
-  public leftOffsetPx = input.required<(colId: string) => number>();
-  public onHeaderFilterInput = input<(field: string, value: unknown) => void>((f, v) =>
-    this.grid?.onHeaderFilterInput(f, v),
-  );
-  public onToggleFilterOption = input<(field: string, option: string, checked: boolean) => void>((f, o, c) =>
-    this.grid?.onToggleFilterOption(f, o, c),
-  );
-  public pinState = input.required<(h: Header<GridRow, unknown>) => 'left' | 'right' | false>();
-  public rightOffsetPx = input.required<(colId: string) => number>();
-  public selectionStickyWidth = input<number>(48);
 
-  public readonly colWidths = computed<Record<string, number>>(() => this.grid?.colWidths?.() ?? {});
-}
-```
+  public onAdd() {
+    this.grid.doAdd();
+  }
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
+  public onClone() {
+    this.grid.doClone();
+  }
 
-```typescript
-import { Component, input } from '@angular/core';
-import type { GridRow } from '../types';
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
 
-@Component({
-  // eslint-disable-next-line @angular-eslint/component-selector
-  selector: 'tr[pc-dg-row]',
-  template: '',
-})
-export class DataGridRowComponent {
-  row = input<GridRow>();
-  enableSelection = input<boolean>(true);
-  selectionStickyWidth = input<number>(48);
-  allSelected = input<boolean>(false);
-  allSelectedIdSet = input<Set<string>>(new Set());
-  toId = input<(row: GridRow) => string>((r) => String(r?.['id'] ?? ''));
-  onRowCheckboxChange = input<(row: GridRow, checked: boolean) => void>((_r, _c) => undefined);
-  onMouseOverRow = input<(row: GridRow) => void>((_r) => undefined);
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    void this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
+  }
 }
 ```
 
@@ -33341,200 +33863,51 @@ export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
 };
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
+## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
 
 ```typescript
-import { computed, signal } from '@angular/core';
-import type { GridHost, GridRow, GridSnapshot } from './types';
+import type { GridRow } from './types';
 
-export class UndoManager {
-  private readonly isOperating = signal(false);
-
-  private readonly undoStack = signal<GridSnapshot[]>([]);
-  private readonly redoStack = signal<GridSnapshot[]>([]);
-  private grid: GridHost | null = null;
-
-  public readonly canRedo = computed(() => this.redoStack().length > 0 && !this.isOperating());
-  public readonly canUndo = computed(() => this.undoStack().length > 0 && !this.isOperating());
-
-  public getRedoSize(): number {
-    return this.redoStack().length;
-  }
-
-  public getUndoSize(): number {
-    return this.undoStack().length;
-  }
-
-  public initialize(api: GridHost): void {
-    this.grid = api;
-    this.isOperating.set(false);
-  }
-
-  public pushUndo(snapshot: GridSnapshot): void {
-    this.undoStack.update((s) => {
-      const next = [...s, snapshot];
-      return next.length > 50 ? next.slice(1) : next;
-    });
-    this.redoStack.set([]);
-  }
-
-  public async redo() {
-    const redoStack = this.redoStack();
-    if (this.isOperating() || redoStack.length === 0 || !this.grid) return;
-
-    const target = redoStack[redoStack.length - 1];
-    if (!target) return;
-
-    this.isOperating.set(true);
-    try {
-      this.redoStack.update((s) => s.slice(0, -1));
-
-      const current = this.captureCurrentState();
-      if (current && target.editMeta) {
-        current.editMeta = target.editMeta;
-      }
-      if (current) {
-        this.undoStack.update((s) => {
-          const next = [...s, current];
-          return next.length > 50 ? next.slice(1) : next;
-        });
-      }
-
-      await this.applySnapshot(target, 'redo');
-    } finally {
-      this.isOperating.set(false);
-    }
-  }
-
-  public async undo() {
-    const undoStack = this.undoStack();
-    if (this.isOperating() || undoStack.length === 0 || !this.grid) return;
-
-    const target = undoStack[undoStack.length - 1];
-    if (!target) return;
-
-    this.isOperating.set(true);
-    try {
-      this.undoStack.update((s) => s.slice(0, -1));
-
-      const current = this.captureCurrentState();
-      if (current && target.editMeta) {
-        current.editMeta = target.editMeta;
-      }
-      if (current) {
-        this.redoStack.update((s) => {
-          const next = [...s, current];
-          return next.length > 50 ? next.slice(1) : next;
-        });
-      }
-
-      await this.applySnapshot(target, 'undo');
-    } finally {
-      this.isOperating.set(false);
-    }
-  }
-
-  private captureCurrentState(): GridSnapshot | null {
-    const store = this.grid?.store;
-    if (!store) return null;
-
-    let rowsCopy: GridRow[] = [];
-    try {
-      rowsCopy = JSON.parse(JSON.stringify(store.rows() || [])) as GridRow[];
-    } catch {
-      rowsCopy = (store.rows() || []).map((r) => {
-        const copy: GridRow = { ...r };
-        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
-        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
-        return copy;
-      });
-    }
-
-    return {
-      rows: rowsCopy,
-      selectedIdSet: new Set(store.selectedIdSet()),
-      filterValues: { ...store.filterValues() },
-      sorting: [...store.sorting()],
-      pageIndex: store.pageIndex(),
-      pageSize: store.pageSize(),
-    };
-  }
-
-  private async applySnapshot(target: GridSnapshot, actionType: 'undo' | 'redo') {
-    if (!this.grid || !this.grid.store) return;
-    const store = this.grid.store;
-    const flashedCells: { id: string; field: string }[] = [];
-
-    if (target.editMeta) {
-      try {
-        const { id, field, prevValue, newValue } = target.editMeta;
-        const valToSet = actionType === 'undo' ? prevValue : newValue;
-        const payload = { [field]: valToSet };
-        await this.grid.gridSvc.update(id, payload);
-        flashedCells.push({ id: String(id), field });
-      } catch (err) {
-        console.error(`Failed to update backend on ${actionType}:`, err);
-        if (this.grid.alertSvc) {
-          this.grid.alertSvc.showError('Reverting changes on the server failed');
-        }
-      }
-    } else {
-      try {
-        const currentRows = store.rows() || [];
-        const diffs = this.findRowsDiff(currentRows, target.rows);
-        for (const diff of diffs) {
-          const payload = { [diff.field]: diff.newValue };
-          await this.grid.gridSvc.update(diff.id, payload);
-          flashedCells.push({ id: String(diff.id), field: diff.field });
-        }
-      } catch (err) {
-        console.error(`Failed to update backend on ${actionType} fallback:`, err);
-      }
-    }
-
-    store.rows.set(target.rows);
-    store.selectedIdSet.set(target.selectedIdSet);
-    store.filterValues.set(target.filterValues);
-    store.sorting.set(target.sorting);
-    store.pageIndex.set(target.pageIndex);
-    store.pageSize.set(target.pageSize);
-
-    this.grid.updateTableWindow(this.grid.startIndex(), this.grid.endIndex());
-
-    for (const item of flashedCells) {
-      if (typeof this.grid.triggerCellFlash === 'function') {
-        this.grid.triggerCellFlash(item.id, item.field);
-      }
-    }
-  }
-
-  private findRowsDiff(
-    oldRows: GridRow[],
-    newRows: GridRow[],
-  ): { id: string; field: string; prevValue: unknown; newValue: unknown }[] {
-    const diffs: { id: string; field: string; prevValue: unknown; newValue: unknown }[] = [];
-    const oldMap = new Map<string, GridRow>();
-    for (const r of oldRows) {
-      if (r && r['id']) oldMap.set(String(r['id']), r);
-    }
-    for (const r of newRows) {
-      if (!r || !r['id']) continue;
-      const idStr = String(r['id']);
-      const oldRow = oldMap.get(idStr);
-      if (oldRow) {
-        for (const key of Object.keys(r)) {
-          if (key === 'id') continue;
-          const val1 = oldRow[key];
-          const val2 = r[key];
-          if (JSON.stringify(val1) !== JSON.stringify(val2)) {
-            diffs.push({ id: idStr, field: key, prevValue: val1, newValue: val2 });
-          }
-        }
-      }
-    }
-    return diffs;
-  }
+/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
+export interface CellParams {
+  data?: GridRow;
+  value?: unknown;
+  newValue?: unknown;
+  colDef?: ColumnDef;
 }
+
+// Lightweight column definition used by DataGrid
+export interface ColumnDef {
+  cellClass?: string | ((p: CellParams) => string | undefined);
+  cellDataType?: string;
+  cellEditorParams?: unknown;
+  cellRenderer?: (p: CellParams) => CellRendererResult;
+  cellRendererParams?: unknown;
+  comparator?: (a: unknown, b: unknown) => number;
+  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
+  doorColumn?: boolean;
+  editable?: boolean;
+  equals?: (a: unknown, b: unknown) => boolean;
+  field?: string;
+  headerName?: string;
+  hide?: boolean;
+  /** Column cannot be hidden by the user (identity columns like the Name door). */
+  noHide?: boolean;
+  onCellClicked?: (event: CellParams) => void;
+  onCellDoubleClicked?: (event: CellParams) => void;
+  isCellInteractive?: (row: GridRow) => boolean;
+  tagColumn?: boolean;
+  valueFormatter?: (p: CellParams) => unknown;
+
+  // Compatibility props (ignored by current table but kept for typing)
+  valueGetter?: (p: CellParams) => unknown;
+  valueSetter?: (p: CellParams) => boolean;
+  minWidth?: number;
+}
+
+type CellRendererResult = string | HTMLElement;
+
+export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
 ## File: apps/frontend/src/app/shared/public-pages.ts
@@ -40424,6 +40797,178 @@ export class Dashboard {
 }
 ```
 
+## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
+
+```typescript
+import type { Router } from '@angular/router';
+import type { TRPCLink } from '@trpc/client';
+import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
+import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
+import superjson from 'superjson';
+
+import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { environment } from '../../../environments/environment';
+import { isCurrentRoutePublic } from '../../routing/public-routes';
+import type { TokenService } from './token-service';
+
+interface JwtPayload {
+  exp?: number;
+
+  [key: string]: unknown;
+}
+
+type NextLink = (op: Operation) => ObservableLike;
+
+/* ------------------------------------------------------------------ */
+/* Local helper types                                                 */
+/* ------------------------------------------------------------------ */
+type ObservableLike<T = unknown, E = unknown> = {
+  subscribe(args: Observer<T, E>): Unsubscribable;
+};
+
+/* ------------------------------------------------------------------ */
+/* Core helpers                                                       */
+/* ------------------------------------------------------------------ */
+
+function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
+  next(op).subscribe({
+    next: (value) => observer.next(value),
+    error: (err) => observer.error(err),
+    complete: () => observer.complete(),
+  });
+}
+
+let activeRefreshPromise: Promise<string> | null = null;
+
+/**
+ * Mint a fresh access token from the HttpOnly refresh cookie (SECURITY-REVIEW.md 2.1). No token is
+ * read from JS/storage — the browser attaches the cookie because the refresh client sends
+ * credentials. Concurrent callers share one in-flight request. Rejects if the cookie is missing or
+ * the session is gone.
+ */
+function performRefresh(tokenSvc: TokenService): Promise<string> {
+  if (activeRefreshPromise) return activeRefreshPromise;
+
+  activeRefreshPromise = (async () => {
+    try {
+      const payload = await trpcRetryClient.auth.renewAuthToken.mutate();
+      tokenSvc.setAuthToken(payload.auth_token);
+      return payload.auth_token;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  })();
+
+  return activeRefreshPromise;
+}
+
+/**
+ * Attempt a silent re-auth on a cold page load: the in-memory access token is gone but the refresh
+ * cookie may still be valid. Returns the new token, or null for a genuine guest. Never throws.
+ */
+export async function silentRefresh(tokenSvc: TokenService): Promise<string | null> {
+  try {
+    return await performRefresh(tokenSvc);
+  } catch {
+    tokenSvc.clearAll();
+    return null;
+  }
+}
+
+async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
+  const authToken = tokenSvc.getAuthToken();
+  // No in-memory token → treat as guest. Startup already ran silentRefresh, so we don't re-probe the
+  // refresh endpoint on every guest request.
+  if (!authToken) return null;
+
+  // Still valid → use it. Expired → swap it for a fresh one via the refresh cookie.
+  return isTokenExpired(authToken) ? performRefresh(tokenSvc) : authToken;
+}
+
+function handleRefreshFailure(
+  err: unknown,
+  tokenSvc: TokenService,
+  router: Router,
+  observer: Observer<unknown, unknown>,
+): void {
+  tokenSvc.clearAll();
+  // Don't evict a guest from a legitimately public page (reset link, public form, etc.) just because
+  // a stale token's refresh failed — surface the error instead.
+  if (!isCurrentRoutePublic(router.url)) {
+    void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
+  }
+  observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
+}
+
+function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
+  if (!token) return true;
+
+  const payload = parseJwt(token);
+  if (!payload?.exp) return true;
+
+  const now = Math.floor(Date.now() / 1000);
+  return payload.exp < now + leewaySeconds;
+}
+
+function parseJwt(token: string): JwtPayload | null {
+  try {
+    const [, payload = ''] = token.split('.');
+    // JWT payloads are base64url-encoded and unpadded; atob only accepts
+    // standard base64, so convert the alphabet and restore padding first.
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    return JSON.parse(atob(padded)) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Public TRPC link                                                   */
+/* ------------------------------------------------------------------ */
+
+export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
+  return () => {
+    return ({ op, next }: { op: Operation; next: NextLink }) =>
+      observable<unknown, unknown>((observer) => {
+        void (async () => {
+          try {
+            const authToken = await getValidAuthToken(tokenSvc);
+
+            // Guest user — just forward.
+            if (!authToken) {
+              forwardOp(op, next, observer);
+              return;
+            }
+
+            // Authenticated user — forward with (possibly refreshed) token.
+            forwardOp(op, next, observer);
+          } catch (err) {
+            handleRefreshFailure(err, tokenSvc, router, observer);
+          }
+        })();
+
+        // No teardown logic needed.
+        return;
+      });
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Dedicated client for token refreshes only                          */
+/* ------------------------------------------------------------------ */
+const trpcRetryClient = createTRPCClient<TRPCRouter>({
+  links: [
+    httpLink({
+      url: environment.apiUrl,
+      transformer: superjson,
+      // Send the HttpOnly refresh cookie with the renew call.
+      fetch: (input, init) => globalThis.fetch(input, { ...init, credentials: 'include' }),
+    }),
+  ],
+});
+```
+
 ## File: apps/frontend/src/app/services/command-palette.service.ts
 
 ```typescript
@@ -40541,374 +41086,96 @@ export class CommandPaletteService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/grid-store.service.ts
+## File: apps/frontend/src/app/services/error.service.ts
 
 ```typescript
-import { Injectable, computed, effect, signal, untracked, linkedSignal } from '@angular/core';
-import type { Table } from '@tanstack/table-core';
-import type { GridHost, GridRow, GridSnapshot } from '../types';
+import { inject, Service } from '@angular/core';
+import { Router } from '@angular/router';
+import { JSendServerError } from '../../../../../libs/common/src';
+import { TRPCClientError } from '@trpc/client';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ApiError } from './api/api-error';
+import { getUserErrorMessage } from './api/user-message';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
+import { TokenService } from './api/token-service';
+import { isCurrentRoutePublic } from '../routing/public-routes';
 
-@Injectable()
-export class GridStoreService {
-  public grid?: GridHost;
-  readonly rows = signal<GridRow[]>([]);
-  readonly sorting = signal<unknown[]>([]);
-  readonly colVisibility = signal<Record<string, boolean>>({});
-  readonly colWidths = signal<Record<string, number>>({});
-  readonly filterValues = signal<Record<string, unknown>>({});
-  readonly panelFilters = signal<Record<string, { op: string; value: unknown }>>({});
-  readonly selectedIdSet = linkedSignal<Record<string, unknown>, Set<string>>({
-    source: () => this.filterValues(),
-    computation: () => new Set<string>(),
-  });
-  readonly allSelected = linkedSignal<Record<string, unknown>, boolean>({
-    source: () => this.filterValues(),
-    computation: () => false,
-  });
-  readonly allSelectedIdSet = linkedSignal<Record<string, unknown>, Set<string>>({
-    source: () => this.filterValues(),
-    computation: () => new Set<string>(),
-  });
-  readonly allSelectedIds = linkedSignal<Record<string, unknown>, string[]>({
-    source: () => this.filterValues(),
-    computation: () => [],
-  });
-  readonly allSelectedCount = linkedSignal<Record<string, unknown>, number>({
-    source: () => this.filterValues(),
-    computation: () => 0,
-  });
-  readonly selectionStickyWidth = signal<number>(48);
-  readonly pageIndex = signal<number>(0);
-  readonly pageSize = signal<number>(25);
+@Service()
+export class ErrorService {
+  private readonly alerts = inject(AlertService);
+  private readonly router = inject(Router);
+  private readonly tokenSvc = inject(TokenService);
 
-  readonly displayedCount = computed(() => this.rows().length);
+  private lastRedirect = 0;
 
-  readonly editCommitCount = signal<number>(0);
-  private _lastSnapshot: GridSnapshot | null = null;
-
-  public recordSnapshotBeforeCommit(id: string, field: string, prevValue: unknown, newValue: unknown) {
-    let rowsCopy: GridRow[] = [];
-    try {
-      rowsCopy = JSON.parse(JSON.stringify(this.rows() || [])) as GridRow[];
-    } catch {
-      rowsCopy = (this.rows() || []).map((r) => {
-        const copy: GridRow = { ...r };
-        if (Array.isArray(r['tags'])) copy['tags'] = [...(r['tags'] as unknown[])];
-        if (Array.isArray(r['issues'])) copy['issues'] = [...(r['issues'] as unknown[])];
-        return copy;
-      });
+  public handle(error: unknown): void {
+    console.error('ErrorService.handle:', error);
+    // Handle JSend server errors produced by the HTTP interceptor
+    if (error instanceof JSendServerError) {
+      if (!this.redirectFromStatus(error.statusCode)) {
+        this.alerts.showError(error.messageText);
+      }
+      return;
     }
 
-    const getRowId = this._getRowId || ((r: GridRow) => String(r?.['id'] || ''));
-    rowsCopy = rowsCopy.map((r) => {
-      if (getRowId(r) === id) {
-        return { ...r, [field]: prevValue };
+    if (error instanceof TRPCClientError) {
+      const code = error.data?.code;
+      if (!this.redirectFromCode(code)) {
+        this.alerts.showError(error.message);
       }
-      return r;
-    });
+      return;
+    }
 
-    this._lastSnapshot = {
-      rows: rowsCopy,
-      selectedIdSet: new Set(this.selectedIdSet()),
-      filterValues: { ...this.filterValues() },
-      sorting: [...this.sorting()],
-      pageIndex: this.pageIndex(),
-      pageSize: this.pageSize(),
-      editMeta: {
-        id,
-        field,
-        prevValue,
-        newValue,
-      },
-    };
-    this.editCommitCount.update((c) => c + 1);
-  }
-
-  private _persistKey = signal<string>('');
-  private _persistTick = signal<number>(0);
-  private _table: Table<GridRow> | null = null;
-  private _getRowId: ((row: GridRow) => string) | null = null;
-
-  constructor() {
-    effect(() => {
-      const count = this.editCommitCount();
-      if (count === 0) return;
-
-      untracked(() => {
-        if (this._lastSnapshot && this.grid?.undoMgr) {
-          this.grid.undoMgr.pushUndo(this._lastSnapshot);
-          this._lastSnapshot = null;
+    if (error instanceof ApiError) {
+      const original = error.originalError;
+      if (original instanceof TRPCClientError) {
+        const code = original.data?.code;
+        if (!this.redirectFromCode(code)) {
+          this.alerts.showError(error.message);
         }
-      });
-    });
-
-    effect(() => {
-      const key = this._persistKey();
-      this.sorting();
-      this.colVisibility();
-      this.filterValues();
-      this.selectionStickyWidth();
-      this.colWidths();
-      this.pageSize();
-      this._persistTick();
-      if (!key) return;
-      try {
-        const state = this._table?.getState();
-        const st = {
-          sorting: state?.sorting as unknown[] | undefined,
-          columnVisibility: state?.columnVisibility,
-          columnPinning: state?.columnPinning,
-          columnSizing: state?.columnSizing,
-          columnOrder: state?.columnOrder,
-        };
-        const data = {
-          sorting: st.sorting || this.sorting(),
-          visibility: st.columnVisibility || this.colVisibility(),
-          pinning: st.columnPinning || { left: [], right: [] },
-          sizing: st.columnSizing || this.colWidths(),
-          order: st.columnOrder || [],
-          filters: this.filterValues() || {},
-          selectionWidth: this.selectionStickyWidth(),
-          pageSize: this.pageSize(),
-        };
-        localStorage.setItem(key, JSON.stringify(data));
-      } catch {}
-    });
-
-    // Attempt to load persisted state whenever key changes
-    effect(() => {
-      const key = this._persistKey();
-      if (!key) return;
-      this._loadFromStorage(key);
-    });
-
-    effect(() => {
-      const v = this.colVisibility();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnVisibility: v } }));
-        } catch {}
+        return;
       }
-    });
+      this.alerts.showError(error.message);
+      return;
+    }
 
-    // Sync sorting state
-    effect(() => {
-      const s = this.sorting();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev) => ({
-            ...prev,
-            state: { ...prev.state, sorting: s as unknown as typeof prev.state.sorting },
-          }));
-        } catch {}
-      }
-    });
-
-    // Sync column sizing
-    effect(() => {
-      const sizing = this.colWidths();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, columnSizing: sizing } }));
-        } catch {}
-      }
-    });
-
-    // Sync data
-    effect(() => {
-      const r = this.rows();
-      if (this._table) {
-        try {
-          this._table.setOptions((prev) => ({ ...prev, data: r }));
-        } catch {}
-      }
-    });
-
-    // Sync row selection map for current rows
-    effect(() => {
-      const rows = this.rows();
-      const ids = this.selectedIdSet();
-      if (!this._table || !this._getRowId) return;
-      try {
-        const map: Record<string, boolean> = {};
-        for (const r of rows) {
-          const id = this._getRowId(r);
-          if (id && ids.has(id)) map[id] = true;
-        }
-        this._table.setOptions((prev) => ({ ...prev, state: { ...prev.state, rowSelection: map } }));
-      } catch {}
-    });
+    // Uncaught exceptions land here via GlobalErrorHandler — never show their
+    // raw message (e.g. a TypeError) to the user; the console has the details.
+    this.alerts.showError(getUserErrorMessage(error, 'Something went wrong, please try again'));
   }
 
-  setPersistKey(key: string) {
-    this._persistKey.set(key || '');
+  /**
+   * Sign the user out and send them to /signin. Called for any 401/UNAUTHORIZED — including on
+   * requests that pass `skipErrorHandler` (that flag suppresses the error toast, not the sign-out).
+   * No-ops on public pages and de-dupes rapid calls, so probes and public routes stay put.
+   */
+  public redirectToSignIn(): void {
+    this.redirect();
   }
 
-  attachTable(table: Table<GridRow> | undefined) {
-    this._table = table ?? null;
+  private redirect(): boolean {
+    // Guests belong on public pages (reset links, public forms, subscription confirmation). A stray
+    // 401/UNAUTHORIZED there must not bounce them to /signin — let the caller surface the error.
+    if (isCurrentRoutePublic(this.router.url)) return false;
+
+    const now = Date.now();
+    if (now - this.lastRedirect < 3000) return false;
+    this.lastRedirect = now;
+
+    this.tokenSvc.clearAll();
+    const returnUrl = this.router.url;
+    void this.router.navigate(['/signin'], { queryParams: { returnUrl } });
+    return true;
   }
 
-  setGetRowId(fn: (row: GridRow) => string) {
-    this._getRowId = fn;
+  private redirectFromCode(code?: string): boolean {
+    if (code === 'UNAUTHORIZED') return this.redirect();
+    return false;
   }
 
-  requestPersist() {
-    this._persistTick.update((v) => (v + 1) | 0);
-  }
-
-  loadState() {
-    const key = this._persistKey();
-    if (!key) return;
-    this._loadFromStorage(key);
-  }
-
-  private _loadFromStorage(key: string) {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return;
-      type Persisted = {
-        sorting?: unknown[];
-        visibility?: Record<string, boolean>;
-        filters?: Record<string, unknown>;
-        selectionWidth?: number;
-        sizing?: Record<string, number>;
-        pinning?: { left: string[]; right: string[] };
-        order?: string[];
-        pageSize?: number;
-      };
-      const parsed: unknown = JSON.parse(raw || '{}');
-      const data: Persisted = isRecord(parsed) ? parsed : {};
-      if (data.sorting) this.sorting.set(data.sorting);
-      if (data.visibility) this.colVisibility.set({ ...untracked(() => this.colVisibility()), ...data.visibility });
-      if (data.filters) this.filterValues.set(data.filters);
-      if (typeof data.selectionWidth === 'number') this.selectionStickyWidth.set(data.selectionWidth);
-      if (typeof data.pageSize === 'number' && data.pageSize > 0) this.pageSize.set(data.pageSize);
-      const sizing = data.sizing || {};
-      queueMicrotask(() => {
-        if (this._table) {
-          this._table.setOptions((prev) => ({
-            ...prev,
-            state: {
-              ...prev.state,
-              sorting: (data.sorting as unknown as typeof prev.state.sorting) || prev.state?.sorting,
-              columnVisibility: data.visibility || prev.state?.columnVisibility,
-              columnPinning: data.pinning || prev.state?.columnPinning,
-              columnSizing: sizing || prev.state?.columnSizing,
-              columnOrder: data.order || prev.state?.columnOrder,
-            },
-          }));
-        }
-        this.colWidths.set({ ...(sizing || {}) });
-      });
-    } catch {}
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/services/table.service.ts
-
-```typescript
-import { Injectable } from '@angular/core';
-import {
-  createTable,
-  getCoreRowModel,
-  type Updater,
-  type SortingState,
-  type Table,
-  type TableState,
-  type ColumnDef as TSColumnDef,
-} from '@tanstack/table-core';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { GridRow } from '../types';
-
-@Injectable({ providedIn: 'root' })
-export class DataGridTableService {
-  updateTableWindow(
-    table: Table<GridRow> | undefined,
-    rows: GridRow[],
-    start: number,
-    end: number,
-    rowSelection: Record<string, boolean>,
-    sortCol: string | null,
-    sortDir: 'asc' | 'desc' | null,
-  ) {
-    const data = rows.slice(start, end);
-    if (!table) return;
-    table.setOptions((prev) => ({
-      ...prev,
-      data,
-      state: {
-        ...prev.state,
-        rowSelection,
-        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
-      },
-    }));
-  }
-
-  setTableData(
-    table: Table<GridRow> | undefined,
-    rows: GridRow[],
-    rowSelection: Record<string, boolean>,
-    sortCol: string | null,
-    sortDir: 'asc' | 'desc' | null,
-  ) {
-    if (!table) return;
-    table.setOptions((prev) => ({
-      ...prev,
-      data: rows,
-      state: {
-        ...prev.state,
-        rowSelection,
-        sorting: sortCol && sortDir ? [{ id: sortCol, desc: sortDir === 'desc' }] : [],
-      },
-    }));
-  }
-
-  createGridTable(params: {
-    rows: GridRow[];
-    columns: TSColumnDef<GridRow, unknown>[];
-    getRowId: (row: GridRow) => string;
-    state: Partial<TableState>;
-    onStateChange: () => void;
-    onSortingChange: (updater: Updater<SortingState>) => void;
-    onRowSelectionChange: (updater: Updater<Record<string, boolean>>) => void;
-    onColumnSizingChange: (updater: Updater<Record<string, number>>) => void;
-  }): Table<GridRow> {
-    return createTable({
-      data: params.rows,
-      columns: params.columns,
-      getCoreRowModel: getCoreRowModel(),
-      getRowId: params.getRowId,
-      // not in the formal type, supported by our usage
-      enableColumnResizing: true as unknown as boolean,
-      state: params.state,
-      initialState: {
-        columnPinning: { left: [], right: [] },
-        columnSizing: {},
-      },
-      onStateChange: params.onStateChange,
-      renderFallbackValue: null as unknown,
-      onSortingChange: params.onSortingChange,
-      onRowSelectionChange: params.onRowSelectionChange,
-      columnResizeMode: 'onChange',
-      onColumnSizingChange: params.onColumnSizingChange,
-    });
-  }
-
-  buildTsColumns(colDefs: ColDef[]): TSColumnDef<GridRow, unknown>[] {
-    return colDefs
-      .filter((c) => !!c.field)
-      .map((c) => ({
-        id: c.field as string,
-        header: c.headerName || (c.field as string),
-        accessorFn: (row: GridRow) => row?.[c.field as string],
-        enableSorting: true,
-        enableResizing: true,
-      })) as unknown as TSColumnDef<GridRow, unknown>[];
+  private redirectFromStatus(status?: number): boolean {
+    if (status === 401) return this.redirect();
+    return false;
   }
 }
 ```
@@ -41234,237 +41501,6 @@ export class DataGridTableService {
 </ul>
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
-
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid = inject(DataGrid);
-
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
-
-  public onAdd() {
-    this.grid.doAdd();
-  }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    void this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
-
-```typescript
-import type { GridRow } from './types';
-
-/** Params passed to colDef callbacks (cellRenderer, valueFormatter, valueGetter, valueSetter, ...). */
-export interface CellParams {
-  data?: GridRow;
-  value?: unknown;
-  newValue?: unknown;
-  colDef?: ColumnDef;
-}
-
-// Lightweight column definition used by DataGrid
-export interface ColumnDef {
-  cellClass?: string | ((p: CellParams) => string | undefined);
-  cellDataType?: string;
-  cellEditorParams?: unknown;
-  cellRenderer?: (p: CellParams) => CellRendererResult;
-  cellRendererParams?: unknown;
-  comparator?: (a: unknown, b: unknown) => number;
-  /** Clicking any cell in this column opens the record (the "name is the door" cell). */
-  doorColumn?: boolean;
-  editable?: boolean;
-  equals?: (a: unknown, b: unknown) => boolean;
-  field?: string;
-  headerName?: string;
-  hide?: boolean;
-  /** Column cannot be hidden by the user (identity columns like the Name door). */
-  noHide?: boolean;
-  onCellClicked?: (event: CellParams) => void;
-  onCellDoubleClicked?: (event: CellParams) => void;
-  isCellInteractive?: (row: GridRow) => boolean;
-  tagColumn?: boolean;
-  valueFormatter?: (p: CellParams) => unknown;
-
-  // Compatibility props (ignored by current table but kept for typing)
-  valueGetter?: (p: CellParams) => unknown;
-  valueSetter?: (p: CellParams) => boolean;
-  minWidth?: number;
-}
-
-type CellRendererResult = string | HTMLElement;
-
-export const SELECTION_COLUMN: ColumnDef = {};
-```
-
-## File: apps/frontend/src/app/app.routes.ts
-
-```typescript
-import type { Routes } from '@angular/router';
-
-import { authGuard } from './auth/auth-guard';
-import { loginGuard } from './auth/login/login-guard';
-
-export const appRoutes = [
-  // Default redirect to summary inside the dashboard shell
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
-
-  // Auth pages
-  {
-    path: 'signin',
-    canActivate: [loginGuard],
-    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
-  },
-  {
-    path: 'signup',
-    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
-  },
-  {
-    path: 'resetpassword',
-    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
-  },
-  {
-    path: 'newpassword',
-    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
-  },
-  {
-    path: 'verify-sender-email',
-    loadComponent: () =>
-      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
-  },
-  {
-    path: 'confirm-subscription',
-    loadComponent: () =>
-      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
-  },
-  {
-    path: 'f/:slug',
-    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
-  },
-  {
-    path: 'e/:slug',
-    data: { kind: 'event' },
-    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
-  },
-  {
-    path: 'v/:slug',
-    data: { kind: 'volunteer' },
-    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
-  },
-  {
-    path: 'volunteer',
-    loadComponent: () =>
-      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
-  },
-  {
-    path: 'verify-email',
-    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
-  },
-  {
-    path: 'cancel-deletion',
-    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
-  },
-  {
-    path: 'resume-account',
-    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
-  },
-
-  // Main dashboard shell + children (protected)
-  {
-    path: '',
-    canActivate: [authGuard],
-    // optionally also: canActivateChild: [authGuard],
-    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
-    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
-  },
-
-  // Fallback
-  {
-    path: '**',
-    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
-  },
-] as const satisfies Routes;
-```
-
 ## File: apps/frontend/src/environments/environment.prod.ts
 
 ```typescript
@@ -41489,235 +41525,6 @@ export const environment = {
   // forms, event RSVPs, volunteer signups, donations.
   publicBaseDomain: 'localhost',
 };
-```
-
-## File: apps/frontend/src/app/auth/auth-service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-import { IAuthUser, signInInputType, signUpInputType } from '../../../../../libs/common/src';
-import { TRPCService } from '../services/api/trpc-service';
-import { silentRefresh } from '../services/api/trpc-refreshlink';
-import { TRPCError } from '@trpc/server';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-
-@Service()
-export class AuthService extends TRPCService<'authusers'> {
-  private user = signal<IAuthUser | null>(null);
-
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this.user.set(user);
-    return user;
-  }
-
-  public getUser(): IAuthUser | null {
-    return this.user();
-  }
-
-  public getUserSignal() {
-    return this.user;
-  }
-
-  public async init() {
-    // Cold load: the in-memory access token is gone. Re-mint one from the HttpOnly refresh cookie
-    // before asking who the user is, so a page reload doesn't look like a sign-out (SECURITY-REVIEW 2.1).
-    await silentRefresh(this.tokenService);
-    return this.getCurrentUser();
-  }
-
-  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
-    const dataBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
-        resolve(result.split(',')[1]!);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    const res = (await this.api.auth.uploadAvatar.mutate({
-      dataBase64,
-      mimeType: file.type as any,
-      filename: file.name,
-    })) as { avatar_url: string };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: res.avatar_url,
-      });
-    }
-
-    return res;
-  }
-
-  public async deleteAvatar(): Promise<{ success: boolean }> {
-    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: null,
-      });
-    }
-
-    return res;
-  }
-
-  public async cancelEmailChange() {
-    const response = await this.api.auth.cancelEmailChange.mutate();
-    await this.getCurrentUser();
-    return response;
-  }
-
-  public resetPassword(input: { code: string; password: string }) {
-    // The new-password page owns the error UX for this call.
-    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public sendPasswordResetEmail(input: { email: string }) {
-    // The reset-password page owns the error UX for this call.
-    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public async signIn(
-    input: signInInputType & { rememberMe?: boolean },
-  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
-    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-
-    if (response && 'requires2FA' in response && response.requires2FA) {
-      return { requires2FA: true, email: response.email };
-    }
-
-    const user = await this.updateTokensAndGetCurrentUser(response);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { requires2FA: false, user };
-  }
-
-  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
-    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return user;
-  }
-
-  public async signOut() {
-    let apiReturn = null;
-    try {
-      apiReturn = await this.api.auth.signOut.mutate();
-    } catch (error) {
-      console.error('Error during sign out:', error);
-    }
-
-    this.user.set(null);
-    this.tokenService.clearAll();
-    void this.router.navigate(['/signin']);
-
-    return apiReturn;
-  }
-
-  public async signUp(input: signUpInputType) {
-    const token = await this.api.auth.signUp.mutate(input);
-    return this.updateTokensAndGetCurrentUser(token);
-  }
-
-  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
-    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
-  }
-
-  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    // Callers toast their own success/failure (and handle rate-limit countdowns).
-    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ success: boolean }>;
-  }
-
-  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    // The sign-in page silently falls back to the password step if this fails —
-    // a global error toast here would be noise.
-    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ hasPasskeys: boolean }>;
-  }
-
-  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
-    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
-    let response: any;
-    try {
-      response = await startAuthentication({ optionsJSON: options });
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
-      throw err;
-    }
-    const token = await (
-      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { user, cancelled: false };
-  }
-
-  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
-    const options = await this.api.auth.passkeyRegistrationOptions.query();
-    const response = await startRegistration({ optionsJSON: options as any });
-    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
-      verified: boolean;
-    };
-  }
-
-  public listPasskeys() {
-    return this.api.auth.listPasskeys.query();
-  }
-
-  public deletePasskey(id: string) {
-    return this.api.auth.deletePasskey.mutate({ id });
-  }
-
-  public dismissPasskeyPrompt() {
-    return this.api.auth.dismissPasskeyPrompt.mutate();
-  }
-
-  public updatePasskeyName(id: string, friendlyName: string) {
-    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
-  }
-
-  private async updateTokensAndGetCurrentUser(token: { auth_token?: string | null } | TRPCError) {
-    if (!token || token instanceof TRPCError) {
-      throw token;
-    }
-    // Only the access token comes back in the body now; the refresh token is set as an HttpOnly
-    // cookie by the server (SECURITY-REVIEW 2.1).
-    this.tokenService.set(token);
-    return this.getCurrentUser();
-  }
-}
 ```
 
 ## File: apps/frontend/src/app/experiences/companies/ui/company-form.html
@@ -45072,6 +44879,553 @@ export class ListsGridComponent implements OnDestroy {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  templateUrl: './persons-grid.html',
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected readonly mappableFields = [
+    'first_name',
+    'middle_names',
+    'last_name',
+    'email',
+    'email2',
+    'mobile',
+    'home_phone',
+    'street_num',
+    'street1',
+    'street2',
+    'apt',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'notes',
+  ];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    { field: 'email', headerName: 'Email', editable: true },
+    { field: 'mobile', headerName: 'Mobile', editable: true },
+    { field: 'company_name', headerName: 'Company', editable: false },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  // Generic CSV importer integration
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  public listId = input<string | null>(null);
+
+  protected readonly narrowTypeOptions = signal<
+    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
+  >([
+    { label: 'All', value: null, tags: [] },
+    { label: 'Donors', value: 'donor', tags: ['donor'] },
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+  ]);
+
+  protected tagsInput = '';
+
+  public ngOnInit() {
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadViewCounts();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Absolute per-view counts for the system-views segmented control (All / Donors /
+   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
+   * regardless of the grid's other active filters (§2).
+   */
+  private async loadViewCounts(): Promise<void> {
+    try {
+      const opts = this.narrowTypeOptions();
+      const counts = await Promise.all(
+        opts.map(async (o) => {
+          if (o.value === null) return this.personsService.count();
+          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
+          return res?.count ?? 0;
+        }),
+      );
+      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
+    } catch (err) {
+      console.error('Failed to load view counts', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  // paging/preview managed by CsvImportComponent
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // --- Import CSV Flow ---
+  protected openImportDialog() {
+    // Clear any prior summary to avoid stale dialogs
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
+    this.importerOpen.set(true);
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+    const inputTags = this.tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => !!t);
+    const tags = inputTags;
+
+    try {
+      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        tag: res?.tag ?? undefined,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  public autoMapHeader(h: string): string {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      firstname: 'first_name',
+      fname: 'first_name',
+      middlename: 'middle_names',
+      lastname: 'last_name',
+      lname: 'last_name',
+      name: 'first_name',
+      email: 'email',
+      emailaddress: 'email',
+      email1address: 'email',
+      email2: 'email2',
+      email2address: 'email2',
+      mobile: 'mobile',
+      mobilephone: 'mobile',
+      cellphone: 'mobile',
+      primaryphone: 'mobile',
+      businessphone: 'mobile',
+      homephone: 'home_phone',
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      homecity: 'city',
+      homestate: 'state',
+      homepostalcode: 'zip',
+      homecountry: 'country',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      businesscity: 'city',
+      businessstate: 'state',
+      businesspostalcode: 'zip',
+      businesscountry: 'country',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/settings/settings-page.html
 
 ```html
@@ -48173,12 +48527,13 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
           next: (value) => observer.next(value),
           error: (err) => {
             const meta = op.context as { skipErrorHandler?: boolean } | undefined;
+            const path = op.path ?? '';
+            const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
             let finalErr: any = err;
+            let code: string | undefined;
 
             if (err instanceof TRPCClientError) {
-              const code = err.data?.code as string | undefined;
-              const path = op.path ?? '';
-              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
+              code = err.data?.code as string | undefined;
 
               let msg = err.message;
               if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
@@ -48194,9 +48549,16 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
             }
 
             // Aborted requests (component teardown, superseded loads) are not
-            // user-facing failures — never toast them.
-            if (!meta?.skipErrorHandler && !isAbortError(err)) {
-              errorSvc.handle(finalErr);
+            // user-facing failures — never toast or redirect them.
+            if (!isAbortError(err)) {
+              if (code === 'UNAUTHORIZED' && !isSignIn) {
+                // A dead session must sign the user out even when the caller passed skipErrorHandler:
+                // that flag suppresses the error toast, not the sign-out. redirectToSignIn() no-ops on
+                // public pages and de-dupes, so probes and public routes stay put.
+                errorSvc.redirectToSignIn();
+              } else if (!meta?.skipErrorHandler) {
+                errorSvc.handle(finalErr);
+              }
             }
 
             observer.error(finalErr);
@@ -48237,61 +48599,333 @@ function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSi
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/types.ts
+## File: apps/frontend/src/app/app.routes.ts
 
 ```typescript
-export type SortDir = 'asc' | 'desc' | 'none';
+import type { Routes } from '@angular/router';
 
-/** Row shape served by the grid APIs: a dynamic record keyed by column field. */
-export type GridRow = Record<string, unknown>;
+import { authGuard } from './auth/auth-guard';
+import { loginGuard } from './auth/login/login-guard';
 
-export interface HeaderRef {
-  column: {
-    id: string;
-    getIsSorted?: () => 'asc' | 'desc' | false;
-    toggleSorting?: (desc?: boolean, multi?: boolean) => void;
-    clearSorting?: () => void;
-    pin?: (side: 'left' | 'right' | false) => void;
-    getIsPinned?: () => 'left' | 'right' | false;
-    getSize?: () => number;
-    setSize?: (px: number) => void;
-  };
-  table?: unknown;
-}
+export const appRoutes = [
+  // Default redirect to summary inside the dashboard shell
+  { path: '', redirectTo: 'summary', pathMatch: 'full' },
 
-/** Undo/redo snapshot of grid state, captured before/after an edit commits. */
-export interface GridSnapshot {
-  rows: GridRow[];
-  selectedIdSet: Set<string>;
-  filterValues: Record<string, unknown>;
-  sorting: unknown[];
-  pageIndex: number;
-  pageSize: number;
-  editMeta?: {
-    id: string;
-    field: string;
-    prevValue: unknown;
-    newValue: unknown;
-  };
-}
+  // Auth pages
+  {
+    path: 'signin',
+    canActivate: [loginGuard],
+    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
+  },
+  {
+    path: 'signup',
+    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
+  },
+  {
+    path: 'resetpassword',
+    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
+  },
+  {
+    path: 'new-password',
+    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
+  },
+  {
+    path: 'verify-sender-email',
+    loadComponent: () =>
+      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
+  },
+  {
+    path: 'confirm-subscription',
+    loadComponent: () =>
+      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'f/:slug',
+    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
+  },
+  {
+    path: 'e/:slug',
+    data: { kind: 'event' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'v/:slug',
+    data: { kind: 'volunteer' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'volunteer',
+    loadComponent: () =>
+      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
+  },
+  {
+    path: 'verify-email',
+    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
+  {
+    path: 'cancel-deletion',
+    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
+  },
+  {
+    path: 'resume-account',
+    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
+  },
 
-/** Minimal shape of DataGrid that GridStoreService/UndoManager depend on (avoids importing DataGrid directly). */
-export interface GridHost {
-  undoMgr: { pushUndo(snapshot: GridSnapshot): void };
-  store: {
-    rows: { (): GridRow[]; set: (rows: GridRow[]) => void };
-    selectedIdSet: { (): Set<string>; set: (ids: Set<string>) => void };
-    filterValues: { (): Record<string, unknown>; set: (v: Record<string, unknown>) => void };
-    sorting: { (): unknown[]; set: (v: unknown[]) => void };
-    pageIndex: { (): number; set: (v: number) => void };
-    pageSize: { (): number; set: (v: number) => void };
-  };
-  gridSvc: { update(id: string, data: unknown): Promise<unknown> };
-  alertSvc: { showError(msg: string): void };
-  updateTableWindow(start: number, end: number): void;
-  startIndex(): number;
-  endIndex(): number;
-  triggerCellFlash(rowId: string, field: string): void;
+  // Main dashboard shell + children (protected)
+  {
+    path: '',
+    canActivate: [authGuard],
+    // optionally also: canActivateChild: [authGuard],
+    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
+    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
+  },
+
+  // Fallback
+  {
+    path: '**',
+    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
+  },
+] as const satisfies Routes;
+```
+
+## File: apps/frontend/src/app/auth/auth-service.ts
+
+```typescript
+import { signal, Service } from '@angular/core';
+import { IAuthUser, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { TRPCService } from '../services/api/trpc-service';
+import { silentRefresh } from '../services/api/trpc-refreshlink';
+import { TRPCError } from '@trpc/server';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+
+@Service()
+export class AuthService extends TRPCService<'authusers'> {
+  private user = signal<IAuthUser | null>(null);
+
+  public async getCurrentUser(opts?: { silent?: boolean }) {
+    // The startup probe (init) passes silent: it swallows failures into `null` and lets the route
+    // guards decide who gets in. A guest's UNAUTHORIZED here is a normal answer, not a toast-worthy
+    // error — without this, every cold load of a public page (e.g. a password-reset link) flashes an
+    // "unauthorized" toast.
+    const request = opts?.silent
+      ? (
+          this.api.auth.currentUser.query as unknown as (
+            input: undefined,
+            o: { context: { skipErrorHandler: boolean } },
+          ) => Promise<IAuthUser>
+        )(undefined, { context: { skipErrorHandler: true } })
+      : this.api.auth.currentUser.query();
+    const user = (await request.catch(() => null)) as IAuthUser;
+    if (user) this.user.set(user);
+    return user;
+  }
+
+  public getUser(): IAuthUser | null {
+    return this.user();
+  }
+
+  public getUserSignal() {
+    return this.user;
+  }
+
+  public async init() {
+    // Cold load: the in-memory access token is gone. Re-mint one from the HttpOnly refresh cookie
+    // before asking who the user is, so a page reload doesn't look like a sign-out (SECURITY-REVIEW 2.1).
+    await silentRefresh(this.tokenService);
+    return this.getCurrentUser({ silent: true });
+  }
+
+  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+        resolve(result.split(',')[1]!);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = (await this.api.auth.uploadAvatar.mutate({
+      dataBase64,
+      mimeType: file.type as any,
+      filename: file.name,
+    })) as { avatar_url: string };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: res.avatar_url,
+      });
+    }
+
+    return res;
+  }
+
+  public async deleteAvatar(): Promise<{ success: boolean }> {
+    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: null,
+      });
+    }
+
+    return res;
+  }
+
+  public async cancelEmailChange() {
+    const response = await this.api.auth.cancelEmailChange.mutate();
+    await this.getCurrentUser();
+    return response;
+  }
+
+  public resetPassword(input: { code: string; password: string }) {
+    // The new-password page owns the error UX for this call.
+    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public sendPasswordResetEmail(input: { email: string }) {
+    // The reset-password page owns the error UX for this call.
+    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public async signIn(
+    input: signInInputType & { rememberMe?: boolean },
+  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
+    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+
+    if (response && 'requires2FA' in response && response.requires2FA) {
+      return { requires2FA: true, email: response.email };
+    }
+
+    const user = await this.updateTokensAndGetCurrentUser(response);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { requires2FA: false, user };
+  }
+
+  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
+    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return user;
+  }
+
+  public async signOut() {
+    let apiReturn = null;
+    try {
+      apiReturn = await this.api.auth.signOut.mutate();
+    } catch (error) {
+      console.error('Error during sign out:', error);
+    }
+
+    this.user.set(null);
+    this.tokenService.clearAll();
+    void this.router.navigate(['/signin']);
+
+    return apiReturn;
+  }
+
+  public async signUp(input: signUpInputType) {
+    const token = await this.api.auth.signUp.mutate(input);
+    return this.updateTokensAndGetCurrentUser(token);
+  }
+
+  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
+    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
+  }
+
+  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
+    // Callers toast their own success/failure (and handle rate-limit countdowns).
+    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ success: boolean }>;
+  }
+
+  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
+    // The sign-in page silently falls back to the password step if this fails —
+    // a global error toast here would be noise.
+    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ hasPasskeys: boolean }>;
+  }
+
+  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
+    let response: any;
+    try {
+      response = await startAuthentication({ optionsJSON: options });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
+      throw err;
+    }
+    const token = await (
+      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
+    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { user, cancelled: false };
+  }
+
+  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
+    const options = await this.api.auth.passkeyRegistrationOptions.query();
+    const response = await startRegistration({ optionsJSON: options as any });
+    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
+      verified: boolean;
+    };
+  }
+
+  public listPasskeys() {
+    return this.api.auth.listPasskeys.query();
+  }
+
+  public deletePasskey(id: string) {
+    return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
+  }
+
+  public updatePasskeyName(id: string, friendlyName: string) {
+    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
+  }
+
+  private async updateTokensAndGetCurrentUser(token: { auth_token?: string | null } | TRPCError) {
+    if (!token || token instanceof TRPCError) {
+      throw token;
+    }
+    // Only the access token comes back in the body now; the refresh token is set as an HttpOnly
+    // cookie by the server (SECURITY-REVIEW 2.1).
+    this.tokenService.set(token);
+    return this.getCurrentUser();
+  }
 }
 ```
 
@@ -50324,553 +50958,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
-  templateUrl: './persons-grid.html',
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({
-      messages: {
-        exportEntity: 'persons',
-        exportFileName: 'persons-export.csv',
-        entityNoun: 'person',
-        entityNounPlural: 'people',
-      },
-    }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected readonly mappableFields = [
-    'first_name',
-    'middle_names',
-    'last_name',
-    'email',
-    'email2',
-    'mobile',
-    'home_phone',
-    'street_num',
-    'street1',
-    'street2',
-    'apt',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'notes',
-  ];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'mobile', headerName: 'Mobile', editable: true },
-    { field: 'company_name', headerName: 'Company', editable: false },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  // Generic CSV importer integration
-  protected importerOpen = signal(false);
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
-  public listId = input<string | null>(null);
-
-  protected readonly narrowTypeOptions = signal<
-    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
-  >([
-    { label: 'All', value: null, tags: [] },
-    { label: 'Donors', value: 'donor', tags: ['donor'] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
-  ]);
-
-  protected tagsInput = '';
-
-  public ngOnInit() {
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadViewCounts();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Absolute per-view counts for the system-views segmented control (All / Donors /
-   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
-   * regardless of the grid's other active filters (§2).
-   */
-  private async loadViewCounts(): Promise<void> {
-    try {
-      const opts = this.narrowTypeOptions();
-      const counts = await Promise.all(
-        opts.map(async (o) => {
-          if (o.value === null) return this.personsService.count();
-          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
-          return res?.count ?? 0;
-        }),
-      );
-      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
-    } catch (err) {
-      console.error('Failed to load view counts', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  // paging/preview managed by CsvImportComponent
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // --- Import CSV Flow ---
-  protected openImportDialog() {
-    // Clear any prior summary to avoid stale dialogs
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importerOpen.set(true);
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-    const inputTags = this.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => !!t);
-    const tags = inputTags;
-
-    try {
-      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        tag: res?.tag ?? undefined,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  public autoMapHeader(h: string): string {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      firstname: 'first_name',
-      fname: 'first_name',
-      middlename: 'middle_names',
-      lastname: 'last_name',
-      lname: 'last_name',
-      name: 'first_name',
-      email: 'email',
-      emailaddress: 'email',
-      email1address: 'email',
-      email2: 'email2',
-      email2address: 'email2',
-      mobile: 'mobile',
-      mobilephone: 'mobile',
-      cellphone: 'mobile',
-      primaryphone: 'mobile',
-      businessphone: 'mobile',
-      homephone: 'home_phone',
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      homecity: 'city',
-      homestate: 'state',
-      homepostalcode: 'zip',
-      homecountry: 'country',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      businesscity: 'city',
-      businessstate: 'state',
-      businesspostalcode: 'zip',
-      businesscountry: 'country',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-form.html
 
 ```html
@@ -52202,6 +52289,769 @@ export class TeamViewComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
+
+```html
+<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle()">
+  @if (displayTitle()) {
+  <pc-grid-header
+    [title]="displayTitle()!"
+    [open]="showDescription()"
+    [description]="description() || ''"
+    [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
+    [filtered]="anyFilterActive()"
+  ></pc-grid-header>
+  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
+  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
+  <div class="mb-2 flex flex-wrap items-center gap-2">
+    <div class="join border border-base-300 rounded-lg">
+      @for (opt of narrowTypeOptions(); track opt.label) {
+      <button
+        type="button"
+        class="btn btn-sm join-item border-0 font-normal gap-1.5"
+        [class.btn-primary]="selectedNarrowType() === opt.value"
+        [class.btn-ghost]="selectedNarrowType() !== opt.value"
+        (click)="selectNarrowType(opt.value)"
+      >
+        {{ opt.label }} @if (opt.count != null) {
+        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
+        }
+      </button>
+      }
+    </div>
+  </div>
+  } @if (isLoading()) {
+  <progress class="progress h-1"></progress>
+  } @if (filterChips().length) {
+  <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
+    <span
+      class="font-semibold uppercase tracking-wider text-base-content/50"
+      i18n="Datagrid|Label preceding the active filter chips@@datagrid.chips.label"
+      >Filters</span
+    >
+    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
+    <span class="badge badge-outline gap-1 border-primary/30 bg-primary/10 text-primary">
+      @if (chip.kind === 'advanced') {
+      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
+      } @else { {{ chip.label }} }
+      <button
+        type="button"
+        class="opacity-70 hover:opacity-100"
+        [attr.aria-label]="'Remove filter: ' + chip.label"
+        (click)="removeFilterChip(chip)"
+      >
+        <pc-icon name="x-mark" [size]="3"></pc-icon>
+      </button>
+    </span>
+    }
+    <span class="flex-1"></span>
+    <button
+      type="button"
+      class="link text-primary hover:no-underline"
+      (click)="clearAllFilters()"
+      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
+    >
+      Clear all
+    </button>
+  </div>
+  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
+      >All {{ displayedCount() }} rows on this page are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="selectAllMatching()"
+      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
+      >Select all {{ totalCountAll() }} rows</a
+    >
+  </div>
+  } @if (allSelected()) {
+  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
+    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
+      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
+    >
+    <a
+      class="link hover:no-underline"
+      (click)="clearAllSelection()"
+      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
+      >Clear selection</a
+    >
+  </div>
+  } @if (hasSelectionState()) {
+  <!-- Bulk action bar: appears on any selection (§2) -->
+  <div
+    class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm"
+  >
+    <span class="font-semibold tabular-nums"
+      >{{ getCountRowSelected() }}
+      <ng-container i18n="Datagrid|Bulk bar selected-count suffix@@datagrid.bulk.selected">selected</ng-container></span
+    >
+    <span class="mx-1 h-4 w-px bg-base-300"></span>
+
+    @if (bulkTagOpen()) {
+    <input
+      type="text"
+      class="input input-bordered input-xs w-40"
+      placeholder="Tag name"
+      i18n-placeholder="@@datagrid.bulk.tagPlaceholder"
+      [ngModel]="bulkTagValue()"
+      (ngModelChange)="bulkTagValue.set($event)"
+      (keydown.enter)="applyBulkTag()"
+      (keydown.escape)="cancelBulkTag()"
+      autofocus
+    />
+    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
+      <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
+    </button>
+    <button class="btn btn-ghost btn-xs" (click)="cancelBulkTag()">
+      <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
+    </button>
+    } @else {
+    <button class="btn btn-ghost btn-sm gap-1.5" (click)="openBulkTag()">
+      <pc-icon name="label" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk add-tag action@@datagrid.bulk.tag">Add tag</ng-container>
+    </button>
+    @if (!disableExport()) {
+    <button class="btn btn-ghost btn-sm gap-1.5" (click)="doConfirmExport()">
+      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk export action@@datagrid.bulk.export">Export</ng-container>
+    </button>
+    } @if (!disableMerge()) {
+    <button
+      class="btn btn-ghost btn-sm gap-1.5"
+      [disabled]="getCountRowSelected() !== 2"
+      [title]="
+        getCountRowSelected() === 2
+          ? 'Merge 2 ' + entityNounPlural
+          : 'Select exactly 2 ' + entityNounPlural + ' to merge — ' + getCountRowSelected() + ' selected'
+      "
+      (click)="doConfirmMerge()"
+    >
+      <pc-icon name="merge" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk merge action@@datagrid.bulk.merge">Merge</ng-container>
+    </button>
+    } @if (!!addRoute()) {
+    <button
+      class="btn btn-ghost btn-sm gap-1.5"
+      [disabled]="!hasSingleSelection()"
+      [title]="
+        hasSingleSelection()
+          ? 'Clone this ' + entityNoun
+          : 'Select exactly 1 ' + entityNoun + ' to clone — ' + getCountRowSelected() + ' selected'
+      "
+      (click)="doClone()"
+    >
+      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk clone action@@datagrid.bulk.clone">Clone</ng-container>
+    </button>
+    }
+    <span class="flex-1"></span>
+    @if (!disableDelete()) {
+    <button class="btn btn-outline btn-error btn-sm gap-1.5" (click)="doConfirmDelete()">
+      <pc-icon name="trash" [size]="4"></pc-icon>
+      <ng-container i18n="Datagrid|Bulk delete action@@datagrid.bulk.delete">Delete</ng-container>
+      {{ getCountRowSelected() }} {{ nounFor(getCountRowSelected()) }}
+    </button>
+    } }
+  </div>
+  }
+  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
+    <table #gridTable class="table w-full">
+      <thead>
+        <tr>
+          @if (enableSelection()) {
+          <th
+            class="border-r border-base-300 pl-2 selection-col"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-sm"
+              [checked]="!allSelected() && tableAllPageSelected()"
+              [indeterminate]="!allSelected() && tableSomePageSelected()"
+              (change)="onHeaderCheckbox($any($event.target).checked)"
+            />
+          </th>
+          } @for (h of leafHeaders(); track h.id) {
+          <th
+            role="columnheader"
+            class="cursor-grab border-r border-base-300 pl-2 relative"
+            [attr.data-col-id]="h.column.id"
+            [attr.aria-sort]="ariaSortHeader(h)"
+            [draggable]="true"
+            (dragstart)="onHeaderDragStart(h, $event)"
+            (dragover)="onHeaderDragOver(h, $event)"
+            (drop)="onHeaderDrop(h, $event)"
+            [style.width.px]="columnWidthPx(h.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
+          >
+            <div class="flex items-center gap-2" data-header-content>
+              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
+                {{ h.column.columnDef.header || h.column.id }}
+              </span>
+              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
+              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
+                <label
+                  tabindex="0"
+                  class="btn btn-xs"
+                  [class.btn-ghost]="!isColFiltered(h.column.id)"
+                  [class.btn-primary]="isColFiltered(h.column.id)"
+                  title="Column options"
+                  i18n-title="@@datagrid.columns.optionsTitle"
+                >
+                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
+                </label>
+                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
+                  @let col = getColDefById(h.column.id);
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
+                      track opt) {
+                      <li>
+                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
+                          <input
+                            type="checkbox"
+                            class="checkbox checkbox-xs"
+                            [checked]="isOptionChecked(h.column.id, opt)"
+                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
+                          />
+                          <span class="label-text">{{ opt }}</span>
+                        </label>
+                      </li>
+                      }
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      } @else {
+                      <li class="px-2 py-1">
+                        <input
+                          class="input input-bordered input-xs w-full"
+                          type="text"
+                          placeholder="Filter value"
+                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
+                          [value]="getFilterValue(h.column.id)"
+                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
+                        />
+                      </li>
+                      <li class="px-2 pt-1">
+                        <a
+                          (click)="clearHeaderFilter(h.column.id)"
+                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
+                          >Clear</a
+                        >
+                      </li>
+                      }
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
+                      <li>
+                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
+                          >Sort asc</a
+                        >
+                      </li>
+                      <li>
+                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
+                          >Sort desc</a
+                        >
+                      </li>
+                      <li>
+                        <a
+                          (click)="clearSort(h)"
+                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
+                          >Clear sort</a
+                        >
+                      </li>
+                    </ul>
+                  </li>
+                  <li class="dropdown dropdown-right">
+                    <label tabindex="0" class="flex w-full items-center justify-between"
+                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
+                        >Column</span
+                      ><span>▸</span></label
+                    >
+                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                      @if (!col?.noHide) {
+                      <li>
+                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
+                          >Hide</a
+                        >
+                      </li>
+                      }
+                      <li class="dropdown dropdown-right">
+                        <label tabindex="0" class="flex w-full items-center justify-between"
+                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
+                            >Columns</span
+                          ><span>▸</span></label
+                        >
+                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
+                          @for (cid of hiddenColumns(); track cid) {
+                          <li>
+                            <a (click)="showColumnById(cid)"
+                              ><ng-container
+                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
+                                >Show</ng-container
+                              >
+                              {{ columnLabelFor(cid) }}</a
+                            >
+                          </li>
+                          } @if (!hiddenColumns().length) {
+                          <li
+                            class="opacity-60 px-2 py-1"
+                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
+                          >
+                            None hidden
+                          </li>
+                          }
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </div>
+              <span
+                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
+                title="Resize column"
+                i18n-title="@@datagrid.columns.resizeTitle"
+                [pcHeaderResize]="headerResizeConfig(h)"
+              ></span>
+            </div>
+          </th>
+          }
+        </tr>
+      </thead>
+      <tbody class="bg-base-100">
+        @if (hasActiveFilters() && !visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
+                >No results match your filters</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
+                >Try clearing or adjusting your filters</span
+              >
+              <button
+                type="button"
+                class="btn btn-outline btn-sm mt-1"
+                (click)="clearAllFilters()"
+                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
+              >
+                Clear all filters
+              </button>
+            </div>
+          </td>
+        </tr>
+        } @else if (!visibleTableRows().length) {
+        <tr>
+          <td
+            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
+            class="py-16 text-center text-gray-400"
+          >
+            <div class="flex flex-col items-center gap-3">
+              <span
+                class="text-base font-medium"
+                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
+                >Nothing here yet</span
+              >
+              <span
+                class="text-sm opacity-70"
+                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
+                >Add your first record using the + button above</span
+              >
+            </div>
+          </td>
+        </tr>
+        } @for (r of visibleTableRows(); let i = $index; track r.id) {
+        <tr
+          class="group hover:bg-base-300"
+          [class.cursor-pointer]="rowNavigatesToDetail()"
+          (mouseover)="onCellMouseOver(r.original)"
+          [attr.data-row-id]="toId(r.original)"
+          [class.bg-base-200]="(i % 2) === 1"
+        >
+          @if (enableSelection()) {
+          <td
+            class="sticky left-0 z-20 border-r border-base-300 pl-2"
+            [style.background]="rowBgForIndex(i)"
+            [style.width.px]="selectionStickyWidth()"
+            [style.minWidth.px]="selectionStickyWidth()"
+            [style.maxWidth.px]="selectionStickyWidth()"
+          >
+            <div class="flex items-center gap-2">
+              @if (rowCanSelect()(r.original)) {
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm"
+                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
+                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
+              />
+              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
+              <span
+                title="Open detail"
+                i18n-title="@@datagrid.rows.openDetailTitle"
+                aria-label="Open detail"
+                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
+                (click)="openEdit(rowId); $event.stopPropagation();"
+              >
+                <pc-icon
+                  name="arrow-top-right-on-square"
+                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
+                ></pc-icon>
+              </span>
+              }
+            </div>
+          </td>
+          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
+          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
+          === col.field;
+          <td
+            [pcEditable]="editableCfg(r.original, col)"
+            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
+            tabindex="0"
+            (keydown)="onCellKeydown($event)"
+            (click)="handleCellClick(r.original, col)"
+            (dblclick)="handleCellDblClick(r.original, col)"
+            [class.sticky]="pinState(cell) !== false"
+            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
+            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
+            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
+            [style.zIndex]="pinState(cell) !== false ? 10 : null"
+            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
+            [class.overflow-visible]="isTagColumn(col) && isEditing"
+            class="min-w-0 px-2 border-r border-base-300 relative"
+            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
+            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
+            [attr.data-col-id]="cell.column.id"
+            [style.width.px]="columnWidthPx(cell.column.id)"
+            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
+          >
+            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
+            (isTagColumn(col)) {
+            <!-- Tag column: checkbox multi-select panel -->
+            <div
+              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
+              (click)="$event.stopPropagation()"
+            >
+              <!-- Search box — pinned, never scrolls -->
+              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
+                <input
+                  type="text"
+                  class="input input-bordered input-xs w-full"
+                  placeholder="Search tags…"
+                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
+                  [ngModel]="tagSearch()"
+                  (ngModelChange)="tagSearch.set($event)"
+                  autofocus
+                />
+              </div>
+              <!-- Scrollable tag list -->
+              <div class="flex-1 overflow-y-auto py-1">
+                @for (tag of filteredTagChoices(col); track tag) {
+                <label
+                  tabindex="-1"
+                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="isTagChecked(tag)"
+                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
+                  />
+                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
+                </label>
+                } @if (!filteredTagChoices(col).length) {
+                <div class="text-xs text-base-content/50 px-3 py-2 italic">
+                  @if (tagSearch()) {
+                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
+                    >No tags match "{{ tagSearch() }}"</ng-container
+                  >
+                  } @else {
+                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
+                    >No tags available</ng-container
+                  >
+                  }
+                </div>
+                }
+              </div>
+              <!-- Done button — pinned, never scrolls -->
+              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
+                <button
+                  class="btn btn-primary btn-xs"
+                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
+                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+            } @else if (editorCfg) { @if (editorCfg.multiple) {
+            <select
+              class="select select-bordered w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              multiple
+              [attr.size]="editorCfg.size ?? null"
+              [style.height]="multiSelectHeight(editorCfg)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } @else {
+            <select
+              class="select select-bordered w-full select-xs"
+              [ngModel]="editingValue()"
+              (ngModelChange)="onSelectChange(r.original, col, $event)"
+              autofocus
+            >
+              @for (opt of editorCfg.choices; track opt.value) {
+              <option [value]="opt.value">{{ opt.label }}</option>
+              }
+            </select>
+            } } @else if (textCfg.textarea) {
+            <textarea
+              class="textarea textarea-bordered textarea-sm w-full"
+              [rows]="textCfg.rows"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            ></textarea>
+            } @else {
+            <input
+              [type]="inputTypeFor(col)"
+              class="input input-bordered input-xs w-full"
+              [ngModel]="editingValue()"
+              (ngModelChange)="editingValue.set($event)"
+              autofocus
+            />
+            } } @else if (hasCellRenderer(col)) {
+            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
+            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
+            (isTagColumn(col) && tagList.length) {
+            <pc-tags
+              [tags]="tagList"
+              [type]="tagTypeFor(col)"
+              [readonly]="true"
+              [canDelete]="false"
+              [compact]="true"
+              [limit]="2"
+              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
+            ></pc-tags>
+            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
+            === null || formattedVal === undefined || formattedVal === '') {
+            <span class="text-base-content/30">—</span>
+            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) {
+            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
+            @if (rawValue) {
+            <span
+              class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
+              >{{ rawValue }}</span
+            >
+            } @else {
+            <span
+              class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
+              i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
+              >Unnamed person</span
+            >
+            } } @else if (col.field === 'address') {
+            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
+              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
+            </div>
+            } @else {
+            <span class="flex items-center gap-1 w-full">
+              @if (rawValue === null || rawValue === undefined || rawValue === '') {
+              <span class="flex-1 truncate text-base-content/30">—</span>
+              } @else {
+              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
+              }
+            </span>
+            } } }
+          </td>
+          } }
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
+    <div class="flex items-center gap-2 whitespace-nowrap">
+      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
+        >Page Size:</span
+      >
+      <select
+        class="select select-bordered select-xs"
+        [ngModel]="pageSize()"
+        (ngModelChange)="onPageSizeChange($event)"
+      >
+        @if (![25,50,100].includes(pageSize())) {
+        <option [value]="pageSize()">{{ pageSize() }}</option>
+        } @for (opt of pageSizeChoices(); track opt) {
+        <option [value]="opt">{{ opt }}</option>
+        }
+      </select>
+    </div>
+    <div
+      class="whitespace-nowrap tabular-nums"
+      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
+    >
+      <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
+        >{{ displayEndIndex() }}</span
+      >
+      of <span class="font-normal">{{ totalCountAll() }}</span> · Page
+      <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
+    </div>
+    <div class="join whitespace-nowrap">
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
+        [disabled]="!canPrev()"
+        (click)="firstPage()"
+      >
+        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
+        [disabled]="!canPrev()"
+        (click)="prevPage()"
+      >
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        [title]="canNext() ? nextPageTitle : onLastPageTitle"
+        [disabled]="!canNext()"
+        (click)="nextPage()"
+      >
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+      <button
+        class="btn btn-sm font-light join-item btn-ghost"
+        [title]="canNext() ? lastPageTitle : onLastPageTitle"
+        [disabled]="!canNext()"
+        (click)="lastPage()"
+      >
+        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Right-side Filter Panel -->
+@if (showFilterPanel()) {
+<pc-dg-filter-panel
+  [panelFields]="panelFields()"
+  [panelFilters]="panelFilters()"
+  [labelFor]="labelForFn"
+  [optionsFor]="optionsForFn"
+  [hasActiveFilters]="hasActiveFilters()"
+  (closePanel)="closePanel()"
+  (apply)="applyPanelFilters()"
+  (clear)="clearPanelFilters()"
+  (changeOp)="onPanelOpChange($event.field, $event.op)"
+  (changeValue)="onPanelValueChange($event.field, $event.value)"
+  (openAdvanced)="switchToAdvancedFilter()"
+/>
+}
+
+<!-- Advanced Filter Builder Modal -->
+@if (showAdvancedFilterBuilder()) {
+<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
+  <div
+    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
+  >
+    <div class="flex justify-between items-center pb-4 border-b border-base-200">
+      <div>
+        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
+          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
+          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
+            >Advanced Filter Builder</ng-container
+          >
+        </h3>
+        <p
+          class="text-xs text-neutral-400 mt-1"
+          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
+        >
+          Build complex matching rules with custom operators and conjunction logic.
+        </p>
+      </div>
+      <button
+        class="btn btn-ghost btn-circle btn-sm"
+        (click)="showAdvancedFilterBuilder.set(false)"
+        aria-label="Close modal"
+        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
+      >
+        <pc-icon name="x-mark" [size]="4"></pc-icon>
+      </button>
+    </div>
+
+    <!-- Scrollable Body containing the rules -->
+    <div class="flex-1 overflow-y-auto py-6">
+      <pc-query-builder
+        [group]="advFilterRoot()"
+        [fields]="advancedFilterFields()"
+        [tagSvc]="tagsSvc ?? undefined"
+        [showSummary]="true"
+        (changed)="onAdvancedFilterChanged()"
+      ></pc-query-builder>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div class="flex justify-between items-center pt-4 border-t border-base-200">
+      <button
+        class="btn btn-outline btn-error btn-sm"
+        (click)="clearAdvancedFilter()"
+        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
+      >
+        Clear Filters
+      </button>
+      <div class="flex gap-2">
+        <button
+          class="btn btn-ghost btn-sm"
+          (click)="showAdvancedFilterBuilder.set(false)"
+          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
+        >
+          Cancel
+        </button>
+        <button
+          class="btn btn-primary btn-sm px-6"
+          (click)="applyAdvancedFilter()"
+          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 }
 ```
 
@@ -57233,769 +58083,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     ></pc-swap>
   </div>
 </div>
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.html
-
-```html
-<div class="flex h-full w-full flex-col" [class.p-6]="displayTitle()">
-  @if (displayTitle()) {
-  <pc-grid-header
-    [title]="displayTitle()!"
-    [open]="showDescription()"
-    [description]="description() || ''"
-    [totalCount]="hasInitiatedLoad() ? totalCountAll() : null"
-    [filtered]="anyFilterActive()"
-  ></pc-grid-header>
-  } @if (showToolbar()) { <pc-dg-toolbar /> } @if (showNarrowTypeFilter()) {
-  <!-- System views: segmented control with per-view counts (composes AND with filters) -->
-  <div class="mb-2 flex flex-wrap items-center gap-2">
-    <div class="join border border-base-300 rounded-lg">
-      @for (opt of narrowTypeOptions(); track opt.label) {
-      <button
-        type="button"
-        class="btn btn-sm join-item border-0 font-normal gap-1.5"
-        [class.btn-primary]="selectedNarrowType() === opt.value"
-        [class.btn-ghost]="selectedNarrowType() !== opt.value"
-        (click)="selectNarrowType(opt.value)"
-      >
-        {{ opt.label }} @if (opt.count != null) {
-        <span class="tabular-nums opacity-70">{{ opt.count }}</span>
-        }
-      </button>
-      }
-    </div>
-  </div>
-  } @if (isLoading()) {
-  <progress class="progress h-1"></progress>
-  } @if (filterChips().length) {
-  <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
-    <span
-      class="font-semibold uppercase tracking-wider text-base-content/50"
-      i18n="Datagrid|Label preceding the active filter chips@@datagrid.chips.label"
-      >Filters</span
-    >
-    @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
-    <span class="badge badge-outline gap-1 border-primary/30 bg-primary/10 text-primary">
-      @if (chip.kind === 'advanced') {
-      <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
-      } @else { {{ chip.label }} }
-      <button
-        type="button"
-        class="opacity-70 hover:opacity-100"
-        [attr.aria-label]="'Remove filter: ' + chip.label"
-        (click)="removeFilterChip(chip)"
-      >
-        <pc-icon name="x-mark" [size]="3"></pc-icon>
-      </button>
-    </span>
-    }
-    <span class="flex-1"></span>
-    <button
-      type="button"
-      class="link text-primary hover:no-underline"
-      (click)="clearAllFilters()"
-      i18n="Datagrid|Button clearing every active filter@@datagrid.chips.clearAll"
-    >
-      Clear all
-    </button>
-  </div>
-  } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all rows on page are selected@@datagrid.selection.allPageSelected"
-      >All {{ displayedCount() }} rows on this page are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="selectAllMatching()"
-      i18n="Datagrid|Button to select all matching rows@@datagrid.selection.selectAllMatching"
-      >Select all {{ totalCountAll() }} rows</a
-    >
-  </div>
-  } @if (allSelected()) {
-  <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
-    <span i18n="Datagrid|Message indicating all matching rows are selected@@datagrid.selection.allSelected"
-      >All {{ allSelectedCount() || totalCountAll() }} rows are selected.</span
-    >
-    <a
-      class="link hover:no-underline"
-      (click)="clearAllSelection()"
-      i18n="Datagrid|Button to clear current selection@@datagrid.selection.clear"
-      >Clear selection</a
-    >
-  </div>
-  } @if (hasSelectionState()) {
-  <!-- Bulk action bar: appears on any selection (§2) -->
-  <div
-    class="mb-2 flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm"
-  >
-    <span class="font-semibold tabular-nums"
-      >{{ getCountRowSelected() }}
-      <ng-container i18n="Datagrid|Bulk bar selected-count suffix@@datagrid.bulk.selected">selected</ng-container></span
-    >
-    <span class="mx-1 h-4 w-px bg-base-300"></span>
-
-    @if (bulkTagOpen()) {
-    <input
-      type="text"
-      class="input input-bordered input-xs w-40"
-      placeholder="Tag name"
-      i18n-placeholder="@@datagrid.bulk.tagPlaceholder"
-      [ngModel]="bulkTagValue()"
-      (ngModelChange)="bulkTagValue.set($event)"
-      (keydown.enter)="applyBulkTag()"
-      (keydown.escape)="cancelBulkTag()"
-      autofocus
-    />
-    <button class="btn btn-primary btn-xs" [disabled]="!bulkTagValue().trim()" (click)="applyBulkTag()">
-      <ng-container i18n="Datagrid|Confirm bulk add-tag@@datagrid.bulk.tagAdd">Add</ng-container>
-    </button>
-    <button class="btn btn-ghost btn-xs" (click)="cancelBulkTag()">
-      <ng-container i18n="Datagrid|Cancel bulk add-tag@@datagrid.bulk.tagCancel">Cancel</ng-container>
-    </button>
-    } @else {
-    <button class="btn btn-ghost btn-sm gap-1.5" (click)="openBulkTag()">
-      <pc-icon name="label" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk add-tag action@@datagrid.bulk.tag">Add tag</ng-container>
-    </button>
-    @if (!disableExport()) {
-    <button class="btn btn-ghost btn-sm gap-1.5" (click)="doConfirmExport()">
-      <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk export action@@datagrid.bulk.export">Export</ng-container>
-    </button>
-    } @if (!disableMerge()) {
-    <button
-      class="btn btn-ghost btn-sm gap-1.5"
-      [disabled]="getCountRowSelected() !== 2"
-      [title]="
-        getCountRowSelected() === 2
-          ? 'Merge 2 ' + entityNounPlural
-          : 'Select exactly 2 ' + entityNounPlural + ' to merge — ' + getCountRowSelected() + ' selected'
-      "
-      (click)="doConfirmMerge()"
-    >
-      <pc-icon name="merge" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk merge action@@datagrid.bulk.merge">Merge</ng-container>
-    </button>
-    } @if (!!addRoute()) {
-    <button
-      class="btn btn-ghost btn-sm gap-1.5"
-      [disabled]="!hasSingleSelection()"
-      [title]="
-        hasSingleSelection()
-          ? 'Clone this ' + entityNoun
-          : 'Select exactly 1 ' + entityNoun + ' to clone — ' + getCountRowSelected() + ' selected'
-      "
-      (click)="doClone()"
-    >
-      <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk clone action@@datagrid.bulk.clone">Clone</ng-container>
-    </button>
-    }
-    <span class="flex-1"></span>
-    @if (!disableDelete()) {
-    <button class="btn btn-outline btn-error btn-sm gap-1.5" (click)="doConfirmDelete()">
-      <pc-icon name="trash" [size]="4"></pc-icon>
-      <ng-container i18n="Datagrid|Bulk delete action@@datagrid.bulk.delete">Delete</ng-container>
-      {{ getCountRowSelected() }} {{ nounFor(getCountRowSelected()) }}
-    </button>
-    } }
-  </div>
-  }
-  <div #scroller class="flex-1 overflow-auto border border-base-300 rounded relative" (scroll)="onScroll($event)">
-    <table #gridTable class="table w-full">
-      <thead>
-        <tr>
-          @if (enableSelection()) {
-          <th
-            class="border-r border-base-300 pl-2 selection-col"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-sm"
-              [checked]="!allSelected() && tableAllPageSelected()"
-              [indeterminate]="!allSelected() && tableSomePageSelected()"
-              (change)="onHeaderCheckbox($any($event.target).checked)"
-            />
-          </th>
-          } @for (h of leafHeaders(); track h.id) {
-          <th
-            role="columnheader"
-            class="cursor-grab border-r border-base-300 pl-2 relative"
-            [attr.data-col-id]="h.column.id"
-            [attr.aria-sort]="ariaSortHeader(h)"
-            [draggable]="true"
-            (dragstart)="onHeaderDragStart(h, $event)"
-            (dragover)="onHeaderDragOver(h, $event)"
-            (drop)="onHeaderDrop(h, $event)"
-            [style.width.px]="columnWidthPx(h.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(h.column.id)"
-          >
-            <div class="flex items-center gap-2" data-header-content>
-              <span class="flex-grow" data-header-label (click)="toggleHeaderSort(h, $event)">
-                {{ h.column.columnDef.header || h.column.id }}
-              </span>
-              <pc-icon [name]="sortIndicatorForHeader(h)" [size]="4"></pc-icon>
-              <div class="dropdown dropdown-end" (click)="$event.stopPropagation()">
-                <label
-                  tabindex="0"
-                  class="btn btn-xs"
-                  [class.btn-ghost]="!isColFiltered(h.column.id)"
-                  [class.btn-primary]="isColFiltered(h.column.id)"
-                  title="Column options"
-                  i18n-title="@@datagrid.columns.optionsTitle"
-                >
-                  <pc-icon [name]="isColFiltered(h.column.id) ? 'funnel' : 'ellipsis-vertical'"></pc-icon>
-                </label>
-                <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-60 p-2 shadow">
-                  @let col = getColDefById(h.column.id);
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column filter option@@datagrid.columns.filterLabel">Filter</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (col && getFilterOptionsForCol(col)?.length) { @for (opt of getFilterOptionsForCol(col)!;
-                      track opt) {
-                      <li>
-                        <label class="label cursor-pointer justify-start gap-2 px-2 py-1">
-                          <input
-                            type="checkbox"
-                            class="checkbox checkbox-xs"
-                            [checked]="isOptionChecked(h.column.id, opt)"
-                            (change)="onToggleFilterOption(h.column.id, opt, $any($event.target).checked)"
-                          />
-                          <span class="label-text">{{ opt }}</span>
-                        </label>
-                      </li>
-                      }
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      } @else {
-                      <li class="px-2 py-1">
-                        <input
-                          class="input input-bordered input-xs w-full"
-                          type="text"
-                          placeholder="Filter value"
-                          i18n-placeholder="@@datagrid.columns.filterValuePlaceholder"
-                          [value]="getFilterValue(h.column.id)"
-                          (input)="onHeaderFilterInput(h.column.id, $any($event.target).value)"
-                        />
-                      </li>
-                      <li class="px-2 pt-1">
-                        <a
-                          (click)="clearHeaderFilter(h.column.id)"
-                          i18n="Datagrid|Action to clear active filter@@datagrid.columns.clearFilter"
-                          >Clear</a
-                        >
-                      </li>
-                      }
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column sort option@@datagrid.columns.sortLabel">Sort</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-48 p-2 shadow">
-                      <li>
-                        <a (click)="sortAsc(h)" i18n="Datagrid|Sort ascending action@@datagrid.columns.sortAsc"
-                          >Sort asc</a
-                        >
-                      </li>
-                      <li>
-                        <a (click)="sortDesc(h)" i18n="Datagrid|Sort descending action@@datagrid.columns.sortDesc"
-                          >Sort desc</a
-                        >
-                      </li>
-                      <li>
-                        <a
-                          (click)="clearSort(h)"
-                          i18n="Datagrid|Clear column sorting action@@datagrid.columns.clearSort"
-                          >Clear sort</a
-                        >
-                      </li>
-                    </ul>
-                  </li>
-                  <li class="dropdown dropdown-right">
-                    <label tabindex="0" class="flex w-full items-center justify-between"
-                      ><span i18n="Datagrid|Label for column visibility sub-menu@@datagrid.columns.columnMenuLabel"
-                        >Column</span
-                      ><span>▸</span></label
-                    >
-                    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                      @if (!col?.noHide) {
-                      <li>
-                        <a (click)="hideColumn(h)" i18n="Datagrid|Hide current column action@@datagrid.columns.hide"
-                          >Hide</a
-                        >
-                      </li>
-                      }
-                      <li class="dropdown dropdown-right">
-                        <label tabindex="0" class="flex w-full items-center justify-between"
-                          ><span i18n="Datagrid|Label for columns list sub-menu@@datagrid.columns.columnsListLabel"
-                            >Columns</span
-                          ><span>▸</span></label
-                        >
-                        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box w-64 p-2 shadow">
-                          @for (cid of hiddenColumns(); track cid) {
-                          <li>
-                            <a (click)="showColumnById(cid)"
-                              ><ng-container
-                                i18n="Datagrid|Action prefix to show hidden column@@datagrid.columns.showPrefix"
-                                >Show</ng-container
-                              >
-                              {{ columnLabelFor(cid) }}</a
-                            >
-                          </li>
-                          } @if (!hiddenColumns().length) {
-                          <li
-                            class="opacity-60 px-2 py-1"
-                            i18n="Datagrid|Message when no columns are hidden@@datagrid.columns.noneHidden"
-                          >
-                            None hidden
-                          </li>
-                          }
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </div>
-              <span
-                class="absolute right-0 top-0 h-full w-2 cursor-col-resize select-none"
-                title="Resize column"
-                i18n-title="@@datagrid.columns.resizeTitle"
-                [pcHeaderResize]="headerResizeConfig(h)"
-              ></span>
-            </div>
-          </th>
-          }
-        </tr>
-      </thead>
-      <tbody class="bg-base-100">
-        @if (hasActiveFilters() && !visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <pc-icon name="funnel" [size]="12" class="opacity-40"></pc-icon>
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when filter returned no results@@datagrid.filterEmptyState.heading"
-                >No results match your filters</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction when filters return no results@@datagrid.filterEmptyState.instruction"
-                >Try clearing or adjusting your filters</span
-              >
-              <button
-                type="button"
-                class="btn btn-outline btn-sm mt-1"
-                (click)="clearAllFilters()"
-                i18n="Datagrid|Button clearing filters from the empty state@@datagrid.filterEmptyState.clear"
-              >
-                Clear all filters
-              </button>
-            </div>
-          </td>
-        </tr>
-        } @else if (!visibleTableRows().length) {
-        <tr>
-          <td
-            [attr.colspan]="leafHeaders().length + (enableSelection() ? 1 : 0)"
-            class="py-16 text-center text-gray-400"
-          >
-            <div class="flex flex-col items-center gap-3">
-              <span
-                class="text-base font-medium"
-                i18n="Datagrid|Heading when table has no data@@datagrid.emptyState.heading"
-                >Nothing here yet</span
-              >
-              <span
-                class="text-sm opacity-70"
-                i18n="Datagrid|Instruction to add first record@@datagrid.emptyState.instruction"
-                >Add your first record using the + button above</span
-              >
-            </div>
-          </td>
-        </tr>
-        } @for (r of visibleTableRows(); let i = $index; track r.id) {
-        <tr
-          class="group hover:bg-base-300"
-          [class.cursor-pointer]="rowNavigatesToDetail()"
-          (mouseover)="onCellMouseOver(r.original)"
-          [attr.data-row-id]="toId(r.original)"
-          [class.bg-base-200]="(i % 2) === 1"
-        >
-          @if (enableSelection()) {
-          <td
-            class="sticky left-0 z-20 border-r border-base-300 pl-2"
-            [style.background]="rowBgForIndex(i)"
-            [style.width.px]="selectionStickyWidth()"
-            [style.minWidth.px]="selectionStickyWidth()"
-            [style.maxWidth.px]="selectionStickyWidth()"
-          >
-            <div class="flex items-center gap-2">
-              @if (rowCanSelect()(r.original)) {
-              <input
-                type="checkbox"
-                class="checkbox checkbox-sm"
-                [checked]="allSelected() ? allSelectedIdSet().has(toId(r.original)) : r.getIsSelected()"
-                (change)="onRowCheckboxChange(r, $any($event.target).checked)"
-              />
-              } @let rowId = toId(r.original); @if (!disableView() && !hasDoorColumn() && rowId) {
-              <span
-                title="Open detail"
-                i18n-title="@@datagrid.rows.openDetailTitle"
-                aria-label="Open detail"
-                i18n-aria-label="@@datagrid.rows.openDetailAriaLabel"
-                (click)="openEdit(rowId); $event.stopPropagation();"
-              >
-                <pc-icon
-                  name="arrow-top-right-on-square"
-                  class="cursor-pointer pb-1 text-base-content/30 transition-colors hover:text-primary"
-                ></pc-icon>
-              </span>
-              }
-            </div>
-          </td>
-          } @for (cell of r.getVisibleCells(); track cell.id) { @let col = getColDefById(cell.column.id); @if (col &&
-          isColVisible(col)) { @let ec = editingCell(); @let isEditing = ec && ec.id === toId(r.original) && ec.field
-          === col.field;
-          <td
-            [pcEditable]="editableCfg(r.original, col)"
-            [class.cell-flash]="col.field && flashedCells().has(toId(r.original) + ':' + col.field)"
-            tabindex="0"
-            (keydown)="onCellKeydown($event)"
-            (click)="handleCellClick(r.original, col)"
-            (dblclick)="handleCellDblClick(r.original, col)"
-            [class.sticky]="pinState(cell) !== false"
-            [style.left.px]="pinState(cell) === 'left' ? leftOffsetPx(cell.column.id) : null"
-            [style.right.px]="pinState(cell) === 'right' ? rightOffsetPx(cell.column.id) : null"
-            [style.background]="pinState(cell) !== false ? rowBgForIndex(i) : null"
-            [style.zIndex]="pinState(cell) !== false ? 10 : null"
-            [class.overflow-hidden]="!(isTagColumn(col) && isEditing)"
-            [class.overflow-visible]="isTagColumn(col) && isEditing"
-            class="min-w-0 px-2 border-r border-base-300 relative"
-            [class.cursor-pencil]="isCellEditable(r.original, col) && !isEditing"
-            [class.cursor-pointer]="isCellPointerInteractive(r.original, col)"
-            [attr.data-col-id]="cell.column.id"
-            [style.width.px]="columnWidthPx(cell.column.id)"
-            [style.minWidth.px]="columnMinWidthPx(cell.column.id)"
-          >
-            @if (isEditing) { @let editorCfg = selectEditorOptions(col); @let textCfg = getTextEditorConfig(col); @if
-            (isTagColumn(col)) {
-            <!-- Tag column: checkbox multi-select panel -->
-            <div
-              class="relative z-50 flex flex-col bg-base-100 border border-base-300 rounded-lg shadow-lg min-w-44 max-h-56"
-              (click)="$event.stopPropagation()"
-            >
-              <!-- Search box — pinned, never scrolls -->
-              <div class="shrink-0 px-2 pt-1.5 pb-1 border-b border-base-300">
-                <input
-                  type="text"
-                  class="input input-bordered input-xs w-full"
-                  placeholder="Search tags…"
-                  i18n-placeholder="@@datagrid.tags.searchPlaceholder"
-                  [ngModel]="tagSearch()"
-                  (ngModelChange)="tagSearch.set($event)"
-                  autofocus
-                />
-              </div>
-              <!-- Scrollable tag list -->
-              <div class="flex-1 overflow-y-auto py-1">
-                @for (tag of filteredTagChoices(col); track tag) {
-                <label
-                  tabindex="-1"
-                  class="flex items-center gap-2 px-3 py-1 hover:bg-base-200 cursor-pointer select-none"
-                >
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="isTagChecked(tag)"
-                    (change)="toggleTagInEditor(tag, $any($event.target).checked)"
-                  />
-                  <span class="text-xs">{{ tag.charAt(0).toUpperCase() + tag.slice(1) }}</span>
-                </label>
-                } @if (!filteredTagChoices(col).length) {
-                <div class="text-xs text-base-content/50 px-3 py-2 italic">
-                  @if (tagSearch()) {
-                  <ng-container i18n="Datagrid|Message when tag search yields no results@@datagrid.tags.noMatch"
-                    >No tags match "{{ tagSearch() }}"</ng-container
-                  >
-                  } @else {
-                  <ng-container i18n="Datagrid|Message when no tags are available@@datagrid.tags.noTags"
-                    >No tags available</ng-container
-                  >
-                  }
-                </div>
-                }
-              </div>
-              <!-- Done button — pinned, never scrolls -->
-              <div class="shrink-0 border-t border-base-300 px-2 py-1 flex justify-end">
-                <button
-                  class="btn btn-primary btn-xs"
-                  (click)="commitTagColumn(r.original, col); $event.stopPropagation()"
-                  i18n="Datagrid|Done editing tags@@datagrid.tags.done"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
-            } @else if (editorCfg) { @if (editorCfg.multiple) {
-            <select
-              class="select select-bordered w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              multiple
-              [attr.size]="editorCfg.size ?? null"
-              [style.height]="multiSelectHeight(editorCfg)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } @else {
-            <select
-              class="select select-bordered w-full select-xs"
-              [ngModel]="editingValue()"
-              (ngModelChange)="onSelectChange(r.original, col, $event)"
-              autofocus
-            >
-              @for (opt of editorCfg.choices; track opt.value) {
-              <option [value]="opt.value">{{ opt.label }}</option>
-              }
-            </select>
-            } } @else if (textCfg.textarea) {
-            <textarea
-              class="textarea textarea-bordered textarea-sm w-full"
-              [rows]="textCfg.rows"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            ></textarea>
-            } @else {
-            <input
-              [type]="inputTypeFor(col)"
-              class="input input-bordered input-xs w-full"
-              [ngModel]="editingValue()"
-              (ngModelChange)="editingValue.set($event)"
-              autofocus
-            />
-            } } @else if (hasCellRenderer(col)) {
-            <span [innerHTML]="callCellRenderer(r.original, col)"></span>
-            } @else { @let rawValue = getCellValue(r.original, col); @let tagList = tagsAsStrings(rawValue); @if
-            (isTagColumn(col) && tagList.length) {
-            <pc-tags
-              [tags]="tagList"
-              [type]="tagTypeFor(col)"
-              [readonly]="true"
-              [canDelete]="false"
-              [compact]="true"
-              [limit]="2"
-              (tagRemoved)="handleTagRemoved(r.original, col, $event)"
-            ></pc-tags>
-            } @else if (col.valueFormatter) { @let formattedVal = callValueFormatter(r.original, col); @if (formattedVal
-            === null || formattedVal === undefined || formattedVal === '') {
-            <span class="text-base-content/30">—</span>
-            } @else { {{ formattedVal }} } } @else { @if (col.doorColumn) {
-            <!-- Name is the door: underlined at rest, primary on hover; opens the record on click -->
-            @if (rawValue) {
-            <span
-              class="cursor-pointer underline decoration-base-content/20 underline-offset-[3px] transition-colors group-hover:text-primary hover:decoration-primary"
-              >{{ rawValue }}</span
-            >
-            } @else {
-            <span
-              class="cursor-pointer font-light text-base-content/55 underline decoration-base-content/20 underline-offset-[3px]"
-              i18n="Datagrid|Fallback label for a record with no name@@datagrid.rows.unnamed"
-              >Unnamed person</span
-            >
-            } } @else if (col.field === 'address') {
-            <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
-              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
-            </div>
-            } @else {
-            <span class="flex items-center gap-1 w-full">
-              @if (rawValue === null || rawValue === undefined || rawValue === '') {
-              <span class="flex-1 truncate text-base-content/30">—</span>
-              } @else {
-              <span class="flex-1 truncate">{{ formatGridCell(col, rawValue) }}</span>
-              }
-            </span>
-            } } }
-          </td>
-          } }
-        </tr>
-        }
-      </tbody>
-    </table>
-  </div>
-  <div class="flex items-center justify-end mt-2 gap-3 text-xs flex-nowrap">
-    <div class="flex items-center gap-2 whitespace-nowrap">
-      <span class="whitespace-nowrap" i18n="Datagrid|Page size selector label@@datagrid.pagination.pageSize"
-        >Page Size:</span
-      >
-      <select
-        class="select select-bordered select-xs"
-        [ngModel]="pageSize()"
-        (ngModelChange)="onPageSizeChange($event)"
-      >
-        @if (![25,50,100].includes(pageSize())) {
-        <option [value]="pageSize()">{{ pageSize() }}</option>
-        } @for (opt of pageSizeChoices(); track opt) {
-        <option [value]="opt">{{ opt }}</option>
-        }
-      </select>
-    </div>
-    <div
-      class="whitespace-nowrap tabular-nums"
-      i18n="Datagrid|Pagination range text showing start, end, and total records count@@datagrid.pagination.range"
-    >
-      <span class="font-normal">{{ displayStartIndex() }}</span>–<span class="font-normal"
-        >{{ displayEndIndex() }}</span
-      >
-      of <span class="font-normal">{{ totalCountAll() }}</span> · Page
-      <span class="font-normal">{{ pageIndex() + 1 }}</span> of <span class="font-normal">{{ totalPages() }}</span>
-    </div>
-    <div class="join whitespace-nowrap">
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canPrev() ? firstPageTitle : onFirstPageTitle"
-        [disabled]="!canPrev()"
-        (click)="firstPage()"
-      >
-        <pc-icon name="chevron-double-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canPrev() ? prevPageTitle : onFirstPageTitle"
-        [disabled]="!canPrev()"
-        (click)="prevPage()"
-      >
-        <pc-icon name="chevron-left" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canNext() ? nextPageTitle : onLastPageTitle"
-        [disabled]="!canNext()"
-        (click)="nextPage()"
-      >
-        <pc-icon name="chevron-right" [size]="4"></pc-icon>
-      </button>
-      <button
-        class="btn btn-sm font-light join-item btn-ghost"
-        [title]="canNext() ? lastPageTitle : onLastPageTitle"
-        [disabled]="!canNext()"
-        (click)="lastPage()"
-      >
-        <pc-icon name="chevron-double-right" [size]="4"></pc-icon>
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- Right-side Filter Panel -->
-@if (showFilterPanel()) {
-<pc-dg-filter-panel
-  [panelFields]="panelFields()"
-  [panelFilters]="panelFilters()"
-  [labelFor]="labelForFn"
-  [optionsFor]="optionsForFn"
-  [hasActiveFilters]="hasActiveFilters()"
-  (closePanel)="closePanel()"
-  (apply)="applyPanelFilters()"
-  (clear)="clearPanelFilters()"
-  (changeOp)="onPanelOpChange($event.field, $event.op)"
-  (changeValue)="onPanelValueChange($event.field, $event.value)"
-  (openAdvanced)="switchToAdvancedFilter()"
-/>
-}
-
-<!-- Advanced Filter Builder Modal -->
-@if (showAdvancedFilterBuilder()) {
-<div class="modal modal-open z-[999] backdrop-blur-sm bg-black/40">
-  <div
-    class="modal-box w-11/12 max-w-3xl p-6 bg-base-100 rounded-2xl border border-base-200/50 shadow-2xl flex flex-col max-h-[85vh]"
-  >
-    <div class="flex justify-between items-center pb-4 border-b border-base-200">
-      <div>
-        <h3 class="font-bold text-lg text-primary flex items-center gap-2">
-          <pc-icon name="adjustments-horizontal" [size]="5"></pc-icon>
-          <ng-container i18n="Datagrid|Heading of the advanced filter builder modal@@datagrid.advancedFilter.heading"
-            >Advanced Filter Builder</ng-container
-          >
-        </h3>
-        <p
-          class="text-xs text-neutral-400 mt-1"
-          i18n="Datagrid|Description of the advanced filter builder modal@@datagrid.advancedFilter.description"
-        >
-          Build complex matching rules with custom operators and conjunction logic.
-        </p>
-      </div>
-      <button
-        class="btn btn-ghost btn-circle btn-sm"
-        (click)="showAdvancedFilterBuilder.set(false)"
-        aria-label="Close modal"
-        i18n-aria-label="@@datagrid.advancedFilter.closeModalAriaLabel"
-      >
-        <pc-icon name="x-mark" [size]="4"></pc-icon>
-      </button>
-    </div>
-
-    <!-- Scrollable Body containing the rules -->
-    <div class="flex-1 overflow-y-auto py-6">
-      <pc-query-builder
-        [group]="advFilterRoot()"
-        [fields]="advancedFilterFields()"
-        [tagSvc]="tagsSvc ?? undefined"
-        [showSummary]="true"
-        (changed)="onAdvancedFilterChanged()"
-      ></pc-query-builder>
-    </div>
-
-    <!-- Modal Footer Actions -->
-    <div class="flex justify-between items-center pt-4 border-t border-base-200">
-      <button
-        class="btn btn-outline btn-error btn-sm"
-        (click)="clearAdvancedFilter()"
-        i18n="Datagrid|Action to clear all advanced filters@@datagrid.advancedFilter.clear"
-      >
-        Clear Filters
-      </button>
-      <div class="flex gap-2">
-        <button
-          class="btn btn-ghost btn-sm"
-          (click)="showAdvancedFilterBuilder.set(false)"
-          i18n="Datagrid|Action to cancel advanced filter setup@@datagrid.advancedFilter.cancel"
-        >
-          Cancel
-        </button>
-        <button
-          class="btn btn-primary btn-sm px-6"
-          (click)="applyAdvancedFilter()"
-          i18n="Datagrid|Action to apply advanced filters@@datagrid.advancedFilter.apply"
-        >
-          Apply
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.ts
