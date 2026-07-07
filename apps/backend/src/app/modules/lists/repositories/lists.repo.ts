@@ -92,9 +92,49 @@ export class ListsRepo extends BaseRepository<'lists'> {
         'lists.is_dynamic',
         'lists.updated_at',
         'lists.last_refreshed_at',
+        // The stored rule definition — the frontend renders it as the human
+        // "DEFINITION" sentence. Selectable alongside the aggregate because
+        // lists.id (the PK) is in GROUP BY, so all lists.* are functionally
+        // dependent and need no explicit grouping.
+        'lists.definition',
         sql<number>`COUNT(DISTINCT map_lists_persons.person_id)`.as('people_count'),
         sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
         sql<string>`CONCAT(authusers.first_name, ' ', authusers.last_name)`.as('created_by'),
+        // "LAST USED IN": the most recently created consumer that references
+        // this list. Newsletters and forms link via a `target_lists` JSONB
+        // column (id stored as string or number, bare array or {include:[...]});
+        // teams link via the map_teams_lists junction. Each arm is tenant-scoped
+        // to lists.tenant_id; the outer query is already filtered to this tenant.
+        sql<string | null>`(
+          SELECT c.label FROM (
+            SELECT nl.name AS label, nl.created_at AS ts
+              FROM public.newsletters nl
+              WHERE nl.tenant_id = lists.tenant_id
+                AND (
+                  nl.target_lists @> to_jsonb(lists.id::text)
+                  OR nl.target_lists @> to_jsonb(lists.id)
+                  OR (nl.target_lists -> 'include') @> to_jsonb(lists.id::text)
+                  OR (nl.target_lists -> 'include') @> to_jsonb(lists.id)
+                )
+            UNION ALL
+            SELECT wf.name AS label, wf.created_at AS ts
+              FROM public.web_forms wf
+              WHERE wf.tenant_id = lists.tenant_id
+                AND (
+                  wf.target_lists @> to_jsonb(lists.id::text)
+                  OR wf.target_lists @> to_jsonb(lists.id)
+                  OR (wf.target_lists -> 'include') @> to_jsonb(lists.id::text)
+                  OR (wf.target_lists -> 'include') @> to_jsonb(lists.id)
+                )
+            UNION ALL
+            SELECT t.name AS label, t.created_at AS ts
+              FROM public.map_teams_lists mtl
+              JOIN public.teams t ON t.id = mtl.team_id
+              WHERE mtl.list_id = lists.id AND mtl.tenant_id = lists.tenant_id
+          ) c
+          ORDER BY c.ts DESC
+          LIMIT 1
+        )`.as('last_used_in'),
       ])
       .groupBy([
         'lists.id',
@@ -146,7 +186,11 @@ export class ListsRepo extends BaseRepository<'lists'> {
       is_dynamic: r.is_dynamic,
       updated_at: r.updated_at,
       last_refreshed_at: r.last_refreshed_at,
+      definition: r.definition,
+      // MEMBERS: the real snapshot/refreshed member count, tabular for both
+      // smart and static lists (smart lists persist members after each refresh).
       list_size: r.object === 'people' ? Number(r.people_count) : Number(r.household_count),
+      last_used_in: r.last_used_in ?? null,
       used_in: 0,
       created_by: r.created_by,
     }));
