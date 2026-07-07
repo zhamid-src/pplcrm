@@ -1,8 +1,8 @@
 import { createHash, createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'crypto';
 import { createSigner } from 'fast-jwt';
-import { signedFileDownloadUrl } from '../../lib/signed-download';
-import { RESERVED_SUBDOMAINS, slugifyHandle } from '../../../../../../libs/common/src';
 import type { QueryResult, Transaction } from 'kysely';
+import { RESERVED_SUBDOMAINS, slugifyHandle } from '../../../../../../libs/common/src';
+import { signedFileDownloadUrl } from '../../lib/signed-download';
 
 import type {
   IAuthKeyPayload,
@@ -41,6 +41,7 @@ import { TransactionalEmailService } from '../../lib/mail/transactional-mail.ser
 import { hashPassword, verifyPassword } from '../../lib/password-hash';
 import { StorageService } from '../../lib/storage.service';
 import { generateToken, hashToken } from '../../lib/token-hash';
+import { logger } from '../../logger';
 import { EmailRepo } from '../emails/repositories/email.repo';
 import { PersonsRepo } from '../persons/repositories/persons.repo';
 import { TagsRepo } from '../tags/repositories/tags.repo';
@@ -49,7 +50,6 @@ import { seedOnboardingData } from './onboarding-seed';
 import { AuthUsersRepo } from './repositories/authusers.repo';
 import { SessionsRepo } from './repositories/sessions.repo';
 import { TenantsRepo } from './repositories/tenants.repo';
-import { logger } from '../../logger';
 
 export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
   private static readonly AVATAR_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -587,7 +587,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
         {
           to: email,
           tenant_id: auth.tenant_id,
-          subject: `You've been invited to join ${auth.name} on CampaignRaven`,
+          subject: `You've been invited to join ${auth.name} on PplCRM`,
           text: `Hi ${input.first_name},\n\nYou have been invited to join the campaign team by ${auth.name}.\n\nYour temporary password is: ${tempPassword}\n\nActivate your account at: ${env.appUrl}/new-password?code=${code}`,
           html: `<h2>You've Been Invited!</h2>
 <p>Hi ${input.first_name},</p>
@@ -770,7 +770,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-            subject: 'Verify Your Email - CampaignRaven',
+            subject: 'Verify Your Email - PplCRM',
             text: `Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
             html: `<h2>Verify Your Email</h2>
 <p>To verify your email address and activate your login, please click the button below:</p>
@@ -829,8 +829,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             to: user.email,
             tenant_id: user.tenant_id ? String(user.tenant_id) : null,
             subject: 'Security Alert: Password Changed',
-            text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your CampaignRaven account was recently changed. If you did not make this change, please contact support immediately.`,
-            html: `<p>Hi ${user.first_name},</p><p>This is a confirmation that the password for your CampaignRaven account was recently changed.</p><p>If you did not make this change, please contact support immediately.</p>`,
+            text: `Hi ${user.first_name},\n\nThis is a confirmation that the password for your PplCRM account was recently changed. If you did not make this change, please contact support immediately.`,
+            html: `<p>Hi ${user.first_name},</p><p>This is a confirmation that the password for your PplCRM account was recently changed.</p><p>If you did not make this change, please contact support immediately.</p>`,
           },
           trx,
         );
@@ -897,7 +897,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           text: `Hi ${authUser.first_name},\n\nYour account has been scheduled for deletion on ${deletionDate.toLocaleDateString()}.\n\nIf this was a mistake, you can cancel the deletion at any time before this date by logging back in.`,
           html: `<h2>Account Scheduled for Deletion</h2>
 <p>Hi ${authUser.first_name},</p>
-<p>As requested, your CampaignRaven account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
+<p>As requested, your PplCRM account has been scheduled for permanent deletion on <strong>${deletionDate.toLocaleDateString()}</strong>.</p>
 <p>All of your data will be permanently removed. If you change your mind, you can cancel this request at any time before the deletion date by simply logging back in.</p>
 <p class="warning">If you did not make this request, please log in immediately to cancel the deletion and secure your account.</p>`,
         },
@@ -988,7 +988,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
             subject: 'Reset Your Password',
             text: `Hey there, please click this link to reset your password: ${env.appUrl}/new-password?code=${code}`,
             html: `<h2>Reset Your Password</h2>
-<p>We received a request to reset the password for your CampaignRaven account. Click the button below to choose a new password:</p>
+<p>We received a request to reset the password for your PplCRM account. Click the button below to choose a new password:</p>
 <div class="btn-container">
   <a href="${env.appUrl}/new-password?code=${code}" class="btn">Reset Password</a>
 </div>
@@ -1062,7 +1062,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: user.email,
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'CampaignRaven - Account Restored',
+        subject: 'PplCRM - Account Restored',
         text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
         html: `<h2>Account Restored</h2>
 <p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,
@@ -1183,10 +1183,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
           {
             to: email,
             tenant_id,
-            subject: 'Welcome to CampaignRaven - Verify Your Email',
-            text: `Welcome to CampaignRaven! Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
+            subject: 'Welcome to PplCRM - Verify Your Email',
+            text: `Welcome to PplCRM! Please verify your email by clicking this link: ${env.appUrl}/verify-email?code=${verificationCode}`,
             html: `<h2>Verify Your Email</h2>
-<p>Welcome to CampaignRaven! To activate your account and complete your sign-up, please verify your email address by clicking the link below:</p>
+<p>Welcome to PplCRM! To activate your account and complete your sign-up, please verify your email address by clicking the link below:</p>
 <div class="btn-container">
   <a href="${env.appUrl}/verify-email?code=${verificationCode}" class="btn">Verify Email Address</a>
 </div>
@@ -1312,7 +1312,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
               {
                 to: nextEmail as string,
                 tenant_id: auth.tenant_id,
-                subject: 'Verify Your New Email Address - CampaignRaven',
+                subject: 'Verify Your New Email Address - PplCRM',
                 text: `Please verify your new email address by clicking this link: ${env.appUrl}/verify-email?code=${code}`,
                 html: `<h2>Verify Your New Email</h2>
 <p>Please verify your new email address to complete the update and activate your login:</p>
@@ -1329,10 +1329,10 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
                 to: oldEmail,
                 tenant_id: auth.tenant_id,
                 subject: 'Security Alert: Email Address Update Initiated',
-                text: `Hi ${existingUser.first_name},\n\nThe email address for your CampaignRaven account has been requested to change to ${nextEmail}. If you did not make this change, please contact support immediately.`,
+                text: `Hi ${existingUser.first_name},\n\nThe email address for your PplCRM account has been requested to change to ${nextEmail}. If you did not make this change, please contact support immediately.`,
                 html: `<h2>Security Alert: Email Change</h2>
 <p>Hi ${existingUser.first_name},</p>
-<p>The email address for your CampaignRaven account was recently changed to <strong>${nextEmail}</strong>.</p>
+<p>The email address for your PplCRM account was recently changed to <strong>${nextEmail}</strong>.</p>
 <p>We have sent a verification link to the new address. Until it is verified, login under that address is inactive.</p>
 <p class="warning">If you did not make this change, please contact support immediately to secure your account.</p>`,
               },
@@ -1529,7 +1529,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       await this.mailService.sendMail({
         to: user.email,
         tenant_id: user.tenant_id ? String(user.tenant_id) : null,
-        subject: 'CampaignRaven - Account Restored',
+        subject: 'PplCRM - Account Restored',
         text: `Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.`,
         html: `<h2>Account Restored</h2>
 <p>Welcome back! Your request to delete your account has been successfully canceled, and your account is fully restored.</p>`,

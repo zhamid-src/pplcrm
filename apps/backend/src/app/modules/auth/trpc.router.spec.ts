@@ -381,7 +381,7 @@ describe('AuthController Integration', () => {
     const payload = typeof signupJob.payload === 'string' ? JSON.parse(signupJob.payload) : signupJob.payload;
     expect(payload.type).toBe('send-transactional-email');
     expect(payload.to).toBe(email);
-    expect(payload.subject).toContain('Welcome to CampaignRaven');
+    expect(payload.subject).toContain('Welcome to PplCRM');
 
     await cleanup(db, user.id, user.tenant_id);
   });

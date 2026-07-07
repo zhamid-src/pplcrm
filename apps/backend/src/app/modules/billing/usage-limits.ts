@@ -1,10 +1,10 @@
-import { env } from '../../../env';
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import { env } from '../../../env';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { SettingsRepo } from '../settings/repositories/settings.repo';
 import { logger } from '../../logger';
+import { SettingsRepo } from '../settings/repositories/settings.repo';
 
 export interface PlanLimits {
   price: string;
@@ -231,7 +231,7 @@ Upgrade Options:
 Update your subscription tier here: ${billingPageUrl}
 
 Thank you,
-The CampaignRaven Team`;
+The PplCRM Team`;
 
   const html = `<p>Hi,</p>
 <p>Your organization <strong>${tenantName}</strong> has reached <strong>${pct}%</strong> of its ${resource.name} capacity limit under the <strong>${planNameUpper}</strong> plan.</p>
