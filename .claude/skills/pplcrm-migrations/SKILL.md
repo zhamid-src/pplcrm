@@ -31,6 +31,14 @@ Every file must export `up(db: Kysely<any>)` and `down(db: Kysely<any>)`.
 - Applied automatically on backend startup: `apps/backend/src/main.ts` calls `migrateToLatest()` from `kyselyinit.ts`. Starting the backend brings the DB to latest.
 - State is tracked in the Kysely-managed tables `kysely_migration` and `kysely_migration_lock`. Never write to these by hand except through the existing rename shim.
 
+### Data backfills on FORCE-RLS tables just work — but always test a fresh bootstrap
+
+Most domain tables run `FORCE ROW LEVEL SECURITY` (the S-1 tenant backstop; grep `schema.sql` for it — persons, households, companies, tasks, and the `map_*` junctions all do). A migration runs with **no `app.tenant_id` GUC set**, but every `tenant_isolation` policy has the escape `NULLIF(current_setting('app.tenant_id', true), '') IS NULL OR …` in both `USING` and `WITH CHECK`, so an unset GUC makes the policy permit **every** row. A migration's `UPDATE`/`DELETE`/backfill therefore reaches all rows — **no per-migration RLS toggle is needed**, and you should not add one.
+
+This only works because `0001_baseline.ts` **strips `SET row_security = off`** out of the pg_dump preamble (same line-filter that strips `search_path`). That dump setting would otherwise leak forward through Kysely's single-session `migrateToLatest()` run, and `row_security = off` + FORCE RLS makes Postgres **reject** even policy-permitted writes with `SQLSTATE 42501` / _"query would be affected by row-level security policy"_ — rolling back the whole batch including the baseline, so no fresh DB (CI, new dev) can bootstrap. If you ever see that 42501 in a migration, the cause is a stray `row_security = off` in session scope, **not** a reason to disable FORCE RLS.
+
+Always verify a new migration by running the whole batch against a **freshly provisioned** DB (`TEST_DB_NAME=pplcrm_x_test apps/backend/scripts/setup-test-db.sh`, then `migrateToLatest`) — an already-migrated `pplcrm_test` won't re-run your migration or a bootstrap. Pure DDL (`ADD COLUMN`, `CREATE INDEX`, `ADD CONSTRAINT`) is unaffected either way.
+
 ## Worked example — add a table
 
 A dated migration is a small raw-SQL file. Model yours on this shape (real ones carry more columns/indexes and a `tenant_id` for multi-tenant scoping):
