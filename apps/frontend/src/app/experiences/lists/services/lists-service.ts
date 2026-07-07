@@ -80,6 +80,16 @@ export class ListsService extends AbstractAPIService<'lists', UpdateListType> {
     return this.api.lists.getMemberCount.query(id);
   }
 
+  /** Live membership (smart = re-run rules, static = saved snapshot). */
+  public getCurrentMembers(id: string) {
+    return this.api.lists.getCurrentMembers.query(id);
+  }
+
+  /** Newsletters / forms / turfs that reference this list. */
+  public getConsumers(id: string) {
+    return this.api.lists.getConsumers.query(id);
+  }
+
   public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return this.api.lists.exportCsv.mutate(input);
   }
