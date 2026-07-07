@@ -46,10 +46,25 @@ ALTER ROLE pplcrm_owner PASSWORD :'owner_pw';
 ALTER ROLE pplcrm_app PASSWORD :'app_pw';
 
 -- 2. Ownership -----------------------------------------------------------------
--- The owner role owns the schema and every existing object. REASSIGN OWNED must
--- run as the current owner or a superuser.
+-- The owner role must own the DATABASE (so it can install the trusted extensions
+-- pg_trgm/pgcrypto the baseline creates) and the public SCHEMA (so it can create
+-- objects, and so the baseline's own `ALTER SCHEMA public OWNER TO pplcrm_owner`
+-- is a no-op instead of a permission error). Run as a superuser or current owner.
+SELECT format('ALTER DATABASE %I OWNER TO pplcrm_owner', current_database()) \gexec
 ALTER SCHEMA public OWNER TO pplcrm_owner;
-REASSIGN OWNED BY :current_owner TO pplcrm_owner;
+
+-- Reassign pre-existing app objects from the previous owner. This matters ONLY
+-- when converting an existing single-role database; a fresh database (new dev
+-- machine, Render, etc.) has no app objects yet. REASSIGN OWNED BY a superuser
+-- always fails — a superuser owns pinned system objects — so skip it when
+-- :current_owner is a superuser, which is also the natural fresh-DB case.
+SELECT CASE WHEN COALESCE((SELECT rolsuper FROM pg_roles WHERE rolname = :'current_owner'), false)
+            THEN 'true' ELSE 'false' END AS _skip_reassign \gset
+\if :_skip_reassign
+  \echo '  setup-db-roles: current_owner is a superuser / fresh database — skipping REASSIGN OWNED.'
+\else
+  REASSIGN OWNED BY :current_owner TO pplcrm_owner;
+\endif
 
 -- 3. Lock down the public schema ----------------------------------------------
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;                 -- S-2a (default in PG15+)

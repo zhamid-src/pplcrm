@@ -198,9 +198,12 @@ This project uses Angular's experimental signal-forms API (`form`, `required`, `
 
 ## 5. Database Migrations
 
-- **Never delete applied migration files.** They are permanent history; deletion breaks the migration runner's state tracking.
-- **`apps/backend/src/app/_migrations/schema.sql` is the baseline.** Update it with `pg_dump --schema-only` when the schema changes significantly. Do not add data (COPY/INSERT). The `0001_baseline.ts` migration reads this file to initialize fresh databases only. (Older references to `schema_dump.sql` elsewhere in the repo are stale — this is the real filename.)
-- **New changes = new file.** Never modify a migration that has already been applied. Add a new timestamped file: `apps/backend/src/app/_migrations/YYYY-MM-DD-description.ts`.
+Read `pplcrm-migrations` before touching migrations — it owns the details. In short:
+
+- **`apps/backend/src/app/_migrations/schema.sql` is the baseline** — a `pg_dump --schema-only` that `0001_baseline.ts` executes to initialize a fresh database. As of the 2026-07-07 pre-ship squash it reflects the **current** schema and there are no dated migrations on top of it. (Older `schema_dump.sql` references in the repo are stale — this is the real filename.)
+- **New changes = new file.** For an ordinary schema change, add a new timestamped `apps/backend/src/app/_migrations/YYYY-MM-DD-description.ts` — do **not** regenerate `schema.sql`. Never modify a migration that has already been applied.
+- **Deleting applied migrations / regenerating the baseline is allowed only as a deliberate pre-ship re-squash** (regenerate the dump, delete the dated files, reset `kysely_migration`, verify a from-scratch build all in one operation). It is safe only because nothing is shipped yet; once there's a production database, migrations become forward-only history again. See `pplcrm-migrations` → "Re-squashing".
+- **Fresh databases need provisioning first** (`apps/backend/scripts/setup-db-roles.sql` as a superuser): the DB and `public` schema must be owned by `pplcrm_owner` or the baseline fails on extension creation / schema ownership.
 
 ---
 
