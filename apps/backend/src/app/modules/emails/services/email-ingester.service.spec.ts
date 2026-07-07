@@ -40,34 +40,6 @@ describe('EmailIngesterService dedup (integration)', () => {
         updatedby_id: userId,
       })
       .execute();
-
-    // email_folders uses global hardcoded IDs; seed Sent (3) and Inbox (11) if absent.
-    await db
-      .insertInto('email_folders')
-      .values([
-        {
-          id: SENT,
-          tenant_id: tenantId,
-          name: 'Sent',
-          icon: 'paper-airplane',
-          sort_order: 9,
-          is_default: false,
-          createdby_id: userId,
-          updatedby_id: userId,
-        },
-        {
-          id: INBOX,
-          tenant_id: tenantId,
-          name: 'Inbox',
-          icon: 'inbox',
-          sort_order: 6,
-          is_default: false,
-          createdby_id: userId,
-          updatedby_id: userId,
-        },
-      ])
-      .onConflict((oc) => oc.column('id').doNothing())
-      .execute();
   });
 
   afterEach(async () => {

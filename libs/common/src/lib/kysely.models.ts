@@ -94,7 +94,6 @@ export interface Models {
   person_connections: PersonConnections;
   passkeys: Passkeys;
   zapier_subscriptions: ZapierSubscriptions;
-  email_folders: EmailFolders;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -926,19 +925,6 @@ interface ZapierSubscriptions {
   tenant_id: string;
   event_type: string;
   webhook_url: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-interface EmailFolders {
-  id: Generated<string>;
-  tenant_id: string;
-  name: string;
-  icon: string | null;
-  sort_order: Generated<number>;
-  is_default: Generated<boolean>;
-  createdby_id: string;
-  updatedby_id: string;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
 }

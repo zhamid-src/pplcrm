@@ -91,7 +91,6 @@ export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promi
       await trx.deleteFrom('email_trash').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('email_drafts').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('emails').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_folders').where('tenant_id', '=', tid).execute();
 
       // ── CRM Core ───────────────────────────────────────────────────────
       await trx.deleteFrom('map_campaigns_users').where('tenant_id', '=', tid).execute();

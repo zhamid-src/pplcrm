@@ -1,5 +1,6 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import crypto from 'crypto';
+import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
 import type { FastifyPluginCallback } from 'fastify';
 import { env } from '../../../../env';
 import { authenticateRest } from '../../../lib/rest-auth';
@@ -99,38 +100,12 @@ export async function saveLocalEmail(
   previewKey: string,
 ) {
   return db.transaction().execute(async (trx: any) => {
-    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
-    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
-    // email_folders(id) — not tenant_id — so the existence check must be by id
-    // alone. onConflict guards against a concurrent/global row already present.
-
-    // NOTE: unscoped by design — email_folders uses global hardcoded IDs; FK references id only, not tenant_id
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
-
-    if (!existingOutbox) {
-      await trx
-        .insertInto('email_folders')
-        .values({
-          id: '10',
-          tenant_id: tenantId,
-          name: 'Outbox',
-          createdby_id: userId,
-          updatedby_id: userId,
-          icon: 'clock',
-          sort_order: 10,
-          is_default: false,
-        })
-        .onConflict((oc: any) => oc.column('id').doNothing())
-        .execute();
-    }
-
-    // 1. Insert into emails table (using Outbox folder: '10')
+    // 1. Insert into emails table (Outbox)
     const createdEmail = await trx
       .insertInto('emails')
       .values({
         tenant_id: tenantId,
-        folder_id: '10', // Outbox folder is '10'
+        folder_id: ALL_FOLDERS.OUTBOX,
         from_email: fromEmail,
         to_email: toList.join(', '),
         subject: subject,
@@ -491,10 +466,10 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           // Send draft
           await client.api(`/me/messages/${msDraftId}/send`).post({});
 
-          // Update local email folder to '3' (Sent) on success
+          // Move local email to Sent on success
           const finalEmail = await db
             .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .returningAll()
@@ -586,7 +561,7 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
 
           const finalEmail = await db
             .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
             .where('tenant_id', '=', tenantId)
             .where('id', '=', String(emailRow.id))
             .returningAll()
@@ -610,8 +585,8 @@ const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
           await db
             .updateTable('emails')
             .set({
-              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
-              folder_id: '4',
+              // Revert to Drafts so the user can retry (was '4' = Spam, a bug)
+              folder_id: ALL_FOLDERS.DRAFTS,
               updated_at: new Date(),
             })
             .where('tenant_id', '=', tenantId)

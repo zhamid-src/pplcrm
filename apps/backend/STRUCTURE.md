@@ -83,6 +83,7 @@ apps/
           2026-07-28-b-target-lists-join-tables.ts
           2026-07-29-a-volunteer-events-slug-per-tenant.ts
           2026-07-29-b-web-forms-slug-backfill.ts
+          2026-07-29-c-drop-email-folders.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -755,105 +756,117 @@ export async function down(db: Kysely<any>): Promise<void> {
 }
 ```
 
-## File: apps/backend/src/app/\_migrations/2026-07-29-a-volunteer-events-slug-per-tenant.ts
+## File: apps/backend/src/app/\_migrations/2026-07-29-c-drop-email-folders.ts
 
 ```typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
 /**
- * Volunteer-event slugs become unique per tenant instead of globally.
+ * Schema review 2026-07-06 follow-up — drop the `email_folders` table.
  *
- * The app-level uniqueness checks (addEvent/updateEvent/checkSlugUnique) have always been
- * tenant-scoped, but the DB constraint was global — so the first tenant to claim "bbq-setup"
- * blocked every other tenant with a raw constraint error the UI never anticipated. Public
- * lookups are now tenant-scoped too (tenant resolved from the subdomain, like /f/:slug), so
- * per-tenant uniqueness is the correct invariant.
+ * Folders are a fixed, code-defined taxonomy (EMAIL_FOLDERS in
+ * libs/common/src/lib/emails.ts); the API serves folders from that constant
+ * and never reads this table. It survived only as an FK anchor for
+ * emails.folder_id / email_trash.from_folder_id, implemented as globally
+ * shared rows with hardcoded ids — which contradicted the tenant model:
+ * lazy-create with an unscoped-query lint exemption, a vestigial tenant_id
+ * column, and a tenant-deletion trap (deleting the row-owning tenant could
+ * cascade away other tenants' email_trash rows via fk_email_trash_folder).
  *
- * No de-duplication pass is needed: global uniqueness held until now, so no (tenant_id, slug)
- * pair can collide.
+ * The FKs' integrity job is replaced by CHECK constraints pinned to the six
+ * REAL folder ids — Sent 3, Spam 4, Trash 5, Drafts 7, Outbox 10, Inbox 11
+ * (snapshot of EMAIL_FOLDERS at migration time; virtual folder ids
+ * 1/2/6/8/9 are query filters and must never be stored). This is stricter
+ * than the FKs were: a virtual-folder row in the table would have satisfied
+ * the FK, but fails the CHECK. Adding a future real folder means a new
+ * migration extending the CHECK — consistent with folders being code-defined
+ * (a deploy is already required). tRPC inputs are tightened to the same set.
  */
+
 export async function up(db: Kysely<any>): Promise<void> {
+  // Normalize strays to Inbox (11) so the CHECKs can validate. No such rows
+  // are expected — the FKs prevented ids without a folder row — but a
+  // virtual-folder id could have slipped in if a row for it ever existed.
   await sql`
-    ALTER TABLE public.volunteer_events DROP CONSTRAINT IF EXISTS volunteer_events_slug_unique;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_volunteer_events_tenant_slug
-      ON public.volunteer_events (tenant_id, slug);
+    UPDATE public.emails SET folder_id = 11 WHERE folder_id NOT IN (3, 4, 5, 7, 10, 11);
+    UPDATE public.email_trash SET from_folder_id = 11 WHERE from_folder_id NOT IN (3, 4, 5, 7, 10, 11);
   `.execute(db);
+
+  await sql`
+    ALTER TABLE public.emails DROP CONSTRAINT IF EXISTS fk_emails_folder;
+    ALTER TABLE public.email_trash DROP CONSTRAINT IF EXISTS fk_email_trash_folder;
+
+    ALTER TABLE public.emails DROP CONSTRAINT IF EXISTS chk_emails_folder_id;
+    ALTER TABLE public.emails ADD CONSTRAINT chk_emails_folder_id
+      CHECK (folder_id IN (3, 4, 5, 7, 10, 11));
+
+    ALTER TABLE public.email_trash DROP CONSTRAINT IF EXISTS chk_email_trash_from_folder_id;
+    ALTER TABLE public.email_trash ADD CONSTRAINT chk_email_trash_from_folder_id
+      CHECK (from_folder_id IN (3, 4, 5, 7, 10, 11));
+  `.execute(db);
+
+  // idx_email_trash_folder existed only as the RI hot-path index for the
+  // dropped FK (2026-07-14-i3); nothing queries by from_folder_id.
+  await sql`DROP INDEX IF EXISTS public.idx_email_trash_folder`.execute(db);
+
+  // Owned sequence email_folders_id_seq and any RLS policy drop with it.
+  await sql`DROP TABLE IF EXISTS public.email_folders`.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
-  // Re-adding the global constraint fails if two tenants now share a slug; that data state is
-  // valid under this migration, so down() is best-effort for pristine rollbacks only.
   await sql`
-    DROP INDEX IF EXISTS public.idx_volunteer_events_tenant_slug;
-    ALTER TABLE public.volunteer_events ADD CONSTRAINT volunteer_events_slug_unique UNIQUE (slug);
-  `.execute(db);
-}
-```
-
-## File: apps/backend/src/app/\_migrations/2026-07-29-b-web-forms-slug-backfill.ts
-
-```typescript
-import type { Kysely } from 'kysely';
-import { sql } from 'kysely';
-
-/**
- * Every web form gets a slug; the column becomes NOT NULL.
- *
- * The lifecycle create path (createForm → uniqueSlug) has always generated slugs, but the legacy
- * donation add path (addForm) never did, so donation forms carry slug = NULL and are only
- * reachable by raw UUID. The public routes now key every lookup on (tenant, slug) — see the
- * tenant-subdomain URL model — so NULL slugs would make those forms unreachable.
- *
- * Backfill: slugify the form name ('' → 'form'); a candidate that collides with an existing slug
- * in the same tenant, or with another backfilled row's candidate, gets a uuid-prefix suffix
- * instead of a numeric one — collision-proof against both live slugs and other backfill rows in a
- * single pass. idx_web_forms_tenant_slug (partial, WHERE slug IS NOT NULL) already enforces
- * per-tenant uniqueness and keeps doing so once no NULLs remain.
- */
-export async function up(db: Kysely<any>): Promise<void> {
-  await sql`
-    WITH slugged AS (
-      SELECT
-        id,
-        tenant_id,
-        CASE WHEN base = '' THEN 'form' ELSE base END AS candidate
-      FROM (
-        SELECT
-          id,
-          tenant_id,
-          regexp_replace(regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g'), '(^-+|-+$)', '', 'g') AS base
-        FROM public.web_forms
-        WHERE slug IS NULL
-      ) s
-    ),
-    resolved AS (
-      SELECT
-        sl.id,
-        CASE
-          WHEN row_number() OVER (PARTITION BY sl.tenant_id, sl.candidate ORDER BY sl.id) = 1
-            AND NOT EXISTS (
-              SELECT 1 FROM public.web_forms e
-              WHERE e.tenant_id = sl.tenant_id AND e.slug = sl.candidate
-            )
-          THEN sl.candidate
-          ELSE sl.candidate || '-' || left(sl.id::text, 8)
-        END AS final_slug
-      FROM slugged sl
-    )
-    UPDATE public.web_forms w
-    SET slug = r.final_slug
-    FROM resolved r
-    WHERE w.id = r.id
+    CREATE TABLE IF NOT EXISTS public.email_folders (
+      id bigint NOT NULL,
+      tenant_id bigint NOT NULL,
+      name text NOT NULL,
+      icon text,
+      sort_order integer DEFAULT 0,
+      is_default boolean DEFAULT false,
+      createdby_id bigint NOT NULL,
+      updatedby_id bigint NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT email_folders_pkey PRIMARY KEY (id)
+    );
+    CREATE SEQUENCE IF NOT EXISTS public.email_folders_id_seq OWNED BY public.email_folders.id;
+    ALTER TABLE public.email_folders ALTER COLUMN id SET DEFAULT nextval('public.email_folders_id_seq');
   `.execute(db);
 
-  await sql`ALTER TABLE public.web_forms ALTER COLUMN slug SET NOT NULL`.execute(db);
-}
+  // Re-seed the six shared-global rows (attributed to the first tenant/user,
+  // matching the old lazy-create behavior) so the FKs below can validate.
+  // No-op on a database with no tenants or users — the FKs still validate
+  // there because such a database has no emails either.
+  await sql`
+    INSERT INTO public.email_folders (id, tenant_id, name, icon, sort_order, is_default, createdby_id, updatedby_id)
+    SELECT v.id, t.id, v.name, v.icon, v.sort_order, false, u.id, u.id
+    FROM (VALUES
+      (3, 'Sent', 'paper-airplane', 9),
+      (4, 'Spam', 'exclamation-triangle', 11),
+      (5, 'Trash', 'trash', 10),
+      (7, 'Drafts', 'document', 7),
+      (10, 'Outbox', 'clock', 8),
+      (11, 'Inbox', 'inbox', 6)
+    ) AS v(id, name, icon, sort_order)
+    CROSS JOIN (SELECT id FROM public.tenants ORDER BY id LIMIT 1) t
+    CROSS JOIN (SELECT id FROM public.authusers ORDER BY id LIMIT 1) u
+    ON CONFLICT (id) DO NOTHING;
+  `.execute(db);
 
-export async function down(db: Kysely<any>): Promise<void> {
-  // Backfilled values are indistinguishable from user-visible slugs by now; only relax the
-  // constraint on rollback, never null the data.
-  await sql`ALTER TABLE public.web_forms ALTER COLUMN slug DROP NOT NULL`.execute(db);
+  await sql`
+    ALTER TABLE public.emails DROP CONSTRAINT IF EXISTS chk_emails_folder_id;
+    ALTER TABLE public.email_trash DROP CONSTRAINT IF EXISTS chk_email_trash_from_folder_id;
+
+    ALTER TABLE public.emails DROP CONSTRAINT IF EXISTS fk_emails_folder;
+    ALTER TABLE public.emails ADD CONSTRAINT fk_emails_folder
+      FOREIGN KEY (folder_id) REFERENCES public.email_folders(id);
+
+    ALTER TABLE public.email_trash DROP CONSTRAINT IF EXISTS fk_email_trash_folder;
+    ALTER TABLE public.email_trash ADD CONSTRAINT fk_email_trash_folder
+      FOREIGN KEY (from_folder_id) REFERENCES public.email_folders(id) ON DELETE CASCADE;
+
+    CREATE INDEX IF NOT EXISTS idx_email_trash_folder ON public.email_trash (from_folder_id);
+  `.execute(db);
 }
 ```
 
@@ -1755,86 +1768,6 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return argon2.verify(hash, password);
-}
-```
-
-## File: apps/backend/src/app/lib/public-tenant.ts
-
-```typescript
-import { RESERVED_SUBDOMAINS } from '@common';
-
-import { BaseRepository } from './base.repo';
-import { env } from '../../env';
-
-/**
- * Tenant resolution for unauthenticated public pages (forms /f/:slug, event RSVP /e/:slug,
- * volunteer signup /v/:slug, donations). Every public lookup is keyed (tenant, slug); the tenant
- * is identified by its subdomain — from the explicit `?t=` param (the SPA passes its own
- * subdomain, robust across hosts) or the request Host — never by a cross-tenant record query.
- */
-
-/**
- * Extract a tenant subdomain label from a request Host. `riverton.mydomain.com` → `riverton` when
- * the base domain is `mydomain.com`. Returns null for the bare/app host, reserved labels, or a
- * mismatch.
- */
-export function tenantSlugFromHost(hostname: string | undefined): string | null {
-  if (!hostname) return null;
-  const host = hostname.split(':')[0]?.toLowerCase();
-  const base = env.publicBaseDomain.toLowerCase();
-  if (!host || host === base) return null;
-  const suffix = `.${base}`;
-  if (!host.endsWith(suffix)) return null;
-  const label = host.slice(0, -suffix.length);
-  // Only a single left-most label maps to a tenant (no nested subdomains).
-  if (!label || label.includes('.') || RESERVED_SUBDOMAINS.has(label)) return null;
-  return label;
-}
-
-export interface PublicTenant {
-  id: string;
-  slug: string;
-}
-
-/**
- * Resolve a tenant from its public subdomain slug. The `tenants` table is tenant-safety
- * allow-listed (you look it up *by* its own key).
- */
-export async function resolveTenantBySlug(tenantSlug: string): Promise<PublicTenant | null> {
-  const row = await BaseRepository.dbInstance
-    .selectFrom('tenants')
-    .select('id')
-    .where('slug', '=', tenantSlug)
-    .executeTakeFirst();
-  return row ? { id: String(row.id), slug: tenantSlug } : null;
-}
-
-/** Org display name for public pages (same source as the /f/:slug page header). */
-export async function publicOrgName(tenantId: string): Promise<string> {
-  const row = await BaseRepository.dbInstance
-    .selectFrom('settings')
-    .select('value')
-    .where('tenant_id', '=', tenantId)
-    .where('key', '=', 'organization.name')
-    .executeTakeFirst();
-  const value = row?.value;
-  return typeof value === 'string' && value.trim() ? value : 'Our organization';
-}
-
-/**
- * Resolve the tenant for a public request: `?t=<tenantSlug>` first, then the Host subdomain.
- * Returns null when neither identifies a known tenant — callers should 404 without revealing
- * whether the slug or the tenant was the miss.
- */
-export async function resolveTenantFromRequest(req: {
-  query?: unknown;
-  hostname?: string;
-}): Promise<PublicTenant | null> {
-  const query = req.query as Record<string, unknown> | undefined;
-  const t = typeof query?.['t'] === 'string' ? query['t'].trim() : '';
-  const tenantSlug = t || tenantSlugFromHost(req.hostname);
-  if (!tenantSlug) return null;
-  return resolveTenantBySlug(tenantSlug);
 }
 ```
 
@@ -3900,7 +3833,7 @@ export class EmailIngesterService {
 ## File: apps/backend/src/app/modules/emails/trpc.router.ts
 
 ```typescript
-import { idSchema } from '../../../../../../libs/common/src';
+import { folderIdSchema, idSchema, regularFolderIdSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -3993,7 +3926,7 @@ function getEmails() {
   return authProcedure
     .input(
       z.object({
-        folderId: idSchema,
+        folderId: folderIdSchema,
         limit: z.number().int().min(1).max(100).optional(),
         offset: z.number().int().min(0).optional(),
       }),
@@ -4029,7 +3962,7 @@ function restoreFromTrash() {
 
 function moveToFolder() {
   return authProcedure
-    .input(z.object({ id: idSchema, folderId: idSchema }))
+    .input(z.object({ id: idSchema, folderId: regularFolderIdSchema }))
     .mutation(({ input, ctx }) => emails.moveToFolder(ctx.auth.tenant_id, input.id, input.folderId, ctx.auth.user_id));
 }
 
@@ -13397,6 +13330,108 @@ export async function down(db: Kysely<any>): Promise<void> {
 }
 ```
 
+## File: apps/backend/src/app/\_migrations/2026-07-29-a-volunteer-events-slug-per-tenant.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Volunteer-event slugs become unique per tenant instead of globally.
+ *
+ * The app-level uniqueness checks (addEvent/updateEvent/checkSlugUnique) have always been
+ * tenant-scoped, but the DB constraint was global — so the first tenant to claim "bbq-setup"
+ * blocked every other tenant with a raw constraint error the UI never anticipated. Public
+ * lookups are now tenant-scoped too (tenant resolved from the subdomain, like /f/:slug), so
+ * per-tenant uniqueness is the correct invariant.
+ *
+ * No de-duplication pass is needed: global uniqueness held until now, so no (tenant_id, slug)
+ * pair can collide.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    ALTER TABLE public.volunteer_events DROP CONSTRAINT IF EXISTS volunteer_events_slug_unique;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_volunteer_events_tenant_slug
+      ON public.volunteer_events (tenant_id, slug);
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  // Re-adding the global constraint fails if two tenants now share a slug; that data state is
+  // valid under this migration, so down() is best-effort for pristine rollbacks only.
+  await sql`
+    DROP INDEX IF EXISTS public.idx_volunteer_events_tenant_slug;
+    ALTER TABLE public.volunteer_events ADD CONSTRAINT volunteer_events_slug_unique UNIQUE (slug);
+  `.execute(db);
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-07-29-b-web-forms-slug-backfill.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Every web form gets a slug; the column becomes NOT NULL.
+ *
+ * The lifecycle create path (createForm → uniqueSlug) has always generated slugs, but the legacy
+ * donation add path (addForm) never did, so donation forms carry slug = NULL and are only
+ * reachable by raw UUID. The public routes now key every lookup on (tenant, slug) — see the
+ * tenant-subdomain URL model — so NULL slugs would make those forms unreachable.
+ *
+ * Backfill: slugify the form name ('' → 'form'); a candidate that collides with an existing slug
+ * in the same tenant, or with another backfilled row's candidate, gets a uuid-prefix suffix
+ * instead of a numeric one — collision-proof against both live slugs and other backfill rows in a
+ * single pass. idx_web_forms_tenant_slug (partial, WHERE slug IS NOT NULL) already enforces
+ * per-tenant uniqueness and keeps doing so once no NULLs remain.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    WITH slugged AS (
+      SELECT
+        id,
+        tenant_id,
+        CASE WHEN base = '' THEN 'form' ELSE base END AS candidate
+      FROM (
+        SELECT
+          id,
+          tenant_id,
+          regexp_replace(regexp_replace(lower(name), '[^a-z0-9]+', '-', 'g'), '(^-+|-+$)', '', 'g') AS base
+        FROM public.web_forms
+        WHERE slug IS NULL
+      ) s
+    ),
+    resolved AS (
+      SELECT
+        sl.id,
+        CASE
+          WHEN row_number() OVER (PARTITION BY sl.tenant_id, sl.candidate ORDER BY sl.id) = 1
+            AND NOT EXISTS (
+              SELECT 1 FROM public.web_forms e
+              WHERE e.tenant_id = sl.tenant_id AND e.slug = sl.candidate
+            )
+          THEN sl.candidate
+          ELSE sl.candidate || '-' || left(sl.id::text, 8)
+        END AS final_slug
+      FROM slugged sl
+    )
+    UPDATE public.web_forms w
+    SET slug = r.final_slug
+    FROM resolved r
+    WHERE w.id = r.id
+  `.execute(db);
+
+  await sql`ALTER TABLE public.web_forms ALTER COLUMN slug SET NOT NULL`.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  // Backfilled values are indistinguishable from user-visible slugs by now; only relax the
+  // constraint on rollback, never null the data.
+  await sql`ALTER TABLE public.web_forms ALTER COLUMN slug DROP NOT NULL`.execute(db);
+}
+```
+
 ## File: apps/backend/src/app/errors/to-trpc-errors.ts
 
 ```typescript
@@ -13602,7 +13637,6 @@ export async function handlePerformScheduledDeletions(db: Kysely<Models>): Promi
       await trx.deleteFrom('email_trash').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('email_drafts').where('tenant_id', '=', tid).execute();
       await trx.deleteFrom('emails').where('tenant_id', '=', tid).execute();
-      await trx.deleteFrom('email_folders').where('tenant_id', '=', tid).execute();
 
       // ── CRM Core ───────────────────────────────────────────────────────
       await trx.deleteFrom('map_campaigns_users').where('tenant_id', '=', tid).execute();
@@ -15030,6 +15064,86 @@ export function parseProfilePreferences(value: unknown): ProfilePreferencesType 
  */
 export function notificationEnabled(preferences: unknown, key: NotificationPreferenceKey): boolean {
   return parseProfilePreferences(preferences)?.notifications?.[key] !== false;
+}
+```
+
+## File: apps/backend/src/app/lib/public-tenant.ts
+
+```typescript
+import { RESERVED_SUBDOMAINS } from '@common';
+
+import { BaseRepository } from './base.repo';
+import { env } from '../../env';
+
+/**
+ * Tenant resolution for unauthenticated public pages (forms /f/:slug, event RSVP /e/:slug,
+ * volunteer signup /v/:slug, donations). Every public lookup is keyed (tenant, slug); the tenant
+ * is identified by its subdomain — from the explicit `?t=` param (the SPA passes its own
+ * subdomain, robust across hosts) or the request Host — never by a cross-tenant record query.
+ */
+
+/**
+ * Extract a tenant subdomain label from a request Host. `riverton.mydomain.com` → `riverton` when
+ * the base domain is `mydomain.com`. Returns null for the bare/app host, reserved labels, or a
+ * mismatch.
+ */
+export function tenantSlugFromHost(hostname: string | undefined): string | null {
+  if (!hostname) return null;
+  const host = hostname.split(':')[0]?.toLowerCase();
+  const base = env.publicBaseDomain.toLowerCase();
+  if (!host || host === base) return null;
+  const suffix = `.${base}`;
+  if (!host.endsWith(suffix)) return null;
+  const label = host.slice(0, -suffix.length);
+  // Only a single left-most label maps to a tenant (no nested subdomains).
+  if (!label || label.includes('.') || RESERVED_SUBDOMAINS.has(label)) return null;
+  return label;
+}
+
+export interface PublicTenant {
+  id: string;
+  slug: string;
+}
+
+/**
+ * Resolve a tenant from its public subdomain slug. The `tenants` table is tenant-safety
+ * allow-listed (you look it up *by* its own key).
+ */
+export async function resolveTenantBySlug(tenantSlug: string): Promise<PublicTenant | null> {
+  const row = await BaseRepository.dbInstance
+    .selectFrom('tenants')
+    .select('id')
+    .where('slug', '=', tenantSlug)
+    .executeTakeFirst();
+  return row ? { id: String(row.id), slug: tenantSlug } : null;
+}
+
+/** Org display name for public pages (same source as the /f/:slug page header). */
+export async function publicOrgName(tenantId: string): Promise<string> {
+  const row = await BaseRepository.dbInstance
+    .selectFrom('settings')
+    .select('value')
+    .where('tenant_id', '=', tenantId)
+    .where('key', '=', 'organization.name')
+    .executeTakeFirst();
+  const value = row?.value;
+  return typeof value === 'string' && value.trim() ? value : 'Our organization';
+}
+
+/**
+ * Resolve the tenant for a public request: `?t=<tenantSlug>` first, then the Host subdomain.
+ * Returns null when neither identifies a known tenant — callers should 404 without revealing
+ * whether the slug or the tenant was the miss.
+ */
+export async function resolveTenantFromRequest(req: {
+  query?: unknown;
+  hostname?: string;
+}): Promise<PublicTenant | null> {
+  const query = req.query as Record<string, unknown> | undefined;
+  const t = typeof query?.['t'] === 'string' ? query['t'].trim() : '';
+  const tenantSlug = t || tenantSlugFromHost(req.hostname);
+  if (!tenantSlug) return null;
+  return resolveTenantBySlug(tenantSlug);
 }
 ```
 
@@ -21610,966 +21724,6 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
       skipped: skipped + results.skipped,
       errorMessages,
     };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/volunteer-events/controller.ts
-
-```typescript
-import { BaseController } from '../../lib/base.controller';
-import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { publicOrgName } from '../../lib/public-tenant';
-import { WorkflowsController } from '../workflows/controller';
-import { logger } from '../../logger';
-
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-const ipSignupTimestamps = new Map<string, number[]>();
-const SIGNUP_RATE_LIMIT_MAX = 5;
-const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
-export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
-  constructor() {
-    super(new VolunteerEventsRepo());
-  }
-
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({
-      tenant_id: auth.tenant_id,
-      options,
-    });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-    }
-
-    const row = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      is_private: payload.is_private ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_signup_confirmation: payload.send_signup_confirmation ?? true,
-      send_volunteer_alert: payload.send_volunteer_alert ?? true,
-      slug: payload.slug,
-      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
-      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
-      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
-      // Stringifying it first makes node-postgres send plain text, which Postgres casts
-      // to jsonb correctly.
-      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
-    } as OperationDataType<'volunteer_events', 'insert'>;
-    return this.add(row);
-  }
-
-  public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select('id')
-      .where('tenant_id', '=', _auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
-  }
-
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('volunteer_events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
-        });
-      }
-    }
-
-    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-    }
-
-    // `fields` is a jsonb column but modeled as `string[]`; pull it out of the raw payload
-    // spread and stringify it so node-postgres sends valid JSON text instead of a Postgres
-    // ARRAY literal (see addEvent() above for the full explanation).
-    const { fields, ...restPayload } = payload;
-    const row = {
-      ...restPayload,
-      ...(fields !== undefined ? { fields: JSON.stringify(fields) as unknown as string[] } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'volunteer_events', 'update'>;
-    const result = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row,
-    });
-
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending reminders for disabled event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        // Fetch all signed up shifts for this event
-        const shifts = await this.getRepo()
-          .db.selectFrom('volunteer_shifts')
-          .select(['id', 'person_id'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('event_id', '=', id)
-          .where('status', '=', 'signed_up')
-          .execute();
-
-        // Fetch event start time
-        const event = await this.getRepo()
-          .db.selectFrom('volunteer_events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
-
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            for (const shift of shifts) {
-              // Delete existing pending reminder for safety
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-                .where(sql`payload->>'shiftId'`, '=', String(shift.id))
-                .execute();
-
-              // Queue new reminder
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-shift-reminder',
-                    shiftId: String(shift.id),
-                    eventId: String(id),
-                    personId: String(shift.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule shift reminders for event');
-      }
-    }
-
-    return result;
-  }
-
-  public async getShiftsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getShiftsForEvent({
-      tenant_id: auth.tenant_id,
-      event_id,
-    });
-  }
-
-  public async signupVolunteer(payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().signupVolunteer({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      status: payload.status,
-      hours_worked: payload.hours_worked,
-      notes: payload.notes,
-      user_id: auth.user_id,
-    });
-
-    if (result && result.status === 'signed_up') {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('volunteer_events')
-          .select(['start_time', 'send_reminder'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', payload.event_id)
-          .executeTakeFirst();
-
-        if (event && event.send_reminder !== false) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-shift-reminder',
-                  shiftId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to schedule shift reminder for volunteer');
-      }
-
-      // Trigger volunteer signup workflows
-      try {
-        const workflowsController = new WorkflowsController();
-        await this.getRepo()
-          .transaction()
-          .execute(async (trx) => {
-            await workflowsController.triggerVolunteerSignup(
-              auth.tenant_id,
-              String(payload.person_id),
-              String(payload.event_id),
-              trx,
-            );
-          });
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger volunteer signup workflows');
-      }
-    }
-
-    if (result && result.status) {
-      try {
-        const workflowsController = new WorkflowsController();
-        await this.getRepo()
-          .transaction()
-          .execute(async (trx) => {
-            await workflowsController.triggerWorkflow(
-              auth.tenant_id,
-              String(payload.person_id),
-              'volunteer_shift_status',
-              result.status,
-              trx,
-            );
-          });
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger volunteer_shift_status workflow in signupVolunteer');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'assign',
-        entity: 'volunteer_shifts',
-        entity_id: result?.id ? String(result.id) : null,
-        quantity: 1,
-        metadata: { id: result?.id, event_id: payload.event_id, person_id: payload.person_id },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift signup activity');
-    }
-
-    return result;
-  }
-
-  public async updateShift(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateShift({
-      tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
-    });
-
-    if (result) {
-      // Trigger volunteer shift status workflows
-      if (payload.status) {
-        try {
-          const workflowsController = new WorkflowsController();
-          await this.getRepo()
-            .transaction()
-            .execute(async (trx) => {
-              await workflowsController.triggerWorkflow(
-                auth.tenant_id,
-                String(result.person_id),
-                'volunteer_shift_status',
-                payload.status,
-                trx,
-              );
-            });
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger volunteer_shift_status workflows');
-        }
-      }
-
-      try {
-        if (payload.status && payload.status !== 'signed_up') {
-          // Cancel/remove pending reminder
-          await this.getRepo()
-            .db.deleteFrom('background_jobs')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('status', '=', 'pending')
-            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-            .where(sql`payload->>'shiftId'`, '=', String(id))
-            .execute();
-        } else if (payload.status === 'signed_up') {
-          // Remove existing pending reminders first
-          await this.getRepo()
-            .db.deleteFrom('background_jobs')
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('status', '=', 'pending')
-            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-            .where(sql`payload->>'shiftId'`, '=', String(id))
-            .execute();
-
-          // Fetch event to check if we should schedule a new reminder
-          const event = await this.getRepo()
-            .db.selectFrom('volunteer_events')
-            .select(['start_time', 'send_reminder'])
-            .where('tenant_id', '=', auth.tenant_id)
-            .where('id', '=', result.event_id)
-            .executeTakeFirst();
-
-          if (event && event.send_reminder !== false) {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-shift-reminder',
-                    shiftId: String(id),
-                    eventId: String(result.event_id),
-                    personId: String(result.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to update shift reminder job status');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'volunteer_shifts',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift update activity');
-    }
-
-    return result;
-  }
-
-  public async deleteShift(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteShift({
-      tenant_id: auth.tenant_id,
-      id,
-    });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
-          .where(sql`payload->>'shiftId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to delete pending shift reminder job');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'delete',
-        entity: 'volunteer_shifts',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log shift delete activity');
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({
-      tenant_id: auth.tenant_id,
-      person_id,
-    });
-  }
-
-  public async getVolunteerStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getVolunteerStats({
-      tenant_id: auth.tenant_id,
-      person_id,
-    });
-  }
-
-  public async getTenantPublic(tenantId: string) {
-    return this.getRepo().db.selectFrom('tenants').select(['name']).where('id', '=', tenantId).executeTakeFirst();
-  }
-
-  public async getUpcomingEventsPublic(tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select([
-        'volunteer_events.id',
-        'volunteer_events.tenant_id',
-        'volunteer_events.name',
-        'volunteer_events.description',
-        'volunteer_events.location_address',
-        'volunteer_events.start_time',
-        'volunteer_events.end_time',
-        'volunteer_events.capacity',
-        'volunteer_events.contact_email',
-        'volunteer_events.contact_phone',
-        'volunteer_events.is_private',
-        'volunteer_events.send_reminder',
-        'volunteer_events.slug',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('volunteer_shifts')
-          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
-          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
-          .as('volunteers_count'),
-      ])
-      .where('volunteer_events.tenant_id', '=', tenantId)
-      .where('volunteer_events.end_time', '>=', new Date())
-      .where('volunteer_events.is_private', '=', false)
-      .orderBy('volunteer_events.start_time', 'asc')
-      .execute();
-  }
-
-  /**
-   * Public signup-page lookup. Tenant-scoped by slug: volunteer-event slugs are unique per tenant,
-   * and the tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
-   */
-  public async getEventPublic(tenantId: string, slug: string) {
-    return this.getRepo()
-      .db.selectFrom('volunteer_events')
-      .select([
-        'volunteer_events.id',
-        'volunteer_events.tenant_id',
-        'volunteer_events.name',
-        'volunteer_events.description',
-        'volunteer_events.location_address',
-        'volunteer_events.start_time',
-        'volunteer_events.end_time',
-        'volunteer_events.capacity',
-        'volunteer_events.contact_email',
-        'volunteer_events.contact_phone',
-        'volunteer_events.is_private',
-        'volunteer_events.send_reminder',
-        'volunteer_events.slug',
-        'volunteer_events.fields',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('volunteer_shifts')
-          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
-          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
-          .as('volunteers_count'),
-      ])
-      .where('volunteer_events.tenant_id', '=', tenantId)
-      .where('volunteer_events.slug', '=', slug)
-      .executeTakeFirst();
-  }
-
-  /**
-   * Everything the public /v/:slug SPA page renders in one payload: the event, live signup count,
-   * and the org name. Unknown slugs throw NOT_FOUND.
-   */
-  public async getPublicEventConfig(tenantId: string, slug: string) {
-    const event = await this.getEventPublic(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    const orgName = await publicOrgName(tenantId);
-    const volunteersCount = Number(event.volunteers_count || 0);
-    const isPast = new Date(event.end_time) < new Date();
-    const isFull = event.capacity !== null && volunteersCount >= event.capacity;
-    const remaining = event.capacity !== null ? Math.max(0, event.capacity - volunteersCount) : null;
-
-    const fields: string[] = Array.isArray(event.fields)
-      ? event.fields
-      : typeof event.fields === 'string'
-        ? JSON.parse(event.fields)
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-    return {
-      orgName,
-      event: {
-        name: String(event.name),
-        description: event.description ?? null,
-        location_address: event.location_address ?? null,
-        start_time: event.start_time,
-        end_time: event.end_time,
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? null,
-        contact_phone: event.contact_phone ?? null,
-        is_private: !!event.is_private,
-        fields,
-      },
-      volunteersCount,
-      isPast,
-      isFull,
-      remaining,
-    };
-  }
-
-  /** Upcoming public volunteer events for the tenant's /volunteer listing page. */
-  public async getPublicEventListing(tenantId: string) {
-    const [orgName, events] = await Promise.all([publicOrgName(tenantId), this.getUpcomingEventsPublic(tenantId)]);
-    return {
-      orgName,
-      events: events.map((ev) => {
-        const volunteersCount = Number(ev.volunteers_count || 0);
-        const remaining = ev.capacity !== null ? Math.max(0, ev.capacity - volunteersCount) : null;
-        return {
-          slug: String(ev.slug),
-          name: String(ev.name),
-          description: ev.description ?? null,
-          location_address: ev.location_address ?? null,
-          start_time: ev.start_time,
-          end_time: ev.end_time,
-          capacity: ev.capacity ?? null,
-          isFull: ev.capacity !== null && volunteersCount >= ev.capacity,
-          remaining,
-        };
-      }),
-    };
-  }
-
-  public async signupVolunteerPublic(
-    tenantId: string,
-    slug: string,
-    payload: Record<string, string>,
-    clientIp: string,
-  ) {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSignupTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < SIGNUP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= SIGNUP_RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
-    }
-    timestamps.push(now);
-    // Prune the key if empty to prevent unbounded Map growth across long-lived processes
-    if (timestamps.length > 0) {
-      ipSignupTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSignupTimestamps.delete(clientIp);
-    }
-
-    // 2. Fetch the event — tenant-scoped by slug
-    const event = await this.getEventPublic(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Event not found.',
-      });
-    }
-
-    // 3. Honeypot check
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for volunteer event ${slug}`);
-      return { success: true }; // Silent mock success
-    }
-
-    // 4. Validate email
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Email address is required.',
-      });
-    }
-
-    // 5. Check capacity limit
-    const currentCount = Number(event.volunteers_count || 0);
-    if (event.capacity !== null && currentCount >= event.capacity) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This event is already at full capacity.',
-      });
-    }
-
-    const firstName = payload['first_name'] || payload['firstName'] || null;
-    const lastName = payload['last_name'] || payload['lastName'] || null;
-    const mobile = payload['mobile'] || payload['phone'] || null;
-    const notes = payload['notes'] || payload['message'] || null;
-
-    // 6. Transaction to find/create person, tags, and shift
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId) {
-          throw new Error('Tenant placeholder household is not configured.');
-        }
-        if (!creatorId) {
-          throw new Error('Tenant admin_id is not configured.');
-        }
-
-        const campaignId = await this.getCampaignId(tenantId, trx);
-
-        // Check if email already exists
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = {
-            updatedby_id: creatorId,
-            updated_at: sql`now()`,
-          };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (!existing.notes && notes) {
-            updateRow.notes = notes;
-          } else if (existing.notes && notes) {
-            updateRow.notes = `${existing.notes}\n\nVolunteer Signup notes: ${notes}`;
-          }
-
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            mobile: mobile,
-            notes: notes,
-          };
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          // Trigger contact created workflow
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in signupVolunteerPublic');
-          }
-        }
-
-        // Check if shift already exists
-        const existingShift = await trx
-          .selectFrom('volunteer_shifts')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', event.id)
-          .where('person_id', '=', personId)
-          .executeTakeFirst();
-
-        if (existingShift) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'You are already signed up for this event.',
-          });
-        }
-
-        const workflowsController = new WorkflowsController();
-
-        // Add tag "volunteer" and "event: <event name>"
-        const allTagsToApply = ['volunteer', `event: ${event.name}`];
-        for (const tagName of allTagsToApply) {
-          const normalizedTagName = tagName.trim().toLowerCase();
-          if (!normalizedTagName) continue;
-
-          let tag = await trx
-            .selectFrom('tags')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('name', '=', normalizedTagName)
-            .where('type', '=', 'tag')
-            .executeTakeFirst();
-
-          if (!tag) {
-            try {
-              const insertTagRes = await trx
-                .insertInto('tags')
-                .values({
-                  tenant_id: tenantId,
-                  name: normalizedTagName,
-                  type: 'tag',
-                  deletable: true,
-                  createdby_id: creatorId,
-                  updatedby_id: creatorId,
-                })
-                .returning('id')
-                .executeTakeFirst();
-              if (insertTagRes) {
-                tag = { id: insertTagRes.id };
-              }
-            } catch (insertErr) {
-              // Concurrent insert fallback: fetch the tag that was just inserted
-              tag = await trx
-                .selectFrom('tags')
-                .select('id')
-                .where('tenant_id', '=', tenantId)
-                .where('name', '=', normalizedTagName)
-                .where('type', '=', 'tag')
-                .executeTakeFirst();
-              if (!tag) throw insertErr;
-            }
-          }
-
-          if (tag) {
-            const mapExists = await trx
-              .selectFrom('map_peoples_tags')
-              .select('person_id')
-              .where('tenant_id', '=', tenantId)
-              .where('person_id', '=', personId)
-              .where('tag_id', '=', tag.id)
-              .executeTakeFirst();
-
-            if (!mapExists) {
-              await trx
-                .insertInto('map_peoples_tags')
-                .values({
-                  tenant_id: tenantId,
-                  person_id: personId,
-                  tag_id: tag.id,
-                  createdby_id: creatorId,
-                  updatedby_id: creatorId,
-                })
-                .onConflict((oc) => oc.columns(['tenant_id', 'person_id', 'tag_id']).doNothing())
-                .execute();
-
-              // Trigger tag_added and specialized subscriber workflows
-              try {
-                await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
-              } catch (err) {
-                logger.error({ err }, 'Failed to trigger tag_added workflow in signupVolunteerPublic');
-              }
-            }
-          }
-        }
-
-        // Insert Shift
-        const shiftResult = await trx
-          .insertInto('volunteer_shifts')
-          .values({
-            tenant_id: tenantId,
-            event_id: event.id,
-            person_id: personId,
-            status: 'signed_up',
-            notes: notes,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        const shiftId = shiftResult.id;
-
-        // Log user activity
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: creatorId,
-            activity: 'signup',
-            entity: 'volunteer_events',
-            entity_id: String(event.id),
-            quantity: 1,
-            metadata: JSON.stringify({ person_id: personId, email }),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .execute();
-
-        // Queue email notification job in background
-        await trx
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'send-form-notifications',
-              eventId: String(event.id),
-              tenantId,
-              email,
-              firstName,
-              lastName,
-              mobile,
-              notes,
-            }),
-            run_at: new Date(),
-          })
-          .execute();
-
-        // Queue shift reminder email if enabled
-        if (event.send_reminder !== false) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-shift-reminder',
-                  shiftId: String(shiftId),
-                  eventId: String(event.id),
-                  personId: String(personId),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        }
-
-        // Trigger volunteer signup workflows
-        try {
-          const workflowsController = new WorkflowsController();
-          await workflowsController.triggerVolunteerSignup(tenantId, personId, String(event.id), trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger volunteer signup workflows in public form');
-        }
-      });
-
-    return { success: true };
-  }
-
-  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'current_campaign')
-      .executeTakeFirst();
-
-    if (row) {
-      const value = row.value;
-      if (typeof value === 'number' || typeof value === 'string') {
-        return String(value);
-      }
-      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-        const id = (value as Record<string, unknown>)['id'];
-        if (typeof id === 'number' || typeof id === 'string') {
-          return String(id);
-        }
-      }
-    }
-
-    const campaignRow = await trx
-      .selectFrom('campaigns')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (campaignRow) {
-      return String(campaignRow.id);
-    }
-
-    throw new Error('No campaign found for this tenant.');
   }
 }
 ```
@@ -30768,6 +29922,966 @@ export class PersonsService {
 }
 ```
 
+## File: apps/backend/src/app/modules/volunteer-events/controller.ts
+
+```typescript
+import { BaseController } from '../../lib/base.controller';
+import { VolunteerEventsRepo } from './repositories/volunteer-events.repo';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { OperationDataType, Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { publicOrgName } from '../../lib/public-tenant';
+import { WorkflowsController } from '../workflows/controller';
+import { logger } from '../../logger';
+
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+const ipSignupTimestamps = new Map<string, number[]>();
+const SIGNUP_RATE_LIMIT_MAX = 5;
+const SIGNUP_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+export class VolunteerEventsController extends BaseController<'volunteer_events', VolunteerEventsRepo> {
+  constructor() {
+    super(new VolunteerEventsRepo());
+  }
+
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({
+      tenant_id: auth.tenant_id,
+      options,
+    });
+  }
+
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
+    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+    }
+
+    const row = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      is_private: payload.is_private ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_signup_confirmation: payload.send_signup_confirmation ?? true,
+      send_volunteer_alert: payload.send_volunteer_alert ?? true,
+      slug: payload.slug,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
+    } as OperationDataType<'volunteer_events', 'insert'>;
+    return this.add(row);
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, _auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select('id')
+      .where('tenant_id', '=', _auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
+
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('volunteer_events')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
+        .executeTakeFirst();
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
+    if (payload.start_time && payload.end_time && new Date(payload.end_time) <= new Date(payload.start_time)) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+    }
+
+    // `fields` is a jsonb column but modeled as `string[]`; pull it out of the raw payload
+    // spread and stringify it so node-postgres sends valid JSON text instead of a Postgres
+    // ARRAY literal (see addEvent() above for the full explanation).
+    const { fields, ...restPayload } = payload;
+    const row = {
+      ...restPayload,
+      ...(fields !== undefined ? { fields: JSON.stringify(fields) as unknown as string[] } : {}),
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'volunteer_events', 'update'>;
+    const result = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row,
+    });
+
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending reminders for disabled event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        // Fetch all signed up shifts for this event
+        const shifts = await this.getRepo()
+          .db.selectFrom('volunteer_shifts')
+          .select(['id', 'person_id'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('event_id', '=', id)
+          .where('status', '=', 'signed_up')
+          .execute();
+
+        // Fetch event start time
+        const event = await this.getRepo()
+          .db.selectFrom('volunteer_events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            for (const shift of shifts) {
+              // Delete existing pending reminder for safety
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+                .where(sql`payload->>'shiftId'`, '=', String(shift.id))
+                .execute();
+
+              // Queue new reminder
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-shift-reminder',
+                    shiftId: String(shift.id),
+                    eventId: String(id),
+                    personId: String(shift.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule shift reminders for event');
+      }
+    }
+
+    return result;
+  }
+
+  public async getShiftsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getShiftsForEvent({
+      tenant_id: auth.tenant_id,
+      event_id,
+    });
+  }
+
+  public async signupVolunteer(payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().signupVolunteer({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      status: payload.status,
+      hours_worked: payload.hours_worked,
+      notes: payload.notes,
+      user_id: auth.user_id,
+    });
+
+    if (result && result.status === 'signed_up') {
+      try {
+        const event = await this.getRepo()
+          .db.selectFrom('volunteer_events')
+          .select(['start_time', 'send_reminder'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', payload.event_id)
+          .executeTakeFirst();
+
+        if (event && event.send_reminder !== false) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-shift-reminder',
+                  shiftId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to schedule shift reminder for volunteer');
+      }
+
+      // Trigger volunteer signup workflows
+      try {
+        const workflowsController = new WorkflowsController();
+        await this.getRepo()
+          .transaction()
+          .execute(async (trx) => {
+            await workflowsController.triggerVolunteerSignup(
+              auth.tenant_id,
+              String(payload.person_id),
+              String(payload.event_id),
+              trx,
+            );
+          });
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger volunteer signup workflows');
+      }
+    }
+
+    if (result && result.status) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await this.getRepo()
+          .transaction()
+          .execute(async (trx) => {
+            await workflowsController.triggerWorkflow(
+              auth.tenant_id,
+              String(payload.person_id),
+              'volunteer_shift_status',
+              result.status,
+              trx,
+            );
+          });
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger volunteer_shift_status workflow in signupVolunteer');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'assign',
+        entity: 'volunteer_shifts',
+        entity_id: result?.id ? String(result.id) : null,
+        quantity: 1,
+        metadata: { id: result?.id, event_id: payload.event_id, person_id: payload.person_id },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift signup activity');
+    }
+
+    return result;
+  }
+
+  public async updateShift(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateShift({
+      tenant_id: auth.tenant_id,
+      id,
+      row: payload,
+      user_id: auth.user_id,
+    });
+
+    if (result) {
+      // Trigger volunteer shift status workflows
+      if (payload.status) {
+        try {
+          const workflowsController = new WorkflowsController();
+          await this.getRepo()
+            .transaction()
+            .execute(async (trx) => {
+              await workflowsController.triggerWorkflow(
+                auth.tenant_id,
+                String(result.person_id),
+                'volunteer_shift_status',
+                payload.status,
+                trx,
+              );
+            });
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger volunteer_shift_status workflows');
+        }
+      }
+
+      try {
+        if (payload.status && payload.status !== 'signed_up') {
+          // Cancel/remove pending reminder
+          await this.getRepo()
+            .db.deleteFrom('background_jobs')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('status', '=', 'pending')
+            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+            .where(sql`payload->>'shiftId'`, '=', String(id))
+            .execute();
+        } else if (payload.status === 'signed_up') {
+          // Remove existing pending reminders first
+          await this.getRepo()
+            .db.deleteFrom('background_jobs')
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('status', '=', 'pending')
+            .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+            .where(sql`payload->>'shiftId'`, '=', String(id))
+            .execute();
+
+          // Fetch event to check if we should schedule a new reminder
+          const event = await this.getRepo()
+            .db.selectFrom('volunteer_events')
+            .select(['start_time', 'send_reminder'])
+            .where('tenant_id', '=', auth.tenant_id)
+            .where('id', '=', result.event_id)
+            .executeTakeFirst();
+
+          if (event && event.send_reminder !== false) {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-shift-reminder',
+                    shiftId: String(id),
+                    eventId: String(result.event_id),
+                    personId: String(result.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to update shift reminder job status');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'volunteer_shifts',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift update activity');
+    }
+
+    return result;
+  }
+
+  public async deleteShift(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteShift({
+      tenant_id: auth.tenant_id,
+      id,
+    });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-shift-reminder')
+          .where(sql`payload->>'shiftId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to delete pending shift reminder job');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'delete',
+        entity: 'volunteer_shifts',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log shift delete activity');
+    }
+
+    return result;
+  }
+
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({
+      tenant_id: auth.tenant_id,
+      person_id,
+    });
+  }
+
+  public async getVolunteerStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getVolunteerStats({
+      tenant_id: auth.tenant_id,
+      person_id,
+    });
+  }
+
+  public async getTenantPublic(tenantId: string) {
+    return this.getRepo().db.selectFrom('tenants').select(['name']).where('id', '=', tenantId).executeTakeFirst();
+  }
+
+  public async getUpcomingEventsPublic(tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select([
+        'volunteer_events.id',
+        'volunteer_events.tenant_id',
+        'volunteer_events.name',
+        'volunteer_events.description',
+        'volunteer_events.location_address',
+        'volunteer_events.start_time',
+        'volunteer_events.end_time',
+        'volunteer_events.capacity',
+        'volunteer_events.contact_email',
+        'volunteer_events.contact_phone',
+        'volunteer_events.is_private',
+        'volunteer_events.send_reminder',
+        'volunteer_events.slug',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('volunteer_shifts')
+          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
+          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
+          .as('volunteers_count'),
+      ])
+      .where('volunteer_events.tenant_id', '=', tenantId)
+      .where('volunteer_events.end_time', '>=', new Date())
+      .where('volunteer_events.is_private', '=', false)
+      .orderBy('volunteer_events.start_time', 'asc')
+      .execute();
+  }
+
+  /**
+   * Public signup-page lookup. Tenant-scoped by slug: volunteer-event slugs are unique per tenant,
+   * and the tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventPublic(tenantId: string, slug: string) {
+    return this.getRepo()
+      .db.selectFrom('volunteer_events')
+      .select([
+        'volunteer_events.id',
+        'volunteer_events.tenant_id',
+        'volunteer_events.name',
+        'volunteer_events.description',
+        'volunteer_events.location_address',
+        'volunteer_events.start_time',
+        'volunteer_events.end_time',
+        'volunteer_events.capacity',
+        'volunteer_events.contact_email',
+        'volunteer_events.contact_phone',
+        'volunteer_events.is_private',
+        'volunteer_events.send_reminder',
+        'volunteer_events.slug',
+        'volunteer_events.fields',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('volunteer_shifts')
+          .whereRef('volunteer_shifts.event_id', '=', 'volunteer_events.id')
+          .select(({ fn }) => [fn.count<number>('volunteer_shifts.id').as('volunteers_count')])
+          .as('volunteers_count'),
+      ])
+      .where('volunteer_events.tenant_id', '=', tenantId)
+      .where('volunteer_events.slug', '=', slug)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Everything the public /v/:slug SPA page renders in one payload: the event, live signup count,
+   * and the org name. Unknown slugs throw NOT_FOUND.
+   */
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventPublic(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    const orgName = await publicOrgName(tenantId);
+    const volunteersCount = Number(event.volunteers_count || 0);
+    const isPast = new Date(event.end_time) < new Date();
+    const isFull = event.capacity !== null && volunteersCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - volunteersCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        is_private: !!event.is_private,
+        fields,
+      },
+      volunteersCount,
+      isPast,
+      isFull,
+      remaining,
+    };
+  }
+
+  /** Upcoming public volunteer events for the tenant's /volunteer listing page. */
+  public async getPublicEventListing(tenantId: string) {
+    const [orgName, events] = await Promise.all([publicOrgName(tenantId), this.getUpcomingEventsPublic(tenantId)]);
+    return {
+      orgName,
+      events: events.map((ev) => {
+        const volunteersCount = Number(ev.volunteers_count || 0);
+        const remaining = ev.capacity !== null ? Math.max(0, ev.capacity - volunteersCount) : null;
+        return {
+          slug: String(ev.slug),
+          name: String(ev.name),
+          description: ev.description ?? null,
+          location_address: ev.location_address ?? null,
+          start_time: ev.start_time,
+          end_time: ev.end_time,
+          capacity: ev.capacity ?? null,
+          isFull: ev.capacity !== null && volunteersCount >= ev.capacity,
+          remaining,
+        };
+      }),
+    };
+  }
+
+  public async signupVolunteerPublic(
+    tenantId: string,
+    slug: string,
+    payload: Record<string, string>,
+    clientIp: string,
+  ) {
+    // 1. Rate limiting check
+    const now = Date.now();
+    let timestamps = ipSignupTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < SIGNUP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= SIGNUP_RATE_LIMIT_MAX) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. Please try again in a minute.',
+      });
+    }
+    timestamps.push(now);
+    // Prune the key if empty to prevent unbounded Map growth across long-lived processes
+    if (timestamps.length > 0) {
+      ipSignupTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSignupTimestamps.delete(clientIp);
+    }
+
+    // 2. Fetch the event — tenant-scoped by slug
+    const event = await this.getEventPublic(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Event not found.',
+      });
+    }
+
+    // 3. Honeypot check
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      logger.warn(`Spam bot detected from IP ${clientIp} for volunteer event ${slug}`);
+      return { success: true }; // Silent mock success
+    }
+
+    // 4. Validate email
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Email address is required.',
+      });
+    }
+
+    // 5. Check capacity limit
+    const currentCount = Number(event.volunteers_count || 0);
+    if (event.capacity !== null && currentCount >= event.capacity) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This event is already at full capacity.',
+      });
+    }
+
+    const firstName = payload['first_name'] || payload['firstName'] || null;
+    const lastName = payload['last_name'] || payload['lastName'] || null;
+    const mobile = payload['mobile'] || payload['phone'] || null;
+    const notes = payload['notes'] || payload['message'] || null;
+
+    // 6. Transaction to find/create person, tags, and shift
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId) {
+          throw new Error('Tenant placeholder household is not configured.');
+        }
+        if (!creatorId) {
+          throw new Error('Tenant admin_id is not configured.');
+        }
+
+        const campaignId = await this.getCampaignId(tenantId, trx);
+
+        // Check if email already exists
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = {
+            updatedby_id: creatorId,
+            updated_at: sql`now()`,
+          };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (!existing.notes && notes) {
+            updateRow.notes = notes;
+          } else if (existing.notes && notes) {
+            updateRow.notes = `${existing.notes}\n\nVolunteer Signup notes: ${notes}`;
+          }
+
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            mobile: mobile,
+            notes: notes,
+          };
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          // Trigger contact created workflow
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in signupVolunteerPublic');
+          }
+        }
+
+        // Check if shift already exists
+        const existingShift = await trx
+          .selectFrom('volunteer_shifts')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', event.id)
+          .where('person_id', '=', personId)
+          .executeTakeFirst();
+
+        if (existingShift) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'You are already signed up for this event.',
+          });
+        }
+
+        const workflowsController = new WorkflowsController();
+
+        // Add tag "volunteer" and "event: <event name>"
+        const allTagsToApply = ['volunteer', `event: ${event.name}`];
+        for (const tagName of allTagsToApply) {
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
+
+          let tag = await trx
+            .selectFrom('tags')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .where('name', '=', normalizedTagName)
+            .where('type', '=', 'tag')
+            .executeTakeFirst();
+
+          if (!tag) {
+            try {
+              const insertTagRes = await trx
+                .insertInto('tags')
+                .values({
+                  tenant_id: tenantId,
+                  name: normalizedTagName,
+                  type: 'tag',
+                  deletable: true,
+                  createdby_id: creatorId,
+                  updatedby_id: creatorId,
+                })
+                .returning('id')
+                .executeTakeFirst();
+              if (insertTagRes) {
+                tag = { id: insertTagRes.id };
+              }
+            } catch (insertErr) {
+              // Concurrent insert fallback: fetch the tag that was just inserted
+              tag = await trx
+                .selectFrom('tags')
+                .select('id')
+                .where('tenant_id', '=', tenantId)
+                .where('name', '=', normalizedTagName)
+                .where('type', '=', 'tag')
+                .executeTakeFirst();
+              if (!tag) throw insertErr;
+            }
+          }
+
+          if (tag) {
+            const mapExists = await trx
+              .selectFrom('map_peoples_tags')
+              .select('person_id')
+              .where('tenant_id', '=', tenantId)
+              .where('person_id', '=', personId)
+              .where('tag_id', '=', tag.id)
+              .executeTakeFirst();
+
+            if (!mapExists) {
+              await trx
+                .insertInto('map_peoples_tags')
+                .values({
+                  tenant_id: tenantId,
+                  person_id: personId,
+                  tag_id: tag.id,
+                  createdby_id: creatorId,
+                  updatedby_id: creatorId,
+                })
+                .onConflict((oc) => oc.columns(['tenant_id', 'person_id', 'tag_id']).doNothing())
+                .execute();
+
+              // Trigger tag_added and specialized subscriber workflows
+              try {
+                await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
+              } catch (err) {
+                logger.error({ err }, 'Failed to trigger tag_added workflow in signupVolunteerPublic');
+              }
+            }
+          }
+        }
+
+        // Insert Shift
+        const shiftResult = await trx
+          .insertInto('volunteer_shifts')
+          .values({
+            tenant_id: tenantId,
+            event_id: event.id,
+            person_id: personId,
+            status: 'signed_up',
+            notes: notes,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        const shiftId = shiftResult.id;
+
+        // Log user activity
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: creatorId,
+            activity: 'signup',
+            entity: 'volunteer_events',
+            entity_id: String(event.id),
+            quantity: 1,
+            metadata: JSON.stringify({ person_id: personId, email }),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .execute();
+
+        // Queue email notification job in background
+        await trx
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'send-form-notifications',
+              eventId: String(event.id),
+              tenantId,
+              email,
+              firstName,
+              lastName,
+              mobile,
+              notes,
+            }),
+            run_at: new Date(),
+          })
+          .execute();
+
+        // Queue shift reminder email if enabled
+        if (event.send_reminder !== false) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-shift-reminder',
+                  shiftId: String(shiftId),
+                  eventId: String(event.id),
+                  personId: String(personId),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        }
+
+        // Trigger volunteer signup workflows
+        try {
+          const workflowsController = new WorkflowsController();
+          await workflowsController.triggerVolunteerSignup(tenantId, personId, String(event.id), trx);
+        } catch (err) {
+          logger.error({ err }, 'Failed to trigger volunteer signup workflows in public form');
+        }
+      });
+
+    return { success: true };
+  }
+
+  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'current_campaign')
+      .executeTakeFirst();
+
+    if (row) {
+      const value = row.value;
+      if (typeof value === 'number' || typeof value === 'string') {
+        return String(value);
+      }
+      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+        const id = (value as Record<string, unknown>)['id'];
+        if (typeof id === 'number' || typeof id === 'string') {
+          return String(id);
+        }
+      }
+    }
+
+    const campaignRow = await trx
+      .selectFrom('campaigns')
+      .select('id')
+      .where('tenant_id', '=', tenantId)
+      .limit(1)
+      .executeTakeFirst();
+
+    if (campaignRow) {
+      return String(campaignRow.id);
+    }
+
+    throw new Error('No campaign found for this tenant.');
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
 
 ```typescript
@@ -31318,879 +31432,6 @@ const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 };
 
 export default donationsWebhookRoute;
-```
-
-## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { TRPCError } from '@trpc/server';
-
-import { EventsController } from '../controller';
-import { resolveTenantFromRequest } from '../../../lib/public-tenant';
-
-const ctrl = new EventsController();
-
-function getStatusFromError(err: unknown): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      case 'TOO_MANY_REQUESTS':
-        return 429;
-      default:
-        return 500;
-    }
-  }
-  const statusCode = (err as { statusCode?: unknown })?.statusCode;
-  return typeof statusCode === 'number' ? statusCode : 500;
-}
-
-/**
- * JSON API behind the public /e/:slug SPA page (registered outside the app shell, like /f/:slug).
- * The tenant is identified by its subdomain — the `?t=` param the SPA passes, or the Host header —
- * and every event lookup is tenant-scoped. The server-rendered HTML pages this file used to carry
- * are gone; the SPA owns presentation.
- */
-const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Event config for the SPA page: event details + tickets + live capacity.
-  fastify.get('/e/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
-      }
-      const result = await ctrl.getPublicEventConfig(tenant.id, String(slug));
-      return reply.status(200).send(result);
-    } catch (err) {
-      const status = getStatusFromError(err);
-      // Never leak internal detail on a public endpoint; NOT_FOUND is the only expected miss.
-      if (status >= 500) fastify.log.error(err, 'Failed to load public event');
-      return reply.status(status === 404 ? 404 : status).send({ error: 'Event not found.' });
-    }
-  });
-
-  // RSVP submission from the SPA page (JSON body).
-  fastify.post('/rsvp/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
-    // read the raw header, which a client can spoof to defeat rate limiting.
-    const clientIp = req.ip;
-
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
-      }
-      await ctrl.rsvpPublic(tenant.id, String(slug), req.body || {}, clientIp);
-      return reply.status(200).send({ success: true });
-    } catch (err) {
-      fastify.log.error(err);
-      const status = getStatusFromError(err);
-      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
-      const message =
-        status < 500 && err instanceof Error && err.message ? err.message : 'An unexpected error occurred.';
-      return reply.status(status).send({ error: message });
-    }
-  });
-
-  done();
-};
-
-export default eventsPublicRoute;
-```
-
-## File: apps/backend/src/app/modules/events/controller.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { BaseController } from '../../lib/base.controller';
-import { publicOrgName } from '../../lib/public-tenant';
-import { logger } from '../../logger';
-import { WorkflowsController } from '../workflows/controller';
-import { EventsRepo } from './repositories/events.repo';
-
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-const ipRsvpTimestamps = new Map<string, number[]>();
-const RSVP_RATE_LIMIT_MAX = 5;
-const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-export class EventsController extends BaseController<'events', EventsRepo> {
-  constructor() {
-    super(new EventsRepo());
-  }
-
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    const row = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      slug: payload.slug,
-      is_published: payload.is_published ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
-      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
-      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
-      // Stringifying it first makes node-postgres send plain text, which Postgres casts
-      // to jsonb correctly.
-      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
-    } as OperationDataType<'events', 'insert'>;
-
-    try {
-      return await this.add(row);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
-   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
-   */
-  public async getEventBySlug(tenantId: string, slug: string) {
-    return this.getRepo()
-      .db.selectFrom('events')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('slug', '=', slug)
-      .where('is_published', '=', true)
-      .executeTakeFirst();
-  }
-
-  /**
-   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
-   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
-   */
-  public async getPublicEventConfig(tenantId: string, slug: string) {
-    const event = await this.getEventBySlug(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    const eventId = String(event.id);
-    const [orgName, tickets, regCount] = await Promise.all([
-      publicOrgName(tenantId),
-      this.getTicketTypesByEventId(eventId, tenantId),
-      this.getRegistrationCountForEvent(eventId, tenantId),
-    ]);
-
-    const now = new Date();
-    const isPast = new Date(event.end_time) < now;
-    const isFull = event.capacity !== null && regCount >= event.capacity;
-    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
-
-    const fields: string[] = Array.isArray(event.fields)
-      ? event.fields
-      : typeof event.fields === 'string'
-        ? JSON.parse(event.fields)
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-    return {
-      orgName,
-      event: {
-        name: String(event.name),
-        description: event.description ?? null,
-        location_address: event.location_address ?? null,
-        start_time: event.start_time,
-        end_time: event.end_time,
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? null,
-        contact_phone: event.contact_phone ?? null,
-        fields,
-      },
-      tickets: tickets.map((t) => ({
-        name: String(t.name),
-        description: t.description ?? null,
-        price_cents: t.price_cents ?? null,
-        capacity: t.capacity ?? null,
-      })),
-      isPast,
-      isFull,
-      remaining,
-    };
-  }
-
-  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
-    const row = await this.getRepo()
-      .db.selectFrom('event_registrations')
-      .select(({ fn }) => [fn.count('id').as('cnt')])
-      .where('tenant_id', '=', tenantId)
-      .where('event_id', '=', eventId)
-      .where('status', '!=', 'cancelled')
-      .executeTakeFirst();
-    return Number(row?.cnt ?? 0);
-  }
-
-  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('event_ticket_types')
-      .selectAll()
-      .where('event_id', '=', eventId)
-      .where('tenant_id', '=', tenantId)
-      .orderBy('sort_order', 'asc')
-      .execute();
-  }
-
-  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
-  }
-
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
-        });
-      }
-    }
-
-    const row = {
-      ...payload,
-      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
-      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
-      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'events', 'update'>;
-    let result;
-    try {
-      result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-
-    // Manage pending reminder jobs when the toggle changes
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
-
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            const registrations = await this.getRepo()
-              .db.selectFrom('event_registrations')
-              .select(['id', 'person_id'])
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('event_id', '=', id)
-              .where('status', '=', 'registered')
-              .execute();
-
-            for (const reg of registrations) {
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
-                .execute();
-
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(id),
-                    personId: String(reg.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule event reminders');
-      }
-    }
-
-    return result;
-  }
-
-  // Ticket types
-
-  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().addTicketType({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      price_cents: payload.price_cents ?? 0,
-      capacity: payload.capacity ?? null,
-      sort_order: payload.sort_order ?? 0,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
-  }
-
-  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
-  }
-
-  // Registrations
-
-  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
-    // Capacity check across the whole event
-    const event = await this.getRepo()
-      .db.selectFrom('events')
-      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', payload.event_id)
-      .executeTakeFirst();
-
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    if (event.capacity !== null) {
-      const countRow = await this.getRepo()
-        .db.selectFrom('event_registrations')
-        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('event_id', '=', payload.event_id)
-        .where('status', '!=', 'cancelled')
-        .executeTakeFirst();
-      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-      }
-    }
-
-    // Per-ticket-type capacity check
-    if (payload.ticket_type_id) {
-      const ticketType = await this.getRepo()
-        .db.selectFrom('event_ticket_types')
-        .select(['capacity'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', payload.ticket_type_id)
-        .executeTakeFirst();
-
-      if (ticketType && ticketType.capacity !== null) {
-        const ticketCountRow = await this.getRepo()
-          .db.selectFrom('event_registrations')
-          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('ticket_type_id', '=', payload.ticket_type_id)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
-        }
-      }
-    }
-
-    const result = await this.getRepo().addRegistration({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      ticket_type_id: payload.ticket_type_id ?? null,
-      status: payload.status ?? 'registered',
-      notes: payload.notes ?? null,
-      user_id: auth.user_id,
-    });
-
-    if (result) {
-      // Queue registration confirmation email
-      if (event.send_registration_confirmation !== false) {
-        try {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: auth.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'send-event-registration-confirmation',
-                registrationId: String(result.id),
-                eventId: String(payload.event_id),
-                personId: String(payload.person_id),
-              }),
-              run_at: new Date(),
-            })
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue registration confirmation');
-        }
-      }
-
-      // Queue 24h reminder
-      if (event.send_reminder !== false) {
-        try {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-reminder',
-                  registrationId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue event reminder');
-        }
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'assign',
-          entity: 'event_registrations',
-          entity_id: String(result.id),
-          quantity: 1,
-          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async checkIn(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'attended', checked_in_at: new Date() },
-      user_id: auth.user_id,
-    });
-
-    // Cancel pending reminder — they've already arrived
-    try {
-      await this.getRepo()
-        .db.deleteFrom('background_jobs')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('status', '=', 'pending')
-        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-        .where(sql`payload->>'registrationId'`, '=', String(id))
-        .execute();
-    } catch (err) {
-      logger.error({ err }, 'Failed to cancel event reminder on check-in');
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log check-in activity');
-    }
-
-    return result;
-  }
-
-  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
-    });
-
-    // Cancel reminder if status moves away from 'registered'
-    if (payload.status && payload.status !== 'registered') {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on status change');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log registration update activity');
-    }
-
-    return result;
-  }
-
-  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'event_registrations',
-          entity_id: id,
-          quantity: 1,
-          metadata: { id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration delete activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
-    // Rate limiting
-    const now = Date.now();
-    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
-      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
-    }
-    timestamps.push(now);
-    ipRsvpTimestamps.set(clientIp, timestamps);
-
-    const event = await this.getEventBySlug(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    // Honeypot
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      return { success: true };
-    }
-
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
-    }
-
-    if (new Date(event.end_time) < new Date()) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
-    }
-
-    const firstName = payload['first_name']?.trim() || null;
-    const lastName = payload['last_name']?.trim() || null;
-    const mobile = payload['mobile']?.trim() || null;
-    const notes = payload['notes']?.trim() || null;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId || !creatorId) {
-          throw new Error('Tenant configuration is incomplete.');
-        }
-
-        // Check overall capacity
-        if (event.capacity !== null) {
-          const countRow = await trx
-            .selectFrom('event_registrations')
-            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-            .where('tenant_id', '=', tenantId)
-            .where('event_id', '=', String(event.id))
-            .where('status', '!=', 'cancelled')
-            .executeTakeFirst();
-          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-          }
-        }
-
-        // Find or create person
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (notes) {
-            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
-          }
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
-          // (there is no "campaign-less" person). `persons` also has no address columns
-          // (street1/city/state/zip/country live on `households`, not `persons`), so those
-          // RSVP fields are intentionally not persisted here.
-          const campaignRow = await trx
-            .selectFrom('campaigns')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .orderBy('created_at', 'asc')
-            .limit(1)
-            .executeTakeFirst();
-
-          if (!campaignRow) {
-            throw new Error('Tenant configuration is incomplete.');
-          }
-          const campaignId = String(campaignRow.id);
-
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email,
-            mobile,
-            notes,
-          };
-
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          try {
-            const workflowsCtrl = new WorkflowsController();
-            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
-          }
-        }
-
-        // Check duplicate registration
-        const existingReg = await trx
-          .selectFrom('event_registrations')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', String(event.id))
-          .where('person_id', '=', personId)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-
-        if (existingReg) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
-        }
-
-        // Insert registration
-        const reg = await trx
-          .insertInto('event_registrations')
-          .values({
-            tenant_id: tenantId,
-            event_id: String(event.id) as any,
-            person_id: personId,
-            ticket_type_id: null,
-            status: 'registered',
-            notes: notes ?? null,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        // Queue confirmation email
-        if ((event as any).send_registration_confirmation !== false) {
-          try {
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-registration-confirmation',
-                  registrationId: String(reg.id),
-                  eventId: String(event.id),
-                  personId,
-                }),
-                run_at: new Date(),
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue RSVP confirmation');
-          }
-        }
-
-        // Queue 24h reminder
-        if ((event as any).send_reminder !== false) {
-          try {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await trx
-                .insertInto('background_jobs')
-                .values({
-                  tenant_id: tenantId,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(event.id),
-                    personId,
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
-          }
-        }
-      });
-
-    return { success: true };
-  }
-}
 ```
 
 ## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
@@ -32944,283 +32185,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
       return { success: true };
     });
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { TRPCError } from '@trpc/server';
-
-import { VolunteerEventsController } from '../controller';
-import { resolveTenantFromRequest } from '../../../lib/public-tenant';
-
-const ctrl = new VolunteerEventsController();
-
-function getStatusFromError(err: unknown): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      case 'TOO_MANY_REQUESTS':
-        return 429;
-      default:
-        return 500;
-    }
-  }
-  const statusCode = (err as { statusCode?: unknown })?.statusCode;
-  return typeof statusCode === 'number' ? statusCode : 500;
-}
-
-/**
- * JSON API behind the public volunteer pages — the /volunteer listing and /v/:slug signup SPA
- * routes (registered outside the app shell, like /f/:slug). The tenant is identified by its
- * subdomain — the `?t=` param the SPA passes, or the Host header — and every lookup is
- * tenant-scoped. This replaces the server-rendered HTML pages and the HMAC-derived org slug.
- */
-const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Upcoming public volunteer events for the tenant's /volunteer listing page.
-  fastify.get('/org', async (req: any, reply) => {
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Organization not found.' });
-      }
-      const result = await ctrl.getPublicEventListing(tenant.id);
-      return reply.status(200).send(result);
-    } catch (err) {
-      fastify.log.error(err, 'Failed to load public volunteer events');
-      return reply.status(getStatusFromError(err)).send({ error: 'Failed to load volunteer events.' });
-    }
-  });
-
-  // Volunteer-event config for the /v/:slug SPA page: event details + live signup count.
-  fastify.get('/v/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
-      }
-      const result = await ctrl.getPublicEventConfig(tenant.id, String(slug));
-      return reply.status(200).send(result);
-    } catch (err) {
-      const status = getStatusFromError(err);
-      if (status >= 500) fastify.log.error(err, 'Failed to load public volunteer event');
-      return reply.status(status).send({ error: 'Event not found.' });
-    }
-  });
-
-  // Volunteer signup from the SPA page (JSON body).
-  fastify.post('/signup/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
-    // read the raw header, which a client can spoof to defeat rate limiting.
-    const clientIp = req.ip;
-
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
-      }
-      await ctrl.signupVolunteerPublic(tenant.id, String(slug), req.body || {}, clientIp);
-      return reply.status(200).send({ success: true });
-    } catch (err) {
-      fastify.log.error(err);
-      const status = getStatusFromError(err);
-      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
-      const message =
-        status < 500 && err instanceof Error && err.message
-          ? err.message
-          : 'An unexpected error occurred during signup.';
-      return reply.status(status).send({ error: message });
-    }
-  });
-
-  done();
-};
-
-export default volunteerEventsPublicRoute;
-```
-
-## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
-
-```typescript
-import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-
-export class WebFormsRepo extends BaseRepository<'web_forms'> {
-  constructor() {
-    super('web_forms');
-  }
-
-  /** Public lookup by slug within a known tenant (resolved from the subdomain — lib/public-tenant). */
-  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('slug', '=', slug)
-      .executeTakeFirst();
-  }
-
-  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
-    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const row = await query.limit(1).executeTakeFirst();
-    return !!row;
-  }
-
-  /**
-   * Cards for the new Forms page: every non-donation form with a live submission count. Donation
-   * forms keep their own /donation-pages experience and are excluded here.
-   */
-  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
-    return this.getSelect()
-      .selectAll('web_forms')
-      .select((eb) =>
-        eb
-          .selectFrom('form_submissions')
-          .select((eb2) => eb2.fn.countAll<number>().as('c'))
-          .whereRef('form_submissions.form_id', '=', 'web_forms.id')
-          .where('form_submissions.tenant_id', '=', tenantId)
-          .as('submission_count'),
-      )
-      .where('web_forms.tenant_id', '=', tenantId)
-      .where('web_forms.form_type', 'not in', ['donation', 'recurring_donation'])
-      .orderBy('web_forms.updated_at', 'desc')
-      .execute();
-  }
-
-  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
-    const row = await this.db
-      .selectFrom('form_submissions')
-      .select((eb) => eb.fn.countAll<number>().as('c'))
-      .where('tenant_id', '=', tenantId)
-      .where('form_id', '=', formId)
-      .executeTakeFirst();
-    return Number(row?.c ?? 0);
-  }
-
-  public async getFormSubmissions(
-    tenantId: string,
-    formId: string,
-    limit: number,
-    offset: number,
-  ): Promise<Record<string, unknown>[]> {
-    return this.db
-      .selectFrom('form_submissions')
-      .leftJoin('persons', (join) =>
-        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
-      )
-      .select([
-        'form_submissions.id',
-        'form_submissions.person_id',
-        'form_submissions.answers',
-        'form_submissions.created_at',
-        'persons.first_name',
-        'persons.last_name',
-      ])
-      .where('form_submissions.tenant_id', '=', tenantId)
-      .where('form_submissions.form_id', '=', formId)
-      .orderBy('form_submissions.created_at', 'desc')
-      .limit(limit)
-      .offset(offset)
-      .execute();
-  }
-
-  public override async getAllWithCounts(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'web_forms'>;
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
-
-    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
-    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
-
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
-      qb
-        .where('web_forms.tenant_id', '=', tenantId)
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          return qb.where(
-            sql<boolean>`(
-            LOWER(web_forms.name) LIKE ${text} OR
-            LOWER(web_forms.description) LIKE ${text}
-          )`,
-          );
-        })
-        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
-        .$if(!!filterModel['description']?.value, (q) =>
-          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
-        )
-        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
-
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    const rows = await applyFilters(this.getSelect(trx))
-      .select([
-        'web_forms.id',
-        'web_forms.tenant_id',
-        'web_forms.name',
-        'web_forms.description',
-        'web_forms.redirect_url',
-        'web_forms.target_tags',
-        'web_forms.target_lists',
-        'web_forms.status',
-        'web_forms.createdby_id',
-        'web_forms.updatedby_id',
-        'web_forms.created_at',
-        'web_forms.updated_at',
-        'web_forms.send_confirmation',
-        'web_forms.send_alert',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce(
-          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
-          qb,
-        ),
-      )
-      .offset(startRow)
-      .limit(endRow - startRow)
-      .execute();
-
-    const formattedRows = rows.map((row) => ({
-      ...row,
-      id: String(row['id']),
-      target_tags: Array.isArray(row['target_tags'])
-        ? row['target_tags']
-        : JSON.parse(String(row['target_tags'] || '[]')),
-      target_lists: Array.isArray(row['target_lists'])
-        ? row['target_lists']
-        : JSON.parse(String(row['target_lists'] || '[]')),
-    }));
-
-    return {
-      rows: formattedRows,
-      count,
-    };
   }
 }
 ```
@@ -39486,6 +38450,2195 @@ GRANT ALL ON SCHEMA public TO PUBLIC;
 \unrestrict oPFHGUe6wVNuN0eNnQazqyJQjnNPomJSMJiQZMlpJpzgVIBdJCJVrckJoNfysZW
 ```
 
+## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { TRPCError } from '@trpc/server';
+
+import { EventsController } from '../controller';
+import { resolveTenantFromRequest } from '../../../lib/public-tenant';
+
+const ctrl = new EventsController();
+
+function getStatusFromError(err: unknown): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      default:
+        return 500;
+    }
+  }
+  const statusCode = (err as { statusCode?: unknown })?.statusCode;
+  return typeof statusCode === 'number' ? statusCode : 500;
+}
+
+/**
+ * JSON API behind the public /e/:slug SPA page (registered outside the app shell, like /f/:slug).
+ * The tenant is identified by its subdomain — the `?t=` param the SPA passes, or the Host header —
+ * and every event lookup is tenant-scoped. The server-rendered HTML pages this file used to carry
+ * are gone; the SPA owns presentation.
+ */
+const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Event config for the SPA page: event details + tickets + live capacity.
+  fastify.get('/e/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
+      }
+      const result = await ctrl.getPublicEventConfig(tenant.id, String(slug));
+      return reply.status(200).send(result);
+    } catch (err) {
+      const status = getStatusFromError(err);
+      // Never leak internal detail on a public endpoint; NOT_FOUND is the only expected miss.
+      if (status >= 500) fastify.log.error(err, 'Failed to load public event');
+      return reply.status(status === 404 ? 404 : status).send({ error: 'Event not found.' });
+    }
+  });
+
+  // RSVP submission from the SPA page (JSON body).
+  fastify.post('/rsvp/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
+
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
+      }
+      await ctrl.rsvpPublic(tenant.id, String(slug), req.body || {}, clientIp);
+      return reply.status(200).send({ success: true });
+    } catch (err) {
+      fastify.log.error(err);
+      const status = getStatusFromError(err);
+      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
+      const message =
+        status < 500 && err instanceof Error && err.message ? err.message : 'An unexpected error occurred.';
+      return reply.status(status).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default eventsPublicRoute;
+```
+
+## File: apps/backend/src/app/modules/events/controller.ts
+
+```typescript
+import { TRPCError } from '@trpc/server';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { BaseController } from '../../lib/base.controller';
+import { publicOrgName } from '../../lib/public-tenant';
+import { logger } from '../../logger';
+import { WorkflowsController } from '../workflows/controller';
+import { EventsRepo } from './repositories/events.repo';
+
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+const ipRsvpTimestamps = new Map<string, number[]>();
+const RSVP_RATE_LIMIT_MAX = 5;
+const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export class EventsController extends BaseController<'events', EventsRepo> {
+  constructor() {
+    super(new EventsRepo());
+  }
+
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
+  }
+
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
+
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
+    const row = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      slug: payload.slug,
+      is_published: payload.is_published ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_registration_confirmation: payload.send_registration_confirmation ?? true,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
+    } as OperationDataType<'events', 'insert'>;
+
+    try {
+      return await this.add(row);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
+   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventBySlug(tenantId: string, slug: string) {
+    return this.getRepo()
+      .db.selectFrom('events')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('slug', '=', slug)
+      .where('is_published', '=', true)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
+   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
+   */
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    const eventId = String(event.id);
+    const [orgName, tickets, regCount] = await Promise.all([
+      publicOrgName(tenantId),
+      this.getTicketTypesByEventId(eventId, tenantId),
+      this.getRegistrationCountForEvent(eventId, tenantId),
+    ]);
+
+    const now = new Date();
+    const isPast = new Date(event.end_time) < now;
+    const isFull = event.capacity !== null && regCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        fields,
+      },
+      tickets: tickets.map((t) => ({
+        name: String(t.name),
+        description: t.description ?? null,
+        price_cents: t.price_cents ?? null,
+        capacity: t.capacity ?? null,
+      })),
+      isPast,
+      isFull,
+      remaining,
+    };
+  }
+
+  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
+    const row = await this.getRepo()
+      .db.selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count('id').as('cnt')])
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .where('status', '!=', 'cancelled')
+      .executeTakeFirst();
+    return Number(row?.cnt ?? 0);
+  }
+
+  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('event_ticket_types')
+      .selectAll()
+      .where('event_id', '=', eventId)
+      .where('tenant_id', '=', tenantId)
+      .orderBy('sort_order', 'asc')
+      .execute();
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
+
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('events')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
+        .executeTakeFirst();
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
+    const row = {
+      ...payload,
+      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
+      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
+      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'events', 'update'>;
+    let result;
+    try {
+      result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+
+    // Manage pending reminder jobs when the toggle changes
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        const event = await this.getRepo()
+          .db.selectFrom('events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            const registrations = await this.getRepo()
+              .db.selectFrom('event_registrations')
+              .select(['id', 'person_id'])
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('event_id', '=', id)
+              .where('status', '=', 'registered')
+              .execute();
+
+            for (const reg of registrations) {
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
+                .execute();
+
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(id),
+                    personId: String(reg.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule event reminders');
+      }
+    }
+
+    return result;
+  }
+
+  // Ticket types
+
+  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().addTicketType({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      price_cents: payload.price_cents ?? 0,
+      capacity: payload.capacity ?? null,
+      sort_order: payload.sort_order ?? 0,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
+  }
+
+  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
+  }
+
+  // Registrations
+
+  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
+    // Capacity check across the whole event
+    const event = await this.getRepo()
+      .db.selectFrom('events')
+      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', payload.event_id)
+      .executeTakeFirst();
+
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    if (event.capacity !== null) {
+      const countRow = await this.getRepo()
+        .db.selectFrom('event_registrations')
+        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('event_id', '=', payload.event_id)
+        .where('status', '!=', 'cancelled')
+        .executeTakeFirst();
+      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+      }
+    }
+
+    // Per-ticket-type capacity check
+    if (payload.ticket_type_id) {
+      const ticketType = await this.getRepo()
+        .db.selectFrom('event_ticket_types')
+        .select(['capacity'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', payload.ticket_type_id)
+        .executeTakeFirst();
+
+      if (ticketType && ticketType.capacity !== null) {
+        const ticketCountRow = await this.getRepo()
+          .db.selectFrom('event_registrations')
+          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('ticket_type_id', '=', payload.ticket_type_id)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
+        }
+      }
+    }
+
+    const result = await this.getRepo().addRegistration({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      ticket_type_id: payload.ticket_type_id ?? null,
+      status: payload.status ?? 'registered',
+      notes: payload.notes ?? null,
+      user_id: auth.user_id,
+    });
+
+    if (result) {
+      // Queue registration confirmation email
+      if (event.send_registration_confirmation !== false) {
+        try {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: auth.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-event-registration-confirmation',
+                registrationId: String(result.id),
+                eventId: String(payload.event_id),
+                personId: String(payload.person_id),
+              }),
+              run_at: new Date(),
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue registration confirmation');
+        }
+      }
+
+      // Queue 24h reminder
+      if (event.send_reminder !== false) {
+        try {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-reminder',
+                  registrationId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue event reminder');
+        }
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'assign',
+          entity: 'event_registrations',
+          entity_id: String(result.id),
+          quantity: 1,
+          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async checkIn(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status: 'attended', checked_in_at: new Date() },
+      user_id: auth.user_id,
+    });
+
+    // Cancel pending reminder — they've already arrived
+    try {
+      await this.getRepo()
+        .db.deleteFrom('background_jobs')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('status', '=', 'pending')
+        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+        .where(sql`payload->>'registrationId'`, '=', String(id))
+        .execute();
+    } catch (err) {
+      logger.error({ err }, 'Failed to cancel event reminder on check-in');
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log check-in activity');
+    }
+
+    return result;
+  }
+
+  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: payload,
+      user_id: auth.user_id,
+    });
+
+    // Cancel reminder if status moves away from 'registered'
+    if (payload.status && payload.status !== 'registered') {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on status change');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log registration update activity');
+    }
+
+    return result;
+  }
+
+  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'event_registrations',
+          entity_id: id,
+          quantity: 1,
+          metadata: { id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration delete activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
+    // Rate limiting
+    const now = Date.now();
+    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
+    }
+    timestamps.push(now);
+    ipRsvpTimestamps.set(clientIp, timestamps);
+
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    // Honeypot
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      return { success: true };
+    }
+
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
+    }
+
+    if (new Date(event.end_time) < new Date()) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
+    }
+
+    const firstName = payload['first_name']?.trim() || null;
+    const lastName = payload['last_name']?.trim() || null;
+    const mobile = payload['mobile']?.trim() || null;
+    const notes = payload['notes']?.trim() || null;
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId || !creatorId) {
+          throw new Error('Tenant configuration is incomplete.');
+        }
+
+        // Check overall capacity
+        if (event.capacity !== null) {
+          const countRow = await trx
+            .selectFrom('event_registrations')
+            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+            .where('tenant_id', '=', tenantId)
+            .where('event_id', '=', String(event.id))
+            .where('status', '!=', 'cancelled')
+            .executeTakeFirst();
+          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+          }
+        }
+
+        // Find or create person
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (notes) {
+            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
+          }
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
+          // (there is no "campaign-less" person). `persons` also has no address columns
+          // (street1/city/state/zip/country live on `households`, not `persons`), so those
+          // RSVP fields are intentionally not persisted here.
+          const campaignRow = await trx
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .orderBy('created_at', 'asc')
+            .limit(1)
+            .executeTakeFirst();
+
+          if (!campaignRow) {
+            throw new Error('Tenant configuration is incomplete.');
+          }
+          const campaignId = String(campaignRow.id);
+
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            mobile,
+            notes,
+          };
+
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          try {
+            const workflowsCtrl = new WorkflowsController();
+            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
+          }
+        }
+
+        // Check duplicate registration
+        const existingReg = await trx
+          .selectFrom('event_registrations')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', String(event.id))
+          .where('person_id', '=', personId)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+
+        if (existingReg) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
+        }
+
+        // Insert registration
+        const reg = await trx
+          .insertInto('event_registrations')
+          .values({
+            tenant_id: tenantId,
+            event_id: String(event.id) as any,
+            person_id: personId,
+            ticket_type_id: null,
+            status: 'registered',
+            notes: notes ?? null,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        // Queue confirmation email
+        if ((event as any).send_registration_confirmation !== false) {
+          try {
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-registration-confirmation',
+                  registrationId: String(reg.id),
+                  eventId: String(event.id),
+                  personId,
+                }),
+                run_at: new Date(),
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue RSVP confirmation');
+          }
+        }
+
+        // Queue 24h reminder
+        if ((event as any).send_reminder !== false) {
+          try {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await trx
+                .insertInto('background_jobs')
+                .values({
+                  tenant_id: tenantId,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(event.id),
+                    personId,
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
+          }
+        }
+      });
+
+    return { success: true };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { TRPCError } from '@trpc/server';
+
+import { VolunteerEventsController } from '../controller';
+import { resolveTenantFromRequest } from '../../../lib/public-tenant';
+
+const ctrl = new VolunteerEventsController();
+
+function getStatusFromError(err: unknown): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      default:
+        return 500;
+    }
+  }
+  const statusCode = (err as { statusCode?: unknown })?.statusCode;
+  return typeof statusCode === 'number' ? statusCode : 500;
+}
+
+/**
+ * JSON API behind the public volunteer pages — the /volunteer listing and /v/:slug signup SPA
+ * routes (registered outside the app shell, like /f/:slug). The tenant is identified by its
+ * subdomain — the `?t=` param the SPA passes, or the Host header — and every lookup is
+ * tenant-scoped. This replaces the server-rendered HTML pages and the HMAC-derived org slug.
+ */
+const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Upcoming public volunteer events for the tenant's /volunteer listing page.
+  fastify.get('/org', async (req: any, reply) => {
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Organization not found.' });
+      }
+      const result = await ctrl.getPublicEventListing(tenant.id);
+      return reply.status(200).send(result);
+    } catch (err) {
+      fastify.log.error(err, 'Failed to load public volunteer events');
+      return reply.status(getStatusFromError(err)).send({ error: 'Failed to load volunteer events.' });
+    }
+  });
+
+  // Volunteer-event config for the /v/:slug SPA page: event details + live signup count.
+  fastify.get('/v/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
+      }
+      const result = await ctrl.getPublicEventConfig(tenant.id, String(slug));
+      return reply.status(200).send(result);
+    } catch (err) {
+      const status = getStatusFromError(err);
+      if (status >= 500) fastify.log.error(err, 'Failed to load public volunteer event');
+      return reply.status(status).send({ error: 'Event not found.' });
+    }
+  });
+
+  // Volunteer signup from the SPA page (JSON body).
+  fastify.post('/signup/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
+
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
+      }
+      await ctrl.signupVolunteerPublic(tenant.id, String(slug), req.body || {}, clientIp);
+      return reply.status(200).send({ success: true });
+    } catch (err) {
+      fastify.log.error(err);
+      const status = getStatusFromError(err);
+      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
+      const message =
+        status < 500 && err instanceof Error && err.message
+          ? err.message
+          : 'An unexpected error occurred during signup.';
+      return reply.status(status).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default volunteerEventsPublicRoute;
+```
+
+## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
+
+```typescript
+import type { ReferenceExpression, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export class WebFormsRepo extends BaseRepository<'web_forms'> {
+  constructor() {
+    super('web_forms');
+  }
+
+  /** Public lookup by slug within a known tenant (resolved from the subdomain — lib/public-tenant). */
+  public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('slug', '=', slug)
+      .executeTakeFirst();
+  }
+
+  public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenantId).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /**
+   * Cards for the new Forms page: every non-donation form with a live submission count. Donation
+   * forms keep their own /donation-pages experience and are excluded here.
+   */
+  public async listForms(tenantId: string): Promise<Record<string, unknown>[]> {
+    return this.getSelect()
+      .selectAll('web_forms')
+      .select((eb) =>
+        eb
+          .selectFrom('form_submissions')
+          .select((eb2) => eb2.fn.countAll<number>().as('c'))
+          .whereRef('form_submissions.form_id', '=', 'web_forms.id')
+          .where('form_submissions.tenant_id', '=', tenantId)
+          .as('submission_count'),
+      )
+      .where('web_forms.tenant_id', '=', tenantId)
+      .where('web_forms.form_type', 'not in', ['donation', 'recurring_donation'])
+      .orderBy('web_forms.updated_at', 'desc')
+      .execute();
+  }
+
+  public async countSubmissions(tenantId: string, formId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom('form_submissions')
+      .select((eb) => eb.fn.countAll<number>().as('c'))
+      .where('tenant_id', '=', tenantId)
+      .where('form_id', '=', formId)
+      .executeTakeFirst();
+    return Number(row?.c ?? 0);
+  }
+
+  public async getFormSubmissions(
+    tenantId: string,
+    formId: string,
+    limit: number,
+    offset: number,
+  ): Promise<Record<string, unknown>[]> {
+    return this.db
+      .selectFrom('form_submissions')
+      .leftJoin('persons', (join) =>
+        join.onRef('persons.id', '=', 'form_submissions.person_id').on('persons.tenant_id', '=', tenantId),
+      )
+      .select([
+        'form_submissions.id',
+        'form_submissions.person_id',
+        'form_submissions.answers',
+        'form_submissions.created_at',
+        'persons.first_name',
+        'persons.last_name',
+      ])
+      .where('form_submissions.tenant_id', '=', tenantId)
+      .where('form_submissions.form_id', '=', formId)
+      .orderBy('form_submissions.created_at', 'desc')
+      .limit(limit)
+      .offset(offset)
+      .execute();
+  }
+
+  public override async getAllWithCounts(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'web_forms'>;
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: string } | undefined>;
+
+    const startRow = typeof options.startRow === 'number' ? options.startRow : 0;
+    const endRow = typeof options.endRow === 'number' && options.endRow > startRow ? options.endRow : startRow + 100;
+
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) =>
+      qb
+        .where('web_forms.tenant_id', '=', tenantId)
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          return qb.where(
+            sql<boolean>`(
+            LOWER(web_forms.name) LIKE ${text} OR
+            LOWER(web_forms.description) LIKE ${text}
+          )`,
+          );
+        })
+        .$if(!!filterModel['name']?.value, (q) => q.where('web_forms.name', 'ilike', `%${filterModel['name']?.value}%`))
+        .$if(!!filterModel['description']?.value, (q) =>
+          q.where('web_forms.description', 'ilike', `%${filterModel['description']?.value}%`),
+        )
+        .$if(!!filterModel['status']?.value, (q) => q.where('web_forms.status', '=', filterModel['status']?.value));
+
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT web_forms.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'web_forms.id',
+        'web_forms.tenant_id',
+        'web_forms.name',
+        'web_forms.description',
+        'web_forms.redirect_url',
+        'web_forms.target_tags',
+        'web_forms.target_lists',
+        'web_forms.status',
+        'web_forms.createdby_id',
+        'web_forms.updatedby_id',
+        'web_forms.created_at',
+        'web_forms.updated_at',
+        'web_forms.send_confirmation',
+        'web_forms.send_alert',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce(
+          (acc, sort) => acc.orderBy(sort.colId as ReferenceExpression<any, any>, sort.sort),
+          qb,
+        ),
+      )
+      .offset(startRow)
+      .limit(endRow - startRow)
+      .execute();
+
+    const formattedRows = rows.map((row) => ({
+      ...row,
+      id: String(row['id']),
+      target_tags: Array.isArray(row['target_tags'])
+        ? row['target_tags']
+        : JSON.parse(String(row['target_tags'] || '[]')),
+      target_lists: Array.isArray(row['target_lists'])
+        ? row['target_lists']
+        : JSON.parse(String(row['target_lists'] || '[]')),
+    }));
+
+    return {
+      rows: formattedRows,
+      count,
+    };
+  }
+}
+```
+
+## File: apps/backend/src/fastify.server.ts
+
+```typescript
+import cookie from '@fastify/cookie';
+import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
+import sensible from '@fastify/sensible';
+import multipart from '@fastify/multipart';
+import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
+
+import fastify from 'fastify';
+
+import jsendPlugin from './app/plugins/jsend-error-handler.plugin';
+import { helmetOptions } from './app/plugins/security-headers';
+import { routes } from './app/routes';
+import { trpcRouter } from './app/modules/trpc';
+import { createContext } from './context';
+import { env } from './env';
+
+export class FastifyServer {
+  private readonly server;
+
+  constructor(opts: object = {}) {
+    // Create Fastify instance with logging and common config.
+    // pino-pretty is a dev-only formatter and is expensive/blocking under load, so use it only
+    // outside production; production emits plain JSON logs for log shippers (SECURITY-REVIEW 4.6).
+    const isProduction = process.env['NODE_ENV'] === 'production';
+    this.server = fastify({
+      logger: {
+        level: 'info',
+        ...(isProduction ? {} : { transport: { target: 'pino-pretty' } }),
+      },
+      // Derive req.ip from X-Forwarded-For only for the proxy hops we actually trust
+      // (configurable via TRUST_PROXY). Security decisions must use req.ip, never the
+      // raw header, which any client can spoof.
+      trustProxy: env.trustProxy,
+      routerOptions: {
+        ignoreTrailingSlash: true,
+      },
+      exposeHeadRoutes: false,
+    });
+
+    // Globally serialize BigInt properties as strings in responses
+    this.server.setReplySerializer((payload) =>
+      JSON.stringify(payload, (_, value) => (typeof value === 'bigint' ? value.toString() : value)),
+    );
+
+    // Register core Fastify plugins.
+    // Restrict cross-origin requests to the SPA origin and allow credentials so the browser sends
+    // the HttpOnly refresh cookie on same-site XHR (SECURITY-REVIEW 2.1). `origin`/`credentials`
+    // are forced AFTER the opts spread so a caller can't accidentally widen them to a wildcard —
+    // credentialed CORS with `*` is rejected by browsers anyway, and a wildcard origin would let any
+    // site drive the API on behalf of a user whose bearer token it has (SECURITY-REVIEW 4.4).
+    this.server.register(cors, { ...opts, origin: env.appUrl, credentials: true });
+    // Parse/serialize cookies (refresh-token cookie). Registered before routes/tRPC so req.cookies
+    // and reply.setCookie are available in handlers and the tRPC context.
+    this.server.register(cookie);
+    // Security headers (CSP, HSTS, nosniff, frame-ancestors, referrer-policy). See
+    // security-headers.ts for why each directive is set the way it is.
+    this.server.register(helmet, helmetOptions);
+    this.server.register(sensible);
+    this.server.register(multipart, {
+      limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB
+      },
+    });
+    this.server.register(jsendPlugin);
+
+    // Register a content type parser for application/json that keeps raw body if path is webhook
+    this.server.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+      if (
+        req.url.includes('/billing/webhook') ||
+        req.url.includes('/donations/webhook') ||
+        req.url.includes('/newsletters/webhook')
+      ) {
+        done(null, body);
+      } else {
+        try {
+          done(null, JSON.parse(body as string));
+        } catch (err) {
+          done(err as Error, null);
+        }
+      }
+    });
+
+    // Register REST routes
+    this.server.register(routes);
+
+    // Register tRPC plugin for RPC-based APIs
+    this.server.register(fastifyTRPCPlugin, {
+      prefix: '/',
+      trpcOptions: {
+        router: trpcRouter,
+        createContext,
+      },
+    });
+  }
+
+  public async close(): Promise<void> {
+    return await this.server.close();
+  }
+
+  public async serve(): Promise<void> {
+    try {
+      const address = await this.server.listen({ port: env.port, host: env.host });
+      this.server.log.info(`[ ready ] ${address}`);
+    } catch (err) {
+      this.server.log.error(err);
+      process.exit(1);
+    }
+  }
+}
+```
+
+## File: apps/backend/src/trpc.ts
+
+```typescript
+// tsco:ignore
+//
+import { TRPCError, initTRPC } from '@trpc/server';
+import { ZodError } from 'zod';
+import type { Context } from './context';
+import { isAppErrorLike, toTRPCError } from './app/errors/to-trpc-errors';
+import superjson from 'superjson';
+import { logger } from './app/logger';
+import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
+
+const trpc = initTRPC.context<Context>().create({
+  transformer: superjson,
+  errorFormatter({ shape, error }) {
+    logger.error({ err: error }, 'tRPC Error');
+    if (error.cause) {
+      logger.error({ err: error.cause }, 'tRPC Error Cause');
+    }
+    // Path may be on error.path, or on shape.data.path (or absent)
+    const errorObj = error as unknown as Record<string, unknown>;
+    const pathStr: string =
+      (typeof errorObj['path'] === 'string' ? errorObj['path'] : undefined) ??
+      (shape.data?.path as string | undefined) ??
+      '';
+
+    const isSignIn = pathStr === 'signIn' || pathStr.endsWith('.signIn') || pathStr === 'auth.signIn';
+
+    // Zod/input → BAD_REQUEST in tRPC v10; zodError is also surfaced on shape.data
+    const isZod =
+      error.cause instanceof ZodError || Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']);
+
+    const isZodOrBadRequest = isZod || error.code === 'BAD_REQUEST';
+
+    // Collapse auth-ish cases
+    const isCredsProblem =
+      error.code === 'UNAUTHORIZED' ||
+      error.code === 'NOT_FOUND' ||
+      error.cause?.name === 'InvalidCredentialsError' ||
+      (error.cause as unknown as Record<string, unknown> | undefined)?.['code'] === 'USER_NOT_FOUND';
+
+    let finalShape = shape;
+    if (isZod) {
+      finalShape = {
+        ...shape,
+        data: {
+          ...shape.data,
+          code: 'BAD_REQUEST',
+          isZodError: true,
+        } as any,
+      } as any;
+    }
+
+    if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
+      return { ...finalShape, message: GENERIC_SIGNIN_ERROR };
+    }
+
+    // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)
+    const causeData = (error.cause as any)?.data;
+    if (causeData && typeof causeData === 'object' && !Array.isArray(causeData)) {
+      return { ...finalShape, data: { ...finalShape.data, ...causeData } };
+    }
+
+    return finalShape;
+  },
+});
+
+export const middleware = trpc.middleware;
+
+const errorMappingMiddleware = middleware(async (opts) => {
+  // tRPC v11 middleware: a downstream throw does NOT reject `next()` — it resolves to a
+  // `{ ok: false, error }` result whose `error` is already a TRPCError (default code
+  // INTERNAL_SERVER_ERROR) wrapping the original throw as `.cause`. So we can't rely on
+  // try/catch here; we inspect the result and remap AppErrors from the cause, preserving
+  // their intended status (e.g. UnauthorizedError -> 401, not a generic 500). The try/catch
+  // is kept as a safety net in case a future path throws synchronously.
+  let result: Awaited<ReturnType<typeof opts.next>>;
+  try {
+    result = await opts.next();
+  } catch (err) {
+    throw toTRPCError(err);
+  }
+
+  if (!result.ok && isAppErrorLike(result.error.cause)) {
+    throw toTRPCError(result.error.cause);
+  }
+
+  return result;
+});
+
+export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
+
+export const router = trpc.router;
+
+import { BaseRepository } from './app/lib/base.repo';
+import { runWithTenant } from './app/lib/tenant-context';
+import { hashToken } from './app/lib/token-hash';
+
+const isAuthed = middleware(async (opts) => {
+  const { ctx } = opts;
+
+  if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+  // Capture the narrowed, non-null auth so the closure below keeps the narrowing.
+  const auth = ctx.auth;
+
+  // S-1 (schema review 2026-07-06 §6): bind the tenant to the async context for
+  // the remainder of the request. The runtime pool's onReserveConnection hook
+  // (base.repo.ts) reads it and sets the `app.tenant_id` GUC on every connection
+  // checkout, so Postgres RLS scopes every query — a backstop beneath the
+  // app-level `.where('tenant_id', …)` filters. Wrapping the auth lookups too is
+  // harmless (they are already tenant-scoped) and covers all downstream resolvers.
+  return runWithTenant(auth.tenant_id, async () => {
+    let user: { role: string | null; verified: boolean } | undefined;
+    if (/^\d+$/.test(auth.user_id)) {
+      const record = await BaseRepository.dbInstance
+        .selectFrom('authusers')
+        .select(['role', 'verified'])
+        .where('id', '=', auth.user_id)
+        .where('tenant_id', '=', auth.tenant_id)
+        .executeTakeFirst();
+      if (record) {
+        user = {
+          role: record.role,
+          verified: record.verified === true || String(record.verified) === 'true',
+        };
+      }
+    }
+
+    if (!user) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+
+    // Enforce session revocation. The access token embeds the plaintext session_id;
+    // its hash must still map to an active, unexpired row in `sessions`. Deleting the
+    // session (sign-out, tenant pause/deletion, password reset, email-change confirm)
+    // therefore invalidates the access token immediately instead of leaving it usable
+    // until the ~30-minute JWT expiry.
+    const session = await BaseRepository.dbInstance
+      .selectFrom('sessions')
+      .select(['id', 'expires_at'])
+      .where('session_id', '=', hashToken(auth.session_id))
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('status', '=', 'active')
+      .executeTakeFirst();
+
+    if (!session) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+    if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
+      throw new TRPCError({ code: 'UNAUTHORIZED' });
+    }
+
+    if (opts.type === 'mutation' && user.role === 'viewer') {
+      const isExempt =
+        opts.path === 'cancelEmailChange' ||
+        opts.path.endsWith('.cancelEmailChange') ||
+        opts.path === 'signOut' ||
+        opts.path.endsWith('.signOut');
+      if (!isExempt) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Viewers are not allowed to make changes.',
+        });
+      }
+    }
+
+    const authWithRole = {
+      ...auth,
+      role: user.role,
+    };
+
+    return opts.next({ ctx: { ...ctx, auth: authWithRole } });
+  });
+});
+
+export const authProcedure = publicProcedure.use(isAuthed);
+
+export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
+  const { ctx } = opts;
+  if (ctx.auth.role !== 'admin' && ctx.auth.role !== 'owner') {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'Only admins or owners can perform this action.',
+    });
+  }
+  return opts.next({ ctx });
+});
+```
+
+## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+
+```typescript
+import { Client } from '@microsoft/microsoft-graph-client';
+import crypto from 'crypto';
+import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
+import type { FastifyPluginCallback } from 'fastify';
+import { env } from '../../../../env';
+import { authenticateRest } from '../../../lib/rest-auth';
+import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
+import { BaseRepository } from '../../../lib/base.repo';
+import { attachmentDisposition } from '../../../lib/download-headers';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { StorageService } from '../../../lib/storage.service';
+import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../google-sync/google-sync.service';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
+
+function buildRawMime(options: {
+  fromName: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments: { filename: string; content: Buffer; contentType: string }[];
+}): Buffer {
+  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+  const headers: string[] = [];
+
+  const safeFromName = options.fromName.replace(/"/g, '\\"');
+  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
+  headers.push(`To: ${options.to.join(', ')}`);
+  if (options.cc.length > 0) {
+    headers.push(`Cc: ${options.cc.join(', ')}`);
+  }
+  if (options.bcc.length > 0) {
+    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+  }
+
+  const base64Subject = Buffer.from(options.subject).toString('base64');
+  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
+
+  headers.push(`MIME-Version: 1.0`);
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(`--${boundary}`);
+  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
+  bodyParts.push(`Content-Transfer-Encoding: base64`);
+  bodyParts.push('');
+  bodyParts.push(Buffer.from(options.html).toString('base64'));
+  bodyParts.push('');
+
+  for (const att of options.attachments) {
+    bodyParts.push(`--${boundary}`);
+    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Transfer-Encoding: base64`);
+    bodyParts.push('');
+    bodyParts.push(att.content.toString('base64'));
+    bodyParts.push('');
+  }
+
+  bodyParts.push(`--${boundary}--`);
+
+  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
+  return Buffer.from(rawMimeString, 'utf-8');
+}
+
+const storageService = new StorageService();
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService(db: any) {
+  if (!_oauthSvc) {
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+export async function saveLocalEmail(
+  db: any,
+  tenantId: string,
+  userId: string,
+  fromEmail: string,
+  fromName: string,
+  toList: string[],
+  ccList: string[],
+  bccList: string[],
+  subject: string,
+  html: string,
+  uploadedFiles: any[],
+  previewKey: string,
+) {
+  return db.transaction().execute(async (trx: any) => {
+    // 1. Insert into emails table (Outbox)
+    const createdEmail = await trx
+      .insertInto('emails')
+      .values({
+        tenant_id: tenantId,
+        folder_id: ALL_FOLDERS.OUTBOX,
+        from_email: fromEmail,
+        to_email: toList.join(', '),
+        subject: subject,
+        preview: previewKey,
+        assigned_to: userId,
+        is_favourite: false,
+        deleted_at: null,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const emailId = String(createdEmail.id);
+
+    // 2. Insert html into email_bodies
+    await trx
+      .insertInto('email_bodies')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        body_html: html,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 3. Insert files and email_attachments metadata
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const uFile = uploadedFiles[i];
+      let fileId: string;
+
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
+      const existingFile = await trx
+        .selectFrom('files')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('sha256_hex', '=', uFile.sha256_hex)
+        .executeTakeFirst();
+
+      if (existingFile) {
+        fileId = String(existingFile.id);
+      } else {
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: tenantId,
+            filename: uFile.filename,
+            mime_type: uFile.content_type,
+            size_bytes: uFile.size_bytes,
+            storage_key: uFile.storage_key,
+            sha256_hex: uFile.sha256_hex,
+            uploaded_by: userId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        fileId = String(fileResult.id);
+      }
+
+      await trx
+        .insertInto('email_attachments')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          filename: uFile.filename,
+          content_type: uFile.content_type,
+          size_bytes: uFile.size_bytes,
+          cid: uFile.cid,
+          is_inline: uFile.is_inline,
+          pos: i + 1,
+          file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+
+    // 4. Insert headers
+    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
+    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+
+    await trx
+      .insertInto('email_headers')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        headers_json: JSON.stringify({ internetMessageId }),
+        raw_headers: rawHeaders,
+        date_sent: new Date(),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 5. Insert recipients
+    const recipientRows: any[] = [];
+    toList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'to',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    ccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'cc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    bccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'bcc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+
+    if (recipientRows.length > 0) {
+      await trx.insertInto('email_recipients').values(recipientRows).execute();
+    }
+
+    return createdEmail;
+  });
+}
+
+const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Send composed email
+  fastify.post('/send', async (req: any, reply) => {
+    // Mutating endpoint: enforce session revocation and block read-only viewers.
+    const authResult = await authenticateRest(req, { requireWrite: true });
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
+    }
+
+    const tenantId = authResult.auth.tenant_id;
+    const userId = authResult.auth.user_id;
+    const db = (BaseRepository as any)['_db'];
+
+    // Retrieve sender user details
+    const user = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Unauthorized: User not found' });
+    }
+
+    const fromEmail = user.email;
+    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
+
+    // Parse multipart request parts
+    const parts = req.parts();
+    const fields: any = {};
+    const files: any[] = [];
+
+    for await (const part of parts) {
+      if (part.file) {
+        const buffer = await part.toBuffer();
+        files.push({
+          filename: part.filename,
+          fieldname: part.fieldname,
+          mimetype: part.mimetype,
+          buffer,
+        });
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    // Parse recipient lists and content fields
+    const toList = fields.to ? JSON.parse(fields.to) : [];
+    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
+    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
+    const subject = fields.subject || '';
+    const html = sanitizeHtml(fields.html || '');
+
+    // Upload attachment files to storage outside transaction
+    const uploadedFiles: Array<{
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      storage_key: string;
+      sha256_hex: string;
+      cid: string | null;
+      is_inline: boolean;
+    }> = [];
+
+    for (const file of files) {
+      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
+      const fileUUID = crypto.randomUUID();
+      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
+
+      await storageService.upload(storage_key, file.buffer, file.mimetype);
+
+      uploadedFiles.push({
+        filename: file.filename,
+        content_type: file.mimetype,
+        size_bytes: file.buffer.length,
+        storage_key,
+        sha256_hex,
+        cid: null,
+        is_inline: false,
+      });
+    }
+
+    // Check if user has connected Microsoft and/or Google accounts
+    const msToken = await db
+      .selectFrom('ms_oauth_tokens')
+      .select(['user_id', 'ms_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const googleToken = await db
+      .selectFrom('google_oauth_tokens')
+      .select(['user_id', 'google_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const hasMsConnected = !!msToken;
+    const hasGoogleConnected = !!googleToken;
+
+    // Fail immediately if no send method is configured
+    if (!hasMsConnected && !hasGoogleConnected) {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
+      });
+    }
+
+    // Save outbound email to database under Outbox folder '10' initially
+    const fallbackPreview =
+      html
+        .replace(/<[^>]*>/g, '')
+        .substring(0, 100)
+        .trim() || '';
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
+    }
+
+    // Determine send method prioritizing matching address
+    let sendMethod: 'ms' | 'google' = 'ms';
+    if (hasMsConnected && hasGoogleConnected) {
+      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
+        sendMethod = 'google';
+      } else {
+        sendMethod = 'ms';
+      }
+    } else if (hasMsConnected) {
+      sendMethod = 'ms';
+    } else if (hasGoogleConnected) {
+      sendMethod = 'google';
+    }
+
+    // Dispatch the email synchronously
+    try {
+      if (sendMethod === 'ms') {
+        const oauthSvc = getOAuthService(db);
+        let msDraftId: string | null = null;
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+          const client = Client.init({
+            authProvider: (done) => done(null, accessToken),
+          });
+
+          const msDraftMessage: any = {
+            subject: subject,
+            body: {
+              contentType: 'html',
+              content: html,
+            },
+            toRecipients: toList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            ccRecipients: ccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            bccRecipients: bccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+          };
+
+          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
+          msDraftId = createdDraft.id;
+          const graphInternetMessageId = createdDraft.internetMessageId;
+
+          // Update local email preview/dedupe key to `ms:${msDraftId}`
+          await db
+            .updateTable('emails')
+            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          if (graphInternetMessageId) {
+            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+            await db
+              .updateTable('email_headers')
+              .set({
+                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
+                raw_headers: rawHeaders,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('email_id', '=', String(emailRow.id))
+              .execute();
+          }
+
+          // Upload attachments
+          for (const file of files) {
+            await client.api(`/me/messages/${msDraftId}/attachments`).post({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.filename,
+              contentType: file.mimetype,
+              contentBytes: file.buffer.toString('base64'),
+            });
+          }
+
+          // Send draft
+          await client.api(`/me/messages/${msDraftId}/send`).post({});
+
+          // Move local email to Sent on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          // Trigger background sync to get folders/Sent items synchronized
+          const syncSvc = new MsSyncService(db, oauthSvc);
+          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
+            400,
+          );
+        }
+      } else if (sendMethod === 'google') {
+        const oauthSvc = new GoogleOAuthService(db, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+
+          const rawMessageBuffer = buildRawMime({
+            fromName,
+            fromEmail,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject,
+            html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          const rawBase64Url = rawMessageBuffer
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: rawBase64Url,
+            }),
+          });
+
+          if (!gmailRes.ok) {
+            const errText = await gmailRes.text();
+            throw new Error(`Gmail API send failed: ${errText}`);
+          }
+
+          const gmailData: any = await gmailRes.json();
+          const googleMsgId = gmailData.id;
+
+          await db
+            .updateTable('emails')
+            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
+          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
+          await db
+            .updateTable('emails')
+            .set({
+              // Revert to Drafts so the user can retry (was '4' = Spam, a bug)
+              folder_id: ALL_FOLDERS.DRAFTS,
+              updated_at: new Date(),
+            })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
+            400,
+          );
+        }
+      }
+    } catch (err) {
+      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
+      // Clean up local email
+      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
+    }
+  });
+
+  // Download attachment by ID
+  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
+    const { id, attachmentId } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (embeddable link, no
+    // session JWT in the URL) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachmentId)
+      .where('email_id', '=', id)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to download attachment' });
+    }
+  });
+
+  // Serve inline attachment by CID
+  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
+    const { id, cid } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (for inline <img> in the
+    // rendered body) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', '=', id)
+      .where('cid', '=', cid)
+      .where('is_inline', '=', true)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Inline attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      // Private: inline attachments are tenant-scoped and token-gated.
+      reply.header('Cache-Control', 'private, max-age=31536000');
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to load inline image' });
+    }
+  });
+
+  done();
+};
+
+export default emailsApiRoute;
+```
+
 ## File: apps/backend/src/app/modules/web-forms/controller.ts
 
 ```typescript
@@ -40614,1070 +41767,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     };
   }
 }
-```
-
-## File: apps/backend/src/fastify.server.ts
-
-```typescript
-import cookie from '@fastify/cookie';
-import cors from '@fastify/cors';
-import helmet from '@fastify/helmet';
-import sensible from '@fastify/sensible';
-import multipart from '@fastify/multipart';
-import { fastifyTRPCPlugin } from '@trpc/server/adapters/fastify';
-
-import fastify from 'fastify';
-
-import jsendPlugin from './app/plugins/jsend-error-handler.plugin';
-import { helmetOptions } from './app/plugins/security-headers';
-import { routes } from './app/routes';
-import { trpcRouter } from './app/modules/trpc';
-import { createContext } from './context';
-import { env } from './env';
-
-export class FastifyServer {
-  private readonly server;
-
-  constructor(opts: object = {}) {
-    // Create Fastify instance with logging and common config.
-    // pino-pretty is a dev-only formatter and is expensive/blocking under load, so use it only
-    // outside production; production emits plain JSON logs for log shippers (SECURITY-REVIEW 4.6).
-    const isProduction = process.env['NODE_ENV'] === 'production';
-    this.server = fastify({
-      logger: {
-        level: 'info',
-        ...(isProduction ? {} : { transport: { target: 'pino-pretty' } }),
-      },
-      // Derive req.ip from X-Forwarded-For only for the proxy hops we actually trust
-      // (configurable via TRUST_PROXY). Security decisions must use req.ip, never the
-      // raw header, which any client can spoof.
-      trustProxy: env.trustProxy,
-      routerOptions: {
-        ignoreTrailingSlash: true,
-      },
-      exposeHeadRoutes: false,
-    });
-
-    // Globally serialize BigInt properties as strings in responses
-    this.server.setReplySerializer((payload) =>
-      JSON.stringify(payload, (_, value) => (typeof value === 'bigint' ? value.toString() : value)),
-    );
-
-    // Register core Fastify plugins.
-    // Restrict cross-origin requests to the SPA origin and allow credentials so the browser sends
-    // the HttpOnly refresh cookie on same-site XHR (SECURITY-REVIEW 2.1). `origin`/`credentials`
-    // are forced AFTER the opts spread so a caller can't accidentally widen them to a wildcard —
-    // credentialed CORS with `*` is rejected by browsers anyway, and a wildcard origin would let any
-    // site drive the API on behalf of a user whose bearer token it has (SECURITY-REVIEW 4.4).
-    this.server.register(cors, { ...opts, origin: env.appUrl, credentials: true });
-    // Parse/serialize cookies (refresh-token cookie). Registered before routes/tRPC so req.cookies
-    // and reply.setCookie are available in handlers and the tRPC context.
-    this.server.register(cookie);
-    // Security headers (CSP, HSTS, nosniff, frame-ancestors, referrer-policy). See
-    // security-headers.ts for why each directive is set the way it is.
-    this.server.register(helmet, helmetOptions);
-    this.server.register(sensible);
-    this.server.register(multipart, {
-      limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB
-      },
-    });
-    this.server.register(jsendPlugin);
-
-    // Register a content type parser for application/json that keeps raw body if path is webhook
-    this.server.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
-      if (
-        req.url.includes('/billing/webhook') ||
-        req.url.includes('/donations/webhook') ||
-        req.url.includes('/newsletters/webhook')
-      ) {
-        done(null, body);
-      } else {
-        try {
-          done(null, JSON.parse(body as string));
-        } catch (err) {
-          done(err as Error, null);
-        }
-      }
-    });
-
-    // Register REST routes
-    this.server.register(routes);
-
-    // Register tRPC plugin for RPC-based APIs
-    this.server.register(fastifyTRPCPlugin, {
-      prefix: '/',
-      trpcOptions: {
-        router: trpcRouter,
-        createContext,
-      },
-    });
-  }
-
-  public async close(): Promise<void> {
-    return await this.server.close();
-  }
-
-  public async serve(): Promise<void> {
-    try {
-      const address = await this.server.listen({ port: env.port, host: env.host });
-      this.server.log.info(`[ ready ] ${address}`);
-    } catch (err) {
-      this.server.log.error(err);
-      process.exit(1);
-    }
-  }
-}
-```
-
-## File: apps/backend/src/trpc.ts
-
-```typescript
-// tsco:ignore
-//
-import { TRPCError, initTRPC } from '@trpc/server';
-import { ZodError } from 'zod';
-import type { Context } from './context';
-import { isAppErrorLike, toTRPCError } from './app/errors/to-trpc-errors';
-import superjson from 'superjson';
-import { logger } from './app/logger';
-import { GENERIC_SIGNIN_ERROR } from '../../../libs/common/src';
-
-const trpc = initTRPC.context<Context>().create({
-  transformer: superjson,
-  errorFormatter({ shape, error }) {
-    logger.error({ err: error }, 'tRPC Error');
-    if (error.cause) {
-      logger.error({ err: error.cause }, 'tRPC Error Cause');
-    }
-    // Path may be on error.path, or on shape.data.path (or absent)
-    const errorObj = error as unknown as Record<string, unknown>;
-    const pathStr: string =
-      (typeof errorObj['path'] === 'string' ? errorObj['path'] : undefined) ??
-      (shape.data?.path as string | undefined) ??
-      '';
-
-    const isSignIn = pathStr === 'signIn' || pathStr.endsWith('.signIn') || pathStr === 'auth.signIn';
-
-    // Zod/input → BAD_REQUEST in tRPC v10; zodError is also surfaced on shape.data
-    const isZod =
-      error.cause instanceof ZodError || Boolean((shape.data as Record<string, unknown> | undefined)?.['zodError']);
-
-    const isZodOrBadRequest = isZod || error.code === 'BAD_REQUEST';
-
-    // Collapse auth-ish cases
-    const isCredsProblem =
-      error.code === 'UNAUTHORIZED' ||
-      error.code === 'NOT_FOUND' ||
-      error.cause?.name === 'InvalidCredentialsError' ||
-      (error.cause as unknown as Record<string, unknown> | undefined)?.['code'] === 'USER_NOT_FOUND';
-
-    let finalShape = shape;
-    if (isZod) {
-      finalShape = {
-        ...shape,
-        data: {
-          ...shape.data,
-          code: 'BAD_REQUEST',
-          isZodError: true,
-        } as any,
-      } as any;
-    }
-
-    if (isSignIn && (isZodOrBadRequest || isCredsProblem)) {
-      return { ...finalShape, message: GENERIC_SIGNIN_ERROR };
-    }
-
-    // Forward safe metadata from AppError (e.g. retryAfterSec for rate limits)
-    const causeData = (error.cause as any)?.data;
-    if (causeData && typeof causeData === 'object' && !Array.isArray(causeData)) {
-      return { ...finalShape, data: { ...finalShape.data, ...causeData } };
-    }
-
-    return finalShape;
-  },
-});
-
-export const middleware = trpc.middleware;
-
-const errorMappingMiddleware = middleware(async (opts) => {
-  // tRPC v11 middleware: a downstream throw does NOT reject `next()` — it resolves to a
-  // `{ ok: false, error }` result whose `error` is already a TRPCError (default code
-  // INTERNAL_SERVER_ERROR) wrapping the original throw as `.cause`. So we can't rely on
-  // try/catch here; we inspect the result and remap AppErrors from the cause, preserving
-  // their intended status (e.g. UnauthorizedError -> 401, not a generic 500). The try/catch
-  // is kept as a safety net in case a future path throws synchronously.
-  let result: Awaited<ReturnType<typeof opts.next>>;
-  try {
-    result = await opts.next();
-  } catch (err) {
-    throw toTRPCError(err);
-  }
-
-  if (!result.ok && isAppErrorLike(result.error.cause)) {
-    throw toTRPCError(result.error.cause);
-  }
-
-  return result;
-});
-
-export const publicProcedure = trpc.procedure.use(errorMappingMiddleware);
-
-export const router = trpc.router;
-
-import { BaseRepository } from './app/lib/base.repo';
-import { runWithTenant } from './app/lib/tenant-context';
-import { hashToken } from './app/lib/token-hash';
-
-const isAuthed = middleware(async (opts) => {
-  const { ctx } = opts;
-
-  if (!ctx.auth?.user_id || !ctx.auth?.tenant_id || !ctx.auth?.session_id) {
-    throw new TRPCError({ code: 'UNAUTHORIZED' });
-  }
-  // Capture the narrowed, non-null auth so the closure below keeps the narrowing.
-  const auth = ctx.auth;
-
-  // S-1 (schema review 2026-07-06 §6): bind the tenant to the async context for
-  // the remainder of the request. The runtime pool's onReserveConnection hook
-  // (base.repo.ts) reads it and sets the `app.tenant_id` GUC on every connection
-  // checkout, so Postgres RLS scopes every query — a backstop beneath the
-  // app-level `.where('tenant_id', …)` filters. Wrapping the auth lookups too is
-  // harmless (they are already tenant-scoped) and covers all downstream resolvers.
-  return runWithTenant(auth.tenant_id, async () => {
-    let user: { role: string | null; verified: boolean } | undefined;
-    if (/^\d+$/.test(auth.user_id)) {
-      const record = await BaseRepository.dbInstance
-        .selectFrom('authusers')
-        .select(['role', 'verified'])
-        .where('id', '=', auth.user_id)
-        .where('tenant_id', '=', auth.tenant_id)
-        .executeTakeFirst();
-      if (record) {
-        user = {
-          role: record.role,
-          verified: record.verified === true || String(record.verified) === 'true',
-        };
-      }
-    }
-
-    if (!user) {
-      throw new TRPCError({ code: 'UNAUTHORIZED' });
-    }
-
-    // Enforce session revocation. The access token embeds the plaintext session_id;
-    // its hash must still map to an active, unexpired row in `sessions`. Deleting the
-    // session (sign-out, tenant pause/deletion, password reset, email-change confirm)
-    // therefore invalidates the access token immediately instead of leaving it usable
-    // until the ~30-minute JWT expiry.
-    const session = await BaseRepository.dbInstance
-      .selectFrom('sessions')
-      .select(['id', 'expires_at'])
-      .where('session_id', '=', hashToken(auth.session_id))
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('status', '=', 'active')
-      .executeTakeFirst();
-
-    if (!session) {
-      throw new TRPCError({ code: 'UNAUTHORIZED' });
-    }
-    if (session.expires_at && new Date(session.expires_at).getTime() < Date.now()) {
-      throw new TRPCError({ code: 'UNAUTHORIZED' });
-    }
-
-    if (opts.type === 'mutation' && user.role === 'viewer') {
-      const isExempt =
-        opts.path === 'cancelEmailChange' ||
-        opts.path.endsWith('.cancelEmailChange') ||
-        opts.path === 'signOut' ||
-        opts.path.endsWith('.signOut');
-      if (!isExempt) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Viewers are not allowed to make changes.',
-        });
-      }
-    }
-
-    const authWithRole = {
-      ...auth,
-      role: user.role,
-    };
-
-    return opts.next({ ctx: { ...ctx, auth: authWithRole } });
-  });
-});
-
-export const authProcedure = publicProcedure.use(isAuthed);
-
-export const adminOrOwnerProcedure = authProcedure.use(async (opts) => {
-  const { ctx } = opts;
-  if (ctx.auth.role !== 'admin' && ctx.auth.role !== 'owner') {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Only admins or owners can perform this action.',
-    });
-  }
-  return opts.next({ ctx });
-});
-```
-
-## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
-
-```typescript
-import { Client } from '@microsoft/microsoft-graph-client';
-import crypto from 'crypto';
-import type { FastifyPluginCallback } from 'fastify';
-import { env } from '../../../../env';
-import { authenticateRest } from '../../../lib/rest-auth';
-import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
-import { BaseRepository } from '../../../lib/base.repo';
-import { attachmentDisposition } from '../../../lib/download-headers';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-import { StorageService } from '../../../lib/storage.service';
-import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
-
-function buildRawMime(options: {
-  fromName: string;
-  fromEmail: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  html: string;
-  attachments: { filename: string; content: Buffer; contentType: string }[];
-}): Buffer {
-  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
-  const headers: string[] = [];
-
-  const safeFromName = options.fromName.replace(/"/g, '\\"');
-  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
-  headers.push(`To: ${options.to.join(', ')}`);
-  if (options.cc.length > 0) {
-    headers.push(`Cc: ${options.cc.join(', ')}`);
-  }
-  if (options.bcc.length > 0) {
-    headers.push(`Bcc: ${options.bcc.join(', ')}`);
-  }
-
-  const base64Subject = Buffer.from(options.subject).toString('base64');
-  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
-
-  headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-  headers.push('');
-
-  const bodyParts: string[] = [];
-
-  bodyParts.push(`--${boundary}`);
-  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
-  bodyParts.push(`Content-Transfer-Encoding: base64`);
-  bodyParts.push('');
-  bodyParts.push(Buffer.from(options.html).toString('base64'));
-  bodyParts.push('');
-
-  for (const att of options.attachments) {
-    bodyParts.push(`--${boundary}`);
-    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Transfer-Encoding: base64`);
-    bodyParts.push('');
-    bodyParts.push(att.content.toString('base64'));
-    bodyParts.push('');
-  }
-
-  bodyParts.push(`--${boundary}--`);
-
-  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
-  return Buffer.from(rawMimeString, 'utf-8');
-}
-
-const storageService = new StorageService();
-
-let _oauthSvc: MsOAuthService | null = null;
-
-function getOAuthService(db: any) {
-  if (!_oauthSvc) {
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-export async function saveLocalEmail(
-  db: any,
-  tenantId: string,
-  userId: string,
-  fromEmail: string,
-  fromName: string,
-  toList: string[],
-  ccList: string[],
-  bccList: string[],
-  subject: string,
-  html: string,
-  uploadedFiles: any[],
-  previewKey: string,
-) {
-  return db.transaction().execute(async (trx: any) => {
-    // Ensure the Outbox folder row exists. email_folders uses global hardcoded
-    // IDs (see EMAIL_FOLDERS) and the FK on emails.folder_id only references
-    // email_folders(id) — not tenant_id — so the existence check must be by id
-    // alone. onConflict guards against a concurrent/global row already present.
-
-    // NOTE: unscoped by design — email_folders uses global hardcoded IDs; FK references id only, not tenant_id
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const existingOutbox = await trx.selectFrom('email_folders').select('id').where('id', '=', '10').executeTakeFirst();
-
-    if (!existingOutbox) {
-      await trx
-        .insertInto('email_folders')
-        .values({
-          id: '10',
-          tenant_id: tenantId,
-          name: 'Outbox',
-          createdby_id: userId,
-          updatedby_id: userId,
-          icon: 'clock',
-          sort_order: 10,
-          is_default: false,
-        })
-        .onConflict((oc: any) => oc.column('id').doNothing())
-        .execute();
-    }
-
-    // 1. Insert into emails table (using Outbox folder: '10')
-    const createdEmail = await trx
-      .insertInto('emails')
-      .values({
-        tenant_id: tenantId,
-        folder_id: '10', // Outbox folder is '10'
-        from_email: fromEmail,
-        to_email: toList.join(', '),
-        subject: subject,
-        preview: previewKey,
-        assigned_to: userId,
-        is_favourite: false,
-        deleted_at: null,
-        status: 'open',
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
-
-    const emailId = String(createdEmail.id);
-
-    // 2. Insert html into email_bodies
-    await trx
-      .insertInto('email_bodies')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        body_html: html,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 3. Insert files and email_attachments metadata
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const uFile = uploadedFiles[i];
-      let fileId: string;
-
-      // Persist (or reuse, via sha256 dedup) the file row, then link the
-      // attachment to it so downloads can resolve the stored blob.
-      const existingFile = await trx
-        .selectFrom('files')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('sha256_hex', '=', uFile.sha256_hex)
-        .executeTakeFirst();
-
-      if (existingFile) {
-        fileId = String(existingFile.id);
-      } else {
-        const fileResult = await trx
-          .insertInto('files')
-          .values({
-            tenant_id: tenantId,
-            filename: uFile.filename,
-            mime_type: uFile.content_type,
-            size_bytes: uFile.size_bytes,
-            storage_key: uFile.storage_key,
-            sha256_hex: uFile.sha256_hex,
-            uploaded_by: userId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        fileId = String(fileResult.id);
-      }
-
-      await trx
-        .insertInto('email_attachments')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          filename: uFile.filename,
-          content_type: uFile.content_type,
-          size_bytes: uFile.size_bytes,
-          cid: uFile.cid,
-          is_inline: uFile.is_inline,
-          pos: i + 1,
-          file_id: fileId,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-    }
-
-    // 4. Insert headers
-    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
-    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-
-    await trx
-      .insertInto('email_headers')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        headers_json: JSON.stringify({ internetMessageId }),
-        raw_headers: rawHeaders,
-        date_sent: new Date(),
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 5. Insert recipients
-    const recipientRows: any[] = [];
-    toList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'to',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    ccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'cc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    bccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'bcc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-
-    if (recipientRows.length > 0) {
-      await trx.insertInto('email_recipients').values(recipientRows).execute();
-    }
-
-    return createdEmail;
-  });
-}
-
-const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Send composed email
-  fastify.post('/send', async (req: any, reply) => {
-    // Mutating endpoint: enforce session revocation and block read-only viewers.
-    const authResult = await authenticateRest(req, { requireWrite: true });
-    if (!authResult.ok) {
-      return reply.status(authResult.status).send({ error: authResult.error });
-    }
-
-    const tenantId = authResult.auth.tenant_id;
-    const userId = authResult.auth.user_id;
-    const db = (BaseRepository as any)['_db'];
-
-    // Retrieve sender user details
-    const user = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', userId)
-      .executeTakeFirst();
-
-    if (!user) {
-      return reply.status(401).send({ error: 'Unauthorized: User not found' });
-    }
-
-    const fromEmail = user.email;
-    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
-
-    // Parse multipart request parts
-    const parts = req.parts();
-    const fields: any = {};
-    const files: any[] = [];
-
-    for await (const part of parts) {
-      if (part.file) {
-        const buffer = await part.toBuffer();
-        files.push({
-          filename: part.filename,
-          fieldname: part.fieldname,
-          mimetype: part.mimetype,
-          buffer,
-        });
-      } else {
-        fields[part.fieldname] = part.value;
-      }
-    }
-
-    // Parse recipient lists and content fields
-    const toList = fields.to ? JSON.parse(fields.to) : [];
-    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
-    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
-    const subject = fields.subject || '';
-    const html = sanitizeHtml(fields.html || '');
-
-    // Upload attachment files to storage outside transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
-
-    for (const file of files) {
-      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
-      const fileUUID = crypto.randomUUID();
-      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
-
-      await storageService.upload(storage_key, file.buffer, file.mimetype);
-
-      uploadedFiles.push({
-        filename: file.filename,
-        content_type: file.mimetype,
-        size_bytes: file.buffer.length,
-        storage_key,
-        sha256_hex,
-        cid: null,
-        is_inline: false,
-      });
-    }
-
-    // Check if user has connected Microsoft and/or Google accounts
-    const msToken = await db
-      .selectFrom('ms_oauth_tokens')
-      .select(['user_id', 'ms_email'])
-      .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const googleToken = await db
-      .selectFrom('google_oauth_tokens')
-      .select(['user_id', 'google_email'])
-      .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const hasMsConnected = !!msToken;
-    const hasGoogleConnected = !!googleToken;
-
-    // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasGoogleConnected) {
-      return reply.status(400).send({
-        status: 'error',
-        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
-      });
-    }
-
-    // Save outbound email to database under Outbox folder '10' initially
-    const fallbackPreview =
-      html
-        .replace(/<[^>]*>/g, '')
-        .substring(0, 100)
-        .trim() || '';
-    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
-    try {
-      emailRow = await saveLocalEmail(
-        db,
-        tenantId,
-        userId,
-        fromEmail,
-        fromName,
-        toList,
-        ccList,
-        bccList,
-        subject,
-        html,
-        uploadedFiles,
-        fallbackPreview,
-      );
-    } catch (err) {
-      fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
-    }
-
-    // Determine send method prioritizing matching address
-    let sendMethod: 'ms' | 'google' = 'ms';
-    if (hasMsConnected && hasGoogleConnected) {
-      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
-        sendMethod = 'google';
-      } else {
-        sendMethod = 'ms';
-      }
-    } else if (hasMsConnected) {
-      sendMethod = 'ms';
-    } else if (hasGoogleConnected) {
-      sendMethod = 'google';
-    }
-
-    // Dispatch the email synchronously
-    try {
-      if (sendMethod === 'ms') {
-        const oauthSvc = getOAuthService(db);
-        let msDraftId: string | null = null;
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-          const client = Client.init({
-            authProvider: (done) => done(null, accessToken),
-          });
-
-          const msDraftMessage: any = {
-            subject: subject,
-            body: {
-              contentType: 'html',
-              content: html,
-            },
-            toRecipients: toList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            ccRecipients: ccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            bccRecipients: bccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-          };
-
-          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
-          msDraftId = createdDraft.id;
-          const graphInternetMessageId = createdDraft.internetMessageId;
-
-          // Update local email preview/dedupe key to `ms:${msDraftId}`
-          await db
-            .updateTable('emails')
-            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          if (graphInternetMessageId) {
-            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-            await db
-              .updateTable('email_headers')
-              .set({
-                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
-                raw_headers: rawHeaders,
-                updated_at: new Date(),
-              })
-              .where('tenant_id', '=', tenantId)
-              .where('email_id', '=', String(emailRow.id))
-              .execute();
-          }
-
-          // Upload attachments
-          for (const file of files) {
-            await client.api(`/me/messages/${msDraftId}/attachments`).post({
-              '@odata.type': '#microsoft.graph.fileAttachment',
-              name: file.filename,
-              contentType: file.mimetype,
-              contentBytes: file.buffer.toString('base64'),
-            });
-          }
-
-          // Send draft
-          await client.api(`/me/messages/${msDraftId}/send`).post({});
-
-          // Update local email folder to '3' (Sent) on success
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          // Trigger background sync to get folders/Sent items synchronized
-          const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
-          // Clean up local email
-          await db
-            .deleteFrom('emails')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
-            400,
-          );
-        }
-      } else if (sendMethod === 'google') {
-        const oauthSvc = new GoogleOAuthService(db, {
-          clientId: env.googleClientId ?? '',
-          clientSecret: env.googleClientSecret ?? '',
-          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-        });
-
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-
-          const rawMessageBuffer = buildRawMime({
-            fromName,
-            fromEmail,
-            to: toList,
-            cc: ccList,
-            bcc: bccList,
-            subject,
-            html,
-            attachments: files.map((file) => ({
-              filename: file.filename,
-              content: file.buffer,
-              contentType: file.mimetype,
-            })),
-          });
-
-          const rawBase64Url = rawMessageBuffer
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-
-          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              raw: rawBase64Url,
-            }),
-          });
-
-          if (!gmailRes.ok) {
-            const errText = await gmailRes.text();
-            throw new Error(`Gmail API send failed: ${errText}`);
-          }
-
-          const gmailData: any = await gmailRes.json();
-          const googleMsgId = gmailData.id;
-
-          await db
-            .updateTable('emails')
-            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: '3', updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
-          await db
-            .updateTable('emails')
-            .set({
-              // Revert back to the Drafts folder (folder_id '2' or '4' depending on schema)
-              folder_id: '4',
-              updated_at: new Date(),
-            })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
-            400,
-          );
-        }
-      }
-    } catch (err) {
-      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
-      // Clean up local email
-      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
-    }
-  });
-
-  // Download attachment by ID
-  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    const { id, attachmentId } = req.params;
-
-    // Auth: a short-lived token scoped to this one email (embeddable link, no
-    // session JWT in the URL) or the app's Authorization header (session-gated).
-    let tenantId: string;
-    if (req.query.st) {
-      try {
-        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
-      } catch (_err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-      }
-    } else {
-      const authResult = await authenticateRest(req);
-      if (!authResult.ok) {
-        return reply.status(authResult.status).send({ error: authResult.error });
-      }
-      tenantId = authResult.auth.tenant_id;
-    }
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachmentId)
-      .where('email_id', '=', id)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', attachmentDisposition(file.filename));
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to download attachment' });
-    }
-  });
-
-  // Serve inline attachment by CID
-  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    const { id, cid } = req.params;
-
-    // Auth: a short-lived token scoped to this one email (for inline <img> in the
-    // rendered body) or the app's Authorization header (session-gated).
-    let tenantId: string;
-    if (req.query.st) {
-      try {
-        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
-      } catch (_err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-      }
-    } else {
-      const authResult = await authenticateRest(req);
-      if (!authResult.ok) {
-        return reply.status(authResult.status).send({ error: authResult.error });
-      }
-      tenantId = authResult.auth.tenant_id;
-    }
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', '=', id)
-      .where('cid', '=', cid)
-      .where('is_inline', '=', true)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Inline attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      // Private: inline attachments are tenant-scoped and token-gated.
-      reply.header('Cache-Control', 'private, max-age=31536000');
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to load inline image' });
-    }
-  });
-
-  done();
-};
-
-export default emailsApiRoute;
 ```
 
 ## File: apps/backend/src/app/lib/base.repo.ts
