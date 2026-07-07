@@ -619,28 +619,6 @@ export default {
 };
 ```
 
-## File: apps/frontend/src/**mocks**/environment.mock.ts
-
-```typescript
-export const environment = {
-  production: false,
-  apiUrl: 'http://localhost:3000',
-  googleMapsApiKey: '',
-  publicFormsBaseDomain: 'localhost',
-};
-```
-
-## File: apps/frontend/src/**mocks**/environment.prod.mock.ts
-
-```typescript
-export const environment = {
-  production: true,
-  apiUrl: 'https://example.com',
-  googleMapsApiKey: '',
-  publicFormsBaseDomain: 'example.com',
-};
-```
-
 ## File: apps/frontend/src/**mocks**/html.mock.ts
 
 ```typescript
@@ -739,6 +717,76 @@ export default '';
     <span class="text-neutral-400">Copyright © 2026 PeopleCRM</span>
   </div>
 </pc-auth-layout>
+```
+
+## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.html
+
+```html
+<pc-auth-layout>
+  @if (isLoading()) {
+  <div class="flex flex-col items-center justify-center py-6 space-y-4">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-sm font-medium text-neutral-100">Confirming your subscription…</p>
+  </div>
+  } @else { @switch (status()) { @case ('success') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
+      <pc-icon [size]="6" name="check-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Subscription Confirmed!</h2>
+      <p class="text-sm text-neutral-300">
+        Thank you for confirming. You will now receive our newsletters. You can close this window.
+      </p>
+    </div>
+  </div>
+  } @case ('error') {
+  <div class="space-y-6 py-4 text-center">
+    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
+      <pc-icon [size]="6" name="exclamation-circle" />
+    </div>
+    <div class="space-y-2">
+      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Confirmation Failed</h2>
+      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The confirmation link expired or is invalid.' }}</p>
+    </div>
+  </div>
+  } } }
+
+  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
+    <span class="text-neutral-400">
+      Copyright © 2026
+      <a href="" class="link link-hover">CampaignRaven</a>
+    </span>
+  </div>
+</pc-auth-layout>
+```
+
+## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+
+import { TRPCService } from '../../services/api/trpc-service';
+
+@Service()
+export class ConfirmSubscriptionService extends TRPCService<unknown> {
+  public async confirmSubscription(token: string) {
+    return this.api.webForms.confirmSubscription.mutate({ token });
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/login/login-guard.ts
+
+```typescript
+import { inject } from '@angular/core';
+import type { CanActivateFn } from '@angular/router';
+import { Router } from '@angular/router';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+
+export const loginGuard: CanActivateFn = () =>
+  inject(AuthService).getUser() ? inject(Router).navigateByUrl('/summary') : true;
 ```
 
 ## File: apps/frontend/src/app/auth/new-password-page/new-password-page.html
@@ -1344,6 +1392,73 @@ export const authGuard: CanActivateFn = () => {
 
   return true;
 };
+```
+
+## File: apps/frontend/src/app/auth/auth-layout.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { Alerts } from '@uxcommon/components/alerts/alerts';
+
+@Component({
+  selector: 'pc-auth-layout',
+  imports: [Alerts],
+  template: `
+    <div class="bg-image flex min-h-screen font-light" data-theme="light" i18n-data-theme>
+      <div class="card card-compact glass m-auto w-96 shadow-xl">
+        <div class="card-title justify-center shadow-lg">
+          <img class="p-5" src="assets/logo.png" />
+        </div>
+        <pc-alerts />
+        <div class="card-body">
+          <ng-content />
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class AuthLayoutComponent {}
+```
+
+## File: apps/frontend/src/app/auth/auth-utils.ts
+
+```typescript
+import type { FormBuilder, NonNullableFormBuilder } from '@angular/forms';
+import { Validators } from '@angular/forms';
+
+// Consolidated form control builders and password breach utilities
+export type AnyFormBuilder = FormBuilder | NonNullableFormBuilder;
+
+export function emailControl(fb: AnyFormBuilder) {
+  return fb.control('', { validators: [Validators.required, Validators.email] });
+}
+
+type BreachError = { kind: string; pwnedPasswordOccurrence?: number };
+type SignalFieldState = { errors: () => BreachError[] };
+
+export function passwordBreachNumber(control: unknown) {
+  let errs: { pwnedPasswordOccurrence?: number } | null = null;
+  if (control && typeof (control as SignalFieldState).errors === 'function') {
+    // It's a FieldState (Signal Forms)
+    const activeErrors = (control as SignalFieldState).errors();
+    const breachErr = activeErrors.find(
+      (e) => e.kind === 'pwnedPasswordOccurrence' || e.pwnedPasswordOccurrence !== undefined,
+    );
+    errs = breachErr ?? null;
+  } else {
+    // It's an AbstractControl (Reactive Forms)
+    errs = (control as { errors?: { pwnedPasswordOccurrence?: number } | null } | null)?.errors ?? null;
+  }
+  return errs?.pwnedPasswordOccurrence ?? null;
+}
+
+export function passwordControl(fb: AnyFormBuilder) {
+  return fb.control('', { validators: [Validators.required, Validators.minLength(8)] });
+}
+
+export function passwordInBreach(control: unknown) {
+  return !!passwordBreachNumber(control);
+}
 ```
 
 ## File: apps/frontend/src/app/auth/role-guard.ts
@@ -2057,6 +2172,141 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
+
+```typescript
+import { Component, effect, inject, input, signal } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { PersonsService } from '../../persons/services/persons-service';
+import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+@Component({
+  selector: 'pc-people-in-company',
+  imports: [RouterModule],
+  template: `<div>
+    <ul class="space-y-1.5">
+      @if (!peopleInCompany().length && !isLoading()) {
+        <span i18n class="text-sm text-base-content/50 italic">No employees found.</span>
+      }
+      @for (person of peopleInCompany(); track person.id) {
+        <li class="flex items-center gap-2">
+          <a routerLink="/people/{{ person.id }}" class="link hover:no-underline font-medium text-primary">
+            {{ person.full_name }}
+          </a>
+          @if (person.email) {
+            <span class="text-xs text-base-content/40">({{ person.email }})</span>
+          }
+        </li>
+      }
+    </ul>
+    @if (hasMore()) {
+      <div class="mt-2">
+        <button
+          i18n
+          type="button"
+          class="btn btn-xs btn-ghost text-primary"
+          (click)="loadMore()"
+          [disabled]="isLoading()"
+        >
+          - More -
+        </button>
+      </div>
+    }
+  </div>`,
+})
+export class PeopleInCompany {
+  private personsSvc = inject(PersonsService);
+
+  protected peopleInCompany = signal<Array<Persons & { full_name: string }>>([]);
+  protected isLoading = signal(false);
+  protected hasMore = signal(false);
+
+  private readonly pageSize = 25;
+  private currentOffset = signal(0);
+  private requestSequence = 0;
+  private lastParams: { id: string } | null = null;
+
+  public companyId = input.required<string>();
+
+  constructor() {
+    effect(() => {
+      const id = this.companyId();
+
+      if (!id) {
+        this.resetState();
+        this.lastParams = null;
+        return;
+      }
+
+      if (this.lastParams && this.lastParams.id === id) {
+        return;
+      }
+
+      this.lastParams = { id };
+      this.resetState();
+      void this.fetchPage({ id, offset: 0, replace: true });
+    });
+  }
+
+  protected async loadMore() {
+    if (this.isLoading() || !this.hasMore()) {
+      return;
+    }
+
+    const id = this.companyId();
+    if (!id) {
+      return;
+    }
+
+    const offset = this.currentOffset();
+    await this.fetchPage({ id, offset, replace: false });
+  }
+
+  private resetState() {
+    this.peopleInCompany.set([]);
+    this.currentOffset.set(0);
+    this.hasMore.set(false);
+    this.isLoading.set(false);
+    this.requestSequence++;
+  }
+
+  private async fetchPage(params: { id: string; offset: number; replace: boolean }) {
+    const { id, offset, replace } = params;
+    const requestId = ++this.requestSequence;
+    this.isLoading.set(true);
+
+    try {
+      const people = (await this.personsSvc.getByCompanyId(id, {
+        limit: this.pageSize,
+        offset,
+      })) as Persons[];
+
+      if (requestId !== this.requestSequence) {
+        return;
+      }
+
+      const mapped = people.map((person) => ({
+        ...person,
+        full_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
+      }));
+
+      if (replace) {
+        this.peopleInCompany.set(mapped);
+      } else {
+        this.peopleInCompany.update((current) => [...current, ...mapped]);
+      }
+
+      this.currentOffset.set(offset + people.length);
+      this.hasMore.set(people.length === this.pageSize);
+    } finally {
+      if (requestId === this.requestSequence) {
+        this.isLoading.set(false);
+      }
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.html
 
 ```html
@@ -2193,6 +2443,92 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     </table>
   </div>
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
+
+```typescript
+import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
+import { CurrencyPipe } from '@angular/common';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
+import { DonationsService } from '../../../services/api/donations-service';
+
+@Component({
+  selector: 'pc-donations-grid',
+  imports: [RouterLink, RouterLinkActive, Icon, SpinOnClickDirective, CurrencyPipe],
+  templateUrl: './donations-grid.html',
+})
+export class DonationsGridComponent implements OnInit {
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly alertSvc = inject(AlertService);
+
+  protected readonly donations = signal<any[]>([]);
+  protected readonly _loading = createLoadingGate();
+
+  // Summary statistics computed signals
+  protected readonly totalDonated = computed(() => {
+    return (
+      this.donations()
+        .filter((d) => d.status === 'succeeded')
+        .reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100
+    );
+  });
+
+  protected readonly totalTaxCredits = computed(() => {
+    return (
+      this.donations()
+        .filter((d) => d.status === 'succeeded')
+        .reduce((sum, d) => sum + Number(d.tax_credit_amount || 0), 0) / 100
+    );
+  });
+
+  protected readonly successCount = computed(() => {
+    return this.donations().filter((d) => d.status === 'succeeded').length;
+  });
+
+  ngOnInit() {
+    void this.load();
+  }
+
+  protected refresh() {
+    void this.load();
+  }
+
+  protected formatCurrency(amountCents: number | null | undefined): string {
+    if (amountCents === null || amountCents === undefined) return '$0.00';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
+  }
+
+  protected formatDate(dateStr: string): string {
+    try {
+      return new Date(dateStr).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const data = await this.donationsSvc.listDonations();
+      this.donations.set(data || []);
+    } catch (_err) {
+      this.alertSvc.showError('Failed to load donations. Please try again.');
+    } finally {
+      end();
+    }
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/donations/ui/pledges-grid.html
@@ -2806,6 +3142,89 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
   </div>
   } }
 </div>
+```
+
+## File: apps/frontend/src/app/experiences/duplicates/merge-summary.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { LowerCasePipe } from '@angular/common';
+
+@Component({
+  selector: 'pc-duplicate-page-shell',
+  imports: [RouterLink, Icon, LowerCasePipe],
+  templateUrl: './merge-summary.html',
+})
+export class DuplicatePageShellComponent {
+  title = input.required<string>();
+  icon = input.required<PcIconNameType>();
+  description = input.required<string>();
+  entityRoute = input.required<string>();
+  isLoading = input.required<boolean>();
+  isEmpty = input.required<boolean>();
+  currentPage = input.required<number>();
+  totalPages = input.required<number>();
+  totalGroups = input.required<number>();
+
+  onNext = output<void>();
+  onPrev = output<void>();
+}
+
+@Component({
+  selector: 'pc-merge-summary',
+  imports: [Icon],
+  template: `
+    <div class="card bg-base-300/40 border border-base-300 flex flex-col justify-between h-full">
+      <div class="card-body p-5">
+        <h4 class="font-bold text-base-content mb-2 flex items-center gap-2">
+          <pc-icon name="information-circle" class="text-warning" [size]="5"></pc-icon>
+          Merge Summary
+        </h4>
+
+        <div class="space-y-3 text-sm flex-1">
+          @if (!hasSelections()) {
+            <div i18n class="text-base-content/50 py-4 italic text-center text-xs">
+              Select which record to Keep and which to Merge.
+            </div>
+          } @else {
+            <div class="space-y-3">
+              <div class="alert alert-info py-2 text-[11px] leading-relaxed">
+                <span>{{ mergeDescription() }}</span>
+              </div>
+              <div class="text-xs space-y-1.5 bg-base-100 p-2.5 rounded-lg border border-base-300">
+                <div i18n class="font-semibold text-base-content/70">Merge Actions:</div>
+                <div class="flex justify-between text-success gap-2">
+                  <span i18n class="flex-shrink-0">Keep Primary:</span>
+                  <span class="font-bold truncate text-right flex-1" [title]="targetName()">{{ targetName() }}</span>
+                </div>
+                <div class="flex justify-between text-error gap-2">
+                  <span i18n class="flex-shrink-0">Remove Duplicate:</span>
+                  <span class="font-bold truncate text-right flex-1" [title]="sourceName()">{{ sourceName() }}</span>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+
+        <div class="card-actions mt-4 pt-3 border-t border-base-300">
+          <button class="btn btn-primary btn-sm w-full gap-2" [disabled]="!hasSelections()" (click)="onMerge.emit()">
+            <pc-icon name="merge" [size]="4"></pc-icon> Merge Records
+          </button>
+        </div>
+      </div>
+    </div>
+  `,
+})
+export class MergeSummaryComponent {
+  hasSelections = input.required<boolean>();
+  targetName = input<string>('');
+  sourceName = input<string>('');
+  mergeDescription = input.required<string>();
+  onMerge = output<void>();
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/emails/services/store/email-cache.store.ts
@@ -3938,6 +4357,98 @@ export class EventsFrontendService extends AbstractAPIService<'events', UpdateEv
 }
 ```
 
+## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { EventsFrontendService } from '../services/events-frontend-service';
+
+@Component({
+  selector: 'pc-events-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Event Pages"
+        i18n-title
+        description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="plus"
+        i18n-plusIcon
+        [showArchiveIcon]="true"
+        archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
+        archiveTip="See past events"
+        i18n-archiveTip
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: EventsFrontendService },
+    provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
+  ],
+})
+export class EventsGridComponent {
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col = [
+    { field: 'name', headerName: 'Event Name', editable: true },
+    { field: 'location_address', headerName: 'Location', editable: true },
+    {
+      field: 'start_time',
+      headerName: 'Start Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
+      editable: false,
+    },
+    {
+      field: 'end_time',
+      headerName: 'End Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
+      editable: false,
+    },
+    {
+      field: 'is_published',
+      headerName: 'Published',
+      valueFormatter: (p: any) => (p.value ? 'Yes' : 'Draft'),
+      editable: false,
+    },
+    {
+      field: 'registrations_count',
+      headerName: 'Registrations',
+      editable: false,
+    },
+    {
+      field: 'capacity',
+      headerName: 'Capacity',
+      editable: false,
+      valueFormatter: (p: any) => p.value ?? 'Unlimited',
+    },
+  ];
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/exports/ui/exports-page.html
 
 ```html
@@ -4332,6 +4843,63 @@ export class StandardFormsService extends FormsService {
     const filtered = result.rows.filter((r: any) => !r.form_type || r.form_type === 'standard');
     return { rows: filtered, count: filtered.length };
   }
+}
+```
+
+## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DonationPagesService } from '@experiences/forms/services/donation-pages-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Component({
+  selector: 'pc-fundraising-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Donation Pages"
+        i18n-title
+        description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [allowFilter]="false"
+        [disableView]="false"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="plus"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: DonationPagesService },
+    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'donation-pages-export.csv' } }),
+  ],
+})
+export class FundraisingGridComponent {
+  protected col = [
+    { field: 'name', headerName: 'Page Name', editable: false },
+    { field: 'description', headerName: 'Description', editable: false },
+    {
+      field: 'form_type',
+      headerName: 'Type',
+      editable: false,
+      valueFormatter: (p: any) => (p.value === 'recurring_donation' ? 'Recurring' : 'One-Time'),
+    },
+    { field: 'status', headerName: 'Status', editable: true },
+    {
+      field: 'created_at',
+      headerName: 'Created At',
+      valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
+    },
+  ];
 }
 ```
 
@@ -6293,6 +6861,364 @@ export function compileBlocksToPlainText(blockList: EmailBlock[]): string {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.html
+
+```html
+<div class="mb-6 rounded-xl border border-base-300 bg-base-100/50 p-6 shadow-sm backdrop-blur-md">
+  <div class="flex flex-col gap-3 border-b border-base-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 class="text-lg font-bold tracking-tight text-base-content">Delivery & Engagement Analytics</h2>
+      <p class="text-xs text-base-content/60">Performance overview of your dispatched marketing campaigns</p>
+    </div>
+    <div class="flex items-center justify-center gap-2 sm:justify-end">
+      <a class="btn btn-sm btn-primary gap-1 font-medium" routerLink="add">
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        New Newsletter
+      </a>
+      <button
+        class="btn btn-sm btn-outline btn-ghost gap-1 font-medium capitalize"
+        (click)="collapsed.set(!collapsed())"
+      >
+        {{ collapsed() ? 'show dashboard' : 'hide dashboard' }}
+      </button>
+    </div>
+  </div>
+
+  @if (!collapsed()) {
+  <div class="mt-5 flex flex-col gap-6">
+    <!-- Stats Cards Grid -->
+    <div class="grid gap-4 grid-cols-2 md:grid-cols-5">
+      <!-- Total Campaigns Sent -->
+      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-4">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Sent Campaigns
+          </div>
+          <div class="stat-value text-xl font-extrabold text-primary sm:text-2xl mt-1">{{ stats().totalSent }}</div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Dispatched newsletters</div>
+        </div>
+      </div>
+
+      <!-- Total Recipients -->
+      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-4">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Total Delivered
+          </div>
+          <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">
+            {{ formatNumber(stats().totalRecipients) }}
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful deliveries</div>
+        </div>
+      </div>
+
+      <!-- Avg Open Rate -->
+      <div
+        class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
+      >
+        <div>
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Avg Open Rate
+          </div>
+          <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">
+            {{ stats().avgOpenRate.toFixed(1) }}%
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Read/Open engagement</div>
+        </div>
+        <div
+          class="radial-progress text-success font-bold text-[10px] flex-shrink-0"
+          [style.--value]="stats().avgOpenRate"
+          [style.--size]="'3rem'"
+          [style.--thickness]="'4px'"
+          role="progressbar"
+        >
+          {{ stats().avgOpenRate.toFixed(0) }}%
+        </div>
+      </div>
+
+      <!-- Avg Click Rate -->
+      <div
+        class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
+      >
+        <div>
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
+            Avg Click Rate
+          </div>
+          <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1">
+            {{ stats().avgClickRate.toFixed(1) }}%
+          </div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Link click engagement</div>
+        </div>
+        <div
+          class="radial-progress text-accent font-bold text-[10px] flex-shrink-0"
+          [style.--value]="stats().avgClickRate"
+          [style.--size]="'3rem'"
+          [style.--thickness]="'4px'"
+          role="progressbar"
+        >
+          {{ stats().avgClickRate.toFixed(0) }}%
+        </div>
+      </div>
+
+      <!-- Bounces & Drops -->
+      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
+        <div class="stat p-4">
+          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
+          <div class="stat-value text-xl font-extrabold text-warning sm:text-2xl mt-1">{{ stats().totalBounces }}</div>
+          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Invalid addresses / drops</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparative Chart Panel -->
+    <div class="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h3 class="text-sm font-semibold tracking-wide uppercase text-base-content/70">
+          Campaign Comparison (Last 8 Dispatched)
+        </h3>
+        <div class="flex items-center gap-4 text-xs font-medium">
+          <div class="flex items-center gap-1.5">
+            <span class="inline-block h-3 w-3 rounded bg-primary"></span>
+            <span class="text-base-content/70">Open Rate</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="inline-block h-3 w-3 rounded bg-secondary"></span>
+            <span class="text-base-content/70">Click Rate</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SVG Chart -->
+      <div class="relative w-full h-[220px]">
+        @if (chartData().length > 0) {
+        <svg viewBox="0 0 800 220" width="100%" height="100%" class="overflow-visible">
+          <!-- Y-Axis Grid Lines & Labels -->
+          <g class="text-[10px] fill-base-content/40 stroke-base-content/5 font-sans" stroke-width="1">
+            <!-- 100% -->
+            <line x1="50" y1="20" x2="780" y2="20" stroke-dasharray="3,3" />
+            <text x="40" y="23" text-anchor="end">100%</text>
+
+            <!-- 75% -->
+            <line x1="50" y1="60" x2="780" y2="60" stroke-dasharray="3,3" />
+            <text x="40" y="63" text-anchor="end">75%</text>
+
+            <!-- 50% -->
+            <line x1="50" y1="100" x2="780" y2="100" stroke-dasharray="3,3" />
+            <text x="40" y="103" text-anchor="end">50%</text>
+
+            <!-- 25% -->
+            <line x1="50" y1="140" x2="780" y2="140" stroke-dasharray="3,3" />
+            <text x="40" y="143" text-anchor="end">25%</text>
+
+            <!-- 0% -->
+            <line x1="50" y1="180" x2="780" y2="180" class="stroke-base-content/20" />
+            <text x="40" y="183" text-anchor="end">0%</text>
+          </g>
+
+          <!-- Bar Groups -->
+          @for (item of chartData(); track $index; let i = $index) {
+          <g>
+            <!-- Group X offset: leftMargin(50) + i * groupWidth -->
+            <g class="transition-all duration-300 hover:opacity-90">
+              <!-- Open Rate Bar -->
+              <rect
+                [attr.x]="50 + i * groupWidth() + barSpacing()"
+                [attr.y]="180 - openBarHeight(item.openRate)"
+                [attr.width]="barWidth()"
+                [attr.height]="openBarHeight(item.openRate)"
+                rx="3"
+                class="fill-primary cursor-pointer transition-all duration-300"
+              >
+                <title>{{ item.name }} - Open Rate: {{ item.openRate.toFixed(1) }}%</title>
+              </rect>
+
+              <!-- Click Rate Bar -->
+              <rect
+                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() + 2"
+                [attr.y]="180 - clickBarHeight(item.clickRate)"
+                [attr.width]="barWidth()"
+                [attr.height]="clickBarHeight(item.clickRate)"
+                rx="3"
+                class="fill-secondary cursor-pointer transition-all duration-300"
+              >
+                <title>{{ item.name }} - Click Rate: {{ item.clickRate.toFixed(1) }}%</title>
+              </rect>
+
+              <!-- Values above bars -->
+              <text
+                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() / 2"
+                [attr.y]="180 - openBarHeight(item.openRate) - 4"
+                text-anchor="middle"
+                class="text-[9px] font-semibold fill-base-content/70 font-sans"
+              >
+                {{ item.openRate > 0 ? item.openRate.toFixed(0) + '%' : '' }}
+              </text>
+              <text
+                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() * 1.5 + 2"
+                [attr.y]="180 - clickBarHeight(item.clickRate) - 4"
+                text-anchor="middle"
+                class="text-[9px] font-semibold fill-base-content/70 font-sans"
+              >
+                {{ item.clickRate > 0 ? item.clickRate.toFixed(0) + '%' : '' }}
+              </text>
+
+              <!-- X Axis Label (Newsletter Name) -->
+              <text
+                [attr.x]="50 + i * groupWidth() + groupWidth() / 2"
+                y="198"
+                text-anchor="middle"
+                class="text-[9px] font-semibold fill-base-content/60 font-sans"
+              >
+                {{ truncate(item.name) }}
+              </text>
+            </g>
+          </g>
+          }
+        </svg>
+        } @else {
+        <div
+          class="flex h-full w-full items-center justify-center flex-col gap-2 rounded-lg border border-dashed border-base-200 bg-base-100/50 p-6 text-center"
+        >
+          <span class="text-sm font-medium text-base-content/40">No analytics data available</span>
+          <span class="text-xs text-base-content/30"
+            >Analytics comparison will appear here once campaigns are sent and tracked.</span
+          >
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.ts
+
+```typescript
+import { Component, input, computed, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { Icon } from '@icons/icon';
+
+interface DashboardStats {
+  totalSent: number;
+  totalRecipients: number;
+  avgOpenRate: number;
+  avgClickRate: number;
+  totalBounces: number;
+}
+
+@Component({
+  selector: 'pc-newsletters-dashboard',
+  standalone: true,
+  imports: [RouterLink, Icon],
+  templateUrl: './newsletters-dashboard.html',
+  styles: [
+    `
+      .fill-primary {
+        fill: var(--color-primary, #6366f1);
+      }
+      .fill-secondary {
+        fill: var(--color-secondary, #10b981);
+      }
+    `,
+  ],
+})
+export class NewslettersDashboardComponent {
+  public rows = input<any[]>([]);
+  protected collapsed = signal(false);
+
+  // Compute overall stats from the dataset
+  protected stats = computed<DashboardStats>(() => {
+    const list = this.rows() || [];
+    // Only aggregate records that have been sent
+    const sentList = list.filter((r) => r.status === 'sent');
+
+    if (sentList.length === 0) {
+      return { totalSent: 0, totalRecipients: 0, avgOpenRate: 0, avgClickRate: 0, totalBounces: 0 };
+    }
+
+    const totalSent = sentList.length;
+    let totalRecipients = 0;
+    let totalOpens = 0;
+    let totalClicks = 0;
+    let totalBounces = 0;
+
+    for (const r of sentList) {
+      totalRecipients += Number(r.delivered_count ?? r.total_recipients ?? 0);
+      totalOpens += Number(r.unique_opens ?? 0);
+      totalClicks += Number(r.unique_clicks ?? 0);
+      totalBounces += Number(r.bounce_count ?? 0);
+    }
+
+    const avgOpenRate = totalRecipients > 0 ? (totalOpens / totalRecipients) * 100 : 0;
+    const avgClickRate = totalRecipients > 0 ? (totalClicks / totalRecipients) * 100 : 0;
+
+    return {
+      totalSent,
+      totalRecipients,
+      avgOpenRate,
+      avgClickRate,
+      totalBounces,
+    };
+  });
+
+  // Extract comparative chart dataset (up to last 8 sent newsletters)
+  protected chartData = computed(() => {
+    const list = this.rows() || [];
+    // Filter for sent items and sort by date descending
+    const sent = list
+      .filter((r) => r.status === 'sent' && r.send_date)
+      .sort((a, b) => new Date(b.send_date).getTime() - new Date(a.send_date).getTime());
+
+    // Take up to 8 items, then reverse to display chronologically (left to right)
+    return sent
+      .slice(0, 8)
+      .reverse()
+      .map((r) => ({
+        name: r.name || 'Newsletter',
+        openRate: Number(r.open_rate ?? 0),
+        clickRate: Number(r.click_rate ?? 0),
+      }));
+  });
+
+  // SVG Chart layout computations
+  protected groupWidth = computed(() => {
+    const n = this.chartData().length;
+    return n > 0 ? Math.floor(730 / n) : 730;
+  });
+
+  protected barSpacing = computed(() => {
+    const gw = this.groupWidth();
+    return Math.floor(gw * 0.18);
+  });
+
+  protected barWidth = computed(() => {
+    const gw = this.groupWidth();
+    return Math.floor(gw * 0.28);
+  });
+
+  protected openBarHeight(rate: number): number {
+    // 160px is the maximum height of a bar (corresponding to 100%)
+    const clamped = Math.max(0, Math.min(100, rate));
+    return Math.round((clamped / 100) * 160);
+  }
+
+  protected clickBarHeight(rate: number): number {
+    const clamped = Math.max(0, Math.min(100, rate));
+    return Math.round((clamped / 100) * 160);
+  }
+
+  protected truncate(value: string): string {
+    if (value.length <= 15) return value;
+    return value.slice(0, 12) + '...';
+  }
+
+  protected formatNumber(value: number): string {
+    return new Intl.NumberFormat().format(value);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/newsletters/ui/visual-newsletter-editor.html
 
 ```html
@@ -7630,6 +8556,410 @@ export class VisualNewsletterEditorComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  PERSONINHOUSEHOLDTYPE,
+  UpdatePersonsType,
+  getAllOptionsType,
+} from '../../../../../../../libs/common/src';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
+
+@Service()
+export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
+  protected override readonly endpointName = 'persons';
+
+  public add(row: UpdatePersonsType, options?: any) {
+    return this.api.persons.add.mutate(row, options);
+  }
+
+  public addMany(rows: UpdatePersonsType[]) {
+    return Promise.resolve(rows);
+  }
+
+  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
+    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
+  }
+
+  public count(): Promise<number> {
+    return this.api.persons.count.query();
+  }
+  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
+    }
+    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
+  }
+
+  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
+    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
+    if (force !== undefined) {
+      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
+    }
+    return await this.api.persons.deleteMany.mutate(ids, opts as any);
+  }
+  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
+    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
+  }
+
+  public detachTag(
+    id: string,
+    tag_name: string,
+    type?: 'tag' | 'issue',
+  ): Promise<RouterOutputs['persons']['detachTag']> {
+    return this.api.persons.detachTag.mutate({ id, tag_name, type });
+  }
+
+  public getAll(options?: getAllOptionsType) {
+    return this.getAllWithAddress(options);
+  }
+
+  // We don't support archives
+  public getAllArchived(_options?: getAllOptionsType) {
+    return Promise.resolve({ rows: [], count: 0 });
+  }
+
+  public async getAllWithAddress(options?: getAllOptionsType) {
+    return this.api.persons.getAllWithAddress.query(options, {
+      signal: this.ac.signal,
+    });
+  }
+
+  public getByHouseholdId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByHouseholdId.query({ id: id, options });
+  }
+
+  public getByCompanyId(id: string, options?: getAllOptionsType) {
+    return this.api.persons.getByCompanyId.query({ id: id, options });
+  }
+
+  public countByCompanyId(id: string): Promise<number> {
+    return this.api.persons.countByCompanyId.query({ id });
+  }
+
+  public getById(id: string) {
+    return this.api.persons.getById.query(id);
+  }
+
+  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
+    if (!id) {
+      return [];
+    }
+
+    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
+    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
+    const requestOptions = {
+      ...options,
+      columns: mergedColumns,
+    };
+
+    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
+
+    return peopleInHousehold.map((person) => {
+      return {
+        ...person,
+        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
+      };
+    });
+  }
+
+  public getActivity(id: string) {
+    return this.api.persons.getActivity.query(id);
+  }
+
+  public async getTags(id: string, type?: 'tag' | 'issue') {
+    const tags = await this.api.persons.getTags.query({ id, type });
+    return tags.map((tag: { name: string }) => tag.name);
+  }
+
+  public import(
+    rows: RouterInputs['persons']['import']['rows'],
+    tags: string[] = [],
+    skipped = 0,
+    fileName?: string | null,
+  ): Promise<RouterOutputs['persons']['import']> {
+    // Opt-out of global error toast; importer UI shows a scoped summary instead
+    return this.api.persons.import.mutate({ rows, tags, skipped, file_name: fileName ?? undefined }, {
+      context: { skipErrorHandler: true },
+    } as any);
+  }
+
+  public async removeHousehold(id: string) {
+    return this.api.persons.removeHousehold.mutate(id);
+  }
+
+  public async update(id: string, data: UpdatePersonsType, options?: any) {
+    return this.api.persons.update.mutate({ id: id, data }, options);
+  }
+
+  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
+    return this.api.persons.exportCsv.mutate(input);
+  }
+
+  public getPotentialDuplicates(
+    options?: RouterInputs['persons']['getPotentialDuplicates'],
+  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
+    return this.api.persons.getPotentialDuplicates.query(options);
+  }
+
+  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
+    return this.api.persons.getDuplicateCounts.query();
+  }
+
+  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
+    return this.api.persons.mergePersons.mutate({ target_id, source_id });
+  }
+}
+
+export type DATA_TYPE = 'persons' | 'households';
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/connection-card.ts
+
+```typescript
+import { Component, computed, input, output } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { RELATION_TYPE_LABELS } from '../../../../../../../libs/common/src';
+
+type ConnectionRow = {
+  id: string;
+  from_person_id: string;
+  to_person_id: string;
+  relation_type: string;
+  custom_label: string | null;
+  is_mutual: boolean;
+  notes: string | null;
+  from_first_name: string | null;
+  from_last_name: string | null;
+  to_first_name: string | null;
+  to_last_name: string | null;
+  created_at: Date | string;
+};
+
+const BADGE_CLASSES: Record<string, string> = {
+  referred_by: 'badge-secondary',
+  referred_to: 'badge-secondary',
+  close_friend: 'badge-success',
+  family_member: 'badge-primary',
+  spouse: 'badge-primary',
+  colleague: 'badge-neutral',
+  org_affiliation: 'badge-warning',
+  introduced_by: 'badge-info',
+  introduced_to: 'badge-info',
+  custom: 'badge-ghost',
+};
+
+@Component({
+  selector: 'pc-connection-card',
+  imports: [RouterModule, Icon],
+  template: `
+    <div class="flex items-center gap-3 p-3 rounded-xl border border-base-200 hover:bg-base-50 transition-colors group">
+      <!-- Avatar -->
+      <div class="avatar placeholder shrink-0">
+        <div class="bg-neutral text-neutral-content rounded-full w-10 h-10 flex items-center justify-center">
+          <span class="text-sm font-bold">{{ initials() }}</span>
+        </div>
+      </div>
+
+      <!-- Info -->
+      <div class="flex-1 min-w-0">
+        <a
+          [routerLink]="['/people', otherPerson().id]"
+          class="font-semibold text-sm hover:text-primary transition-colors block truncate"
+        >
+          {{ otherPerson().first_name }} {{ otherPerson().last_name }}
+        </a>
+        <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+          <span class="text-xs font-mono text-base-content/50">{{ directionLabel() }}</span>
+          <span class="badge badge-sm {{ badgeClass() }}">{{ relationLabel() }}</span>
+          @if (connection().notes) {
+            <span class="text-xs text-base-content/40 truncate max-w-[140px]">{{ connection().notes }}</span>
+          }
+        </div>
+      </div>
+
+      <!-- Remove -->
+      <button
+        type="button"
+        class="btn btn-ghost btn-xs btn-circle text-error/50 hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
+        (click)="remove.emit(connection().id)"
+        data-tip="Remove connection"
+        i18n-data-tip
+      >
+        <pc-icon name="x-mark" [size]="3"></pc-icon>
+      </button>
+    </div>
+  `,
+})
+export class ConnectionCard {
+  readonly connection = input.required<ConnectionRow>();
+  readonly currentPersonId = input.required<string>();
+  readonly remove = output<string>();
+
+  protected readonly otherPerson = computed(() => {
+    const c = this.connection();
+    const isFrom = String(c.from_person_id) === String(this.currentPersonId());
+    return {
+      id: isFrom ? String(c.to_person_id) : String(c.from_person_id),
+      first_name: isFrom ? c.to_first_name : c.from_first_name,
+      last_name: isFrom ? c.to_last_name : c.from_last_name,
+    };
+  });
+
+  protected readonly directionLabel = computed(() => {
+    const c = this.connection();
+    if (c.is_mutual) return '↔';
+    return String(c.from_person_id) === String(this.currentPersonId()) ? '→' : '←';
+  });
+
+  protected readonly initials = computed(() => {
+    const p = this.otherPerson();
+    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
+  });
+
+  protected readonly badgeClass = computed(() => BADGE_CLASSES[this.connection().relation_type] ?? 'badge-ghost');
+
+  protected readonly relationLabel = computed(() => {
+    const c = this.connection();
+    if (c.relation_type === 'custom' && c.custom_label) return c.custom_label;
+    return RELATION_TYPE_LABELS[c.relation_type as keyof typeof RELATION_TYPE_LABELS] ?? c.relation_type;
+  });
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/people-in-household.ts
+
+```typescript
+import { Component, effect, inject, input, signal } from '@angular/core';
+import { RouterModule } from '@angular/router';
+import { PERSONINHOUSEHOLDTYPE } from '../../../../../../../libs/common/src';
+
+import { PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-people-in-household',
+  imports: [RouterModule],
+  template: `<div>
+    <ul>
+      @if (!peopleInHousehold().length && !isLoading()) {
+        <span i18n> No one else </span>
+      }
+      @for (person of peopleInHousehold(); track person.id) {
+        <li>
+          <a routerLink="/people/{{ person.id }}" class="link hover:no-underline">{{ person.full_name }}</a>
+        </li>
+      }
+    </ul>
+    @if (hasMore()) {
+      <div class="mt-2">
+        <button i18n type="button" class="link" (click)="loadMore()" [disabled]="isLoading()">- More -</button>
+      </div>
+    }
+  </div>`,
+})
+export class PeopleInHousehold {
+  private personsSvc = inject(PersonsService);
+
+  protected peopleInHousehold = signal<PERSONINHOUSEHOLDTYPE[]>([]);
+  protected isLoading = signal(false);
+  protected hasMore = signal(false);
+
+  private readonly pageSize = 25;
+  private currentOffset = signal(0);
+  private requestSequence = 0;
+  private lastParams: { id: string; excludeId: string | null } | null = null;
+
+  public excludePersonId = input<string | null>(null);
+
+  public householdId = input.required<string>();
+
+  constructor() {
+    // React to input changes
+    effect(() => {
+      const id = this.householdId();
+      const excludeId = this.excludePersonId();
+
+      if (!id) {
+        this.resetState();
+        this.lastParams = null;
+        return;
+      }
+
+      if (this.lastParams && this.lastParams.id === id && this.lastParams.excludeId === excludeId) {
+        return;
+      }
+
+      this.lastParams = { id, excludeId };
+      this.resetState();
+      void this.fetchPage({ id, excludeId, offset: 0, replace: true });
+    });
+  }
+
+  protected async loadMore() {
+    if (this.isLoading() || !this.hasMore()) {
+      return;
+    }
+
+    const id = this.householdId();
+    if (!id) {
+      return;
+    }
+
+    const excludeId = this.excludePersonId();
+    const offset = this.currentOffset();
+    await this.fetchPage({ id, excludeId, offset, replace: false });
+  }
+
+  private resetState() {
+    this.peopleInHousehold.set([]);
+    this.currentOffset.set(0);
+    this.hasMore.set(false);
+    this.isLoading.set(false);
+    this.requestSequence++;
+  }
+
+  private async fetchPage(params: { id: string; excludeId: string | null; offset: number; replace: boolean }) {
+    const { id, excludeId, offset, replace } = params;
+    const requestId = ++this.requestSequence;
+    this.isLoading.set(true);
+
+    try {
+      const people = await this.personsSvc.getPeopleInHousehold(id, {
+        limit: this.pageSize,
+        offset,
+      });
+
+      if (requestId !== this.requestSequence) {
+        return;
+      }
+
+      const filtered = excludeId ? people.filter((p) => p.id !== excludeId) : people;
+
+      if (replace) {
+        this.peopleInHousehold.set(filtered);
+      } else {
+        this.peopleInHousehold.update((current) => [...current, ...filtered]);
+      }
+
+      this.currentOffset.set(offset + people.length);
+      this.hasMore.set(people.length === this.pageSize);
+    } finally {
+      if (requestId === this.requestSequence) {
+        this.isLoading.set(false);
+      }
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/profile/profile-page.html
 
 ```html
@@ -8939,587 +10269,6 @@ export class DomainSettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
-
-```html
-<div class="space-y-8">
-  <!-- Stripe Connection Section -->
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <div class="border-b border-base-200 pb-3 flex items-center justify-between">
-      <h3 class="text-lg font-semibold flex items-center gap-2">
-        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
-        Stripe Integration
-      </h3>
-      <span
-        class="badge badge-sm font-medium"
-        [class.badge-success]="stripeSecretKey().trim()"
-        [class.badge-neutral]="!stripeSecretKey().trim()"
-      >
-        {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
-      </span>
-    </div>
-
-    <!-- Security Banner -->
-    <div
-      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
-    >
-      <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
-      <div>
-        <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
-        <p class="mt-0.5 text-base-content/70">
-          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
-          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
-        </p>
-        <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Payment Intents</code>: Read</li>
-          <li><code class="text-[10px] bg-base-300 px-1 rounded">Webhooks</code>: Write</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="grid gap-6 md:grid-cols-2 pt-2">
-      <!-- Stripe Secret Key -->
-      <div class="flex flex-col gap-1.5">
-        <label for="stripe_secret_key" class="text-sm font-semibold text-base-content/90"> Stripe Secret Key </label>
-        <input
-          id="stripe_secret_key"
-          type="password"
-          placeholder="sk_live_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
-          [value]="stripeSecretKey()"
-          (input)="stripeSecretKey.set($any($event.target).value)"
-        />
-        <p class="text-[11px] text-base-content/50">
-          Used to securely authenticate payments with Stripe. Starts with <code class="font-mono">sk_live_</code> or
-          <code class="font-mono">sk_test_</code>.
-        </p>
-      </div>
-
-      <!-- Stripe Webhook Secret -->
-      <div class="flex flex-col gap-1.5">
-        <label for="stripe_webhook_secret" class="text-sm font-semibold text-base-content/90">
-          Stripe Webhook Signing Secret
-        </label>
-        <input
-          id="stripe_webhook_secret"
-          type="password"
-          placeholder="whsec_..."
-          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
-          [value]="stripeWebhookSecret()"
-          (input)="stripeWebhookSecret.set($any($event.target).value)"
-        />
-        <p class="text-[11px] text-base-content/50">
-          Enables signature verification of incoming Stripe webhook notifications. Starts with
-          <code class="font-mono">whsec_</code>.
-        </p>
-      </div>
-    </div>
-
-    <!-- Webhook Instructions Info Card -->
-    <div
-      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-4 shadow-sm"
-    >
-      <div class="space-y-1">
-        <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
-          <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
-          Webhook Endpoint URL
-        </h4>
-        <p class="text-xs text-base-content/65 max-w-xl">
-          Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
-          completion notifications:
-        </p>
-        <div
-          class="mt-2 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all inline-block"
-        >
-          {{ webhookUrl() }}
-        </div>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline btn-primary shrink-0 self-end sm:self-center"
-        (click)="copyWebhookUrl()"
-      >
-        <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-        Copy URL
-      </button>
-    </div>
-  </div>
-
-  <!-- Donation Limit & Residency Restrictions Section -->
-  <div class="grid gap-6 md:grid-cols-2">
-    <!-- Donation Periods card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
-      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
-        <h3 class="text-lg font-semibold flex items-center gap-2">
-          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
-          Donation Limit Periods
-        </h3>
-        <button
-          type="button"
-          class="btn btn-xs btn-primary"
-          (click)="showAddPeriod.set(true)"
-          [hidden]="showAddPeriod()"
-        >
-          <pc-icon name="plus" [size]="3"></pc-icon>
-          Add Period
-        </button>
-      </div>
-      <p class="text-xs text-base-content/60">
-        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
-        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
-        below applies.
-      </p>
-
-      <!-- Existing periods list -->
-      <div class="space-y-2">
-        @for (period of donationPeriods(); track period.id) {
-        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
-          <div class="space-y-0.5 flex-1 min-w-0">
-            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
-            <div class="text-base-content/60">
-              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
-            </div>
-            <div class="flex items-center gap-2 mt-1">
-              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
-              @if (isPeriodActive(period)) {
-              <span class="badge badge-xs badge-success font-semibold">Active now</span>
-              } @else if (period.is_active) {
-              <span class="badge badge-xs badge-neutral font-semibold">Enabled</span>
-              } @else {
-              <span class="badge badge-xs badge-ghost font-semibold">Disabled</span>
-              }
-            </div>
-          </div>
-          <div class="flex items-center gap-1 shrink-0">
-            <input
-              type="checkbox"
-              class="toggle toggle-xs toggle-success"
-              [checked]="period.is_active"
-              (change)="togglePeriodActive(period)"
-              title="Enable/disable period"
-            />
-            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
-              <pc-icon name="trash" [size]="3"></pc-icon>
-            </button>
-          </div>
-        </div>
-        } @empty {
-        <div class="text-xs text-base-content/50 italic py-2 text-center">
-          No periods defined. Using fallback annual limit.
-        </div>
-        }
-      </div>
-
-      <!-- Add period form -->
-      @if (showAddPeriod()) {
-      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
-        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold">Period Name</label>
-          <input
-            type="text"
-            class="input input-sm input-bordered bg-base-200/30"
-            placeholder="e.g. 2024 Municipal Campaign"
-            [value]="newPeriodName()"
-            (input)="newPeriodName.set($any($event.target).value)"
-          />
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold">Start Date</label>
-            <input
-              type="date"
-              class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodStartDate()"
-              (input)="newPeriodStartDate.set($any($event.target).value)"
-            />
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
-            <input
-              type="date"
-              class="input input-sm input-bordered bg-base-200/30"
-              [value]="newPeriodEndDate()"
-              (input)="newPeriodEndDate.set($any($event.target).value)"
-            />
-          </div>
-        </div>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold">Limit per Donor ($)</label>
-          <div class="relative max-w-xs">
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
-            <input
-              type="number"
-              min="1"
-              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
-              [ngModel]="newPeriodLimit()"
-              (ngModelChange)="newPeriodLimit.set($event)"
-            />
-          </div>
-        </div>
-        <div class="flex items-center gap-2 pt-1">
-          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
-            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
-          </button>
-          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
-        </div>
-      </div>
-      }
-
-      <!-- Fallback annual limit (used when no period is active) -->
-      <div class="border-t border-base-200 pt-4 mt-2">
-        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
-        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
-        <div class="relative max-w-xs">
-          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
-          <input
-            id="donation_limit"
-            type="number"
-            min="1"
-            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
-            [value]="donationLimit()"
-            (input)="donationLimit.set($any($event.target).value)"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Residency restrictions card -->
-    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-      <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-        <pc-icon name="map-pin" class="text-primary" [size]="5"></pc-icon>
-        Residency Restrictions
-      </h3>
-      <p class="text-xs text-base-content/60">
-        Filter and restrict eligibility based on where the donor resides. Useful for regional municipal, provincial, or
-        state elections.
-      </p>
-
-      <div class="space-y-4">
-        <!-- Toggle Restriction -->
-        <label class="flex items-center gap-3 cursor-pointer py-1">
-          <input
-            id="restrict_residency"
-            type="checkbox"
-            class="toggle toggle-primary toggle-md"
-            [checked]="restrictResidency()"
-            (change)="restrictResidency.set($any($event.target).checked)"
-          />
-          <span class="text-sm font-semibold text-base-content/90"> Enforce residency restrictions </span>
-        </label>
-
-        @if (restrictResidency()) {
-        <div class="space-y-4 pt-2 animate-fade-in relative">
-          <!-- Autocomplete Allowed Countries Picker -->
-          <div class="flex flex-col gap-1.5 relative">
-            <label class="text-xs font-semibold text-base-content/85"> Allowed Countries </label>
-            <div class="flex flex-wrap gap-1.5 p-2 bg-base-200/30 rounded-lg border border-base-200">
-              @for (cCode of selectedCountries(); track cCode) {
-              <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
-                {{ getCountryName(cCode) }}
-                <button
-                  type="button"
-                  class="text-[10px] hover:text-base-content font-bold"
-                  (click)="removeCountry(cCode)"
-                >
-                  ×
-                </button>
-              </span>
-              }
-              <input
-                type="text"
-                placeholder="Type to search country..."
-                class="bg-transparent border-none outline-none text-xs flex-1 min-w-[120px]"
-                [value]="countrySearch()"
-                (input)="countrySearch.set($any($event.target).value); showCountryDropdown.set(true)"
-                (focus)="showCountryDropdown.set(true)"
-                (blur)="showCountryDropdown.set(false)"
-              />
-            </div>
-
-            @if (showCountryDropdown() && availableCountriesToSelect().length) {
-            <!-- Use mousedown to prevent input blur before selecting -->
-            <ul
-              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
-            >
-              @for (c of availableCountriesToSelect(); track c.code) {
-              <li>
-                <button
-                  type="button"
-                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
-                  (mousedown)="selectCountry(c); $event.preventDefault()"
-                >
-                  {{ c.name }} ({{ c.code }})
-                </button>
-              </li>
-              }
-            </ul>
-            }
-          </div>
-          <!-- Allowed Province/State Checkboxes for Selected Countries -->
-          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
-          {
-          <div class="flex flex-col gap-3 p-4 bg-base-100 border border-base-200 rounded-xl max-h-64 overflow-y-auto">
-            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
-              Allowed Provinces & States
-            </label>
-
-            @if (isCanadaSelected()) {
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (p of canadaProvinces; track p.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(p.code)"
-                    (change)="toggleRegion(p.code)"
-                  />
-                  <span>{{ p.name }} ({{ p.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">United States States</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of usStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of germanyStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (r of franceRegions; track r.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(r.code)"
-                    (change)="toggleRegion(r.code)"
-                  />
-                  <span>{{ r.name }} ({{ r.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
-            isFranceSelected()) {
-            <div class="divider my-1"></div>
-            }
-            <div class="space-y-1.5">
-              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
-              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                @for (s of indiaStates; track s.code) {
-                <label class="flex items-center gap-2 cursor-pointer text-xs">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-xs checkbox-primary"
-                    [checked]="selectedRegions().includes(s.code)"
-                    (change)="toggleRegion(s.code)"
-                  />
-                  <span>{{ s.name }} ({{ s.code }})</span>
-                </label>
-                }
-              </div>
-            </div>
-            }
-          </div>
-          }
-        </div>
-        }
-      </div>
-    </div>
-  </div>
-
-  <!-- Tax Credit Configuration -->
-  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
-    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
-      <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
-      Tax Credit Tiers
-    </h3>
-    <p class="text-xs text-base-content/60">
-      Define progressive tax credit brackets. Tax credits are computed automatically based on cumulative donations
-      inside a calendar year.
-    </p>
-
-    <!-- Table of existing tiers -->
-    <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl mt-3 shadow-sm">
-      <table class="table w-full text-xs">
-        <thead>
-          <tr class="border-b border-base-200 bg-base-50">
-            <th class="font-bold text-base-content/70">Bracket Tier</th>
-            <th class="font-bold text-base-content/70">Up to Limit</th>
-            <th class="font-bold text-base-content/70">Credit Percentage</th>
-            <th class="font-bold text-base-content/70 text-right w-24">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (tier of taxCreditTiers(); track $index) {
-          <tr class="hover:bg-base-200/20 border-b border-base-200">
-            <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
-            <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
-            <td>
-              <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
-            </td>
-            <td class="text-right">
-              <button
-                type="button"
-                class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
-                (click)="removeTier($index)"
-              >
-                Delete
-              </button>
-            </td>
-          </tr>
-          } @empty {
-          <tr>
-            <td colspan="4" class="text-center py-6 text-base-content/50 italic">
-              No tax credit tiers defined yet. Add a tier below to set up credit calculations.
-            </td>
-          </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Progressive bracket summary -->
-    @if (taxCreditTiers().length) {
-    <div class="mt-4 p-4 rounded-xl border border-base-200 bg-base-200/20 text-xs">
-      <h4 class="font-bold text-base-content/85 flex items-center gap-1.5 mb-2">
-        <pc-icon name="information-circle" class="text-primary" [size]="4"></pc-icon>
-        Tax Credit Bracket Summary (Plain Language)
-      </h4>
-      <ul class="list-disc list-inside space-y-1 text-base-content/75 font-semibold">
-        @for (line of taxCreditSummary(); track $index) {
-        <li>{{ line }}</li>
-        }
-      </ul>
-    </div>
-    }
-
-    <!-- Add new tier form -->
-    <div
-      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-wrap sm:flex-nowrap items-end gap-4 mt-3 shadow-sm"
-    >
-      <!-- Tier Limit -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_limit" class="text-xs font-semibold text-base-content/95"> Bracket Upper Limit ($) </label>
-        <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
-          <input
-            id="new_limit"
-            type="number"
-            min="1"
-            placeholder="500"
-            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
-            [ngModel]="newLimit()"
-            (ngModelChange)="newLimit.set($event)"
-          />
-        </div>
-      </div>
-
-      <!-- Tier Rate -->
-      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
-        <label for="new_rate" class="text-xs font-semibold text-base-content/95"> Credit Percentage (%) </label>
-        <div class="relative">
-          <input
-            id="new_rate"
-            type="number"
-            min="0"
-            max="100"
-            placeholder="75"
-            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
-            [ngModel]="newRate()"
-            (ngModelChange)="newRate.set($event)"
-          />
-          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
-        </div>
-      </div>
-
-      <!-- Add button -->
-      <button
-        type="button"
-        class="btn btn-sm btn-primary w-full sm:w-auto mt-2 sm:mt-0 font-semibold"
-        (click)="addTier()"
-      >
-        <pc-icon name="plus" [size]="4"></pc-icon>
-        Add Tier
-      </button>
-    </div>
-  </div>
-
-  <!-- Action buttons footer -->
-  <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
-    <div>
-      @if (isSaving()) {
-      <span class="text-sm font-medium text-base-content/60 flex items-center">
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        Saving donations configuration…
-      </span>
-      }
-    </div>
-
-    <div class="flex items-center gap-3">
-      <button
-        type="button"
-        class="btn btn-ghost hover:bg-base-200 font-semibold text-sm"
-        (click)="reset()"
-        [disabled]="isSaving()"
-      >
-        Reset
-      </button>
-      <button
-        type="button"
-        class="btn btn-primary min-w-[120px] font-semibold text-sm"
-        (click)="save()"
-        [disabled]="isSaving()"
-      >
-        @if (isSaving()) {
-        <span class="loading loading-spinner loading-xs mr-2"></span>
-        } Save Changes
-      </button>
-    </div>
-  </div>
-</div>
-```
-
 ## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.html
 
 ```html
@@ -10004,6 +10753,92 @@ export class ShiftsService extends AbstractAPIService<'volunteer_events', Update
 }
 ```
 
+## File: apps/frontend/src/app/experiences/shifts/ui/shifts-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ShiftsService } from '../services/shifts-service';
+
+@Component({
+  selector: 'pc-shifts-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Shifts"
+        i18n-title
+        description="Manage volunteer shifts, schedule events, and track attendance records."
+        i18n-description
+        [showDescription]="true"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-schedule"
+        i18n-plusIcon
+        [showArchiveIcon]="true"
+        archiveIcon="archive-box-arrow-down"
+        i18n-archiveIcon
+        archiveTip="See archived events"
+        i18n-archiveTip
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: ShiftsService },
+    provideDataGridConfig({ messages: { exportEntity: 'volunteer', exportFileName: 'volunteer-export.csv' } }),
+  ],
+})
+export class ShiftsGridComponent {
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col = [
+    { field: 'name', headerName: 'Event Name', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    { field: 'location_address', headerName: 'Location', editable: true },
+    {
+      field: 'start_time',
+      headerName: 'Start Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
+      editable: false,
+    },
+    {
+      field: 'end_time',
+      headerName: 'End Time',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
+      editable: false,
+    },
+    {
+      field: 'volunteers_count',
+      headerName: 'Signed Up',
+      editable: false,
+    },
+    {
+      field: 'capacity',
+      headerName: 'Capacity',
+      editable: true,
+    },
+  ];
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/summary/services/dashboard.service.ts
 
 ```typescript
@@ -10348,6 +11183,86 @@ export class TagsService extends AbstractAPIService<'tags', AddTagType> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tags/ui/issues-grid.ts
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { getAllOptionsType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+class IssuesService extends TagsService {
+  private readonly globalTagsSvc = inject(TagsService, { skipSelf: true, optional: true });
+
+  public override getAll(options?: getAllOptionsType) {
+    return this.getAllWithCounts({ ...(options ?? {}), type: 'issue' } as getAllOptionsType);
+  }
+
+  public override triggerRefresh() {
+    super.triggerRefresh();
+    this.globalTagsSvc?.triggerRefresh();
+  }
+}
+
+@Component({
+  selector: 'pc-issues-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Issues"
+        i18n-title
+        description="Manage political or support issues to track contact stances and interests."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [allowFilter]="false"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-issue"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    IssuesService,
+    { provide: AbstractAPIService, useExisting: IssuesService },
+    provideDataGridConfig({ messages: { exportEntity: 'issues', exportFileName: 'issues-export.csv' } }),
+  ],
+})
+export class IssuesGridComponent {
+  protected col = [
+    { field: 'name', headerName: 'Issue Name', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'color',
+      headerName: 'Colour',
+      editable: true,
+      cellDataType: 'color',
+      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
+    },
+    { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
+    { field: 'use_count_people', headerName: 'People' },
+    { field: 'use_count_households', headerName: 'Households' },
+  ];
+
+  protected renderColorCell(raw: unknown): string {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
+      return '<span class="text-xs text-neutral">None</span>';
+    }
+    const color = v.toLowerCase();
+    return `
+    <span class="inline-block h-4 w-8 rounded border shadow-sm"
+          style="background-color:${color}; border-color:${color}"
+          title="${color}"></span>
+  `;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/tags/ui/tag-model.ts
 
 ```typescript
@@ -10358,6 +11273,85 @@ export class TagModel {
     public name: string,
     public invisible = signal(false),
   ) {}
+}
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/tags-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { getAllOptionsType } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+class TagsOnlyService extends TagsService {
+  public override getAll(options?: getAllOptionsType) {
+    return this.getAllWithCounts({ ...(options ?? {}), type: 'tag' } as getAllOptionsType);
+  }
+}
+
+@Component({
+  selector: 'pc-tags-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Tags"
+        i18n-title
+        description="Manage custom categorization tags used across people, households."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [allowFilter]="false"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-label"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    TagsOnlyService,
+    { provide: AbstractAPIService, useExisting: TagsOnlyService },
+    provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
+  ],
+})
+export class TagsGridComponent {
+  protected col = [
+    {
+      field: 'name',
+      headerName: 'Tag Name',
+      editable: true,
+      valueFormatter: (p: any) => (p.value ? p.value.charAt(0).toUpperCase() + p.value.slice(1) : ''),
+    },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'color',
+      headerName: 'Colour',
+      editable: true,
+      cellDataType: 'color',
+      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
+    },
+    { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
+    { field: 'use_count_people', headerName: 'People' },
+    { field: 'use_count_households', headerName: 'Households' },
+  ];
+
+  protected renderColorCell(raw: unknown): string {
+    const v = typeof raw === 'string' ? raw.trim() : '';
+    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
+      return '<span class="text-xs text-neutral">None</span>';
+    }
+    const color = v.toLowerCase();
+
+    return `
+    <span class="inline-block h-4 w-8 rounded border shadow-sm"
+          style="background-color:${color}; border-color:${color}"
+          title="${color}"></span>
+  `;
+  }
 }
 ```
 
@@ -11271,6 +12265,78 @@ export class TeamsService extends AbstractAPIService<'teams', UpdateTeamType> {
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('Team export is not available'));
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { TeamsService } from '../services/teams-service';
+
+@Component({
+  selector: 'pc-teams-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Teams"
+        i18n-title
+        description="Organize volunteers and staff into structured teams, assign captains, and coordinate group activities."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-group"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: TeamsService },
+    provideDataGridConfig({ messages: { exportEntity: 'teams', exportFileName: 'teams-export.csv' } }),
+  ],
+})
+export class TeamsGridComponent {
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col = [
+    { field: 'name', headerName: 'Team', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'team_captain_name',
+      headerName: 'Team Captain',
+      valueGetter: (p: any) => p.data?.team_captain_name ?? '',
+      editable: false,
+    },
+    {
+      field: 'volunteer_count',
+      headerName: 'Volunteers',
+      editable: false,
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Updated',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
+    },
+  ];
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
   }
 }
 ```
@@ -12290,6 +13356,104 @@ export class WorkflowsService extends AbstractAPIService<'workflows', UpdateWork
 }
 ```
 
+## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.ts
+
+```typescript
+import { Component } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { WorkflowsService } from '../services/workflows-service';
+
+@Component({
+  selector: 'pc-workflows-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        title="Automated Workflows"
+        i18n-title
+        description="Create automated drip email campaigns triggered by volunteer events, tag changes, form submissions, list signups, or manual enrollment."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableImport]="true"
+        [disableExport]="true"
+        [addRoute]="'add'"
+        [allowFilter]="false"
+        plusIcon="plus"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: WorkflowsService },
+    provideDataGridConfig({ messages: { exportEntity: 'workflows', exportFileName: 'workflows-export.csv' } }),
+  ],
+})
+export class WorkflowsGridComponent {
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  protected col = [
+    { field: 'name', headerName: 'Workflow Name' },
+    {
+      field: 'trigger_type',
+      headerName: 'Trigger Type',
+      valueFormatter: (p: any) => this.formatTriggerType(p.value ?? p.data?.trigger_type),
+    },
+    {
+      field: 'status',
+      headerName: 'Status',
+      valueFormatter: (p: any) => this.formatStatus(p.value ?? p.data?.status),
+    },
+    {
+      field: 'steps_count',
+      headerName: 'Steps Count',
+      valueFormatter: (p: any) => String(p.value ?? p.data?.steps_count ?? 0),
+    },
+    {
+      field: 'active_enrollments_count',
+      headerName: 'Active Enrollments',
+      valueFormatter: (p: any) => String(p.value ?? p.data?.active_enrollments_count ?? 0),
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Last Updated',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
+    },
+  ];
+
+  private formatDate(value: unknown): string {
+    if (!value) return '--';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '--';
+    return this.dateFormatter.format(date);
+  }
+
+  private formatTriggerType(value: unknown): string {
+    if (!value) return '--';
+    const text = String(value).trim();
+    if (text === 'volunteer_signup') return 'Volunteer Signup';
+    if (text === 'manual') return 'Manual Enrollment';
+    return text.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
+  private formatStatus(value: unknown): string {
+    if (!value) return '--';
+    const text = String(value).trim();
+    if (text === 'active') return 'Active';
+    if (text === 'draft') return 'Draft';
+    if (text === 'paused') return 'Paused';
+    return text.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+}
+```
+
 ## File: apps/frontend/src/app/services/api/api-error.ts
 
 ```typescript
@@ -12327,124 +13491,6 @@ export class ConnectionsService extends TRPCService<'person_connections'> {
 
   public remove(id: string) {
     return this.api.connections.remove.mutate(id);
-  }
-}
-```
-
-## File: apps/frontend/src/app/services/api/donations-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import { TRPCService } from './trpc-service';
-
-@Service()
-export class DonationsService extends TRPCService<'donations'> {
-  // ── One-time donations ──────────────────────────────────────────────────────
-
-  public listDonations() {
-    return this.api.donations.listDonations.query();
-  }
-
-  public getHistory(personId: string) {
-    return this.api.donations.getPersonDonationHistory.query(personId);
-  }
-
-  public getStats(personId: string) {
-    return this.api.donations.getDonationStats.query(personId);
-  }
-
-  public checkEligibility(payload: {
-    personId: string;
-    amountCents: number;
-    address: { country?: string; state?: string };
-    isRecurring?: boolean;
-    remainingMonths?: number;
-  }) {
-    return this.api.donations.checkEligibility.query(payload);
-  }
-
-  public createCheckout(payload: {
-    personId: string;
-    amountCents: number;
-    address: { country?: string; state?: string };
-  }) {
-    return this.api.donations.createCheckout.mutate(payload);
-  }
-
-  public confirmDonation(sessionId: string) {
-    return this.api.donations.confirmDonation.mutate({ sessionId });
-  }
-
-  public confirmMockDonation(payload: {
-    personId: string;
-    amountCents: number;
-    sessionId: string;
-    province: string;
-    country: string;
-  }) {
-    return this.api.donations.confirmMockDonation.mutate(payload);
-  }
-
-  // ── Recurring pledges ───────────────────────────────────────────────────────
-
-  public createRecurringCheckout(payload: {
-    personId: string;
-    monthlyAmountCents: number;
-    address: { country?: string; state?: string };
-  }) {
-    return this.api.donations.createRecurringCheckout.mutate(payload);
-  }
-
-  public confirmMockPledge(payload: {
-    personId: string;
-    monthlyAmountCents: number;
-    mockSubId: string;
-    province: string;
-    country: string;
-  }) {
-    return this.api.donations.confirmMockPledge.mutate(payload);
-  }
-
-  public listPledges() {
-    return this.api.donations.listPledges.query();
-  }
-
-  public getPersonPledges(personId: string) {
-    return this.api.donations.getPersonPledges.query(personId);
-  }
-
-  public cancelPledge(pledgeId: string) {
-    return this.api.donations.cancelPledge.mutate({ pledgeId });
-  }
-
-  // ── Donation periods ────────────────────────────────────────────────────────
-
-  public getDonationPeriods() {
-    return this.api.donations.getDonationPeriods.query();
-  }
-
-  public createDonationPeriod(payload: {
-    name: string;
-    start_date: string;
-    end_date?: string | null;
-    limit_amount: number;
-  }) {
-    return this.api.donations.createDonationPeriod.mutate(payload);
-  }
-
-  public updateDonationPeriod(payload: {
-    id: string;
-    name?: string;
-    start_date?: string;
-    end_date?: string | null;
-    limit_amount?: number;
-    is_active?: boolean;
-  }) {
-    return this.api.donations.updateDonationPeriod.mutate(payload);
-  }
-
-  public deleteDonationPeriod(id: string) {
-    return this.api.donations.deleteDonationPeriod.mutate({ id });
   }
 }
 ```
@@ -12598,113 +13644,14 @@ export class SearchService {
 }
 ```
 
-## File: apps/frontend/src/app/services/api/token-service.ts
+## File: apps/frontend/src/app/services/api/trpc-types.ts
 
 ```typescript
-import { Service } from '@angular/core';
-import { IToken } from '../../../../../../libs/common/src';
+import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
+import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
 
-@Service()
-export class TokenService {
-  private persistence = false;
-
-  constructor() {
-    this.persistence = !!localStorage.getItem('pc-persistence');
-  }
-
-  public clearAll(): void {
-    this.clearPersistentStorage();
-    this.clearSessionStorage();
-  }
-
-  public get(): IToken {
-    return {
-      auth_token: this.getAuthToken(),
-      refresh_token: this.getRefreshToken(),
-    };
-  }
-
-  public getAuthToken(): string | null {
-    return this.persistence ? localStorage.getItem(AUTHTOKEN) : sessionStorage.getItem(AUTHTOKEN);
-  }
-
-  public getPersistence(): boolean {
-    return this.persistence;
-  }
-
-  public getRefreshToken(): string | null {
-    return this.persistence ? localStorage.getItem(REFRESHTOKEN) : sessionStorage.getItem(REFRESHTOKEN);
-  }
-
-  public removeAuthToken(): void {
-    this.removeToken(AUTHTOKEN);
-  }
-
-  public removeRefreshToken(): void {
-    this.removeToken(REFRESHTOKEN);
-  }
-
-  public set(token: IToken): void {
-    if (token.auth_token) {
-      this.setAuthToken(token.auth_token);
-    } else {
-      this.removeAuthToken();
-    }
-
-    if (token.refresh_token) {
-      this.setRefreshToken(token.refresh_token);
-    } else {
-      this.removeRefreshToken();
-    }
-  }
-
-  public setAuthToken(token: string): void {
-    this.setToken(AUTHTOKEN, token);
-  }
-
-  public setPersistence(persistence: boolean) {
-    if (this.getPersistence() && !persistence) {
-      this.clearPersistentStorage();
-    } else if (!this.getPersistence() && persistence) {
-      this.clearSessionStorage();
-    }
-    this.persistence = persistence;
-    localStorage.setItem('pc-persistence', persistence ? '1' : '0');
-  }
-
-  public setRefreshToken(token: string): void {
-    this.setToken(REFRESHTOKEN, token);
-  }
-
-  private clearPersistentStorage(): void {
-    localStorage.removeItem(AUTHTOKEN);
-    localStorage.removeItem(REFRESHTOKEN);
-  }
-
-  private clearSessionStorage(): void {
-    sessionStorage.removeItem(AUTHTOKEN);
-    sessionStorage.removeItem(REFRESHTOKEN);
-  }
-
-  private removeToken(item: string): void {
-    if (this.persistence) {
-      localStorage.removeItem(item);
-    } else {
-      sessionStorage.removeItem(item);
-    }
-  }
-
-  private setToken(item: string, token: string): void {
-    if (this.persistence) {
-      localStorage.setItem(item, token);
-    } else {
-      sessionStorage.setItem(item, token);
-    }
-  }
-}
-
-const AUTHTOKEN = 'ppl-crm-auth-token';
-const REFRESHTOKEN = 'ppl-crm-refresh-token';
+export type RouterInputs = inferRouterInputs<TRPCRouter>;
+export type RouterOutputs = inferRouterOutputs<TRPCRouter>;
 ```
 
 ## File: apps/frontend/src/app/services/api/volunteer-service.ts
@@ -12772,6 +13719,94 @@ export class VolunteerService extends TRPCService<'volunteer_events'> {
     return this.api.volunteer.getVolunteerStats.query(personId);
   }
 }
+```
+
+## File: apps/frontend/src/app/services/global-error-handler.ts
+
+```typescript
+import { ErrorHandler, inject, Service } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { TRPCClientError } from '@trpc/client';
+import { JSendFailError, JSendServerError } from '../../../../../libs/common/src';
+import { ApiError } from './api/api-error';
+
+import { ErrorService } from './error.service';
+
+@Service()
+export class GlobalErrorHandler implements ErrorHandler {
+  private readonly errors = inject(ErrorService);
+
+  handleError(error: unknown): void {
+    if (
+      error instanceof HttpErrorResponse ||
+      error instanceof JSendFailError ||
+      error instanceof JSendServerError ||
+      error instanceof TRPCClientError ||
+      error instanceof ApiError
+    ) {
+      // Already handled elsewhere
+      return;
+    }
+
+    this.errors.handle(error);
+
+    console.error(error);
+  }
+}
+```
+
+## File: apps/frontend/src/app/services/jsend.interceptor.ts
+
+```typescript
+import type { HttpInterceptorFn } from '@angular/common/http';
+import { HttpContextToken, HttpErrorResponse, HttpResponse } from '@angular/common/http';
+import { inject } from '@angular/core';
+import { jsend, JSendFailError, JSendServerError } from '../../../../../libs/common/src';
+import { catchError, map } from 'rxjs/operators';
+import { throwError } from 'rxjs';
+
+import { ErrorService } from './error.service';
+
+export const SKIP_ERROR_HANDLER = new HttpContextToken<boolean>(() => false);
+
+export const jsendInterceptor: HttpInterceptorFn = (req, next) => {
+  const errorSvc = inject(ErrorService);
+  const skip = req.context.get(SKIP_ERROR_HANDLER);
+
+  return next(req).pipe(
+    map((event) => {
+      if (event instanceof HttpResponse) {
+        const body = event.body;
+        if (jsend.isSuccess(body)) return event.clone({ body: body.data });
+        if (jsend.isFail(body)) throw new JSendFailError(body.data, event.status);
+        if (jsend.isError(body)) {
+          const err = new JSendServerError(body.message, body.code, event.status);
+          if (!skip) errorSvc.handle(err);
+          throw err;
+        }
+      }
+      return event;
+    }),
+    catchError((error: unknown) => {
+      if (error instanceof HttpErrorResponse) {
+        const body = error.error;
+        if (jsend.isFail(body)) {
+          return throwError(() => new JSendFailError(body.data, error.status));
+        }
+        if (jsend.isError(body)) {
+          const err = new JSendServerError(body.message, body.code, error.status);
+          if (!skip) errorSvc.handle(err);
+          return throwError(() => err);
+        }
+        const err = new JSendServerError(error.message, undefined, error.status);
+        if (!skip) errorSvc.handle(err);
+        return throwError(() => err);
+      }
+      if (!skip) errorSvc.handle(error);
+      return throwError(() => error);
+    }),
+  );
+};
 ```
 
 ## File: apps/frontend/src/app/services/shared-dialog.service.ts
@@ -12878,6 +13913,253 @@ export class DataGridColumnsService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/services/grid-advanced-filter.service.ts
+
+```typescript
+import { computed, signal } from '@angular/core';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type {
+  QueryBuilderGroupNode,
+  QueryBuilderNode,
+  QueryBuilderRuleNode,
+} from '../../../../../../../../libs/common/src';
+
+export class GridAdvancedFilterService {
+  // ── Signals ───────────────────────────────────────────────────────────────
+  readonly showAdvancedFilterBuilder = signal<boolean>(false);
+  readonly advFilterRoot = signal<QueryBuilderGroupNode>({
+    kind: 'group',
+    id: 'root',
+    conjunction: 'AND',
+    rules: [],
+  });
+
+  // ── Computeds ─────────────────────────────────────────────────────────────
+  readonly hasActiveAdvancedFilters = computed(() => {
+    return this.hasActiveRules(this.advFilterRoot());
+  });
+
+  private hasActiveRules(node: QueryBuilderNode): boolean {
+    if (node.kind === 'rule') {
+      if (!node.field) return false;
+      if (node.op === 'isEmpty' || node.op === 'isNotEmpty' || node.op === 'empty' || node.op === 'notempty')
+        return true;
+      return node.value !== undefined && node.value !== null && String(node.value).trim() !== '';
+    } else {
+      return node.rules.some((child) => this.hasActiveRules(child));
+    }
+  }
+
+  buildModel(): QueryBuilderGroupNode | undefined {
+    if (!this.hasActiveAdvancedFilters()) return undefined;
+    const cleaned = this.cleanFilterTree(this.advFilterRoot());
+    if (cleaned && cleaned.kind === 'group') {
+      return cleaned;
+    }
+    return undefined;
+  }
+
+  private cleanFilterTree(node: QueryBuilderNode): QueryBuilderNode | null {
+    if (node.kind === 'rule') {
+      if (!node.field) return null;
+      if (node.op === 'isEmpty' || node.op === 'isNotEmpty' || node.op === 'empty' || node.op === 'notempty') {
+        return { ...node, value: '' };
+      }
+      if (node.value !== undefined && node.value !== null && String(node.value).trim() !== '') {
+        return { ...node };
+      }
+      return null;
+    } else {
+      const activeChildren = node.rules
+        .map((child) => this.cleanFilterTree(child))
+        .filter((child): child is QueryBuilderNode => child !== null);
+      if (activeChildren.length === 0) return null;
+      return {
+        ...node,
+        rules: activeChildren,
+      };
+    }
+  }
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+
+  openAdvancedFilterBuilder(getColDefs: () => ColDef[]): void {
+    this.showAdvancedFilterBuilder.set(true);
+    if (this.advFilterRoot().rules.length === 0) {
+      this.addRule(getColDefs);
+    }
+  }
+
+  switchToAdvancedFilter(closeFilterPanel: () => void, getColDefs: () => ColDef[]): void {
+    closeFilterPanel();
+    this.openAdvancedFilterBuilder(getColDefs);
+  }
+
+  addRule(getColDefs: () => ColDef[]): void {
+    const fields = getColDefs().filter((c) => c.field && c.field !== 'actions');
+    const defaultField = fields[0]?.field || '';
+    const newRule: QueryBuilderRuleNode = {
+      kind: 'rule',
+      id: Math.random().toString(36).substring(2),
+      field: defaultField,
+      op: 'contains',
+      value: '',
+    };
+    this.advFilterRoot.update((root) => ({
+      ...root,
+      rules: [...root.rules, newRule],
+    }));
+  }
+
+  apply(doRefresh: () => void): void {
+    this.showAdvancedFilterBuilder.set(false);
+    doRefresh();
+  }
+
+  clear(doRefresh: () => void): void {
+    this.advFilterRoot.set({
+      kind: 'group',
+      id: 'root',
+      conjunction: 'AND',
+      rules: [],
+    });
+    this.showAdvancedFilterBuilder.set(false);
+    doRefresh();
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/services/grid-tag-filter.service.ts
+
+```typescript
+import { computed, signal } from '@angular/core';
+
+import type { TagOptionsService } from './tag-options.service';
+
+export class GridTagFilterService {
+  // ── Tag filter signals ────────────────────────────────────────────────────
+  readonly allAvailableTags = signal<string[]>([]);
+  readonly selectedTags = signal<string[]>([]);
+  readonly tagSearchQuery = signal<string>('');
+
+  // ── Issue filter signals ──────────────────────────────────────────────────
+  readonly allAvailableIssues = signal<string[]>([]);
+  readonly selectedIssues = signal<string[]>([]);
+  readonly issueSearchQuery = signal<string>('');
+
+  // ── Computeds ─────────────────────────────────────────────────────────────
+  readonly filteredAvailableTags = computed(() => {
+    const query = this.tagSearchQuery().toLowerCase().trim();
+    const all = this.allAvailableTags();
+    if (!query) return all;
+    return all.filter((tag) => tag.toLowerCase().includes(query));
+  });
+
+  readonly filteredAvailableIssues = computed(() => {
+    const query = this.issueSearchQuery().toLowerCase().trim();
+    const all = this.allAvailableIssues();
+    if (!query) return all;
+    return all.filter((issue) => issue.toLowerCase().includes(query));
+  });
+
+  // showTagFilter / showIssueFilter are kept on DataGrid because they depend
+  // on the `colDefs` input signal, which belongs to the component.
+
+  // ── Initialisation ────────────────────────────────────────────────────────
+
+  async init(params: {
+    limitToTags: string[];
+    limitToIssues: string[];
+    tagOptionsSvc: TagOptionsService;
+    doRefresh: () => void;
+  }): Promise<void> {
+    this._doRefresh = params.doRefresh;
+
+    this.selectedTags.set([...params.limitToTags]);
+    this.selectedIssues.set([...params.limitToIssues]);
+
+    try {
+      const tags = await params.tagOptionsSvc.getTagNames('tag');
+      this.allAvailableTags.set(tags);
+    } catch {
+      this.allAvailableTags.set([]);
+    }
+
+    try {
+      const issues = await params.tagOptionsSvc.getTagNames('issue');
+      this.allAvailableIssues.set(issues);
+    } catch {
+      this.allAvailableIssues.set([]);
+    }
+  }
+
+  // ── Tag filter actions ────────────────────────────────────────────────────
+
+  toggleTagFilter(tag: string, checked: boolean): void {
+    const current = this.selectedTags();
+    const next = checked ? [...current, tag] : current.filter((t) => t !== tag);
+    this.selectedTags.set(next);
+    this._doRefresh();
+  }
+
+  clearTagsFilter(): void {
+    this.selectedTags.set([]);
+    this.tagSearchQuery.set('');
+    this._doRefresh();
+  }
+
+  selectAllTags(): void {
+    const visible = this.filteredAvailableTags();
+    const current = new Set(this.selectedTags());
+    for (const tag of visible) current.add(tag);
+    this.selectedTags.set(Array.from(current));
+    this._doRefresh();
+  }
+
+  clearAllTagsVisible(): void {
+    const visibleSet = new Set(this.filteredAvailableTags());
+    const next = this.selectedTags().filter((tag) => !visibleSet.has(tag));
+    this.selectedTags.set(next);
+    this._doRefresh();
+  }
+
+  // ── Issue filter actions ──────────────────────────────────────────────────
+
+  toggleIssueFilter(issue: string, checked: boolean): void {
+    const current = this.selectedIssues();
+    const next = checked ? [...current, issue] : current.filter((i) => i !== issue);
+    this.selectedIssues.set(next);
+    this._doRefresh();
+  }
+
+  clearIssuesFilter(): void {
+    this.selectedIssues.set([]);
+    this.issueSearchQuery.set('');
+    this._doRefresh();
+  }
+
+  selectAllIssues(): void {
+    const visible = this.filteredAvailableIssues();
+    const current = new Set(this.selectedIssues());
+    for (const issue of visible) current.add(issue);
+    this.selectedIssues.set(Array.from(current));
+    this._doRefresh();
+  }
+
+  clearAllIssuesVisible(): void {
+    const visibleSet = new Set(this.filteredAvailableIssues());
+    const next = this.selectedIssues().filter((issue) => !visibleSet.has(issue));
+    this.selectedIssues.set(next);
+    this._doRefresh();
+  }
+
+  // ── Private ───────────────────────────────────────────────────────────────
+  private _doRefresh: () => void = () => {
+    /*noop */
+  };
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/services/selection.service.ts
 
 ```typescript
@@ -12939,6 +14221,125 @@ export class GridContextService {
 }
 ```
 
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-dropdown.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+
+/**
+ * Desktop filter dropdown shell shared by the tags/issues/list toolbar
+ * dropdowns: a `dropdown-content` panel with a title and an optional
+ * "Clear Filter" action, with the actual filter control projected in.
+ *
+ * Rendered as the projected content of a `pc-grid-tool-btn`, so it uses
+ * `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ */
+@Component({
+  selector: 'pc-dg-filter-dropdown',
+  template: `
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
+    >
+      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
+        <span>{{ title() }}</span>
+        @if (active()) {
+          <button
+            i18n
+            class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
+            (click)="clear.emit()"
+          >
+            Clear Filter
+          </button>
+        }
+      </div>
+      <ng-content></ng-content>
+    </div>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridFilterDropdownComponent {
+  public title = input.required<string>();
+  public active = input(false);
+  public clear = output<void>();
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-section.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+import { Icon } from '@icons/icon';
+
+/**
+ * Mobile collapsible filter section shared by the narrow/tags/issues/list
+ * rows inside the combined mobile filter panel: a `<details>` with an active
+ * dot indicator, title, optional "Clear" action, and a rotating chevron.
+ * The filter control itself is projected in.
+ *
+ * Uses `display: contents` so the `<details>` stays a direct flex child of
+ * the surrounding panel column.
+ */
+@Component({
+  selector: 'pc-dg-filter-section',
+  imports: [Icon],
+  template: `
+    <details class="group" [class.border-t]="bordered()" [class.border-base-200]="bordered()" [open]="open()">
+      <summary
+        class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
+      >
+        <span class="flex items-center gap-1.5">
+          @if (active()) {
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
+          }
+          {{ title() }}
+        </span>
+        <div class="flex items-center gap-1">
+          @if (active() && clearable()) {
+            <button
+              i18n
+              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
+              (click)="clear.emit(); $event.stopPropagation()"
+            >
+              Clear
+            </button>
+          }
+          <pc-icon
+            name="chevron-down"
+            [size]="3"
+            class="transition-transform group-open:rotate-180 text-base-content/40"
+          ></pc-icon>
+        </div>
+      </summary>
+      <div class="pt-1 pb-2">
+        <ng-content></ng-content>
+      </div>
+    </details>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
+})
+export class DataGridFilterSectionComponent {
+  public title = input.required<string>();
+  public active = input(false);
+  public open = input(false);
+  public bordered = input(true);
+  public clearable = input(true);
+  public clear = output<void>();
+}
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-inline-filters-row.html
 
 ```html
@@ -12997,6 +14398,109 @@ export class GridContextService {
   </th>
   } }
 </tr>
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/multiselect-filter.ts
+
+```typescript
+import { Component, input, model, output } from '@angular/core';
+
+@Component({
+  selector: 'pc-multiselect-filter',
+  template: `
+    <div class="flex flex-col gap-1">
+      <input
+        type="text"
+        [placeholder]="'Search ' + label().toLowerCase() + '...'"
+        class="input input-bordered input-xs w-full bg-base-100"
+        [value]="searchQuery()"
+        (input)="searchQuery.set($any($event.target).value)"
+      />
+      <div class="flex gap-2 text-[11px] text-primary px-1">
+        <button i18n class="hover:underline cursor-pointer font-medium" (click)="selectAll.emit()">Select all</button>
+        <span class="text-base-300">|</span>
+        <button i18n class="hover:underline cursor-pointer font-medium" (click)="clearVisible.emit()">Clear</button>
+      </div>
+      <div class="border-t border-base-200 my-0.5"></div>
+      <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
+        @if (options().length === 0) {
+          <div i18n class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
+        } @else {
+          @for (opt of options(); track opt) {
+            <label
+              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 rounded w-full min-w-0 flex items-center select-none"
+            >
+              <input
+                type="checkbox"
+                class="checkbox checkbox-primary checkbox-xs shrink-0"
+                [checked]="selected().includes(opt)"
+                (change)="toggle.emit({ value: opt, checked: $any($event.target).checked })"
+              />
+              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="opt">{{ opt }}</span>
+            </label>
+          }
+        }
+      </div>
+    </div>
+  `,
+})
+export class MultiselectFilterComponent {
+  label = input.required<string>();
+  options = input.required<string[]>();
+  selected = input.required<string[]>();
+  searchQuery = model.required<string>();
+  maxHeight = input(9);
+
+  selectAll = output<void>();
+  clearVisible = output<void>();
+  toggle = output<{ value: string; checked: boolean }>();
+}
+```
+
+## File: apps/frontend/src/app/shared/components/datagrid/ui/singleselect-filter.ts
+
+```typescript
+import { Component, input, output } from '@angular/core';
+
+export interface SingleSelectOption {
+  value: string;
+  label: string;
+}
+
+@Component({
+  selector: 'pc-singleselect-filter',
+  template: `
+    <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
+      @if (options().length === 0) {
+        <div i18n class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
+      } @else {
+        @for (opt of options(); track opt.value) {
+          <label
+            class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded hover:bg-base-200 w-full min-w-0 flex items-center select-none"
+          >
+            <input
+              type="radio"
+              [name]="radioName()"
+              class="radio radio-primary radio-xs shrink-0"
+              [checked]="selected() === opt.value"
+              (change)="select.emit(opt.value)"
+            />
+            <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="opt.label">{{ opt.label }}</span>
+          </label>
+        }
+      }
+    </div>
+  `,
+})
+export class SingleselectFilterComponent {
+  label = input.required<string>();
+  options = input.required<SingleSelectOption[]>();
+  selected = input<string | null>(null);
+  radioName = input.required<string>();
+  maxHeight = input(9);
+
+  select = output<string>();
+}
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/datagrid.css
@@ -13487,6 +14991,31 @@ export class QueryBuilderComponent {
 }
 ```
 
+## File: apps/frontend/src/app/shared/pipes/pc-date.pipe.ts
+
+```typescript
+import { inject, Pipe, PipeTransform } from '@angular/core';
+
+import { DateFormatService } from '../services/date-format.service';
+
+/**
+ * Formats a date using the tenant's configured Appearance → Date Format setting.
+ * Impure so it reflects setting changes (via the settings snapshot signal) without a reload.
+ */
+@Pipe({
+  name: 'pcDate',
+  standalone: true,
+  pure: false,
+})
+export class PcDatePipe implements PipeTransform {
+  private readonly dates = inject(DateFormatService);
+
+  public transform(value: string | number | Date | null | undefined, pattern?: string): string {
+    return this.dates.format(value, pattern);
+  }
+}
+```
+
 ## File: apps/frontend/src/app/shared/pipes/resolve-avatar.pipe.ts
 
 ```typescript
@@ -13502,6 +15031,47 @@ export class ResolveAvatarPipe implements PipeTransform {
 
   transform(url: string | null | undefined): string | null {
     return this.userService.resolveAvatarUrl(url);
+  }
+}
+```
+
+## File: apps/frontend/src/app/shared/services/date-format.service.ts
+
+```typescript
+import { computed, inject, Service } from '@angular/core';
+import { formatDate } from '@angular/common';
+
+import { SettingsService } from '../../experiences/settings/services/settings-service';
+
+const DEFAULT_DATE_FORMAT = 'MMMM d, yyyy';
+
+/**
+ * Resolves the tenant-wide default date format (Appearance → Date Format) and formats date values
+ * with it. Backed by the settings snapshot signal so changes propagate without a reload.
+ */
+@Service()
+export class DateFormatService {
+  private readonly settings = inject(SettingsService);
+
+  /** The configured date format pattern, falling back to the project default. */
+  public readonly pattern = computed<string>(() => {
+    const raw = this.settings.snapshotSignal()['appearance.date_format'];
+    return typeof raw === 'string' && raw.trim() ? raw : DEFAULT_DATE_FORMAT;
+  });
+
+  /**
+   * Formats a date value with the tenant's configured pattern. Returns an empty string for nullish or
+   * unparseable input so callers can render their own placeholder.
+   */
+  public format(value: string | number | Date | null | undefined, pattern?: string): string {
+    if (value === null || value === undefined || value === '') return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (isNaN(date.getTime())) return String(value);
+    try {
+      return formatDate(date, pattern ?? this.pattern(), 'en-US');
+    } catch {
+      return String(value);
+    }
   }
 }
 ```
@@ -13542,30 +15112,6 @@ export const ENVIRONMENT = new InjectionToken<typeof environment>('ENVIRONMENT',
 
 ```
 
-```
-
-## File: apps/frontend/src/environments/environment.prod.ts
-
-```typescript
-export const environment = {
-  production: true,
-  apiUrl: 'https://pplcrm.example.com',
-  googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  // Set to your real base domain in production, e.g. 'mydomain.com' → forms at '<tenant>.mydomain.com'.
-  publicFormsBaseDomain: 'example.com',
-};
-```
-
-## File: apps/frontend/src/environments/environment.ts
-
-```typescript
-export const environment = {
-  production: false,
-  apiUrl: 'http://localhost:3000',
-  googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
-  // Base domain tenant subdomains hang off of, for building public form URLs (`<slug>.<baseDomain>`).
-  publicFormsBaseDomain: 'localhost',
-};
 ```
 
 ## File: apps/frontend/src/import-meta.d.ts
@@ -13620,6 +15166,51 @@ getTestBed().initTestEnvironment(BrowserDynamicTestingModule, platformBrowserDyn
   ok: true,
   text: () => Promise.resolve('<svg></svg>'),
 });
+```
+
+## File: apps/frontend/eslint.config.cjs
+
+```javascript
+/* -----------------  apps/frontend/eslint.config.cjs  -------------- */
+/* Angular-specific rules + selector prefixes for the front-end app. */
+
+const { FlatCompat } = require('@eslint/eslintrc');
+
+const compat = new FlatCompat({ baseDirectory: __dirname });
+
+module.exports = [
+  /* Angular + inline-template processing for TS files */
+  ...compat
+    .config({
+      extends: ['plugin:@nx/angular', 'plugin:@angular-eslint/template/process-inline-templates'],
+    })
+    .map((cfg) => ({
+      ...cfg,
+      files: ['**/*.ts'],
+      rules: {
+        '@angular-eslint/directive-selector': ['error', { type: 'attribute', prefix: 'pc', style: 'camelCase' }],
+        '@angular-eslint/component-selector': ['error', { type: 'element', prefix: 'pc', style: 'kebab-case' }],
+      },
+    })),
+
+  /* Stand-alone HTML templates */
+  ...compat
+    .config({
+      extends: [
+        'plugin:@nx/angular-template',
+        'plugin:@angular-eslint/template/recommended',
+        'plugin:@angular-eslint/template/accessibility',
+      ],
+    })
+    .map((cfg) => ({
+      ...cfg,
+      files: ['**/*.html'],
+      rules: {
+        '@angular-eslint/template/no-negated-async': 'error',
+        '@angular-eslint/template/i18n': 'off',
+      },
+    })),
+];
 ```
 
 ## File: apps/frontend/jest.config.ts
@@ -13947,320 +15538,179 @@ export default defineConfig({
 }
 ```
 
-## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.html
-
-```html
-<pc-auth-layout>
-  @if (isLoading()) {
-  <div class="flex flex-col items-center justify-center py-6 space-y-4">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-sm font-medium text-neutral-100">Confirming your subscription…</p>
-  </div>
-  } @else { @switch (status()) { @case ('success') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
-      <pc-icon [size]="6" name="check-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Subscription Confirmed!</h2>
-      <p class="text-sm text-neutral-300">
-        Thank you for confirming. You will now receive our newsletters. You can close this window.
-      </p>
-    </div>
-  </div>
-  } @case ('error') {
-  <div class="space-y-6 py-4 text-center">
-    <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-error/10 text-error">
-      <pc-icon [size]="6" name="exclamation-circle" />
-    </div>
-    <div class="space-y-2">
-      <h2 class="text-xl font-bold tracking-tight text-neutral-100">Confirmation Failed</h2>
-      <p class="text-sm text-neutral-300">{{ errorMessage() || 'The confirmation link expired or is invalid.' }}</p>
-    </div>
-  </div>
-  } } }
-
-  <div class="text-center text-xs mt-6 border-t border-neutral-800 pt-4">
-    <span class="text-neutral-400">
-      Copyright © 2026
-      <a href="" class="link link-hover">CampaignRaven</a>
-    </span>
-  </div>
-</pc-auth-layout>
-```
-
-## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-service.ts
+## File: apps/frontend/src/**mocks**/environment.mock.ts
 
 ```typescript
-import { Service } from '@angular/core';
-
-import { TRPCService } from '../../services/api/trpc-service';
-
-@Service()
-export class ConfirmSubscriptionService extends TRPCService<unknown> {
-  public async confirmSubscription(token: string) {
-    return this.api.webForms.confirmSubscription.mutate({ token });
-  }
-}
+export const environment = {
+  production: false,
+  apiUrl: 'http://localhost:3000',
+  googleMapsApiKey: '',
+  publicFormsBaseDomain: 'localhost',
+};
 ```
 
-## File: apps/frontend/src/app/auth/login/login-guard.ts
+## File: apps/frontend/src/**mocks**/environment.prod.mock.ts
 
 ```typescript
-import { inject } from '@angular/core';
-import type { CanActivateFn } from '@angular/router';
-import { Router } from '@angular/router';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-
-export const loginGuard: CanActivateFn = () =>
-  inject(AuthService).getUser() ? inject(Router).navigateByUrl('/summary') : true;
+export const environment = {
+  production: true,
+  apiUrl: 'https://example.com',
+  googleMapsApiKey: '',
+  publicFormsBaseDomain: 'example.com',
+};
 ```
 
-## File: apps/frontend/src/app/auth/auth-layout.ts
+## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
 
 ```typescript
-import { Component } from '@angular/core';
-import { Alerts } from '@uxcommon/components/alerts/alerts';
+import { Component, signal, inject, viewChild } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { CompaniesService } from '../services/companies-service';
 
 @Component({
-  selector: 'pc-auth-layout',
-  imports: [Alerts],
+  selector: 'pc-companies-grid',
+  imports: [DataGrid, CsvImportComponent],
   template: `
-    <div class="bg-image flex min-h-screen font-light" data-theme="light" i18n-data-theme>
-      <div class="card card-compact glass m-auto w-96 shadow-xl">
-        <div class="card-title justify-center shadow-lg">
-          <img class="p-5" src="assets/logo.png" />
-        </div>
-        <pc-alerts />
-        <div class="card-body">
-          <ng-content />
-        </div>
-      </div>
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Companies"
+        i18n-title
+        description="Manage corporate contacts, associate people with companies, and track organization profiles."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="false"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        (importCSV)="openImportDialog()"
+        plusIcon="add-company"
+        i18n-plusIcon
+      ></pc-datagrid>
     </div>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Companies from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
   `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: CompaniesService },
+    provideDataGridConfig({ messages: { exportEntity: 'companies', exportFileName: 'companies-export.csv' } }),
+  ],
 })
-export class AuthLayoutComponent {}
-```
+export class CompaniesGrid {
+  private readonly companiesService = inject(CompaniesService);
+  private readonly grid = viewChild<DataGrid<'companies', any>>('grid');
 
-## File: apps/frontend/src/app/experiences/companies/ui/people-in-company.ts
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
 
-```typescript
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { PersonsService } from '../../persons/services/persons-service';
-import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models';
+  protected readonly mappableFields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'];
+  protected readonly importerOpen = signal(false);
+  protected readonly importSummary = signal<CsvImportSummary | null>(null);
 
-@Component({
-  selector: 'pc-people-in-company',
-  imports: [RouterModule],
-  template: `<div>
-    <ul class="space-y-1.5">
-      @if (!peopleInCompany().length && !isLoading()) {
-        <span i18n class="text-sm text-base-content/50 italic">No employees found.</span>
-      }
-      @for (person of peopleInCompany(); track person.id) {
-        <li class="flex items-center gap-2">
-          <a routerLink="/people/{{ person.id }}" class="link hover:no-underline font-medium text-primary">
-            {{ person.full_name }}
-          </a>
-          @if (person.email) {
-            <span class="text-xs text-base-content/40">({{ person.email }})</span>
-          }
-        </li>
-      }
-    </ul>
-    @if (hasMore()) {
-      <div class="mt-2">
-        <button
-          i18n
-          type="button"
-          class="btn btn-xs btn-ghost text-primary"
-          (click)="loadMore()"
-          [disabled]="isLoading()"
-        >
-          - More -
-        </button>
-      </div>
-    }
-  </div>`,
-})
-export class PeopleInCompany {
-  private personsSvc = inject(PersonsService);
+  protected col = [
+    { field: 'name', headerName: 'Company Name', editable: true },
+    { field: 'website', headerName: 'Website', editable: true },
+    { field: 'industry', headerName: 'Industry', editable: true },
+    { field: 'email', headerName: 'Email', editable: true },
+    { field: 'phone', headerName: 'Phone', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'created_at',
+      headerName: 'Created',
+      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
+    },
+  ];
 
-  protected peopleInCompany = signal<Array<Persons & { full_name: string }>>([]);
-  protected isLoading = signal(false);
-  protected hasMore = signal(false);
-
-  private readonly pageSize = 25;
-  private currentOffset = signal(0);
-  private requestSequence = 0;
-  private lastParams: { id: string } | null = null;
-
-  public companyId = input.required<string>();
-
-  constructor() {
-    effect(() => {
-      const id = this.companyId();
-
-      if (!id) {
-        this.resetState();
-        this.lastParams = null;
-        return;
-      }
-
-      if (this.lastParams && this.lastParams.id === id) {
-        return;
-      }
-
-      this.lastParams = { id };
-      this.resetState();
-      void this.fetchPage({ id, offset: 0, replace: true });
-    });
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
   }
 
-  protected async loadMore() {
-    if (this.isLoading() || !this.hasMore()) {
-      return;
-    }
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      name: 'name',
+      companyname: 'name',
+      description: 'description',
+      desc: 'description',
+      website: 'website',
+      web: 'website',
+      email: 'email',
+      phone: 'phone',
+      tel: 'phone',
+      telephone: 'phone',
+      industry: 'industry',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  };
 
-    const id = this.companyId();
-    if (!id) {
-      return;
-    }
-
-    const offset = this.currentOffset();
-    await this.fetchPage({ id, offset, replace: false });
-  }
-
-  private resetState() {
-    this.peopleInCompany.set([]);
-    this.currentOffset.set(0);
-    this.hasMore.set(false);
-    this.isLoading.set(false);
-    this.requestSequence++;
-  }
-
-  private async fetchPage(params: { id: string; offset: number; replace: boolean }) {
-    const { id, offset, replace } = params;
-    const requestId = ++this.requestSequence;
-    this.isLoading.set(true);
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
 
     try {
-      const people = (await this.personsSvc.getByCompanyId(id, {
-        limit: this.pageSize,
-        offset,
-      })) as Persons[];
+      const res = await this.companiesService.import(rows, skippedReported, fileName || undefined);
 
-      if (requestId !== this.requestSequence) {
-        return;
-      }
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
 
-      const mapped = people.map((person) => ({
-        ...person,
-        full_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
-      }));
-
-      if (replace) {
-        this.peopleInCompany.set(mapped);
-      } else {
-        this.peopleInCompany.update((current) => [...current, ...mapped]);
-      }
-
-      this.currentOffset.set(offset + people.length);
-      this.hasMore.set(people.length === this.pageSize);
-    } finally {
-      if (requestId === this.requestSequence) {
-        this.isLoading.set(false);
-      }
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
     }
+  }
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
   }
 }
-```
 
-## File: apps/frontend/src/app/experiences/donations/ui/donations-grid.ts
-
-```typescript
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
-import { RouterLink, RouterLinkActive } from '@angular/router';
-import { CurrencyPipe } from '@angular/common';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { SpinOnClickDirective } from '@uxcommon/directives/spin-on-click.directive';
-import { DonationsService } from '../../../services/api/donations-service';
-
-@Component({
-  selector: 'pc-donations-grid',
-  imports: [RouterLink, RouterLinkActive, Icon, SpinOnClickDirective, CurrencyPipe],
-  templateUrl: './donations-grid.html',
-})
-export class DonationsGridComponent implements OnInit {
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly alertSvc = inject(AlertService);
-
-  protected readonly donations = signal<any[]>([]);
-  protected readonly _loading = createLoadingGate();
-
-  // Summary statistics computed signals
-  protected readonly totalDonated = computed(() => {
-    return (
-      this.donations()
-        .filter((d) => d.status === 'succeeded')
-        .reduce((sum, d) => sum + Number(d.amount || 0), 0) / 100
-    );
-  });
-
-  protected readonly totalTaxCredits = computed(() => {
-    return (
-      this.donations()
-        .filter((d) => d.status === 'succeeded')
-        .reduce((sum, d) => sum + Number(d.tax_credit_amount || 0), 0) / 100
-    );
-  });
-
-  protected readonly successCount = computed(() => {
-    return this.donations().filter((d) => d.status === 'succeeded').length;
-  });
-
-  ngOnInit() {
-    void this.load();
-  }
-
-  protected refresh() {
-    void this.load();
-  }
-
-  protected formatCurrency(amountCents: number | null | undefined): string {
-    if (amountCents === null || amountCents === undefined) return '$0.00';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amountCents / 100);
-  }
-
-  protected formatDate(dateStr: string): string {
-    try {
-      return new Date(dateStr).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return '';
-    }
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const data = await this.donationsSvc.listDonations();
-      this.donations.set(data || []);
-    } catch (_err) {
-      this.alertSvc.showError('Failed to load donations. Please try again.');
-    } finally {
-      end();
-    }
-  }
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 ```
 
@@ -14590,86 +16040,243 @@ export class PeopleDuplicatesComponent extends BaseDuplicateManager<any> impleme
 }
 ```
 
-## File: apps/frontend/src/app/experiences/duplicates/merge-summary.ts
+## File: apps/frontend/src/app/experiences/emails/services/store/email-actions.store.ts
 
 ```typescript
-import { Component, input, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { LowerCasePipe } from '@angular/common';
+import { inject, signal, Service } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
-@Component({
-  selector: 'pc-duplicate-page-shell',
-  imports: [RouterLink, Icon, LowerCasePipe],
-  templateUrl: './merge-summary.html',
-})
-export class DuplicatePageShellComponent {
-  title = input.required<string>();
-  icon = input.required<PcIconNameType>();
-  description = input.required<string>();
-  entityRoute = input.required<string>();
-  isLoading = input.required<boolean>();
-  isEmpty = input.required<boolean>();
-  currentPage = input.required<number>();
-  totalPages = input.required<number>();
-  totalGroups = input.required<number>();
+import { ComposePayload, DraftPayload } from '../../ui/email-compose/email-compose';
+import { EmailsService } from '../emails-service';
+import { EmailCacheStore } from './email-cache.store';
+import { EmailFoldersStore } from './email-folders.store';
+import { type EmailId, EmailStateStore } from './email-state.store';
+import { ALL_FOLDERS, EmailStatus } from '../../../../../../../../libs/common/src/lib/emails';
+import type { EmailDraftType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
 
-  onNext = output<void>();
-  onPrev = output<void>();
-}
+@Service()
+export class EmailActionsStore {
+  public readonly sendingCount = signal(0);
+  private readonly alerts = inject(AlertService);
+  private readonly cache = inject(EmailCacheStore);
+  private readonly folders = inject(EmailFoldersStore);
+  private readonly state = inject(EmailStateStore);
+  private readonly svc = inject(EmailsService);
 
-@Component({
-  selector: 'pc-merge-summary',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-300/40 border border-base-300 flex flex-col justify-between h-full">
-      <div class="card-body p-5">
-        <h4 class="font-bold text-base-content mb-2 flex items-center gap-2">
-          <pc-icon name="information-circle" class="text-warning" [size]="5"></pc-icon>
-          Merge Summary
-        </h4>
+  public async addComment(emailId: EmailId, authorId: string, commentText: string): Promise<any> {
+    const created = await this.svc.addComment(String(emailId), authorId, commentText);
+    this.cache.appendCommentToHeader(emailId, created);
+    return created;
+  }
 
-        <div class="space-y-3 text-sm flex-1">
-          @if (!hasSelections()) {
-            <div i18n class="text-base-content/50 py-4 italic text-center text-xs">
-              Select which record to Keep and which to Merge.
-            </div>
-          } @else {
-            <div class="space-y-3">
-              <div class="alert alert-info py-2 text-[11px] leading-relaxed">
-                <span>{{ mergeDescription() }}</span>
-              </div>
-              <div class="text-xs space-y-1.5 bg-base-100 p-2.5 rounded-lg border border-base-300">
-                <div i18n class="font-semibold text-base-content/70">Merge Actions:</div>
-                <div class="flex justify-between text-success gap-2">
-                  <span i18n class="flex-shrink-0">Keep Primary:</span>
-                  <span class="font-bold truncate text-right flex-1" [title]="targetName()">{{ targetName() }}</span>
-                </div>
-                <div class="flex justify-between text-error gap-2">
-                  <span i18n class="flex-shrink-0">Remove Duplicate:</span>
-                  <span class="font-bold truncate text-right flex-1" [title]="sourceName()">{{ sourceName() }}</span>
-                </div>
-              </div>
-            </div>
-          }
-        </div>
+  public async assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null): Promise<void> {
+    const key = String(emailId);
+    await this.updateProperty(
+      key,
+      { assigned_to: userId ?? undefined },
+      () => this.svc.assign(key, userId, assigneeName),
+      {
+        refreshFolder: true,
+        refreshCounts: true,
+      },
+    );
+  }
 
-        <div class="card-actions mt-4 pt-3 border-t border-base-300">
-          <button class="btn btn-primary btn-sm w-full gap-2" [disabled]="!hasSelections()" (click)="onMerge.emit()">
-            <pc-icon name="merge" [size]="4"></pc-icon> Merge Records
-          </button>
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class MergeSummaryComponent {
-  hasSelections = input.required<boolean>();
-  targetName = input<string>('');
-  sourceName = input<string>('');
-  mergeDescription = input.required<string>();
-  onMerge = output<void>();
+  public async deleteComment(emailId: EmailId, commentId: string | number): Promise<void> {
+    const key = String(emailId);
+    const prevHeader = this.cache.getEmailHeaderById(key)(); // snapshot before change
+
+    // Optimistic: remove from cache now
+    this.cache.removeCommentFromHeader(key, commentId);
+
+    try {
+      await this.svc.deleteComment(key, String(commentId));
+      // success: nothing else to do, UI is already updated
+    } catch (e) {
+      console.error('deleteComment failed; rolling back', e);
+      if (typeof prevHeader !== 'undefined') {
+        this.cache.replaceHeader(key, prevHeader);
+      } else {
+        // If we somehow had no header snapshot, refetch to get back to server truth
+        await this.svc
+          .getEmailWithHeaders(key)
+          .then((res: any) => {
+            this.cache.replaceHeader(key, res?.header ?? null);
+          })
+          .catch(() => {
+            /* ignore */
+          });
+      }
+      throw e;
+    }
+  }
+
+  public async deleteDraft(id: string): Promise<void> {
+    await this.svc.deleteDraft(id);
+    await this.folders.refreshFolderCounts();
+    if (this.folders.currentSelectedFolderId() === ALL_FOLDERS.DRAFTS) {
+      await this.folders.loadEmailsForFolder(ALL_FOLDERS.DRAFTS);
+    }
+  }
+
+  public async deleteEmail(emailId: EmailId): Promise<void> {
+    const key = String(emailId);
+    try {
+      await this.svc.delete(key);
+      this.state.removeEmail(key);
+
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      await this.folders.refreshFolderCounts();
+    } catch (e) {
+      this.alerts.showError(getUserErrorMessage(e, 'Could not delete the email. Please try again.'));
+      throw e;
+    }
+  }
+
+  public getDraft(id: string): Promise<EmailDraftType> {
+    return this.svc.getDraft(id);
+  }
+
+  public async restoreFromTrash(emailId: EmailId): Promise<void> {
+    const key = String(emailId);
+    try {
+      await this.svc.restoreFromTrash([key]);
+      this.state.removeEmail(key); // Remove from current state as it's no longer in Trash
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      await this.folders.refreshFolderCounts();
+    } catch (e) {
+      this.alerts.showError(getUserErrorMessage(e, 'Could not restore the email. Please try again.'));
+      throw e;
+    }
+  }
+
+  public async saveDraft(input: DraftPayload): Promise<{ id: string }> {
+    const saved = await this.svc.saveDraft(input);
+    const currentFolderId = this.folders.currentSelectedFolderId();
+    if (currentFolderId === ALL_FOLDERS.DRAFTS) {
+      await this.folders.loadEmailsForFolder(ALL_FOLDERS.DRAFTS);
+    } else {
+      await this.folders.refreshFolderCounts();
+    }
+    return saved as { id: string };
+  }
+
+  public async sendEmail(input: ComposePayload): Promise<EmailType> {
+    this.sendingCount.update((c) => c + 1);
+    try {
+      const created = await this.svc.sendEmail(input);
+
+      // Reload the current folder to show the new email in Outbox/Sent immediately.
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      await this.folders.refreshFolderCounts();
+
+      // Trigger automatic background sync shortly after sending to give the dispatch time to process.
+      setTimeout(() => {
+        this.svc
+          .syncEmails()
+          .then(async () => {
+            const fid = this.folders.currentSelectedFolderId();
+            if (fid) {
+              await this.folders.loadEmailsForFolder(fid);
+            }
+            await this.folders.refreshFolderCounts();
+          })
+          .catch((err) => {
+            console.warn('Auto-sync after send failed:', err);
+          });
+      }, 4000);
+
+      // Optional: warm header cache (if your API returns header)
+      // this.cache.replaceHeader(String(created.id), created.header ?? null);
+
+      return created;
+    } catch (e) {
+      this.alerts.showError(getUserErrorMessage(e, 'Could not send the email. Please try again.'));
+      throw e;
+    } finally {
+      this.sendingCount.update((c) => c - 1);
+    }
+  }
+
+  public async toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean): Promise<void> {
+    const key = String(emailId);
+    const currentFolderId = this.folders.currentSelectedFolderId();
+    await this.updateProperty(key, { is_favourite: isFavorite }, () => this.svc.setFavourite(key, isFavorite), {
+      refreshFolder: currentFolderId === ALL_FOLDERS.FAVOURITES,
+      refreshCounts: true,
+    });
+  }
+
+  public async updateEmailStatus(emailId: EmailId, status: EmailStatus): Promise<void> {
+    const key = String(emailId);
+    await this.updateProperty(key, { status }, () => this.svc.setStatus(key, status), {
+      refreshFolder: true,
+      refreshCounts: true,
+    });
+  }
+
+  public async toggleEmailReadStatus(emailId: EmailId, isRead: boolean): Promise<void> {
+    const key = String(emailId);
+    await this.updateProperty(key, { is_read: isRead }, () => this.svc.setEmailReadStatus(key, isRead), {
+      refreshFolder: false,
+      refreshCounts: true,
+    });
+  }
+
+  public async moveToFolder(emailId: EmailId, folderId: string): Promise<void> {
+    const key = String(emailId);
+    try {
+      await this.svc.moveToFolder(key, folderId);
+      this.state.removeEmail(key);
+
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      await this.folders.refreshFolderCounts();
+    } catch (e) {
+      this.alerts.showError(getUserErrorMessage(e, 'Could not move the email. Please try again.'));
+      throw e;
+    }
+  }
+
+  private async updateProperty(
+    emailKey: string,
+    patch: Partial<EmailType>,
+    serverCall: () => Promise<unknown>,
+    opts?: { refreshFolder?: boolean; refreshCounts?: boolean },
+  ): Promise<void> {
+    const prev = this.state.patchEmail(emailKey, patch);
+    if (!prev) {
+      console.warn(`Email ${emailKey} not found in store`);
+      return;
+    }
+
+    try {
+      await serverCall();
+
+      const currentFolderId = this.folders.currentSelectedFolderId();
+      if (opts?.refreshFolder && currentFolderId) {
+        await this.folders.loadEmailsForFolder(currentFolderId);
+      }
+      if (opts?.refreshCounts) {
+        await this.folders.refreshFolderCounts();
+      }
+    } catch (e) {
+      this.state.replaceEmail(emailKey, prev);
+      throw e;
+    }
+  }
 }
 ```
 
@@ -14949,6 +16556,89 @@ export function computeEmailSla(inputs: SlaInputs, now: Date = new Date()): SlaP
   const dueIn = Math.max(1, Math.ceil(remaining));
   const tone: SlaTone = remaining <= target * WARNING_REMAINING_FRACTION ? 'warning' : 'neutral';
   return { text: `First response due in ${dueIn}h · ${targetLabel}h SLA`, tone };
+}
+```
+
+## File: apps/frontend/src/app/experiences/emails/ui/email-body/email-body.ts
+
+```typescript
+import { Component, computed, effect, inject, input, untracked } from '@angular/core';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AttachmentIconComponent } from '@uxcommon/components/icons/attachment-icon';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
+import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
+
+import { EmailsStore } from '../../services/store/emailstore';
+import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { environment } from '../../../../../environments/environment';
+
+@Component({
+  selector: 'pc-email-body',
+  imports: [SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
+  template: `<div class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar">
+    <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>
+    @if (attachments().length > 0) {
+      <div class="mt-4 flex flex-wrap gap-2">
+        @for (att of attachments(); track att.id) {
+          <a
+            class="badge badge-outline no-underline hover:text-primary group"
+            [href]="getAttachmentUrl(att)"
+            target="_blank"
+            rel="noopener"
+            i18n-rel
+          >
+            <pc-attachment-icon [filename]="att.filename" [size]="4" class="group-hover:hidden"></pc-attachment-icon>
+            <pc-icon name="arrow-down-tray" [size]="4" class="hidden group-hover:block"></pc-icon>
+            <span>{{ att.filename }} | {{ att.size_bytes | fileSize }}</span>
+          </a>
+        }
+      </div>
+    }
+  </div>`,
+})
+export class EmailBody {
+  private readonly alerts = inject(AlertService);
+  private readonly emailId = computed(() => {
+    const em = this.email();
+    return em ? String(em.id) : null;
+  });
+  private readonly store = inject(EmailsStore);
+
+  protected readonly attachments = computed(() => {
+    const id = this.emailId();
+    if (!id) return [] as any[];
+    const header = this.store.getEmailHeaderById(id)();
+    return (header?.attachments || []).filter((a: any) => !a.is_inline);
+  });
+  protected readonly bodyHtml = computed(() => {
+    const id = this.emailId();
+    return id ? (this.store.getEmailBodyById(id)() ?? '') : '';
+  });
+
+  public email = input<EmailType | null>(null);
+
+  constructor() {
+    effect(() => {
+      const id = this.emailId();
+      if (!id) return;
+
+      // Only fetch if truly not cached (undefined); empty string is a valid "loaded" result.
+      const cached = untracked(() => this.store.getEmailBodyById(id)());
+      if (typeof cached === 'undefined') {
+        this.store.loadEmailWithHeaders(id).catch((err) => {
+          console.error('Failed to load email data:', err);
+          this.alerts.showError('Failed to load email data. Please try again later.');
+        });
+      }
+    });
+  }
+
+  protected getAttachmentUrl(att: any): string {
+    // The backend returns a short-lived, email-scoped signed URL (download_url).
+    // We never build a URL with a session token in it (SECURITY-REVIEW.md 1.3).
+    return att?.download_url ? `${environment.apiUrl}${att.download_url}` : '';
+  }
 }
 ```
 
@@ -16046,294 +17736,6 @@ export class FormRenderComponent {
     const parts = name.split(/\s+/).slice(0, 2);
     return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
   });
-}
-```
-
-## File: apps/frontend/src/app/experiences/forms/ui/public-form.ts
-
-```typescript
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { FormField } from '../../../../../../../libs/common/src';
-
-import { environment } from '../../../../environments/environment';
-
-interface PublicForm {
-  id: string;
-  name: string;
-  description: string | null;
-  submit_label: string | null;
-  thanks_title: string | null;
-  thanks_body: string | null;
-  redirect_url: string | null;
-  fields: FormField[];
-}
-
-type PageState = 'loading' | 'open' | 'closed' | 'notfound' | 'thanks';
-
-/**
- * Unauthenticated public form page served at /f/:slug, outside the app shell. Fetches the form's
- * render config from the backend, collects a response with coach-don't-block validation, and posts
- * it to the existing public submit endpoint.
- */
-@Component({
-  selector: 'pc-public-form',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <div class="flex min-h-screen items-center justify-center bg-base-200 px-4 py-10">
-      @switch (state()) {
-        @case ('loading') {
-          <span class="loading loading-spinner loading-lg text-primary"></span>
-        }
-        @case ('open') {
-          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm">
-            <div class="mb-4 flex items-center gap-2">
-              <div
-                class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
-              >
-                {{ orgInitials() }}
-              </div>
-              <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
-            </div>
-
-            <h1 class="mb-1 text-xl font-semibold text-base-content">{{ form()!.name }}</h1>
-            @if (form()!.description) {
-              <p class="mb-6 text-sm leading-relaxed text-base-content/60">{{ form()!.description }}</p>
-            } @else {
-              <div class="mb-6"></div>
-            }
-
-            <form class="flex flex-col gap-5" (submit)="$event.preventDefault(); submit()" novalidate>
-              @for (field of form()!.fields; track field.key) {
-                <div class="flex flex-col gap-2">
-                  <label class="text-sm font-medium text-base-content">
-                    {{ field.label }}
-                    @if (field.required) {
-                      <span class="text-base-content/50"> *</span>
-                    }
-                  </label>
-
-                  @switch (field.type) {
-                    @case ('area') {
-                      <textarea
-                        class="textarea textarea-bordered min-h-[76px] w-full resize-none text-sm"
-                        [class.textarea-error]="!!errors()[field.key]"
-                        [placeholder]="field.placeholder ?? ''"
-                        (input)="setValue(field.key, $any($event.target).value)"
-                      ></textarea>
-                    }
-                    @case ('select') {
-                      <select
-                        class="select select-bordered w-full text-sm"
-                        [class.select-error]="!!errors()[field.key]"
-                        (change)="setValue(field.key, $any($event.target).value)"
-                      >
-                        <option value="">Choose…</option>
-                        @for (opt of field.options ?? []; track opt) {
-                          <option [value]="opt">{{ opt }}</option>
-                        }
-                      </select>
-                    }
-                    @case ('checks') {
-                      <div class="flex flex-col gap-2">
-                        @for (opt of field.options ?? []; track opt) {
-                          <label class="flex items-center gap-2 text-sm text-base-content">
-                            <input
-                              type="checkbox"
-                              class="checkbox checkbox-sm"
-                              (change)="toggleCheck(field.key, opt)"
-                            />
-                            {{ opt }}
-                          </label>
-                        }
-                      </div>
-                    }
-                    @default {
-                      <input
-                        class="input input-bordered w-full text-sm"
-                        [class.input-error]="!!errors()[field.key]"
-                        [type]="field.key === 'email' ? 'email' : 'text'"
-                        [placeholder]="field.placeholder ?? ''"
-                        (input)="setValue(field.key, $any($event.target).value)"
-                      />
-                    }
-                  }
-
-                  @if (errors()[field.key]) {
-                    <span class="text-xs text-error">{{ errors()[field.key] }}</span>
-                  } @else if (field.help) {
-                    <span class="text-xs text-base-content/50">{{ field.help }}</span>
-                  }
-                </div>
-              }
-
-              @if (submitError()) {
-                <p class="text-sm text-error">{{ submitError() }}</p>
-              }
-
-              <button class="btn btn-primary mt-1 w-full" [disabled]="submitting()" type="submit">
-                @if (submitting()) {
-                  <span class="loading loading-spinner loading-sm"></span>
-                }
-                {{ form()!.submit_label || 'Submit' }}
-              </button>
-            </form>
-
-            <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
-          </div>
-        }
-        @case ('thanks') {
-          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
-            <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
-              ✓
-            </div>
-            <h1 class="mb-2 text-xl font-semibold text-base-content">{{ form()?.thanks_title || 'Thank you!' }}</h1>
-            <p class="text-sm text-base-content/60">{{ form()?.thanks_body || 'Your response has been recorded.' }}</p>
-          </div>
-        }
-        @default {
-          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
-            <h1 class="mb-2 text-xl font-semibold text-base-content">This form is closed</h1>
-            <p class="text-sm text-base-content/60">{{ orgName() }} isn’t taking new responses here right now.</p>
-          </div>
-        }
-      }
-    </div>
-  `,
-})
-export class PublicFormComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-
-  protected readonly state = signal<PageState>('loading');
-  protected readonly orgName = signal('Our organization');
-  protected readonly form = signal<PublicForm | null>(null);
-  protected readonly errors = signal<Record<string, string>>({});
-  protected readonly submitError = signal<string | null>(null);
-  protected readonly submitting = signal(false);
-
-  private readonly values = new Map<string, string>();
-  private readonly checks = new Map<string, Set<string>>();
-
-  protected readonly orgInitials = computed(() => {
-    const parts = this.orgName().trim().split(/\s+/).slice(0, 2);
-    return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
-  });
-
-  public ngOnInit(): void {
-    void this.load();
-  }
-
-  private async load(): Promise<void> {
-    const slug = this.route.snapshot.paramMap.get('slug');
-    if (!slug) {
-      this.state.set('notfound');
-      return;
-    }
-    try {
-      const tenant = this.tenantFromHost();
-      const query = tenant ? `?t=${encodeURIComponent(tenant)}` : '';
-      const res = await fetch(`${this.apiBase()}/api/forms/f/${encodeURIComponent(slug)}${query}`);
-      if (res.status === 404) {
-        this.state.set('notfound');
-        return;
-      }
-      const data = await res.json();
-      if (data?.orgName) this.orgName.set(String(data.orgName));
-      if (data?.status === 'open' && data.form) {
-        this.form.set(data.form as PublicForm);
-        this.state.set('open');
-      } else {
-        this.state.set('closed');
-      }
-    } catch {
-      this.state.set('notfound');
-    }
-  }
-
-  protected setValue(key: string, value: string): void {
-    this.values.set(key, value);
-    if (this.errors()[key]) {
-      this.errors.update((e) => {
-        const next = { ...e };
-        delete next[key];
-        return next;
-      });
-    }
-  }
-
-  protected toggleCheck(key: string, opt: string): void {
-    const set = this.checks.get(key) ?? new Set<string>();
-    if (set.has(opt)) set.delete(opt);
-    else set.add(opt);
-    this.checks.set(key, set);
-    this.values.set(key, Array.from(set).join(', '));
-    if (this.errors()[key]) {
-      this.errors.update((e) => {
-        const next = { ...e };
-        delete next[key];
-        return next;
-      });
-    }
-  }
-
-  protected async submit(): Promise<void> {
-    const form = this.form();
-    if (!form || this.submitting()) return;
-
-    const errors: Record<string, string> = {};
-    for (const field of form.fields) {
-      if (field.required && !(this.values.get(field.key) ?? '').trim()) {
-        errors[field.key] = `${field.label} is required.`;
-      }
-    }
-    if (Object.keys(errors).length > 0) {
-      this.errors.set(errors);
-      return;
-    }
-
-    this.submitting.set(true);
-    this.submitError.set(null);
-    try {
-      const payload: Record<string, string> = {};
-      for (const [key, value] of this.values.entries()) payload[key] = value;
-
-      const res = await fetch(`${this.apiBase()}/api/forms/submit/${form.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        this.submitError.set(data?.error || 'Something went wrong. Please try again.');
-        return;
-      }
-      if (data?.redirect_url) {
-        window.location.href = String(data.redirect_url);
-        return;
-      }
-      this.state.set('thanks');
-    } catch {
-      this.submitError.set('Couldn’t reach the server. Check your connection and try again.');
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  private apiBase(): string {
-    return environment.apiUrl.replace(/\/$/, '');
-  }
-
-  /** The tenant subdomain the public page is being served on (`riverton.mydomain.com` → `riverton`). */
-  private tenantFromHost(): string | null {
-    const host = window.location.hostname.toLowerCase();
-    const base = environment.publicFormsBaseDomain.toLowerCase();
-    if (!host || host === base) return null;
-    const suffix = `.${base}`;
-    if (!host.endsWith(suffix)) return null;
-    const label = host.slice(0, -suffix.length);
-    if (!label || label.includes('.')) return null;
-    return label;
-  }
 }
 ```
 
@@ -19508,764 +20910,123 @@ export class NewsletterDetailComponent {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.html
-
-```html
-<div class="mb-6 rounded-xl border border-base-300 bg-base-100/50 p-6 shadow-sm backdrop-blur-md">
-  <div class="flex flex-col gap-3 border-b border-base-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
-    <div>
-      <h2 class="text-lg font-bold tracking-tight text-base-content">Delivery & Engagement Analytics</h2>
-      <p class="text-xs text-base-content/60">Performance overview of your dispatched marketing campaigns</p>
-    </div>
-    <div class="flex items-center justify-center gap-2 sm:justify-end">
-      <a class="btn btn-sm btn-primary gap-1 font-medium" routerLink="add">
-        <pc-icon name="plus" [size]="3"></pc-icon>
-        New Newsletter
-      </a>
-      <button
-        class="btn btn-sm btn-outline btn-ghost gap-1 font-medium capitalize"
-        (click)="collapsed.set(!collapsed())"
-      >
-        {{ collapsed() ? 'show dashboard' : 'hide dashboard' }}
-      </button>
-    </div>
-  </div>
-
-  @if (!collapsed()) {
-  <div class="mt-5 flex flex-col gap-6">
-    <!-- Stats Cards Grid -->
-    <div class="grid gap-4 grid-cols-2 md:grid-cols-5">
-      <!-- Total Campaigns Sent -->
-      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-4">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Sent Campaigns
-          </div>
-          <div class="stat-value text-xl font-extrabold text-primary sm:text-2xl mt-1">{{ stats().totalSent }}</div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Dispatched newsletters</div>
-        </div>
-      </div>
-
-      <!-- Total Recipients -->
-      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-4">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Total Delivered
-          </div>
-          <div class="stat-value text-xl font-extrabold text-info sm:text-2xl mt-1">
-            {{ formatNumber(stats().totalRecipients) }}
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Successful deliveries</div>
-        </div>
-      </div>
-
-      <!-- Avg Open Rate -->
-      <div
-        class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
-      >
-        <div>
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Avg Open Rate
-          </div>
-          <div class="stat-value text-xl font-extrabold text-success sm:text-2xl mt-1">
-            {{ stats().avgOpenRate.toFixed(1) }}%
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Read/Open engagement</div>
-        </div>
-        <div
-          class="radial-progress text-success font-bold text-[10px] flex-shrink-0"
-          [style.--value]="stats().avgOpenRate"
-          [style.--size]="'3rem'"
-          [style.--thickness]="'4px'"
-          role="progressbar"
-        >
-          {{ stats().avgOpenRate.toFixed(0) }}%
-        </div>
-      </div>
-
-      <!-- Avg Click Rate -->
-      <div
-        class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4"
-      >
-        <div>
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            Avg Click Rate
-          </div>
-          <div class="stat-value text-xl font-extrabold text-accent sm:text-2xl mt-1">
-            {{ stats().avgClickRate.toFixed(1) }}%
-          </div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Link click engagement</div>
-        </div>
-        <div
-          class="radial-progress text-accent font-bold text-[10px] flex-shrink-0"
-          [style.--value]="stats().avgClickRate"
-          [style.--size]="'3rem'"
-          [style.--thickness]="'4px'"
-          role="progressbar"
-        >
-          {{ stats().avgClickRate.toFixed(0) }}%
-        </div>
-      </div>
-
-      <!-- Bounces & Drops -->
-      <div class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md">
-        <div class="stat p-4">
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">Bounces</div>
-          <div class="stat-value text-xl font-extrabold text-warning sm:text-2xl mt-1">{{ stats().totalBounces }}</div>
-          <div class="stat-desc text-[10px] text-base-content/40 mt-1">Invalid addresses / drops</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Comparative Chart Panel -->
-    <div class="rounded-xl border border-base-200 bg-base-100 p-5 shadow-sm">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-        <h3 class="text-sm font-semibold tracking-wide uppercase text-base-content/70">
-          Campaign Comparison (Last 8 Dispatched)
-        </h3>
-        <div class="flex items-center gap-4 text-xs font-medium">
-          <div class="flex items-center gap-1.5">
-            <span class="inline-block h-3 w-3 rounded bg-primary"></span>
-            <span class="text-base-content/70">Open Rate</span>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <span class="inline-block h-3 w-3 rounded bg-secondary"></span>
-            <span class="text-base-content/70">Click Rate</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- SVG Chart -->
-      <div class="relative w-full h-[220px]">
-        @if (chartData().length > 0) {
-        <svg viewBox="0 0 800 220" width="100%" height="100%" class="overflow-visible">
-          <!-- Y-Axis Grid Lines & Labels -->
-          <g class="text-[10px] fill-base-content/40 stroke-base-content/5 font-sans" stroke-width="1">
-            <!-- 100% -->
-            <line x1="50" y1="20" x2="780" y2="20" stroke-dasharray="3,3" />
-            <text x="40" y="23" text-anchor="end">100%</text>
-
-            <!-- 75% -->
-            <line x1="50" y1="60" x2="780" y2="60" stroke-dasharray="3,3" />
-            <text x="40" y="63" text-anchor="end">75%</text>
-
-            <!-- 50% -->
-            <line x1="50" y1="100" x2="780" y2="100" stroke-dasharray="3,3" />
-            <text x="40" y="103" text-anchor="end">50%</text>
-
-            <!-- 25% -->
-            <line x1="50" y1="140" x2="780" y2="140" stroke-dasharray="3,3" />
-            <text x="40" y="143" text-anchor="end">25%</text>
-
-            <!-- 0% -->
-            <line x1="50" y1="180" x2="780" y2="180" class="stroke-base-content/20" />
-            <text x="40" y="183" text-anchor="end">0%</text>
-          </g>
-
-          <!-- Bar Groups -->
-          @for (item of chartData(); track $index; let i = $index) {
-          <g>
-            <!-- Group X offset: leftMargin(50) + i * groupWidth -->
-            <g class="transition-all duration-300 hover:opacity-90">
-              <!-- Open Rate Bar -->
-              <rect
-                [attr.x]="50 + i * groupWidth() + barSpacing()"
-                [attr.y]="180 - openBarHeight(item.openRate)"
-                [attr.width]="barWidth()"
-                [attr.height]="openBarHeight(item.openRate)"
-                rx="3"
-                class="fill-primary cursor-pointer transition-all duration-300"
-              >
-                <title>{{ item.name }} - Open Rate: {{ item.openRate.toFixed(1) }}%</title>
-              </rect>
-
-              <!-- Click Rate Bar -->
-              <rect
-                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() + 2"
-                [attr.y]="180 - clickBarHeight(item.clickRate)"
-                [attr.width]="barWidth()"
-                [attr.height]="clickBarHeight(item.clickRate)"
-                rx="3"
-                class="fill-secondary cursor-pointer transition-all duration-300"
-              >
-                <title>{{ item.name }} - Click Rate: {{ item.clickRate.toFixed(1) }}%</title>
-              </rect>
-
-              <!-- Values above bars -->
-              <text
-                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() / 2"
-                [attr.y]="180 - openBarHeight(item.openRate) - 4"
-                text-anchor="middle"
-                class="text-[9px] font-semibold fill-base-content/70 font-sans"
-              >
-                {{ item.openRate > 0 ? item.openRate.toFixed(0) + '%' : '' }}
-              </text>
-              <text
-                [attr.x]="50 + i * groupWidth() + barSpacing() + barWidth() * 1.5 + 2"
-                [attr.y]="180 - clickBarHeight(item.clickRate) - 4"
-                text-anchor="middle"
-                class="text-[9px] font-semibold fill-base-content/70 font-sans"
-              >
-                {{ item.clickRate > 0 ? item.clickRate.toFixed(0) + '%' : '' }}
-              </text>
-
-              <!-- X Axis Label (Newsletter Name) -->
-              <text
-                [attr.x]="50 + i * groupWidth() + groupWidth() / 2"
-                y="198"
-                text-anchor="middle"
-                class="text-[9px] font-semibold fill-base-content/60 font-sans"
-              >
-                {{ truncate(item.name) }}
-              </text>
-            </g>
-          </g>
-          }
-        </svg>
-        } @else {
-        <div
-          class="flex h-full w-full items-center justify-center flex-col gap-2 rounded-lg border border-dashed border-base-200 bg-base-100/50 p-6 text-center"
-        >
-          <span class="text-sm font-medium text-base-content/40">No analytics data available</span>
-          <span class="text-xs text-base-content/30"
-            >Analytics comparison will appear here once campaigns are sent and tracked.</span
-          >
-        </div>
-        }
-      </div>
-    </div>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-dashboard.ts
+## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-grid.ts
 
 ```typescript
-import { Component, input, computed, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
+import { Component, viewChild } from '@angular/core';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
 
-interface DashboardStats {
-  totalSent: number;
-  totalRecipients: number;
-  avgOpenRate: number;
-  avgClickRate: number;
-  totalBounces: number;
-}
-
-@Component({
-  selector: 'pc-newsletters-dashboard',
-  standalone: true,
-  imports: [RouterLink, Icon],
-  templateUrl: './newsletters-dashboard.html',
-  styles: [
-    `
-      .fill-primary {
-        fill: var(--color-primary, #6366f1);
-      }
-      .fill-secondary {
-        fill: var(--color-secondary, #10b981);
-      }
-    `,
-  ],
-})
-export class NewslettersDashboardComponent {
-  public rows = input<any[]>([]);
-  protected collapsed = signal(false);
-
-  // Compute overall stats from the dataset
-  protected stats = computed<DashboardStats>(() => {
-    const list = this.rows() || [];
-    // Only aggregate records that have been sent
-    const sentList = list.filter((r) => r.status === 'sent');
-
-    if (sentList.length === 0) {
-      return { totalSent: 0, totalRecipients: 0, avgOpenRate: 0, avgClickRate: 0, totalBounces: 0 };
-    }
-
-    const totalSent = sentList.length;
-    let totalRecipients = 0;
-    let totalOpens = 0;
-    let totalClicks = 0;
-    let totalBounces = 0;
-
-    for (const r of sentList) {
-      totalRecipients += Number(r.delivered_count ?? r.total_recipients ?? 0);
-      totalOpens += Number(r.unique_opens ?? 0);
-      totalClicks += Number(r.unique_clicks ?? 0);
-      totalBounces += Number(r.bounce_count ?? 0);
-    }
-
-    const avgOpenRate = totalRecipients > 0 ? (totalOpens / totalRecipients) * 100 : 0;
-    const avgClickRate = totalRecipients > 0 ? (totalClicks / totalRecipients) * 100 : 0;
-
-    return {
-      totalSent,
-      totalRecipients,
-      avgOpenRate,
-      avgClickRate,
-      totalBounces,
-    };
-  });
-
-  // Extract comparative chart dataset (up to last 8 sent newsletters)
-  protected chartData = computed(() => {
-    const list = this.rows() || [];
-    // Filter for sent items and sort by date descending
-    const sent = list
-      .filter((r) => r.status === 'sent' && r.send_date)
-      .sort((a, b) => new Date(b.send_date).getTime() - new Date(a.send_date).getTime());
-
-    // Take up to 8 items, then reverse to display chronologically (left to right)
-    return sent
-      .slice(0, 8)
-      .reverse()
-      .map((r) => ({
-        name: r.name || 'Newsletter',
-        openRate: Number(r.open_rate ?? 0),
-        clickRate: Number(r.click_rate ?? 0),
-      }));
-  });
-
-  // SVG Chart layout computations
-  protected groupWidth = computed(() => {
-    const n = this.chartData().length;
-    return n > 0 ? Math.floor(730 / n) : 730;
-  });
-
-  protected barSpacing = computed(() => {
-    const gw = this.groupWidth();
-    return Math.floor(gw * 0.18);
-  });
-
-  protected barWidth = computed(() => {
-    const gw = this.groupWidth();
-    return Math.floor(gw * 0.28);
-  });
-
-  protected openBarHeight(rate: number): number {
-    // 160px is the maximum height of a bar (corresponding to 100%)
-    const clamped = Math.max(0, Math.min(100, rate));
-    return Math.round((clamped / 100) * 160);
-  }
-
-  protected clickBarHeight(rate: number): number {
-    const clamped = Math.max(0, Math.min(100, rate));
-    return Math.round((clamped / 100) * 160);
-  }
-
-  protected truncate(value: string): string {
-    if (value.length <= 15) return value;
-    return value.slice(0, 12) + '...';
-  }
-
-  protected formatNumber(value: number): string {
-    return new Intl.NumberFormat().format(value);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/services/persons-service.ts
-
-```typescript
-import { Service } from '@angular/core';
-import {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  PERSONINHOUSEHOLDTYPE,
-  UpdatePersonsType,
-  getAllOptionsType,
-} from '../../../../../../../libs/common/src';
-
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { RouterInputs, RouterOutputs } from '../../../services/api/trpc-types';
-
-@Service()
-export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsType> {
-  protected override readonly endpointName = 'persons';
-
-  public add(row: UpdatePersonsType, options?: any) {
-    return this.api.persons.add.mutate(row, options);
-  }
-
-  public addMany(rows: UpdatePersonsType[]) {
-    return Promise.resolve(rows);
-  }
-
-  public attachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
-    return this.api.persons.attachTag.mutate({ id: id, tag_name, type });
-  }
-
-  public count(): Promise<number> {
-    return this.api.persons.count.query();
-  }
-  public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return (await this.api.persons.delete.mutate({ id, force }, opts as any)) !== null;
-    }
-    return (await this.api.persons.delete.mutate(id, opts as any)) !== null;
-  }
-
-  public override async deleteMany(ids: string[], force?: boolean, skipAlert = false): Promise<boolean> {
-    const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
-    if (force !== undefined) {
-      return await this.api.persons.deleteMany.mutate({ ids, force }, opts as any);
-    }
-    return await this.api.persons.deleteMany.mutate(ids, opts as any);
-  }
-  public moveEntireHousehold(fromHouseholdId: string, toHouseholdId: string) {
-    return this.api.persons.moveEntireHousehold.mutate({ fromHouseholdId, toHouseholdId });
-  }
-
-  public detachTag(
-    id: string,
-    tag_name: string,
-    type?: 'tag' | 'issue',
-  ): Promise<RouterOutputs['persons']['detachTag']> {
-    return this.api.persons.detachTag.mutate({ id, tag_name, type });
-  }
-
-  public getAll(options?: getAllOptionsType) {
-    return this.getAllWithAddress(options);
-  }
-
-  // We don't support archives
-  public getAllArchived(_options?: getAllOptionsType) {
-    return Promise.resolve({ rows: [], count: 0 });
-  }
-
-  public async getAllWithAddress(options?: getAllOptionsType) {
-    return this.api.persons.getAllWithAddress.query(options, {
-      signal: this.ac.signal,
-    });
-  }
-
-  public getByHouseholdId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByHouseholdId.query({ id: id, options });
-  }
-
-  public getByCompanyId(id: string, options?: getAllOptionsType) {
-    return this.api.persons.getByCompanyId.query({ id: id, options });
-  }
-
-  public countByCompanyId(id: string): Promise<number> {
-    return this.api.persons.countByCompanyId.query({ id });
-  }
-
-  public getById(id: string) {
-    return this.api.persons.getById.query(id);
-  }
-
-  public async getPeopleInHousehold(id: string | null | undefined, options?: getAllOptionsType) {
-    if (!id) {
-      return [];
-    }
-
-    const requiredColumns = ['id', 'first_name', 'middle_names', 'last_name'];
-    const mergedColumns = Array.from(new Set([...(options?.columns ?? []), ...requiredColumns]));
-    const requestOptions = {
-      ...options,
-      columns: mergedColumns,
-    };
-
-    const peopleInHousehold = (await this.getByHouseholdId(id, requestOptions)) as PERSONINHOUSEHOLDTYPE[];
-
-    return peopleInHousehold.map((person) => {
-      return {
-        ...person,
-        full_name: `${person.first_name || ''} ${person.middle_names || ''} ${person.last_name || ''}`.trim(),
-      };
-    });
-  }
-
-  public getActivity(id: string) {
-    return this.api.persons.getActivity.query(id);
-  }
-
-  public async getTags(id: string, type?: 'tag' | 'issue') {
-    const tags = await this.api.persons.getTags.query({ id, type });
-    return tags.map((tag: { name: string }) => tag.name);
-  }
-
-  public import(
-    rows: RouterInputs['persons']['import']['rows'],
-    tags: string[] = [],
-    skipped = 0,
-    fileName?: string | null,
-  ): Promise<RouterOutputs['persons']['import']> {
-    // Opt-out of global error toast; importer UI shows a scoped summary instead
-    return this.api.persons.import.mutate({ rows, tags, skipped, file_name: fileName ?? undefined }, {
-      context: { skipErrorHandler: true },
-    } as any);
-  }
-
-  public async removeHousehold(id: string) {
-    return this.api.persons.removeHousehold.mutate(id);
-  }
-
-  public async update(id: string, data: UpdatePersonsType, options?: any) {
-    return this.api.persons.update.mutate({ id: id, data }, options);
-  }
-
-  public exportCsv(input: ExportCsvInputType): Promise<ExportCsvResponseType> {
-    return this.api.persons.exportCsv.mutate(input);
-  }
-
-  public getPotentialDuplicates(
-    options?: RouterInputs['persons']['getPotentialDuplicates'],
-  ): Promise<RouterOutputs['persons']['getPotentialDuplicates']> {
-    return this.api.persons.getPotentialDuplicates.query(options);
-  }
-
-  public getDuplicateCounts(): Promise<RouterOutputs['persons']['getDuplicateCounts']> {
-    return this.api.persons.getDuplicateCounts.query();
-  }
-
-  public mergePersons(target_id: string, source_id: string): Promise<RouterOutputs['persons']['mergePersons']> {
-    return this.api.persons.mergePersons.mutate({ target_id, source_id });
-  }
-}
-
-export type DATA_TYPE = 'persons' | 'households';
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/connection-card.ts
-
-```typescript
-import { Component, computed, input, output } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { RELATION_TYPE_LABELS } from '../../../../../../../libs/common/src';
-
-type ConnectionRow = {
-  id: string;
-  from_person_id: string;
-  to_person_id: string;
-  relation_type: string;
-  custom_label: string | null;
-  is_mutual: boolean;
-  notes: string | null;
-  from_first_name: string | null;
-  from_last_name: string | null;
-  to_first_name: string | null;
-  to_last_name: string | null;
-  created_at: Date | string;
-};
-
-const BADGE_CLASSES: Record<string, string> = {
-  referred_by: 'badge-secondary',
-  referred_to: 'badge-secondary',
-  close_friend: 'badge-success',
-  family_member: 'badge-primary',
-  spouse: 'badge-primary',
-  colleague: 'badge-neutral',
-  org_affiliation: 'badge-warning',
-  introduced_by: 'badge-info',
-  introduced_to: 'badge-info',
-  custom: 'badge-ghost',
-};
+import { NewslettersService } from '../services/newsletters-service';
+import { NewslettersDashboardComponent } from './newsletters-dashboard';
 
 @Component({
-  selector: 'pc-connection-card',
-  imports: [RouterModule, Icon],
+  selector: 'pc-newsletters-grid',
+  imports: [DataGrid, NewslettersDashboardComponent],
   template: `
-    <div class="flex items-center gap-3 p-3 rounded-xl border border-base-200 hover:bg-base-50 transition-colors group">
-      <!-- Avatar -->
-      <div class="avatar placeholder shrink-0">
-        <div class="bg-neutral text-neutral-content rounded-full w-10 h-10 flex items-center justify-center">
-          <span class="text-sm font-bold">{{ initials() }}</span>
-        </div>
-      </div>
+    <div class="flex flex-col gap-6">
+      <pc-newsletters-dashboard [rows]="grid?.rows() ?? []"></pc-newsletters-dashboard>
 
-      <!-- Info -->
-      <div class="flex-1 min-w-0">
-        <a
-          [routerLink]="['/people', otherPerson().id]"
-          class="font-semibold text-sm hover:text-primary transition-colors block truncate"
-        >
-          {{ otherPerson().first_name }} {{ otherPerson().last_name }}
-        </a>
-        <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-          <span class="text-xs font-mono text-base-content/50">{{ directionLabel() }}</span>
-          <span class="badge badge-sm {{ badgeClass() }}">{{ relationLabel() }}</span>
-          @if (connection().notes) {
-            <span class="text-xs text-base-content/40 truncate max-w-[140px]">{{ connection().notes }}</span>
-          }
-        </div>
-      </div>
-
-      <!-- Remove -->
-      <button
-        type="button"
-        class="btn btn-ghost btn-xs btn-circle text-error/50 hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
-        (click)="remove.emit(connection().id)"
-        data-tip="Remove connection"
-        i18n-data-tip
-      >
-        <pc-icon name="x-mark" [size]="3"></pc-icon>
-      </button>
+      <pc-datagrid
+        #grid
+        [colDefs]="col"
+        [disableDelete]="true"
+        [disableView]="false"
+        [disableImport]="true"
+        [disableExport]="false"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-newsletter"
+        i18n-plusIcon
+      ></pc-datagrid>
     </div>
   `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: NewslettersService },
+    provideDataGridConfig({ messages: { exportEntity: 'newsletters', exportFileName: 'newsletters-export.csv' } }),
+  ],
 })
-export class ConnectionCard {
-  readonly connection = input.required<ConnectionRow>();
-  readonly currentPersonId = input.required<string>();
-  readonly remove = output<string>();
+export class NewslettersGridComponent {
+  protected readonly grid = viewChild<DataGrid<'newsletters', UpdateMarketingEmailType>>('grid');
 
-  protected readonly otherPerson = computed(() => {
-    const c = this.connection();
-    const isFrom = String(c.from_person_id) === String(this.currentPersonId());
-    return {
-      id: isFrom ? String(c.to_person_id) : String(c.from_person_id),
-      first_name: isFrom ? c.to_first_name : c.from_first_name,
-      last_name: isFrom ? c.to_last_name : c.from_last_name,
-    };
+  private readonly countFormatter = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 0,
+  });
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  private readonly percentFormatter = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 0,
   });
 
-  protected readonly directionLabel = computed(() => {
-    const c = this.connection();
-    if (c.is_mutual) return '↔';
-    return String(c.from_person_id) === String(this.currentPersonId()) ? '→' : '←';
-  });
+  protected col: ColDef[] = [
+    { field: 'name', headerName: 'Newsletter name' },
+    {
+      field: 'status',
+      headerName: 'Status',
+      valueFormatter: (p: CellParams) => this.formatStatus(p.value ?? p.data?.['status']),
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Last updated at',
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
+    },
+    {
+      field: 'delivered_count',
+      headerName: 'Delivered',
+      valueFormatter: (p: CellParams) => this.formatCount(p.value ?? p.data?.['delivered_count']),
+    },
+    {
+      field: 'total_recipients',
+      headerName: 'Recipients',
+      valueFormatter: (p: CellParams) => this.formatCount(p.value ?? p.data?.['total_recipients']),
+    },
+    {
+      field: 'open_rate',
+      headerName: 'Open rate',
+      valueFormatter: (p: CellParams) => this.formatPercent(p.value ?? p.data?.['open_rate']),
+    },
+    {
+      field: 'click_rate',
+      headerName: 'Click rate',
+      valueFormatter: (p: CellParams) => this.formatPercent(p.value ?? p.data?.['click_rate']),
+    },
+    {
+      field: 'send_date',
+      headerName: 'Send date',
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['send_date']),
+    },
+  ];
 
-  protected readonly initials = computed(() => {
-    const p = this.otherPerson();
-    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
-  });
-
-  protected readonly badgeClass = computed(() => BADGE_CLASSES[this.connection().relation_type] ?? 'badge-ghost');
-
-  protected readonly relationLabel = computed(() => {
-    const c = this.connection();
-    if (c.relation_type === 'custom' && c.custom_label) return c.custom_label;
-    return RELATION_TYPE_LABELS[c.relation_type as keyof typeof RELATION_TYPE_LABELS] ?? c.relation_type;
-  });
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/people-in-household.ts
-
-```typescript
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { RouterModule } from '@angular/router';
-import { PERSONINHOUSEHOLDTYPE } from '../../../../../../../libs/common/src';
-
-import { PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-people-in-household',
-  imports: [RouterModule],
-  template: `<div>
-    <ul>
-      @if (!peopleInHousehold().length && !isLoading()) {
-        <span i18n> No one else </span>
-      }
-      @for (person of peopleInHousehold(); track person.id) {
-        <li>
-          <a routerLink="/people/{{ person.id }}" class="link hover:no-underline">{{ person.full_name }}</a>
-        </li>
-      }
-    </ul>
-    @if (hasMore()) {
-      <div class="mt-2">
-        <button i18n type="button" class="link" (click)="loadMore()" [disabled]="isLoading()">- More -</button>
-      </div>
-    }
-  </div>`,
-})
-export class PeopleInHousehold {
-  private personsSvc = inject(PersonsService);
-
-  protected peopleInHousehold = signal<PERSONINHOUSEHOLDTYPE[]>([]);
-  protected isLoading = signal(false);
-  protected hasMore = signal(false);
-
-  private readonly pageSize = 25;
-  private currentOffset = signal(0);
-  private requestSequence = 0;
-  private lastParams: { id: string; excludeId: string | null } | null = null;
-
-  public excludePersonId = input<string | null>(null);
-
-  public householdId = input.required<string>();
-
-  constructor() {
-    // React to input changes
-    effect(() => {
-      const id = this.householdId();
-      const excludeId = this.excludePersonId();
-
-      if (!id) {
-        this.resetState();
-        this.lastParams = null;
-        return;
-      }
-
-      if (this.lastParams && this.lastParams.id === id && this.lastParams.excludeId === excludeId) {
-        return;
-      }
-
-      this.lastParams = { id, excludeId };
-      this.resetState();
-      void this.fetchPage({ id, excludeId, offset: 0, replace: true });
-    });
+  private formatCount(value: unknown): string {
+    const num = Number(value);
+    return Number.isFinite(num) ? this.countFormatter.format(num) : '--';
   }
 
-  protected async loadMore() {
-    if (this.isLoading() || !this.hasMore()) {
-      return;
-    }
-
-    const id = this.householdId();
-    if (!id) {
-      return;
-    }
-
-    const excludeId = this.excludePersonId();
-    const offset = this.currentOffset();
-    await this.fetchPage({ id, excludeId, offset, replace: false });
+  private formatDate(value: unknown): string {
+    if (!value) return '--';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '--';
+    return this.dateFormatter.format(date);
   }
 
-  private resetState() {
-    this.peopleInHousehold.set([]);
-    this.currentOffset.set(0);
-    this.hasMore.set(false);
-    this.isLoading.set(false);
-    this.requestSequence++;
+  private formatPercent(value: unknown): string {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '--';
+    return `${this.percentFormatter.format(num)}%`;
   }
 
-  private async fetchPage(params: { id: string; excludeId: string | null; offset: number; replace: boolean }) {
-    const { id, excludeId, offset, replace } = params;
-    const requestId = ++this.requestSequence;
-    this.isLoading.set(true);
-
-    try {
-      const people = await this.personsSvc.getPeopleInHousehold(id, {
-        limit: this.pageSize,
-        offset,
-      });
-
-      if (requestId !== this.requestSequence) {
-        return;
-      }
-
-      const filtered = excludeId ? people.filter((p) => p.id !== excludeId) : people;
-
-      if (replace) {
-        this.peopleInHousehold.set(filtered);
-      } else {
-        this.peopleInHousehold.update((current) => [...current, ...filtered]);
-      }
-
-      this.currentOffset.set(offset + people.length);
-      this.hasMore.set(people.length === this.pageSize);
-    } finally {
-      if (requestId === this.requestSequence) {
-        this.isLoading.set(false);
-      }
-    }
+  private formatStatus(value: unknown): string {
+    if (!value) return '--';
+    const text = String(value).trim();
+    if (!text) return '--';
+    return text.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 }
 ```
@@ -20926,6 +21687,611 @@ export class AccountSettingsComponent extends TRPCService<any> implements OnInit
     }
   }
 }
+```
+
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.html
+
+```html
+<div class="space-y-8">
+  <!-- Stripe Connection Section -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+      <h3 class="text-lg font-semibold flex items-center gap-2">
+        <pc-icon name="credit-card" class="text-primary" [size]="5"></pc-icon>
+        Stripe Integration
+      </h3>
+      <span
+        class="badge badge-sm font-medium"
+        [class.badge-success]="stripeSecretKey().trim()"
+        [class.badge-neutral]="!stripeSecretKey().trim()"
+      >
+        {{ stripeSecretKey().trim() ? 'Connected' : 'Not Configured' }}
+      </span>
+    </div>
+
+    <!-- Security Banner -->
+    <div
+      class="alert alert-warning text-xs rounded-xl p-3 border-warning/30 bg-warning/5 text-warning-content shadow-sm flex items-start gap-3"
+    >
+      <pc-icon name="shield-exclamation" [size]="5" class="shrink-0 mt-0.5 text-warning"></pc-icon>
+      <div>
+        <strong class="font-semibold">Security Best Practice: Use Stripe Restricted API Keys (RAK)</strong>
+        <p class="mt-0.5 text-base-content/70">
+          For maximum security, do not provide your account's master Secret Key. Instead, go to your Stripe Dashboard
+          and create a <strong class="font-medium">Restricted API Key (RAK)</strong> with the following permissions:
+        </p>
+        <ul class="list-disc list-inside mt-1 space-y-0.5 font-medium text-base-content/85">
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Checkout Sessions</code>: Write</li>
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Payment Intents</code>: Read</li>
+          <li><code class="text-[10px] bg-base-300 px-1 rounded">Webhooks</code>: Write</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="grid gap-6 md:grid-cols-2 pt-2">
+      <!-- Stripe Secret Key -->
+      <div class="flex flex-col gap-1.5">
+        <label for="stripe_secret_key" class="text-sm font-semibold text-base-content/90"> Stripe Secret Key </label>
+        <input
+          id="stripe_secret_key"
+          type="password"
+          placeholder="sk_live_..."
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          [value]="stripeSecretKey()"
+          (input)="stripeSecretKey.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Used to securely authenticate payments with Stripe. Starts with <code class="font-mono">sk_live_</code> or
+          <code class="font-mono">sk_test_</code>.
+        </p>
+      </div>
+
+      <!-- Stripe Webhook Secret -->
+      <div class="flex flex-col gap-1.5">
+        <label for="stripe_webhook_secret" class="text-sm font-semibold text-base-content/90">
+          Stripe Webhook Signing Secret
+        </label>
+        <input
+          id="stripe_webhook_secret"
+          type="password"
+          placeholder="whsec_..."
+          class="input input-bordered focus:input-primary w-full bg-base-200/30 text-sm font-mono"
+          [value]="stripeWebhookSecret()"
+          (input)="stripeWebhookSecret.set($any($event.target).value)"
+        />
+        <p class="text-[11px] text-base-content/50">
+          Enables signature verification of incoming Stripe webhook notifications. Starts with
+          <code class="font-mono">whsec_</code>.
+        </p>
+      </div>
+    </div>
+
+    <!-- Webhook Instructions Info Card -->
+    <div class="card border border-base-200 bg-base-100 p-4 rounded-xl mt-4 shadow-sm space-y-3">
+      <div class="space-y-1">
+        <h4 class="text-sm font-bold text-base-content/90 flex items-center gap-1.5">
+          <pc-icon name="information-circle" class="text-info" [size]="4"></pc-icon>
+          Webhook Endpoint URL
+        </h4>
+        <p class="text-xs text-base-content/65 max-w-xl">
+          Enter this endpoint URL in your Stripe Developer Dashboard webhooks configuration to receive donation
+          completion notifications. For security the token is shown only once, when you generate it.
+        </p>
+      </div>
+
+      @if (webhookToken()) {
+      <!-- Just generated — show the URL once with a copy button -->
+      <div class="rounded-lg border border-warning/40 bg-warning/10 p-3 space-y-2">
+        <p class="text-xs font-semibold text-warning flex items-center gap-1.5">
+          <pc-icon name="exclamation-triangle" [size]="4"></pc-icon>
+          Copy this URL now — it won't be shown again.
+        </p>
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2">
+          <div class="flex-1 text-xs font-mono bg-base-200/50 p-2 rounded border border-base-300 break-all select-all">
+            {{ webhookUrl() }}
+          </div>
+          <button type="button" class="btn btn-sm btn-outline btn-primary shrink-0" (click)="copyWebhookUrl()">
+            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
+            Copy URL
+          </button>
+        </div>
+      </div>
+      } @else {
+      <!-- No plaintext available (never generated, or generated in a previous session) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <p class="text-xs text-base-content/65 flex items-center gap-1.5">
+          @if (webhookConfigured()) {
+          <pc-icon name="check-circle" class="text-success" [size]="4"></pc-icon>
+          A webhook token is configured. Generate a new one if you need to re-copy the URL or rotate it. } @else {
+          <pc-icon name="exclamation-circle" class="text-base-content/40" [size]="4"></pc-icon>
+          No webhook token yet. Generate one to get your Stripe webhook URL. }
+        </p>
+        <button
+          type="button"
+          class="btn btn-sm btn-primary shrink-0"
+          [disabled]="isRegeneratingWebhook()"
+          (click)="regenerateWebhookToken()"
+        >
+          <pc-icon name="arrow-path" [size]="4"></pc-icon>
+          {{ webhookConfigured() ? 'Generate new token' : 'Generate token' }}
+        </button>
+      </div>
+      }
+    </div>
+  </div>
+
+  <!-- Donation Limit & Residency Restrictions Section -->
+  <div class="grid gap-6 md:grid-cols-2">
+    <!-- Donation Periods card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6 flex flex-col">
+      <div class="border-b border-base-200 pb-3 flex items-center justify-between">
+        <h3 class="text-lg font-semibold flex items-center gap-2">
+          <pc-icon name="calendar" class="text-primary" [size]="5"></pc-icon>
+          Donation Limit Periods
+        </h3>
+        <button
+          type="button"
+          class="btn btn-xs btn-primary"
+          (click)="showAddPeriod.set(true)"
+          [hidden]="showAddPeriod()"
+        >
+          <pc-icon name="plus" [size]="3"></pc-icon>
+          Add Period
+        </button>
+      </div>
+      <p class="text-xs text-base-content/60">
+        Define campaign periods with custom date ranges and maximum limits instead of a flat calendar year. The active
+        period covering today is used for all eligibility checks. If no period is defined, the fallback annual limit
+        below applies.
+      </p>
+
+      <!-- Existing periods list -->
+      <div class="space-y-2">
+        @for (period of donationPeriods(); track period.id) {
+        <div class="flex items-start justify-between gap-3 p-3 rounded-lg border border-base-200 bg-base-100 text-xs">
+          <div class="space-y-0.5 flex-1 min-w-0">
+            <div class="font-bold text-base-content truncate">{{ period.name }}</div>
+            <div class="text-base-content/60">
+              {{ formatDate(period.start_date) }} – {{ period.end_date ? formatDate(period.end_date) : 'No end date' }}
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="font-semibold text-primary">${{ (period.limit_amount / 100).toLocaleString() }} limit</span>
+              @if (isPeriodActive(period)) {
+              <span class="badge badge-xs badge-success font-semibold">Active now</span>
+              } @else if (period.is_active) {
+              <span class="badge badge-xs badge-neutral font-semibold">Enabled</span>
+              } @else {
+              <span class="badge badge-xs badge-ghost font-semibold">Disabled</span>
+              }
+            </div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <input
+              type="checkbox"
+              class="toggle toggle-xs toggle-success"
+              [checked]="period.is_active"
+              (change)="togglePeriodActive(period)"
+              title="Enable/disable period"
+            />
+            <button type="button" class="btn btn-xs btn-ghost text-error" (click)="deletePeriod(period)">
+              <pc-icon name="trash" [size]="3"></pc-icon>
+            </button>
+          </div>
+        </div>
+        } @empty {
+        <div class="text-xs text-base-content/50 italic py-2 text-center">
+          No periods defined. Using fallback annual limit.
+        </div>
+        }
+      </div>
+
+      <!-- Add period form -->
+      @if (showAddPeriod()) {
+      <div class="space-y-3 p-4 rounded-xl border border-base-300 bg-base-200/20 mt-1">
+        <h4 class="text-sm font-bold text-base-content/90">New Donation Period</h4>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Period Name</label>
+          <input
+            type="text"
+            class="input input-sm input-bordered bg-base-200/30"
+            placeholder="e.g. 2024 Municipal Campaign"
+            [value]="newPeriodName()"
+            (input)="newPeriodName.set($any($event.target).value)"
+          />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">Start Date</label>
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodStartDate()"
+              (input)="newPeriodStartDate.set($any($event.target).value)"
+            />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold">End Date <span class="text-base-content/40">(optional)</span></label>
+            <input
+              type="date"
+              class="input input-sm input-bordered bg-base-200/30"
+              [value]="newPeriodEndDate()"
+              (input)="newPeriodEndDate.set($any($event.target).value)"
+            />
+          </div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold">Limit per Donor ($)</label>
+          <div class="relative max-w-xs">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/50 font-bold">$</span>
+            <input
+              type="number"
+              min="1"
+              class="input input-sm input-bordered bg-base-200/30 pl-6 w-full"
+              [ngModel]="newPeriodLimit()"
+              (ngModelChange)="newPeriodLimit.set($event)"
+            />
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <button type="button" class="btn btn-sm btn-primary" (click)="addPeriod()" [disabled]="isSavingPeriod()">
+            @if (isSavingPeriod()) { <span class="loading loading-spinner loading-xs"></span> } Save Period
+          </button>
+          <button type="button" class="btn btn-sm btn-ghost" (click)="showAddPeriod.set(false)">Cancel</button>
+        </div>
+      </div>
+      }
+
+      <!-- Fallback annual limit (used when no period is active) -->
+      <div class="border-t border-base-200 pt-4 mt-2">
+        <p class="text-xs text-base-content/50 mb-2 font-semibold">Fallback: Calendar Year Limit</p>
+        <p class="text-[11px] text-base-content/40 mb-2">Used when no donation period covers the current date.</p>
+        <div class="relative max-w-xs">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-base-content/50 font-semibold">$</span>
+          <input
+            id="donation_limit"
+            type="number"
+            min="1"
+            class="input input-bordered focus:input-primary w-full pl-8 bg-base-200/30 text-sm font-semibold"
+            [value]="donationLimit()"
+            (input)="donationLimit.set($any($event.target).value)"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Residency restrictions card -->
+    <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+      <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+        <pc-icon name="map-pin" class="text-primary" [size]="5"></pc-icon>
+        Residency Restrictions
+      </h3>
+      <p class="text-xs text-base-content/60">
+        Filter and restrict eligibility based on where the donor resides. Useful for regional municipal, provincial, or
+        state elections.
+      </p>
+
+      <div class="space-y-4">
+        <!-- Toggle Restriction -->
+        <label class="flex items-center gap-3 cursor-pointer py-1">
+          <input
+            id="restrict_residency"
+            type="checkbox"
+            class="toggle toggle-primary toggle-md"
+            [checked]="restrictResidency()"
+            (change)="restrictResidency.set($any($event.target).checked)"
+          />
+          <span class="text-sm font-semibold text-base-content/90"> Enforce residency restrictions </span>
+        </label>
+
+        @if (restrictResidency()) {
+        <div class="space-y-4 pt-2 animate-fade-in relative">
+          <!-- Autocomplete Allowed Countries Picker -->
+          <div class="flex flex-col gap-1.5 relative">
+            <label class="text-xs font-semibold text-base-content/85"> Allowed Countries </label>
+            <div class="flex flex-wrap gap-1.5 p-2 bg-base-200/30 rounded-lg border border-base-200">
+              @for (cCode of selectedCountries(); track cCode) {
+              <span class="badge badge-sm badge-primary gap-1.5 py-2 px-2.5 font-medium">
+                {{ getCountryName(cCode) }}
+                <button
+                  type="button"
+                  class="text-[10px] hover:text-base-content font-bold"
+                  (click)="removeCountry(cCode)"
+                >
+                  ×
+                </button>
+              </span>
+              }
+              <input
+                type="text"
+                placeholder="Type to search country..."
+                class="bg-transparent border-none outline-none text-xs flex-1 min-w-[120px]"
+                [value]="countrySearch()"
+                (input)="countrySearch.set($any($event.target).value); showCountryDropdown.set(true)"
+                (focus)="showCountryDropdown.set(true)"
+                (blur)="showCountryDropdown.set(false)"
+              />
+            </div>
+
+            @if (showCountryDropdown() && availableCountriesToSelect().length) {
+            <!-- Use mousedown to prevent input blur before selecting -->
+            <ul
+              class="absolute z-50 left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-base-100 border border-base-300 rounded-lg shadow-lg py-1 text-xs"
+            >
+              @for (c of availableCountriesToSelect(); track c.code) {
+              <li>
+                <button
+                  type="button"
+                  class="w-full text-left px-3 py-2 hover:bg-base-200/50 font-medium"
+                  (mousedown)="selectCountry(c); $event.preventDefault()"
+                >
+                  {{ c.name }} ({{ c.code }})
+                </button>
+              </li>
+              }
+            </ul>
+            }
+          </div>
+          <!-- Allowed Province/State Checkboxes for Selected Countries -->
+          @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() || isFranceSelected() || isIndiaSelected())
+          {
+          <div class="flex flex-col gap-3 p-4 bg-base-100 border border-base-200 rounded-xl max-h-64 overflow-y-auto">
+            <label class="text-xs font-bold text-base-content/85 uppercase tracking-wide">
+              Allowed Provinces & States
+            </label>
+
+            @if (isCanadaSelected()) {
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Canada Provinces</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (p of canadaProvinces; track p.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(p.code)"
+                    (change)="toggleRegion(p.code)"
+                  />
+                  <span>{{ p.name }} ({{ p.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isUsaSelected()) { @if (isCanadaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">United States States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of usStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isGermanySelected()) { @if (isCanadaSelected() || isUsaSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">Germany States</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of germanyStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isFranceSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">France Regions</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (r of franceRegions; track r.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(r.code)"
+                    (change)="toggleRegion(r.code)"
+                  />
+                  <span>{{ r.name }} ({{ r.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            } @if (isIndiaSelected()) { @if (isCanadaSelected() || isUsaSelected() || isGermanySelected() ||
+            isFranceSelected()) {
+            <div class="divider my-1"></div>
+            }
+            <div class="space-y-1.5">
+              <span class="text-[11px] font-bold text-primary/80">India States & UTs</span>
+              <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                @for (s of indiaStates; track s.code) {
+                <label class="flex items-center gap-2 cursor-pointer text-xs">
+                  <input
+                    type="checkbox"
+                    class="checkbox checkbox-xs checkbox-primary"
+                    [checked]="selectedRegions().includes(s.code)"
+                    (change)="toggleRegion(s.code)"
+                  />
+                  <span>{{ s.name }} ({{ s.code }})</span>
+                </label>
+                }
+              </div>
+            </div>
+            }
+          </div>
+          }
+        </div>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Tax Credit Configuration -->
+  <div class="space-y-4 rounded-xl border border-base-200 bg-base-50/50 p-6">
+    <h3 class="text-lg font-semibold flex items-center gap-2 border-b border-base-200 pb-3">
+      <pc-icon name="chart-pie" class="text-primary" [size]="5"></pc-icon>
+      Tax Credit Tiers
+    </h3>
+    <p class="text-xs text-base-content/60">
+      Define progressive tax credit brackets. Tax credits are computed automatically based on cumulative donations
+      inside a calendar year.
+    </p>
+
+    <!-- Table of existing tiers -->
+    <div class="overflow-x-auto border border-base-200 bg-base-100 rounded-xl mt-3 shadow-sm">
+      <table class="table w-full text-xs">
+        <thead>
+          <tr class="border-b border-base-200 bg-base-50">
+            <th class="font-bold text-base-content/70">Bracket Tier</th>
+            <th class="font-bold text-base-content/70">Up to Limit</th>
+            <th class="font-bold text-base-content/70">Credit Percentage</th>
+            <th class="font-bold text-base-content/70 text-right w-24">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (tier of taxCreditTiers(); track $index) {
+          <tr class="hover:bg-base-200/20 border-b border-base-200">
+            <td class="font-bold text-base-content">Tier {{ $index + 1 }}</td>
+            <td class="font-semibold text-base-content/80">${{ tier.limit.toLocaleString() }}</td>
+            <td>
+              <span class="badge badge-success gap-1 font-semibold py-2 px-2.5"> {{ tier.rate * 100 }}% </span>
+            </td>
+            <td class="text-right">
+              <button
+                type="button"
+                class="btn btn-xs btn-ghost text-error font-medium hover:bg-error/10"
+                (click)="removeTier($index)"
+              >
+                Delete
+              </button>
+            </td>
+          </tr>
+          } @empty {
+          <tr>
+            <td colspan="4" class="text-center py-6 text-base-content/50 italic">
+              No tax credit tiers defined yet. Add a tier below to set up credit calculations.
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Progressive bracket summary -->
+    @if (taxCreditTiers().length) {
+    <div class="mt-4 p-4 rounded-xl border border-base-200 bg-base-200/20 text-xs">
+      <h4 class="font-bold text-base-content/85 flex items-center gap-1.5 mb-2">
+        <pc-icon name="information-circle" class="text-primary" [size]="4"></pc-icon>
+        Tax Credit Bracket Summary (Plain Language)
+      </h4>
+      <ul class="list-disc list-inside space-y-1 text-base-content/75 font-semibold">
+        @for (line of taxCreditSummary(); track $index) {
+        <li>{{ line }}</li>
+        }
+      </ul>
+    </div>
+    }
+
+    <!-- Add new tier form -->
+    <div
+      class="card border border-base-200 bg-base-100 p-4 rounded-xl flex flex-wrap sm:flex-nowrap items-end gap-4 mt-3 shadow-sm"
+    >
+      <!-- Tier Limit -->
+      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
+        <label for="new_limit" class="text-xs font-semibold text-base-content/95"> Bracket Upper Limit ($) </label>
+        <div class="relative">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">$</span>
+          <input
+            id="new_limit"
+            type="number"
+            min="1"
+            placeholder="500"
+            class="input input-bordered focus:input-primary w-full pl-6 bg-base-200/20 text-xs font-semibold"
+            [ngModel]="newLimit()"
+            (ngModelChange)="newLimit.set($event)"
+          />
+        </div>
+      </div>
+
+      <!-- Tier Rate -->
+      <div class="flex-1 min-w-[150px] flex flex-col gap-1.5">
+        <label for="new_rate" class="text-xs font-semibold text-base-content/95"> Credit Percentage (%) </label>
+        <div class="relative">
+          <input
+            id="new_rate"
+            type="number"
+            min="0"
+            max="100"
+            placeholder="75"
+            class="input input-bordered focus:input-primary w-full pr-7 bg-base-200/20 text-xs font-semibold"
+            [ngModel]="newRate()"
+            (ngModelChange)="newRate.set($event)"
+          />
+          <span class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40 font-bold">%</span>
+        </div>
+      </div>
+
+      <!-- Add button -->
+      <button
+        type="button"
+        class="btn btn-sm btn-primary w-full sm:w-auto mt-2 sm:mt-0 font-semibold"
+        (click)="addTier()"
+      >
+        <pc-icon name="plus" [size]="4"></pc-icon>
+        Add Tier
+      </button>
+    </div>
+  </div>
+
+  <!-- Action buttons footer -->
+  <div class="border-t border-base-200 pt-6 mt-8 flex items-center justify-between">
+    <div>
+      @if (isSaving()) {
+      <span class="text-sm font-medium text-base-content/60 flex items-center">
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        Saving donations configuration…
+      </span>
+      }
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button
+        type="button"
+        class="btn btn-ghost hover:bg-base-200 font-semibold text-sm"
+        (click)="reset()"
+        [disabled]="isSaving()"
+      >
+        Reset
+      </button>
+      <button
+        type="button"
+        class="btn btn-primary min-w-[120px] font-semibold text-sm"
+        (click)="save()"
+        [disabled]="isSaving()"
+      >
+        @if (isSaving()) {
+        <span class="loading loading-spinner loading-xs mr-2"></span>
+        } Save Changes
+      </button>
+    </div>
+  </div>
+</div>
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/google-sync/google-sync-settings.ts
@@ -21709,168 +23075,589 @@ export class PasskeySettingsComponent implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/shifts/ui/shifts-grid.ts
+## File: apps/frontend/src/app/experiences/settings/settings.config.ts
 
 ```typescript
-import { Component } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { PcIconNameType } from '@icons/icons.index';
 
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ShiftsService } from '../services/shifts-service';
+export type SettingsFieldType =
+  | 'text'
+  | 'textarea'
+  | 'email'
+  | 'tel'
+  | 'number'
+  | 'select'
+  | 'toggle'
+  | 'password'
+  | 'url'
+  | 'date';
+
+export interface SettingsOptionConfig {
+  label: string;
+  value: string;
+}
+
+export interface SettingsFieldConfig {
+  key: string;
+  label: string;
+  type: SettingsFieldType;
+  placeholder?: string;
+  helper?: string;
+  options?: SettingsOptionConfig[];
+  defaultValue?: unknown;
+}
+
+export interface SettingsSectionConfig {
+  id: string;
+  title: string;
+  description: string;
+  icon: PcIconNameType;
+  fields: SettingsFieldConfig[];
+}
+
+export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
+  {
+    id: 'organization',
+    title: 'Organization',
+    description: 'Tenant branding, contact details, and campaign defaults.',
+    icon: 'cog-6-tooth',
+    fields: [
+      {
+        key: 'organization.name',
+        label: 'Organization name',
+        type: 'text',
+        placeholder: 'PeopleCRM',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.contact_email',
+        label: 'Primary contact email',
+        type: 'email',
+        placeholder: 'hello@example.com',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.phone',
+        label: 'Contact phone',
+        type: 'tel',
+        placeholder: '(555) 555-1234',
+        defaultValue: '',
+      },
+      {
+        key: 'organization.address',
+        label: 'Mailing address',
+        type: 'textarea',
+        placeholder: '123 Main St, Springfield, USA',
+        defaultValue: '',
+      },
+    ],
+  },
+  {
+    id: 'communications',
+    title: 'Communications',
+    description: 'Email delivery, inbox routing, and compliance copy.',
+    icon: 'envelope',
+    fields: [
+      {
+        key: 'communications.default_from_name',
+        label: 'Default from name',
+        type: 'text',
+        placeholder: 'PeopleCRM Team',
+        defaultValue: '',
+      },
+      {
+        key: 'communications.default_from_email',
+        label: 'Default from email',
+        type: 'select',
+        defaultValue: '',
+        options: [],
+      },
+      {
+        key: 'communications.reply_to',
+        label: 'Reply-to email',
+        type: 'select',
+        defaultValue: '',
+        options: [],
+      },
+      {
+        key: 'communications.footer_disclaimer',
+        label: 'Email footer disclaimer',
+        type: 'textarea',
+        placeholder: 'Paid for by PeopleCRM Campaign…',
+        defaultValue: '',
+        helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
+      },
+      {
+        key: 'communications.double_opt_in',
+        label: 'Require double opt-in',
+        type: 'toggle',
+        defaultValue: false,
+        helper: 'Require new web-form subscribers to confirm via email before they receive newsletters.',
+      },
+    ],
+  },
+  {
+    id: 'notifications',
+    title: 'Notifications',
+    description: 'Tenant-wide notification defaults and escalation.',
+    icon: 'bell',
+    fields: [
+      {
+        key: 'notifications.mention_in_comment',
+        label: 'Mentioned in comment',
+        type: 'toggle',
+        helper: 'Alerts when someone mentions you in a thread',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.mention_in_comment_in_app',
+        label: 'Mentioned in comment (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_assigned',
+        label: 'Task assigned',
+        type: 'toggle',
+        helper: 'Alerts when a task is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_assigned_in_app',
+        label: 'Task assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_due',
+        label: 'Task due today / overdue',
+        type: 'toggle',
+        helper: 'Daily reminder check of active tasks due',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.task_due_in_app',
+        label: 'Task due today / overdue (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.person_assigned',
+        label: 'Person assigned',
+        type: 'toggle',
+        helper: 'Alerts when a contact ownership is assigned to you',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.person_assigned_in_app',
+        label: 'Person assigned (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.export_ready',
+        label: 'Export ready',
+        type: 'toggle',
+        helper: 'Receive download link when CSV export finishes',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.export_ready_in_app',
+        label: 'Export ready (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.import_summary',
+        label: 'Import summary',
+        type: 'toggle',
+        helper: 'Spreadsheet import completion stats report',
+        defaultValue: true,
+      },
+      {
+        key: 'notifications.import_summary_in_app',
+        label: 'Import summary (in-app)',
+        type: 'toggle',
+        defaultValue: true,
+      },
+    ],
+  },
+  {
+    id: 'access',
+    title: 'Teams & access',
+    description: 'Default role for new invites and tenant-wide MFA enforcement.',
+    icon: 'user-group',
+    fields: [
+      {
+        key: 'access.default_role',
+        label: 'Default invite role',
+        type: 'select',
+        defaultValue: 'editor',
+        options: [
+          { label: 'Viewer', value: 'viewer' },
+          { label: 'Editor', value: 'editor' },
+          { label: 'Admin', value: 'admin' },
+        ],
+      },
+      {
+        key: 'access.mfa_required',
+        label: 'Require MFA for all users',
+        type: 'toggle',
+        defaultValue: false,
+        helper: 'Force email verification codes for every user signing in from a new device or location.',
+      },
+    ],
+  },
+
+  {
+    id: 'sla',
+    title: 'Service levels',
+    description:
+      'Configure Service Level Agreements (SLAs) for tasks and emails, including working days, business hours, and status warning/critical thresholds.',
+    icon: 'clock',
+    fields: [
+      {
+        key: 'sla.tasks_hours',
+        label: 'Task SLA target (working hours)',
+        type: 'number',
+        defaultValue: 24,
+        helper: 'Maximum working hours allowed to resolve or close a task before it is considered an SLA breach.',
+      },
+      {
+        key: 'sla.emails_hours',
+        label: 'Email SLA target (working hours)',
+        type: 'number',
+        defaultValue: 24,
+        helper:
+          'Maximum working hours allowed to reply to an incoming inbox email before it is considered an SLA breach.',
+      },
+      {
+        key: 'sla.email_warning_threshold',
+        label: 'Email SLA warning threshold (breaches)',
+        type: 'number',
+        defaultValue: 1,
+        helper: 'Number of active open email breaches that triggers a "Warning" (yellow) status on the dashboard.',
+      },
+      {
+        key: 'sla.email_critical_threshold',
+        label: 'Email SLA critical threshold (breaches)',
+        type: 'number',
+        defaultValue: 4,
+        helper: 'Number of active open email breaches that triggers a "Critical" (red) status on the dashboard.',
+      },
+      {
+        key: 'sla.task_warning_threshold',
+        label: 'Task SLA warning threshold (breaches)',
+        type: 'number',
+        defaultValue: 1,
+        helper: 'Number of active open task breaches that triggers a "Warning" (yellow) status on the dashboard.',
+      },
+      {
+        key: 'sla.task_critical_threshold',
+        label: 'Task SLA critical threshold (breaches)',
+        type: 'number',
+        defaultValue: 4,
+        helper: 'Number of active open task breaches that triggers a "Critical" (red) status on the dashboard.',
+      },
+      {
+        key: 'sla.working_days',
+        label: 'Working days (comma-separated: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0=Sun)',
+        type: 'text',
+        defaultValue: '1,2,3,4,5',
+        helper: 'Days of the week counted towards the SLA response and resolution calculations.',
+      },
+      {
+        key: 'sla.working_hours_start',
+        label: 'Working hours start (HH:MM)',
+        type: 'text',
+        defaultValue: '09:00',
+        helper: 'Beginning of the business day for working time tracking.',
+      },
+      {
+        key: 'sla.working_hours_end',
+        label: 'Working hours end (HH:MM)',
+        type: 'text',
+        defaultValue: '17:00',
+        helper: 'End of the business day for working time tracking.',
+      },
+    ],
+  },
+  {
+    id: 'appearance',
+    title: 'Appearance',
+    description: 'Global UI defaults that users can override locally.',
+    icon: 'sun',
+    fields: [
+      {
+        key: 'appearance.theme',
+        label: 'Default theme',
+        type: 'select',
+        defaultValue: 'system',
+        options: [
+          { label: 'System', value: 'system' },
+          { label: 'Light', value: 'light' },
+          { label: 'Dark', value: 'dark' },
+        ],
+      },
+      {
+        key: 'appearance.date_format',
+        label: 'Date format',
+        type: 'select',
+        defaultValue: 'MMMM d, yyyy',
+        options: [
+          { label: 'January 10, 2025', value: 'MMMM d, yyyy' },
+          { label: '01/10/2025', value: 'MM/dd/yyyy' },
+          { label: '10/01/2025', value: 'dd/MM/yyyy' },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'integrations',
+    title: 'Integrations & API',
+    description: 'Storage, webhooks, analytics, and external vendor keys.',
+    icon: 'cloud-arrow-up',
+    fields: [
+      {
+        key: 'integrations.webhook_api_key',
+        label: 'Webhook API key',
+        type: 'text',
+        placeholder: 'Not generated yet',
+        defaultValue: '',
+      },
+      {
+        key: 'integrations.webhook_api_secret',
+        label: 'Webhook API secret',
+        type: 'password',
+        placeholder: 'Not generated yet',
+        defaultValue: '',
+      },
+    ],
+  },
+];
+```
+
+## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
+
+```typescript
+import { Component, inject, viewChild, signal } from '@angular/core';
+import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
+import { TagsService } from '@experiences/tags/services/tags-service';
+import { AddTagObj } from '../../../../../../../libs/common/src';
+
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+
+function randomHexColor(): string {
+  return (
+    '#' +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')
+  );
+}
 
 @Component({
-  selector: 'pc-shifts-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Shifts"
-        i18n-title
-        description="Manage volunteer shifts, schedule events, and track attendance records."
-        i18n-description
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-schedule"
-        i18n-plusIcon
-        [showArchiveIcon]="true"
-        archiveIcon="archive-box-arrow-down"
-        i18n-archiveIcon
-        archiveTip="See archived events"
-        i18n-archiveTip
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: ShiftsService },
-    provideDataGridConfig({ messages: { exportEntity: 'volunteer', exportFileName: 'volunteer-export.csv' } }),
-  ],
+  selector: 'pc-add-issue',
+  imports: [PcInput, FormField, FormActions],
+  template: `<div class="flex min-h-full flex-col bg-base-100">
+    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
+      <div class="flex flex-col gap-2">
+        <label i18n class="label text-base font-light">
+          Enter a unique issue name (and optionally, give it a description)
+        </label>
+        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+        <div class="flex items-center gap-2">
+          <label i18n class="label-text font-light text-sm">Colour</label>
+          <input
+            class="input input-bordered input-sm w-24"
+            type="color"
+            [formField]="form.color"
+            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
+          />
+          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
+            @for (err of form.color().errors(); track err) {
+              <span class="text-error text-xs">{{ err.message }}</span>
+            }
+          }
+        </div>
+        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
+      </div>
+    </form>
+  </div>`,
 })
-export class ShiftsGridComponent {
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
+export class AddIssue {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tagSvc = inject(TagsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+
+  private _loading = createLoadingGate();
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    color: randomHexColor(),
   });
 
-  protected col = [
-    { field: 'name', headerName: 'Event Name', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    { field: 'location_address', headerName: 'Location', editable: true },
-    {
-      field: 'start_time',
-      headerName: 'Start Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
-      editable: false,
-    },
-    {
-      field: 'end_time',
-      headerName: 'End Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
-      editable: false,
-    },
-    {
-      field: 'volunteers_count',
-      headerName: 'Signed Up',
-      editable: false,
-    },
-    {
-      field: 'capacity',
-      headerName: 'Capacity',
-      editable: true,
-    },
-  ];
+  public readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddTagObj);
+  });
 
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
+  protected isLoading = this._loading.visible;
+
+  public readonly formActions = viewChild(FormActions);
+
+  protected async add(event?: any) {
+    if (event instanceof Event) {
+      event.preventDefault();
+    }
+
+    if (this.isLoading()) return;
+
+    this.form().markAsTouched();
+    if (!this.form().valid) return;
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const formObj = this.payload();
+          await this.tagSvc.add({ ...formObj, type: 'issue' });
+          await this.tagOptionsSvc.invalidate('issue');
+          this.tagSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Issue added successfully.');
+
+          this.payload.set({ name: '', description: '', color: randomHexColor() });
+          this.formActions()?.stayOrCancel();
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
   }
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tags/ui/issues-grid.ts
+## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
 
 ```typescript
-import { Component, inject } from '@angular/core';
+import { Component, inject, viewChild, signal } from '@angular/core';
+import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
 import { TagsService } from '@experiences/tags/services/tags-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { getAllOptionsType } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 
-class IssuesService extends TagsService {
-  private readonly globalTagsSvc = inject(TagsService, { skipSelf: true, optional: true });
+import { FormActions } from '@uxcommon/components/form-actions/form-actions';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 
-  public override getAll(options?: getAllOptionsType) {
-    return this.getAllWithCounts({ ...(options ?? {}), type: 'issue' } as getAllOptionsType);
-  }
-
-  public override triggerRefresh() {
-    super.triggerRefresh();
-    this.globalTagsSvc?.triggerRefresh();
-  }
+function randomHexColor(): string {
+  return (
+    '#' +
+    Math.floor(Math.random() * 0xffffff)
+      .toString(16)
+      .padStart(6, '0')
+  );
 }
 
 @Component({
-  selector: 'pc-issues-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Issues"
-        i18n-title
-        description="Manage political or support issues to track contact stances and interests."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [allowFilter]="false"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-issue"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    IssuesService,
-    { provide: AbstractAPIService, useExisting: IssuesService },
-    provideDataGridConfig({ messages: { exportEntity: 'issues', exportFileName: 'issues-export.csv' } }),
-  ],
+  selector: 'pc-add-tag',
+  imports: [PcInput, FormField, FormActions],
+  template: `<div class="flex min-h-full flex-col bg-base-100">
+    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
+      <div class="flex flex-col gap-2">
+        <label i18n class="label text-base font-light">
+          Enter a unique tag name (and optionally, give it a description)
+        </label>
+        <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
+        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
+        <div class="flex items-center gap-2">
+          <label i18n class="label-text font-light text-sm">Colour</label>
+          <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
+          @if (form.color().invalid() && form.color().touched()) {
+            <span i18n class="text-error text-xs">Use a value like #3366ff</span>
+          }
+        </div>
+        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
+      </div>
+    </form>
+  </div>`,
 })
-export class IssuesGridComponent {
-  protected col = [
-    { field: 'name', headerName: 'Issue Name', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'color',
-      headerName: 'Colour',
-      editable: true,
-      cellDataType: 'color',
-      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
-    },
-    { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
-    { field: 'use_count_people', headerName: 'People' },
-    { field: 'use_count_households', headerName: 'Households' },
-  ];
+export class AddTag {
+  private readonly alertSvc = inject(AlertService);
+  private readonly tagSvc = inject(TagsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
 
-  protected renderColorCell(raw: unknown): string {
-    const v = typeof raw === 'string' ? raw.trim() : '';
-    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
-      return '<span class="text-xs text-neutral">None</span>';
+  private _loading = createLoadingGate();
+
+  protected readonly payload = signal({
+    name: '',
+    description: '',
+    color: randomHexColor(),
+  });
+
+  public readonly form = form(this.payload, (p) => {
+    required(p.name);
+    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
+  });
+
+  protected isLoading = this._loading.visible;
+
+  public readonly formActions = viewChild(FormActions);
+
+  protected async add(event?: any) {
+    if (event instanceof Event) {
+      event.preventDefault();
     }
-    const color = v.toLowerCase();
-    return `
-    <span class="inline-block h-4 w-8 rounded border shadow-sm"
-          style="background-color:${color}; border-color:${color}"
-          title="${color}"></span>
-  `;
+
+    if (this.isLoading()) {
+      return;
+    }
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    if (!this.form().valid) {
+      return;
+    }
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const formObj = this.payload();
+          await this.tagSvc.add(formObj);
+          await this.tagOptionsSvc.invalidate('tag');
+          this.tagSvc.triggerRefresh();
+          this.alertSvc.showSuccess('Tag added successfully.');
+
+          // Reset the backing signal
+          this.payload.set({
+            name: '',
+            description: '',
+            color: randomHexColor(),
+          });
+
+          this.formActions()?.stayOrCancel();
+        } catch (err) {
+          this.alertSvc.showError(
+            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
+          );
+        } finally {
+          end();
+        }
+        return null;
+      },
+    });
   }
 }
 ```
@@ -21937,85 +23724,6 @@ export class TagPaletteService {
   public async ensurePalette(): Promise<void> {
     // Trigger a reload of the resource
     this.tagsResource.reload();
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/tags-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { getAllOptionsType } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-class TagsOnlyService extends TagsService {
-  public override getAll(options?: getAllOptionsType) {
-    return this.getAllWithCounts({ ...(options ?? {}), type: 'tag' } as getAllOptionsType);
-  }
-}
-
-@Component({
-  selector: 'pc-tags-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Tags"
-        i18n-title
-        description="Manage custom categorization tags used across people, households."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [allowFilter]="false"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-label"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    TagsOnlyService,
-    { provide: AbstractAPIService, useExisting: TagsOnlyService },
-    provideDataGridConfig({ messages: { exportEntity: 'tags', exportFileName: 'tags-export.csv' } }),
-  ],
-})
-export class TagsGridComponent {
-  protected col = [
-    {
-      field: 'name',
-      headerName: 'Tag Name',
-      editable: true,
-      valueFormatter: (p: any) => (p.value ? p.value.charAt(0).toUpperCase() + p.value.slice(1) : ''),
-    },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'color',
-      headerName: 'Colour',
-      editable: true,
-      cellDataType: 'color',
-      cellRenderer: (p: any) => this.renderColorCell(p.value ?? p.data?.color ?? null),
-    },
-    { field: 'deletable', headerName: 'Deletable', type: 'boolean', editable: false },
-    { field: 'use_count_people', headerName: 'People' },
-    { field: 'use_count_households', headerName: 'Households' },
-  ];
-
-  protected renderColorCell(raw: unknown): string {
-    const v = typeof raw === 'string' ? raw.trim() : '';
-    if (!/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)) {
-      return '<span class="text-xs text-neutral">None</span>';
-    }
-    const color = v.toLowerCase();
-
-    return `
-    <span class="inline-block h-4 w-8 rounded border shadow-sm"
-          style="background-color:${color}; border-color:${color}"
-          title="${color}"></span>
-  `;
   }
 }
 ```
@@ -22183,78 +23891,6 @@ export class Tags implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/teams/ui/teams-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { TeamsService } from '../services/teams-service';
-
-@Component({
-  selector: 'pc-teams-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Teams"
-        i18n-title
-        description="Organize volunteers and staff into structured teams, assign captains, and coordinate group activities."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-group"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: TeamsService },
-    provideDataGridConfig({ messages: { exportEntity: 'teams', exportFileName: 'teams-export.csv' } }),
-  ],
-})
-export class TeamsGridComponent {
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col = [
-    { field: 'name', headerName: 'Team', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'team_captain_name',
-      headerName: 'Team Captain',
-      valueGetter: (p: any) => p.data?.team_captain_name ?? '',
-      editable: false,
-    },
-    {
-      field: 'volunteer_count',
-      headerName: 'Volunteers',
-      editable: false,
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Updated',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
-    },
-  ];
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/services/useradmin-service.ts
 
 ```typescript
@@ -22326,104 +23962,6 @@ export class UserAdminService extends AbstractAPIService<'authusers', UpdateAuth
 
   public exportCsv(_input: ExportCsvInputType): Promise<ExportCsvResponseType> {
     return Promise.reject(new Error('User export is not available'));
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/workflows/ui/workflows-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { WorkflowsService } from '../services/workflows-service';
-
-@Component({
-  selector: 'pc-workflows-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Automated Workflows"
-        i18n-title
-        description="Create automated drip email campaigns triggered by volunteer events, tag changes, form submissions, list signups, or manual enrollment."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableImport]="true"
-        [disableExport]="true"
-        [addRoute]="'add'"
-        [allowFilter]="false"
-        plusIcon="plus"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: WorkflowsService },
-    provideDataGridConfig({ messages: { exportEntity: 'workflows', exportFileName: 'workflows-export.csv' } }),
-  ],
-})
-export class WorkflowsGridComponent {
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
-  protected col = [
-    { field: 'name', headerName: 'Workflow Name' },
-    {
-      field: 'trigger_type',
-      headerName: 'Trigger Type',
-      valueFormatter: (p: any) => this.formatTriggerType(p.value ?? p.data?.trigger_type),
-    },
-    {
-      field: 'status',
-      headerName: 'Status',
-      valueFormatter: (p: any) => this.formatStatus(p.value ?? p.data?.status),
-    },
-    {
-      field: 'steps_count',
-      headerName: 'Steps Count',
-      valueFormatter: (p: any) => String(p.value ?? p.data?.steps_count ?? 0),
-    },
-    {
-      field: 'active_enrollments_count',
-      headerName: 'Active Enrollments',
-      valueFormatter: (p: any) => String(p.value ?? p.data?.active_enrollments_count ?? 0),
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Last Updated',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.updated_at),
-    },
-  ];
-
-  private formatDate(value: unknown): string {
-    if (!value) return '--';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '--';
-    return this.dateFormatter.format(date);
-  }
-
-  private formatTriggerType(value: unknown): string {
-    if (!value) return '--';
-    const text = String(value).trim();
-    if (text === 'volunteer_signup') return 'Volunteer Signup';
-    if (text === 'manual') return 'Manual Enrollment';
-    return text.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-
-  private formatStatus(value: unknown): string {
-    if (!value) return '--';
-    const text = String(value).trim();
-    if (text === 'active') return 'Active';
-    if (text === 'draft') return 'Draft';
-    if (text === 'paused') return 'Paused';
-    return text.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   }
 }
 ```
@@ -22772,6 +24310,149 @@ export class KeyboardShortcutsHelp {
 }
 ```
 
+## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
+
+```typescript
+import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  NavigationCancel,
+  NavigationError,
+  NavigationStart,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+} from '@angular/router';
+import { filter, map } from 'rxjs';
+import { Icon } from '@icons/icon';
+import { Swap } from '@uxcommon/components/swap/swap';
+
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { ISidebarItem } from './sidebar-items';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+
+@Component({
+  selector: 'pc-sidebar',
+  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
+  templateUrl: './sidebar.html',
+  styles: [
+    `
+      .tooltip:before {
+        z-index: 100 !important;
+      }
+    `,
+  ],
+})
+export class Sidebar {
+  private readonly sidebarSvc = inject(SidebarService);
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+
+  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
+  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
+  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
+
+  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
+  protected readonly isEffectivelyNarrow = computed(
+    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
+  );
+
+  protected readonly pendingRoute = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
+      map((e) => (e instanceof NavigationStart ? e.url : null)),
+    ),
+    { initialValue: null },
+  );
+
+  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
+
+  protected readonly items = computed(() => {
+    const role = this.auth.getUser()?.role;
+    const allItems = this.sidebarSvc.getItems()();
+    if (role === 'user') {
+      return allItems.map((item) => {
+        if (item.children) {
+          return {
+            ...item,
+            children: item.children.filter((child) => !child.adminOnly),
+          };
+        }
+        return item;
+      });
+    }
+    return allItems;
+  });
+
+  constructor() {
+    if (this._mql) {
+      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
+      this._mql.addEventListener('change', handler);
+      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
+    }
+
+    effect(() => {
+      const flatItems = this.flattenItems(this.items());
+      for (const item of flatItems) {
+        const key = this.getItemKey(item);
+        const visible = !item.hidden && !item.hiddenByFavourite;
+        const existing = this.visibilitySignals.get(key);
+        if (existing) {
+          existing.set(visible);
+        } else {
+          this.visibilitySignals.set(key, signal(visible));
+        }
+      }
+    });
+  }
+
+  protected closeMobile() {
+    this.sidebarSvc.closeMobile();
+  }
+
+  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
+    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
+  }
+
+  private getItemKey(item: ISidebarItem): string {
+    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
+    return prefix + item.name + (item.route ?? '');
+  }
+
+  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
+    const key = this.getItemKey(item);
+    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
+  }
+
+  protected isCollapsed(name: string): boolean {
+    return this.sidebarSvc.isCollapsed(name);
+  }
+
+  protected isDrawerFull() {
+    return this.sidebarSvc.isFull();
+  }
+
+  protected isDrawerHalf() {
+    return this.sidebarSvc.isHalf();
+  }
+
+  protected isMobileOpen() {
+    return this.sidebarSvc.isMobileOpen();
+  }
+
+  protected toggleCollapse(name: string) {
+    this.sidebarSvc.toggleCollapsed(name);
+  }
+
+  protected toggleDrawer() {
+    return this.sidebarSvc.toggleDrawer();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/layout/theme/theme-service.ts
 
 ```typescript
@@ -23083,6 +24764,134 @@ export abstract class AbstractAPIService<T extends keyof Models, U> extends TRPC
 }
 ```
 
+## File: apps/frontend/src/app/services/api/donations-service.ts
+
+```typescript
+import { Service } from '@angular/core';
+import { TRPCService } from './trpc-service';
+
+@Service()
+export class DonationsService extends TRPCService<'donations'> {
+  // ── One-time donations ──────────────────────────────────────────────────────
+
+  public listDonations() {
+    return this.api.donations.listDonations.query();
+  }
+
+  public getHistory(personId: string) {
+    return this.api.donations.getPersonDonationHistory.query(personId);
+  }
+
+  public getStats(personId: string) {
+    return this.api.donations.getDonationStats.query(personId);
+  }
+
+  public checkEligibility(payload: {
+    personId: string;
+    amountCents: number;
+    address: { country?: string; state?: string };
+    isRecurring?: boolean;
+    remainingMonths?: number;
+  }) {
+    return this.api.donations.checkEligibility.query(payload);
+  }
+
+  public createCheckout(payload: {
+    personId: string;
+    amountCents: number;
+    address: { country?: string; state?: string };
+  }) {
+    return this.api.donations.createCheckout.mutate(payload);
+  }
+
+  public confirmDonation(sessionId: string) {
+    return this.api.donations.confirmDonation.mutate({ sessionId });
+  }
+
+  public confirmMockDonation(payload: {
+    personId: string;
+    amountCents: number;
+    sessionId: string;
+    province: string;
+    country: string;
+  }) {
+    return this.api.donations.confirmMockDonation.mutate(payload);
+  }
+
+  // ── Recurring pledges ───────────────────────────────────────────────────────
+
+  public createRecurringCheckout(payload: {
+    personId: string;
+    monthlyAmountCents: number;
+    address: { country?: string; state?: string };
+  }) {
+    return this.api.donations.createRecurringCheckout.mutate(payload);
+  }
+
+  public confirmMockPledge(payload: {
+    personId: string;
+    monthlyAmountCents: number;
+    mockSubId: string;
+    province: string;
+    country: string;
+  }) {
+    return this.api.donations.confirmMockPledge.mutate(payload);
+  }
+
+  public listPledges() {
+    return this.api.donations.listPledges.query();
+  }
+
+  public getPersonPledges(personId: string) {
+    return this.api.donations.getPersonPledges.query(personId);
+  }
+
+  public cancelPledge(pledgeId: string) {
+    return this.api.donations.cancelPledge.mutate({ pledgeId });
+  }
+
+  // ── Donation periods ────────────────────────────────────────────────────────
+
+  public getDonationPeriods() {
+    return this.api.donations.getDonationPeriods.query();
+  }
+
+  public createDonationPeriod(payload: {
+    name: string;
+    start_date: string;
+    end_date?: string | null;
+    limit_amount: number;
+  }) {
+    return this.api.donations.createDonationPeriod.mutate(payload);
+  }
+
+  public updateDonationPeriod(payload: {
+    id: string;
+    name?: string;
+    start_date?: string;
+    end_date?: string | null;
+    limit_amount?: number;
+    is_active?: boolean;
+  }) {
+    return this.api.donations.updateDonationPeriod.mutate(payload);
+  }
+
+  public deleteDonationPeriod(id: string) {
+    return this.api.donations.deleteDonationPeriod.mutate({ id });
+  }
+
+  // ── Webhook token (stored hashed, shown once) ────────────────────────────────
+
+  public getWebhookTokenStatus() {
+    return this.api.donations.getWebhookTokenStatus.query();
+  }
+
+  public regenerateWebhookToken() {
+    return this.api.donations.regenerateWebhookToken.mutate();
+  }
+}
+```
+
 ## File: apps/frontend/src/app/services/api/http-download.ts
 
 ```typescript
@@ -23114,14 +24923,62 @@ export async function downloadWithAuthHeader(url: string, token: string | null, 
 const OBJECT_URL_REVOKE_DELAY_MS = 10_000;
 ```
 
-## File: apps/frontend/src/app/services/api/trpc-types.ts
+## File: apps/frontend/src/app/services/api/token-service.ts
 
 ```typescript
-import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
-import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { Service } from '@angular/core';
 
-export type RouterInputs = inferRouterInputs<TRPCRouter>;
-export type RouterOutputs = inferRouterOutputs<TRPCRouter>;
+/**
+ * Holds the short-lived access token IN MEMORY only (SECURITY-REVIEW.md 2.1). The long-lived refresh
+ * token is never seen by JS — it lives in an HttpOnly cookie set by the backend — so an XSS payload
+ * can't exfiltrate a durable credential. On a cold page load the access token is gone; the app
+ * silently re-mints one from the refresh cookie (see trpc-refreshlink `silentRefresh`).
+ *
+ * `persistence` is the remember-me preference only (which drives the cookie lifetime server-side);
+ * it no longer controls token storage because tokens are never persisted client-side.
+ */
+@Service()
+export class TokenService {
+  private persistence = false;
+  private authToken: string | null = null;
+
+  constructor() {
+    this.persistence = localStorage.getItem(PERSISTENCE_KEY) === '1';
+  }
+
+  public clearAll(): void {
+    this.authToken = null;
+  }
+
+  public getAuthToken(): string | null {
+    return this.authToken;
+  }
+
+  public getPersistence(): boolean {
+    return this.persistence;
+  }
+
+  public removeAuthToken(): void {
+    this.authToken = null;
+  }
+
+  /** Accepts the token-issuing response shape ({ auth_token }); the refresh token is not returned
+   * to JS anymore (it's in the HttpOnly cookie). */
+  public set(token: { auth_token?: string | null }): void {
+    this.authToken = token.auth_token ?? null;
+  }
+
+  public setAuthToken(token: string | null): void {
+    this.authToken = token;
+  }
+
+  public setPersistence(persistence: boolean): void {
+    this.persistence = persistence;
+    localStorage.setItem(PERSISTENCE_KEY, persistence ? '1' : '0');
+  }
+}
+
+const PERSISTENCE_KEY = 'pc-persistence';
 ```
 
 ## File: apps/frontend/src/app/services/api/user-message.ts
@@ -23327,94 +25184,6 @@ export class FullScreenService {
     return !!(document.fullscreenElement || doc.webkitFullscreenElement || doc.msFullscreenElement);
   }
 }
-```
-
-## File: apps/frontend/src/app/services/global-error-handler.ts
-
-```typescript
-import { ErrorHandler, inject, Service } from '@angular/core';
-import { HttpErrorResponse } from '@angular/common/http';
-import { TRPCClientError } from '@trpc/client';
-import { JSendFailError, JSendServerError } from '../../../../../libs/common/src';
-import { ApiError } from './api/api-error';
-
-import { ErrorService } from './error.service';
-
-@Service()
-export class GlobalErrorHandler implements ErrorHandler {
-  private readonly errors = inject(ErrorService);
-
-  handleError(error: unknown): void {
-    if (
-      error instanceof HttpErrorResponse ||
-      error instanceof JSendFailError ||
-      error instanceof JSendServerError ||
-      error instanceof TRPCClientError ||
-      error instanceof ApiError
-    ) {
-      // Already handled elsewhere
-      return;
-    }
-
-    this.errors.handle(error);
-
-    console.error(error);
-  }
-}
-```
-
-## File: apps/frontend/src/app/services/jsend.interceptor.ts
-
-```typescript
-import type { HttpInterceptorFn } from '@angular/common/http';
-import { HttpContextToken, HttpErrorResponse, HttpResponse } from '@angular/common/http';
-import { inject } from '@angular/core';
-import { jsend, JSendFailError, JSendServerError } from '../../../../../libs/common/src';
-import { catchError, map } from 'rxjs/operators';
-import { throwError } from 'rxjs';
-
-import { ErrorService } from './error.service';
-
-export const SKIP_ERROR_HANDLER = new HttpContextToken<boolean>(() => false);
-
-export const jsendInterceptor: HttpInterceptorFn = (req, next) => {
-  const errorSvc = inject(ErrorService);
-  const skip = req.context.get(SKIP_ERROR_HANDLER);
-
-  return next(req).pipe(
-    map((event) => {
-      if (event instanceof HttpResponse) {
-        const body = event.body;
-        if (jsend.isSuccess(body)) return event.clone({ body: body.data });
-        if (jsend.isFail(body)) throw new JSendFailError(body.data, event.status);
-        if (jsend.isError(body)) {
-          const err = new JSendServerError(body.message, body.code, event.status);
-          if (!skip) errorSvc.handle(err);
-          throw err;
-        }
-      }
-      return event;
-    }),
-    catchError((error: unknown) => {
-      if (error instanceof HttpErrorResponse) {
-        const body = error.error;
-        if (jsend.isFail(body)) {
-          return throwError(() => new JSendFailError(body.data, error.status));
-        }
-        if (jsend.isError(body)) {
-          const err = new JSendServerError(body.message, body.code, error.status);
-          if (!skip) errorSvc.handle(err);
-          return throwError(() => err);
-        }
-        const err = new JSendServerError(error.message, undefined, error.status);
-        if (!skip) errorSvc.handle(err);
-        return throwError(() => err);
-      }
-      if (!skip) errorSvc.handle(error);
-      return throwError(() => error);
-    }),
-  );
-};
 ```
 
 ## File: apps/frontend/src/app/services/keyboard-shortcuts.service.ts
@@ -23945,6 +25714,53 @@ function joinWithAnd(items: string[]): string {
   if (items.length <= 1) return items[0] ?? '';
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+```
+
+## File: apps/frontend/src/app/services/user.service.ts
+
+```typescript
+import { inject, Service } from '@angular/core';
+import { IAuthUser, UpdateAuthUserType } from '../../../../../libs/common/src';
+import { environment } from '../../environments/environment';
+import { AuthService } from '../auth/auth-service';
+import { TRPCService } from './api/trpc-service';
+
+@Service()
+export class UserService extends TRPCService<any> {
+  private readonly authService = inject(AuthService);
+
+  public getUsers() {
+    return this.api.users.getUsers.query() as unknown as Promise<IAuthUser[]>;
+  }
+
+  public getProfileById(id: string) {
+    return this.api.users.getProfileById.query(id);
+  }
+
+  public async updateUserProfile(id: string, data: UpdateAuthUserType) {
+    const updated = await this.api.users.updateUserProfile.mutate({ id, data });
+    // If the updated user is the current user, update our local signal
+    const current = this.authService.getUser();
+    if (current && current.id === id) {
+      this.authService.getUserSignal().set({
+        ...current,
+        ...updated,
+        first_name: (updated.first_name as string | undefined) ?? current.first_name,
+      });
+    }
+    return updated;
+  }
+
+  public resolveAvatarUrl(url: string | null | undefined): string | null {
+    if (!url) return null;
+    // Backend avatar URLs arrive pre-signed (short-lived, single-file scope),
+    // so no session token is appended — tokens in URLs leak into history/logs.
+    if (url.startsWith('/') && !url.startsWith('//')) {
+      return environment.apiUrl + url;
+    }
+    return url;
+  }
 }
 ```
 
@@ -25056,122 +26872,6 @@ export class DataGridFiltersService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/grid-advanced-filter.service.ts
-
-```typescript
-import { computed, signal } from '@angular/core';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type {
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  QueryBuilderRuleNode,
-} from '../../../../../../../../libs/common/src';
-
-export class GridAdvancedFilterService {
-  // ── Signals ───────────────────────────────────────────────────────────────
-  readonly showAdvancedFilterBuilder = signal<boolean>(false);
-  readonly advFilterRoot = signal<QueryBuilderGroupNode>({
-    kind: 'group',
-    id: 'root',
-    conjunction: 'AND',
-    rules: [],
-  });
-
-  // ── Computeds ─────────────────────────────────────────────────────────────
-  readonly hasActiveAdvancedFilters = computed(() => {
-    return this.hasActiveRules(this.advFilterRoot());
-  });
-
-  private hasActiveRules(node: QueryBuilderNode): boolean {
-    if (node.kind === 'rule') {
-      if (!node.field) return false;
-      if (node.op === 'isEmpty' || node.op === 'isNotEmpty' || node.op === 'empty' || node.op === 'notempty')
-        return true;
-      return node.value !== undefined && node.value !== null && String(node.value).trim() !== '';
-    } else {
-      return node.rules.some((child) => this.hasActiveRules(child));
-    }
-  }
-
-  buildModel(): QueryBuilderGroupNode | undefined {
-    if (!this.hasActiveAdvancedFilters()) return undefined;
-    const cleaned = this.cleanFilterTree(this.advFilterRoot());
-    if (cleaned && cleaned.kind === 'group') {
-      return cleaned;
-    }
-    return undefined;
-  }
-
-  private cleanFilterTree(node: QueryBuilderNode): QueryBuilderNode | null {
-    if (node.kind === 'rule') {
-      if (!node.field) return null;
-      if (node.op === 'isEmpty' || node.op === 'isNotEmpty' || node.op === 'empty' || node.op === 'notempty') {
-        return { ...node, value: '' };
-      }
-      if (node.value !== undefined && node.value !== null && String(node.value).trim() !== '') {
-        return { ...node };
-      }
-      return null;
-    } else {
-      const activeChildren = node.rules
-        .map((child) => this.cleanFilterTree(child))
-        .filter((child): child is QueryBuilderNode => child !== null);
-      if (activeChildren.length === 0) return null;
-      return {
-        ...node,
-        rules: activeChildren,
-      };
-    }
-  }
-
-  // ── Actions ───────────────────────────────────────────────────────────────
-
-  openAdvancedFilterBuilder(getColDefs: () => ColDef[]): void {
-    this.showAdvancedFilterBuilder.set(true);
-    if (this.advFilterRoot().rules.length === 0) {
-      this.addRule(getColDefs);
-    }
-  }
-
-  switchToAdvancedFilter(closeFilterPanel: () => void, getColDefs: () => ColDef[]): void {
-    closeFilterPanel();
-    this.openAdvancedFilterBuilder(getColDefs);
-  }
-
-  addRule(getColDefs: () => ColDef[]): void {
-    const fields = getColDefs().filter((c) => c.field && c.field !== 'actions');
-    const defaultField = fields[0]?.field || '';
-    const newRule: QueryBuilderRuleNode = {
-      kind: 'rule',
-      id: Math.random().toString(36).substring(2),
-      field: defaultField,
-      op: 'contains',
-      value: '',
-    };
-    this.advFilterRoot.update((root) => ({
-      ...root,
-      rules: [...root.rules, newRule],
-    }));
-  }
-
-  apply(doRefresh: () => void): void {
-    this.showAdvancedFilterBuilder.set(false);
-    doRefresh();
-  }
-
-  clear(doRefresh: () => void): void {
-    this.advFilterRoot.set({
-      kind: 'group',
-      id: 'root',
-      conjunction: 'AND',
-      rules: [],
-    });
-    this.showAdvancedFilterBuilder.set(false);
-    doRefresh();
-  }
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/services/nav.service.ts
 
 ```typescript
@@ -25351,40 +27051,52 @@ export class DataGridUtilsService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-dropdown.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
 
 ```typescript
-import { Component, input, output } from '@angular/core';
+import { Component, computed, input } from '@angular/core';
+import type { DataGrid } from '../datagrid';
+import type { ColumnDef as ColDef } from '../grid-defaults';
+import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
 
 /**
- * Desktop filter dropdown shell shared by the tags/issues/list toolbar
- * dropdowns: a `dropdown-content` panel with a title and an optional
- * "Clear Filter" action, with the actual filter control projected in.
+ * Column visibility dropdown shared by the mobile and desktop toolbars.
+ * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
+ * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
  *
- * Rendered as the projected content of a `pc-grid-tool-btn`, so it uses
- * `display: contents` to stay a direct child of the DaisyUI `<details>`.
+ * The grid is passed in as an input rather than injected: as projected
+ * content it does not reliably resolve the same `DataGrid` instance.
+ *
+ * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
+ * in after init, so as an isolated component this would render once and stay
+ * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
+ * signal) to recompute once the columns are populated.
  */
 @Component({
-  selector: 'pc-dg-filter-dropdown',
+  selector: 'pc-dg-columns-dropdown',
   template: `
-    <div
-      tabindex="0"
-      class="dropdown-content bg-base-100 rounded-box w-72 p-3 shadow-lg border border-base-200 flex flex-col items-stretch text-left gap-2"
-    >
-      <div class="font-semibold text-xs flex justify-between items-center text-base-content/80 px-1">
-        <span>{{ title() }}</span>
-        @if (active()) {
-          <button
-            i18n
-            class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 no-underline hover:underline text-[11px]"
-            (click)="clear.emit()"
-          >
-            Clear Filter
-          </button>
+    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
+      <li class="px-2 py-1 flex gap-2">
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
+        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
+      </li>
+      @for (col of cols(); track col.field) {
+        @if (col.field) {
+          <li>
+            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs"
+                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
+                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
+              />
+              <span class="label-text">{{ col.headerName || col.field }}</span>
+            </label>
+          </li>
         }
-      </div>
-      <ng-content></ng-content>
-    </div>
+      }
+    </ul>
   `,
   styles: [
     `
@@ -25394,10 +27106,15 @@ import { Component, input, output } from '@angular/core';
     `,
   ],
 })
-export class DataGridFilterDropdownComponent {
-  public title = input.required<string>();
-  public active = input(false);
-  public clear = output<void>();
+export class DataGridColumnsDropdownComponent {
+  public readonly grid = input.required<DataGrid<keyof Models, unknown>>();
+
+  protected readonly cols = computed<ColDef[]>(() => {
+    // Establish a reactive dependency on the colVisibility signal so the list
+    // recomputes once the (non-signal) column defs are populated after init.
+    this.grid().getColVisibilityMap();
+    return this.grid().getColDefsForToolbar();
+  });
 }
 ```
 
@@ -25510,75 +27227,6 @@ export class DataGridFilterPanelComponent {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-filter-section.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-/**
- * Mobile collapsible filter section shared by the narrow/tags/issues/list
- * rows inside the combined mobile filter panel: a `<details>` with an active
- * dot indicator, title, optional "Clear" action, and a rotating chevron.
- * The filter control itself is projected in.
- *
- * Uses `display: contents` so the `<details>` stays a direct flex child of
- * the surrounding panel column.
- */
-@Component({
-  selector: 'pc-dg-filter-section',
-  imports: [Icon],
-  template: `
-    <details class="group" [class.border-t]="bordered()" [class.border-base-200]="bordered()" [open]="open()">
-      <summary
-        class="flex items-center justify-between px-1 py-2 cursor-pointer list-none select-none hover:bg-base-200 rounded text-xs font-semibold text-base-content/80"
-      >
-        <span class="flex items-center gap-1.5">
-          @if (active()) {
-            <span class="inline-block w-1.5 h-1.5 rounded-full bg-primary shrink-0"></span>
-          }
-          {{ title() }}
-        </span>
-        <div class="flex items-center gap-1">
-          @if (active() && clearable()) {
-            <button
-              i18n
-              class="btn btn-ghost btn-xs text-primary p-0 h-auto min-h-0 hover:underline text-[11px]"
-              (click)="clear.emit(); $event.stopPropagation()"
-            >
-              Clear
-            </button>
-          }
-          <pc-icon
-            name="chevron-down"
-            [size]="3"
-            class="transition-transform group-open:rotate-180 text-base-content/40"
-          ></pc-icon>
-        </div>
-      </summary>
-      <div class="pt-1 pb-2">
-        <ng-content></ng-content>
-      </div>
-    </details>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class DataGridFilterSectionComponent {
-  public title = input.required<string>();
-  public active = input(false);
-  public open = input(false);
-  public bordered = input(true);
-  public clearable = input(true);
-  public clear = output<void>();
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-inline-filters-row.ts
 
 ```typescript
@@ -25624,107 +27272,102 @@ export class DataGridInlineFiltersRowComponent {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/multiselect-filter.ts
+## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
 
 ```typescript
-import { Component, input, model, output } from '@angular/core';
+import type { Provider } from '@angular/core';
+import { InjectionToken } from '@angular/core';
+import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
+import type { QueueExportInputType } from '../../../../../../../libs/common/src';
 
-@Component({
-  selector: 'pc-multiselect-filter',
-  template: `
-    <div class="flex flex-col gap-1">
-      <input
-        type="text"
-        [placeholder]="'Search ' + label().toLowerCase() + '...'"
-        class="input input-bordered input-xs w-full bg-base-100"
-        [value]="searchQuery()"
-        (input)="searchQuery.set($any($event.target).value)"
-      />
-      <div class="flex gap-2 text-[11px] text-primary px-1">
-        <button i18n class="hover:underline cursor-pointer font-medium" (click)="selectAll.emit()">Select all</button>
-        <span class="text-base-300">|</span>
-        <button i18n class="hover:underline cursor-pointer font-medium" (click)="clearVisible.emit()">Clear</button>
-      </div>
-      <div class="border-t border-base-200 my-0.5"></div>
-      <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
-        @if (options().length === 0) {
-          <div i18n class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
-        } @else {
-          @for (opt of options(); track opt) {
-            <label
-              class="label cursor-pointer justify-start gap-2 py-1 px-2 hover:bg-base-200 rounded w-full min-w-0 flex items-center select-none"
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-primary checkbox-xs shrink-0"
-                [checked]="selected().includes(opt)"
-                (change)="toggle.emit({ value: opt, checked: $any($event.target).checked })"
-              />
-              <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="opt">{{ opt }}</span>
-            </label>
-          }
-        }
-      </div>
-    </div>
-  `,
-})
-export class MultiselectFilterComponent {
-  label = input.required<string>();
-  options = input.required<string[]>();
-  selected = input.required<string[]>();
-  searchQuery = model.required<string>();
-  maxHeight = input(9);
+export interface DataGridConfig {
+  filterToolPanelId: string;
+  messages: {
+    noDeletePermission: string;
+    editBlocked: string;
+    editFailed: string;
+    loadFailed: string;
 
-  selectAll = output<void>();
-  clearVisible = output<void>();
-  toggle = output<{ value: string; checked: boolean }>();
-}
-```
+    deleteConfirmTitle: string;
+    deleteConfirmMessage: string;
+    deleteConfirmIcon: BaseDialogOptions['icon'];
+    deleteConfirmVariant: 'danger' | 'info' | 'warning' | 'success';
+    deleteConfirmText: string;
+    deleteCancelText: string;
+    deleteNoneSelected: string;
+    deleteSystemValues: string;
+    deleteFailed: string;
+    deleteSuccess: string;
 
-## File: apps/frontend/src/app/shared/components/datagrid/ui/singleselect-filter.ts
+    exportTitle: string;
+    exportMessage: string;
+    exportIcon: BaseDialogOptions['icon'];
+    exportConfirmText: string;
+    exportCancelText: string;
+    exportFailed: string;
+    exportInProgress: string;
+    exportReady: string;
+    exportNavigateWarning: string;
+    exportFileName: string;
+    exportEntity: QueueExportInputType['entity'] | '';
 
-```typescript
-import { Component, input, output } from '@angular/core';
-
-export interface SingleSelectOption {
-  value: string;
-  label: string;
+    /** Noun used in selection & bulk-bar copy, e.g. "person"/"people". Defaults to row/rows. */
+    entityNoun?: string;
+    entityNounPlural?: string;
+  };
+  pageSize: number;
 }
 
-@Component({
-  selector: 'pc-singleselect-filter',
-  template: `
-    <div class="overflow-y-auto flex flex-col gap-0.5 pr-1 email-scrollbar" [style.max-height.rem]="maxHeight()">
-      @if (options().length === 0) {
-        <div i18n class="px-3 py-3 text-xs text-neutral-400 text-center">No {{ label().toLowerCase() }} found</div>
-      } @else {
-        @for (opt of options(); track opt.value) {
-          <label
-            class="label cursor-pointer justify-start gap-2 py-1 px-2 rounded hover:bg-base-200 w-full min-w-0 flex items-center select-none"
-          >
-            <input
-              type="radio"
-              [name]="radioName()"
-              class="radio radio-primary radio-xs shrink-0"
-              [checked]="selected() === opt.value"
-              (change)="select.emit(opt.value)"
-            />
-            <span class="label-text truncate flex-1 min-w-0 text-xs" [title]="opt.label">{{ opt.label }}</span>
-          </label>
-        }
-      }
-    </div>
-  `,
-})
-export class SingleselectFilterComponent {
-  label = input.required<string>();
-  options = input.required<SingleSelectOption[]>();
-  selected = input<string | null>(null);
-  radioName = input.required<string>();
-  maxHeight = input(9);
-
-  select = output<string>();
+export function provideDataGridConfig(
+  overrides?: Partial<Omit<DataGridConfig, 'messages'>> & { messages?: Partial<DataGridConfig['messages']> },
+): Provider {
+  const merged: DataGridConfig = {
+    ...DEFAULT_DATA_GRID_CONFIG,
+    ...overrides,
+    messages: {
+      ...DEFAULT_DATA_GRID_CONFIG.messages,
+      ...(overrides?.messages ?? {}),
+    },
+  };
+  return { provide: DATA_GRID_CONFIG, useValue: merged };
 }
+
+export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CONFIG');
+
+export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
+  pageSize: 25,
+  filterToolPanelId: 'filters-new',
+  messages: {
+    noDeletePermission: 'You do not have the permission to delete rows from this table.',
+    editBlocked: 'This cell cannot be edited or deleted.',
+    editFailed: 'Could not edit the row. Please try again later.',
+    loadFailed: 'Could not load the data. Please try again later.',
+
+    deleteConfirmTitle: 'Are you sure?',
+    deleteConfirmMessage: 'The selected rows will be deleted permanently. You cannot undo this.',
+    deleteConfirmIcon: 'trash',
+    deleteConfirmVariant: 'danger',
+    deleteConfirmText: 'Delete',
+    deleteCancelText: 'Cancel',
+    deleteNoneSelected: 'Please select at least one row to delete.',
+    deleteSystemValues: 'Some rows cannot be deleted because these are system values.',
+    deleteFailed: 'Could not delete. Please try again later.',
+    deleteSuccess: 'Selected rows were successfully deleted.',
+
+    exportTitle: 'Choose export scope',
+    exportMessage:
+      'Select whether to export only the displayed rows or all matching rows. Only the columns visible in the grid are included.',
+    exportIcon: 'arrow-down-tray',
+    exportConfirmText: 'All rows',
+    exportCancelText: 'Displayed rows',
+    exportFailed: 'Export failed. Please try again.',
+    exportInProgress: 'Preparing your export. Keep this tab open until the download starts.',
+    exportReady: 'Export ready. Your download should begin momentarily.',
+    exportNavigateWarning: 'Exporting all rows can take a while. Please avoid navigating away until it completes.',
+    exportFileName: 'grid-export.csv',
+    exportEntity: '',
+  },
+};
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/undo-redo-mgr.ts
@@ -25923,70 +27566,102 @@ export class UndoManager {
 }
 ```
 
-## File: apps/frontend/src/app/shared/pipes/pc-date.pipe.ts
+## File: apps/frontend/src/app/app.routes.ts
 
 ```typescript
-import { inject, Pipe, PipeTransform } from '@angular/core';
+import type { Routes } from '@angular/router';
 
-import { DateFormatService } from '../services/date-format.service';
+import { authGuard } from './auth/auth-guard';
+import { loginGuard } from './auth/login/login-guard';
 
-/**
- * Formats a date using the tenant's configured Appearance → Date Format setting.
- * Impure so it reflects setting changes (via the settings snapshot signal) without a reload.
- */
-@Pipe({
-  name: 'pcDate',
-  standalone: true,
-  pure: false,
-})
-export class PcDatePipe implements PipeTransform {
-  private readonly dates = inject(DateFormatService);
+export const appRoutes = [
+  // Default redirect to summary inside the dashboard shell
+  { path: '', redirectTo: 'summary', pathMatch: 'full' },
 
-  public transform(value: string | number | Date | null | undefined, pattern?: string): string {
-    return this.dates.format(value, pattern);
-  }
-}
+  // Auth pages
+  {
+    path: 'signin',
+    canActivate: [loginGuard],
+    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
+  },
+  {
+    path: 'signup',
+    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
+  },
+  {
+    path: 'resetpassword',
+    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
+  },
+  {
+    path: 'newpassword',
+    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
+  },
+  {
+    path: 'verify-sender-email',
+    loadComponent: () =>
+      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
+  },
+  {
+    path: 'confirm-subscription',
+    loadComponent: () =>
+      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
+  },
+  {
+    path: 'f/:slug',
+    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
+  },
+  {
+    path: 'verify-email',
+    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
+  },
+  {
+    path: 'cancel-deletion',
+    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
+  },
+  {
+    path: 'resume-account',
+    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
+  },
+
+  // Main dashboard shell + children (protected)
+  {
+    path: '',
+    canActivate: [authGuard],
+    // optionally also: canActivateChild: [authGuard],
+    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
+    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
+  },
+
+  // Fallback
+  {
+    path: '**',
+    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
+  },
+] as const satisfies Routes;
 ```
 
-## File: apps/frontend/src/app/shared/services/date-format.service.ts
+## File: apps/frontend/src/environments/environment.prod.ts
 
 ```typescript
-import { computed, inject, Service } from '@angular/core';
-import { formatDate } from '@angular/common';
+export const environment = {
+  production: true,
+  apiUrl: 'https://pplcrm.example.com',
+  googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  // Set to your real base domain in production, e.g. 'mydomain.com' → forms at '<tenant>.mydomain.com'.
+  publicFormsBaseDomain: 'example.com',
+};
+```
 
-import { SettingsService } from '../../experiences/settings/services/settings-service';
+## File: apps/frontend/src/environments/environment.ts
 
-const DEFAULT_DATE_FORMAT = 'MMMM d, yyyy';
-
-/**
- * Resolves the tenant-wide default date format (Appearance → Date Format) and formats date values
- * with it. Backed by the settings snapshot signal so changes propagate without a reload.
- */
-@Service()
-export class DateFormatService {
-  private readonly settings = inject(SettingsService);
-
-  /** The configured date format pattern, falling back to the project default. */
-  public readonly pattern = computed<string>(() => {
-    const raw = this.settings.snapshotSignal()['appearance.date_format'];
-    return typeof raw === 'string' && raw.trim() ? raw : DEFAULT_DATE_FORMAT;
-  });
-
-  /**
-   * Formats a date value with the tenant's configured pattern. Returns an empty string for nullish or
-   * unparseable input so callers can render their own placeholder.
-   */
-  public format(value: string | number | Date | null | undefined, pattern?: string): string {
-    if (value === null || value === undefined || value === '') return '';
-    const date = value instanceof Date ? value : new Date(value);
-    if (isNaN(date.getTime())) return String(value);
-    try {
-      return formatDate(date, pattern ?? this.pattern(), 'en-US');
-    } catch {
-      return String(value);
-    }
-  }
-}
+```typescript
+export const environment = {
+  production: false,
+  apiUrl: 'http://localhost:3000',
+  googleMapsApiKey: import.meta.env['VITE_GOOGLE_MAPS_API_KEY'] ?? '',
+  // Base domain tenant subdomains hang off of, for building public form URLs (`<slug>.<baseDomain>`).
+  publicFormsBaseDomain: 'localhost',
+};
 ```
 
 ## File: apps/frontend/src/index.html
@@ -26099,51 +27774,6 @@ export class DateFormatService {
 </html>
 ```
 
-## File: apps/frontend/eslint.config.cjs
-
-```javascript
-/* -----------------  apps/frontend/eslint.config.cjs  -------------- */
-/* Angular-specific rules + selector prefixes for the front-end app. */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-
-const compat = new FlatCompat({ baseDirectory: __dirname });
-
-module.exports = [
-  /* Angular + inline-template processing for TS files */
-  ...compat
-    .config({
-      extends: ['plugin:@nx/angular', 'plugin:@angular-eslint/template/process-inline-templates'],
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.ts'],
-      rules: {
-        '@angular-eslint/directive-selector': ['error', { type: 'attribute', prefix: 'pc', style: 'camelCase' }],
-        '@angular-eslint/component-selector': ['error', { type: 'element', prefix: 'pc', style: 'kebab-case' }],
-      },
-    })),
-
-  /* Stand-alone HTML templates */
-  ...compat
-    .config({
-      extends: [
-        'plugin:@nx/angular-template',
-        'plugin:@angular-eslint/template/recommended',
-        'plugin:@angular-eslint/template/accessibility',
-      ],
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.html'],
-      rules: {
-        '@angular-eslint/template/no-negated-async': 'error',
-        '@angular-eslint/template/i18n': 'off',
-      },
-    })),
-];
-```
-
 ## File: apps/frontend/vite.config.ts
 
 ```typescript
@@ -26202,6 +27832,171 @@ export default defineConfig(() => ({
     },
   },
 }));
+```
+
+## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.ts
+
+```typescript
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { ConfirmSubscriptionService } from './confirm-subscription-service';
+
+@Component({
+  selector: 'pc-confirm-subscription',
+  imports: [AuthLayoutComponent, Icon],
+  templateUrl: './confirm-subscription-page.html',
+})
+export class ConfirmSubscriptionPage implements OnInit {
+  private readonly route = inject(ActivatedRoute);
+  private readonly confirmSvc = inject(ConfirmSubscriptionService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+
+  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
+  protected readonly errorMessage = signal<string>('');
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    const token = this.route.snapshot.queryParamMap.get('token');
+
+    if (!token) {
+      this.status.set('error');
+      this.errorMessage.set('Invalid or missing confirmation token.');
+      return;
+    }
+
+    const end = this._loading.begin();
+    this.status.set('idle');
+
+    try {
+      const result = await this.confirmSvc.confirmSubscription(token);
+      if (result && result.success) {
+        this.status.set('success');
+      } else {
+        this.status.set('error');
+        this.errorMessage.set('Confirmation failed. The link may be invalid or expired.');
+      }
+    } catch (err) {
+      this.status.set('error');
+      this.errorMessage.set(
+        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during confirmation.',
+      );
+    } finally {
+      end();
+    }
+  }
+}
+```
+
+## File: apps/frontend/src/app/auth/new-password-page/new-password-page.ts
+
+```typescript
+import { DecimalPipe } from '@angular/common';
+import { Component, OnInit, inject, signal } from '@angular/core';
+import { FormField, form, minLength, required, submit } from '@angular/forms/signals';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
+import { getUserErrorMessage } from 'apps/frontend/src/app/services/api/user-message';
+
+@Component({
+  selector: 'pc-new-password',
+  imports: [DecimalPipe, FormField, RouterLink, AuthLayoutComponent, Icon],
+  templateUrl: './new-password-page.html',
+})
+export class NewPasswordPage implements OnInit {
+  private readonly alertSvc = inject(AlertService);
+  private readonly authService = inject(AuthService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+
+  private _loading = createLoadingGate();
+
+  private code: string | null = null;
+
+  protected readonly error = signal(false);
+  protected readonly isLoading = this._loading.visible;
+
+  protected passwordBreachNumber = passwordBreachNumber;
+  protected passwordInBreach = passwordInBreach;
+
+  protected success: string | undefined;
+
+  protected readonly payload = signal({
+    password: '',
+  });
+
+  public readonly form = form(this.payload, (p) => {
+    required(p.password);
+    minLength(p.password, 8);
+  });
+
+  public get password() {
+    return this.form.password();
+  }
+
+  public ngOnInit() {
+    const code = this.route.snapshot.queryParamMap.get('code');
+
+    if (!code) {
+      this.error.set(true);
+      return;
+    }
+
+    this.code = code;
+  }
+
+  public async submit(event?: Event) {
+    event?.preventDefault();
+
+    // force validation messages to appear
+    this.form().markAsTouched();
+
+    if (!this.form().valid) {
+      this.alertSvc.showError('Please check the password.');
+      return;
+    }
+
+    await submit(this.form, {
+      action: async () => {
+        const end = this._loading.begin();
+        try {
+          const passwordVal = this.payload().password;
+          await this.authService.resetPassword({
+            code: this.code || '',
+            password: passwordVal,
+          });
+
+          this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
+          void this.router.navigateByUrl('signin');
+        } catch (err) {
+          // Catch backend/network rejections properly
+          this.alertSvc.showError(getUserErrorMessage(err, 'Could not reset the password. Please try again.'));
+          this.error.set(true);
+        } finally {
+          end();
+        }
+        return null;
+      },
+      onInvalid: () => {
+        this.alertSvc.showError('Please check the password.');
+      },
+    });
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/auth/resume-account-page/resume-account-page.ts
@@ -26902,47 +28697,6 @@ export class VerifySenderEmailPage implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/auth/auth-utils.ts
-
-```typescript
-import type { FormBuilder, NonNullableFormBuilder } from '@angular/forms';
-import { Validators } from '@angular/forms';
-
-// Consolidated form control builders and password breach utilities
-export type AnyFormBuilder = FormBuilder | NonNullableFormBuilder;
-
-export function emailControl(fb: AnyFormBuilder) {
-  return fb.control('', { validators: [Validators.required, Validators.email] });
-}
-
-type BreachError = { kind: string; pwnedPasswordOccurrence?: number };
-type SignalFieldState = { errors: () => BreachError[] };
-
-export function passwordBreachNumber(control: unknown) {
-  let errs: { pwnedPasswordOccurrence?: number } | null = null;
-  if (control && typeof (control as SignalFieldState).errors === 'function') {
-    // It's a FieldState (Signal Forms)
-    const activeErrors = (control as SignalFieldState).errors();
-    const breachErr = activeErrors.find(
-      (e) => e.kind === 'pwnedPasswordOccurrence' || e.pwnedPasswordOccurrence !== undefined,
-    );
-    errs = breachErr ?? null;
-  } else {
-    // It's an AbstractControl (Reactive Forms)
-    errs = (control as { errors?: { pwnedPasswordOccurrence?: number } | null } | null)?.errors ?? null;
-  }
-  return errs?.pwnedPasswordOccurrence ?? null;
-}
-
-export function passwordControl(fb: AnyFormBuilder) {
-  return fb.control('', { validators: [Validators.required, Validators.minLength(8)] });
-}
-
-export function passwordInBreach(control: unknown) {
-  return !!passwordBreachNumber(control);
-}
-```
-
 ## File: apps/frontend/src/app/experiences/activity/ui/activity-feed.ts
 
 ```typescript
@@ -27450,400 +29204,6 @@ export class ActivityFeed implements OnInit {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/companies/ui/companies-grid.ts
-
-```typescript
-import { Component, signal, inject, viewChild } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { CompaniesService } from '../services/companies-service';
-
-@Component({
-  selector: 'pc-companies-grid',
-  imports: [DataGrid, CsvImportComponent],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Companies"
-        i18n-title
-        description="Manage corporate contacts, associate people with companies, and track organization profiles."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="false"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        (importCSV)="openImportDialog()"
-        plusIcon="add-company"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Companies from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    />
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: CompaniesService },
-    provideDataGridConfig({ messages: { exportEntity: 'companies', exportFileName: 'companies-export.csv' } }),
-  ],
-})
-export class CompaniesGrid {
-  private readonly companiesService = inject(CompaniesService);
-  private readonly grid = viewChild<DataGrid<'companies', any>>('grid');
-
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected readonly mappableFields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'];
-  protected readonly importerOpen = signal(false);
-  protected readonly importSummary = signal<CsvImportSummary | null>(null);
-
-  protected col = [
-    { field: 'name', headerName: 'Company Name', editable: true },
-    { field: 'website', headerName: 'Website', editable: true },
-    { field: 'industry', headerName: 'Industry', editable: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'phone', headerName: 'Phone', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'created_at',
-      headerName: 'Created',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.created_at),
-    },
-  ];
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      name: 'name',
-      companyname: 'name',
-      description: 'description',
-      desc: 'description',
-      website: 'website',
-      web: 'website',
-      email: 'email',
-      phone: 'phone',
-      tel: 'phone',
-      telephone: 'phone',
-      industry: 'industry',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  };
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.companiesService.import(rows, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/services/store/email-actions.store.ts
-
-```typescript
-import { inject, signal, Service } from '@angular/core';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-import { ComposePayload, DraftPayload } from '../../ui/email-compose/email-compose';
-import { EmailsService } from '../emails-service';
-import { EmailCacheStore } from './email-cache.store';
-import { EmailFoldersStore } from './email-folders.store';
-import { type EmailId, EmailStateStore } from './email-state.store';
-import { ALL_FOLDERS, EmailStatus } from '../../../../../../../../libs/common/src/lib/emails';
-import type { EmailDraftType, EmailType } from '../../../../../../../../libs/common/src/lib/models';
-
-@Service()
-export class EmailActionsStore {
-  public readonly sendingCount = signal(0);
-  private readonly alerts = inject(AlertService);
-  private readonly cache = inject(EmailCacheStore);
-  private readonly folders = inject(EmailFoldersStore);
-  private readonly state = inject(EmailStateStore);
-  private readonly svc = inject(EmailsService);
-
-  public async addComment(emailId: EmailId, authorId: string, commentText: string): Promise<any> {
-    const created = await this.svc.addComment(String(emailId), authorId, commentText);
-    this.cache.appendCommentToHeader(emailId, created);
-    return created;
-  }
-
-  public async assignEmailToUser(emailId: EmailId, userId: string | null, assigneeName?: string | null): Promise<void> {
-    const key = String(emailId);
-    await this.updateProperty(
-      key,
-      { assigned_to: userId ?? undefined },
-      () => this.svc.assign(key, userId, assigneeName),
-      {
-        refreshFolder: true,
-        refreshCounts: true,
-      },
-    );
-  }
-
-  public async deleteComment(emailId: EmailId, commentId: string | number): Promise<void> {
-    const key = String(emailId);
-    const prevHeader = this.cache.getEmailHeaderById(key)(); // snapshot before change
-
-    // Optimistic: remove from cache now
-    this.cache.removeCommentFromHeader(key, commentId);
-
-    try {
-      await this.svc.deleteComment(key, String(commentId));
-      // success: nothing else to do, UI is already updated
-    } catch (e) {
-      console.error('deleteComment failed; rolling back', e);
-      if (typeof prevHeader !== 'undefined') {
-        this.cache.replaceHeader(key, prevHeader);
-      } else {
-        // If we somehow had no header snapshot, refetch to get back to server truth
-        await this.svc
-          .getEmailWithHeaders(key)
-          .then((res: any) => {
-            this.cache.replaceHeader(key, res?.header ?? null);
-          })
-          .catch(() => {
-            /* ignore */
-          });
-      }
-      throw e;
-    }
-  }
-
-  public async deleteDraft(id: string): Promise<void> {
-    await this.svc.deleteDraft(id);
-    await this.folders.refreshFolderCounts();
-    if (this.folders.currentSelectedFolderId() === ALL_FOLDERS.DRAFTS) {
-      await this.folders.loadEmailsForFolder(ALL_FOLDERS.DRAFTS);
-    }
-  }
-
-  public async deleteEmail(emailId: EmailId): Promise<void> {
-    const key = String(emailId);
-    try {
-      await this.svc.delete(key);
-      this.state.removeEmail(key);
-
-      const currentFolderId = this.folders.currentSelectedFolderId();
-      if (currentFolderId) {
-        await this.folders.loadEmailsForFolder(currentFolderId);
-      }
-      await this.folders.refreshFolderCounts();
-    } catch (e) {
-      this.alerts.showError(getUserErrorMessage(e, 'Could not delete the email. Please try again.'));
-      throw e;
-    }
-  }
-
-  public getDraft(id: string): Promise<EmailDraftType> {
-    return this.svc.getDraft(id);
-  }
-
-  public async restoreFromTrash(emailId: EmailId): Promise<void> {
-    const key = String(emailId);
-    try {
-      await this.svc.restoreFromTrash([key]);
-      this.state.removeEmail(key); // Remove from current state as it's no longer in Trash
-      const currentFolderId = this.folders.currentSelectedFolderId();
-      if (currentFolderId) {
-        await this.folders.loadEmailsForFolder(currentFolderId);
-      }
-      await this.folders.refreshFolderCounts();
-    } catch (e) {
-      this.alerts.showError(getUserErrorMessage(e, 'Could not restore the email. Please try again.'));
-      throw e;
-    }
-  }
-
-  public async saveDraft(input: DraftPayload): Promise<{ id: string }> {
-    const saved = await this.svc.saveDraft(input);
-    const currentFolderId = this.folders.currentSelectedFolderId();
-    if (currentFolderId === ALL_FOLDERS.DRAFTS) {
-      await this.folders.loadEmailsForFolder(ALL_FOLDERS.DRAFTS);
-    } else {
-      await this.folders.refreshFolderCounts();
-    }
-    return saved as { id: string };
-  }
-
-  public async sendEmail(input: ComposePayload): Promise<EmailType> {
-    this.sendingCount.update((c) => c + 1);
-    try {
-      const created = await this.svc.sendEmail(input);
-
-      // Reload the current folder to show the new email in Outbox/Sent immediately.
-      const currentFolderId = this.folders.currentSelectedFolderId();
-      if (currentFolderId) {
-        await this.folders.loadEmailsForFolder(currentFolderId);
-      }
-      await this.folders.refreshFolderCounts();
-
-      // Trigger automatic background sync shortly after sending to give the dispatch time to process.
-      setTimeout(() => {
-        this.svc
-          .syncEmails()
-          .then(async () => {
-            const fid = this.folders.currentSelectedFolderId();
-            if (fid) {
-              await this.folders.loadEmailsForFolder(fid);
-            }
-            await this.folders.refreshFolderCounts();
-          })
-          .catch((err) => {
-            console.warn('Auto-sync after send failed:', err);
-          });
-      }, 4000);
-
-      // Optional: warm header cache (if your API returns header)
-      // this.cache.replaceHeader(String(created.id), created.header ?? null);
-
-      return created;
-    } catch (e) {
-      this.alerts.showError(getUserErrorMessage(e, 'Could not send the email. Please try again.'));
-      throw e;
-    } finally {
-      this.sendingCount.update((c) => c - 1);
-    }
-  }
-
-  public async toggleEmailFavoriteStatus(emailId: EmailId, isFavorite: boolean): Promise<void> {
-    const key = String(emailId);
-    const currentFolderId = this.folders.currentSelectedFolderId();
-    await this.updateProperty(key, { is_favourite: isFavorite }, () => this.svc.setFavourite(key, isFavorite), {
-      refreshFolder: currentFolderId === ALL_FOLDERS.FAVOURITES,
-      refreshCounts: true,
-    });
-  }
-
-  public async updateEmailStatus(emailId: EmailId, status: EmailStatus): Promise<void> {
-    const key = String(emailId);
-    await this.updateProperty(key, { status }, () => this.svc.setStatus(key, status), {
-      refreshFolder: true,
-      refreshCounts: true,
-    });
-  }
-
-  public async toggleEmailReadStatus(emailId: EmailId, isRead: boolean): Promise<void> {
-    const key = String(emailId);
-    await this.updateProperty(key, { is_read: isRead }, () => this.svc.setEmailReadStatus(key, isRead), {
-      refreshFolder: false,
-      refreshCounts: true,
-    });
-  }
-
-  public async moveToFolder(emailId: EmailId, folderId: string): Promise<void> {
-    const key = String(emailId);
-    try {
-      await this.svc.moveToFolder(key, folderId);
-      this.state.removeEmail(key);
-
-      const currentFolderId = this.folders.currentSelectedFolderId();
-      if (currentFolderId) {
-        await this.folders.loadEmailsForFolder(currentFolderId);
-      }
-      await this.folders.refreshFolderCounts();
-    } catch (e) {
-      this.alerts.showError(getUserErrorMessage(e, 'Could not move the email. Please try again.'));
-      throw e;
-    }
-  }
-
-  private async updateProperty(
-    emailKey: string,
-    patch: Partial<EmailType>,
-    serverCall: () => Promise<unknown>,
-    opts?: { refreshFolder?: boolean; refreshCounts?: boolean },
-  ): Promise<void> {
-    const prev = this.state.patchEmail(emailKey, patch);
-    if (!prev) {
-      console.warn(`Email ${emailKey} not found in store`);
-      return;
-    }
-
-    try {
-      await serverCall();
-
-      const currentFolderId = this.folders.currentSelectedFolderId();
-      if (opts?.refreshFolder && currentFolderId) {
-        await this.folders.loadEmailsForFolder(currentFolderId);
-      }
-      if (opts?.refreshCounts) {
-        await this.folders.refreshFolderCounts();
-      }
-    } catch (e) {
-      this.state.replaceEmail(emailKey, prev);
-      throw e;
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/emails/services/emails-service.ts
 
 ```typescript
@@ -28146,84 +29506,86 @@ export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'ema
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/emails/ui/email-body/email-body.ts
+## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
 
 ```typescript
-import { Component, computed, effect, inject, input, untracked } from '@angular/core';
+import { Component, effect, inject, input, signal } from '@angular/core';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { AttachmentIconComponent } from '@uxcommon/components/icons/attachment-icon';
 import { Icon } from '@uxcommon/components/icons/icon';
-import { FileSizePipe } from '@uxcommon/pipes/filesize.pipe';
-import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
 
+import { IAuthUser } from '../../../../../../../../libs/common/src';
+import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
+import { UserService } from '../../../../services/user.service';
 import { EmailsStore } from '../../services/store/emailstore';
-import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { environment } from '../../../../../environments/environment';
 
 @Component({
-  selector: 'pc-email-body',
-  imports: [SanitizeHtmlPipe, FileSizePipe, AttachmentIconComponent, Icon],
-  template: `<div class="prose max-w-none break-words overflow-y-auto h-full p-2 email-scrollbar">
-    <div [innerHTML]="bodyHtml() | sanitizeHtml"></div>
-    @if (attachments().length > 0) {
-      <div class="mt-4 flex flex-wrap gap-2">
-        @for (att of attachments(); track att.id) {
-          <a
-            class="badge badge-outline no-underline hover:text-primary group"
-            [href]="getAttachmentUrl(att)"
-            target="_blank"
-            rel="noopener"
-            i18n-rel
-          >
-            <pc-attachment-icon [filename]="att.filename" [size]="4" class="group-hover:hidden"></pc-attachment-icon>
-            <pc-icon name="arrow-down-tray" [size]="4" class="hidden group-hover:block"></pc-icon>
-            <span>{{ att.filename }} | {{ att.size_bytes | fileSize }}</span>
-          </a>
-        }
+  selector: 'pc-email-assign',
+  imports: [Icon],
+  template: `<div class="flex items-center gap-2 mt-1">
+    <span i18n class="text-xs text-base-content/70">Owner:</span>
+    <div class="dropdown">
+      <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
+        <span>{{ getUserName(assignedTo()) }}</span>
+        <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
       </div>
-    }
+
+      <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
+        @for (user of users(); track user.id) {
+          <li>
+            <button type="button" (click)="assign(user.id); closeDropdown()">{{ user.first_name }}</button>
+          </li>
+        }
+        @if (assignedTo()) {
+          <li><button i18n type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
+        }
+      </ul>
+    </div>
   </div>`,
 })
-export class EmailBody {
-  private readonly alerts = inject(AlertService);
-  private readonly emailId = computed(() => {
-    const em = this.email();
-    return em ? String(em.id) : null;
-  });
-  private readonly store = inject(EmailsStore);
+export class EmailAssign {
+  private alertSvc = inject(AlertService);
+  private store = inject(EmailsStore);
+  private userService = inject(UserService);
 
-  protected readonly attachments = computed(() => {
-    const id = this.emailId();
-    if (!id) return [] as any[];
-    const header = this.store.getEmailHeaderById(id)();
-    return (header?.attachments || []).filter((a: any) => !a.is_inline);
-  });
-  protected readonly bodyHtml = computed(() => {
-    const id = this.emailId();
-    return id ? (this.store.getEmailBodyById(id)() ?? '') : '';
-  });
+  protected assignedTo = signal<string | null>(null);
 
-  public email = input<EmailType | null>(null);
+  public email = input.required<EmailType | null>();
+  public users = signal<IAuthUser[]>([]);
 
   constructor() {
+    void this.userService.getUsers().then((u) => this.users.set(u));
+    // Can't use computed because assignedTo is settable
     effect(() => {
-      const id = this.emailId();
-      if (!id) return;
-
-      // Only fetch if truly not cached (undefined); empty string is a valid "loaded" result.
-      const cached = untracked(() => this.store.getEmailBodyById(id)());
-      if (typeof cached === 'undefined') {
-        this.store.loadEmailWithHeaders(id).catch((err) => {
-          console.error('Failed to load email data:', err);
-          this.alerts.showError('Failed to load email data. Please try again later.');
-        });
-      }
+      this.assignedTo.set(this.email()?.assigned_to || null);
     });
   }
 
-  protected getAttachmentUrl(att: any): string {
-    const id = this.emailId();
-    return id ? `${environment.apiUrl}/api/emails/${id}/attachments/${att.id}` : '';
+  public async assign(userId: string | number | null) {
+    const email = this.email();
+    if (!email) return;
+
+    const normalizedUserId = userId != null ? String(userId) : null;
+    const assigneeName = normalizedUserId
+      ? (this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null)
+      : null;
+
+    try {
+      await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
+      this.assignedTo.set(normalizedUserId);
+    } catch (_e) {
+      this.alertSvc.showError('Something went wrong, please try again');
+      this.assignedTo.set(null);
+    }
+  }
+
+  public closeDropdown() {
+    const el = document.activeElement as HTMLElement | null;
+    el?.blur?.(); // remove focus -> :focus-within becomes false -> closes
+  }
+
+  public getUserName(id: string | null = null) {
+    if (!id) return 'Noone';
+    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Noone';
   }
 }
 ```
@@ -28442,98 +29804,6 @@ export class EmailFolderList implements OnInit {
 
   protected isSelected(folder: EmailFolderType): boolean {
     return String(folder.id) === String(this.store.currentSelectedFolderId());
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/events/ui/events-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { EventsFrontendService } from '../services/events-frontend-service';
-
-@Component({
-  selector: 'pc-events-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Event Pages"
-        i18n-title
-        description="Manage public event pages with RSVP and ticketing for fundraisers, town halls, and meet-and-greets."
-        i18n-description
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="plus"
-        i18n-plusIcon
-        [showArchiveIcon]="true"
-        archiveIcon="archive-box-arrow-down"
-        i18n-archiveIcon
-        archiveTip="See past events"
-        i18n-archiveTip
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: EventsFrontendService },
-    provideDataGridConfig({ messages: { exportFileName: 'events-export.csv' } }),
-  ],
-})
-export class EventsGridComponent {
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col = [
-    { field: 'name', headerName: 'Event Name', editable: true },
-    { field: 'location_address', headerName: 'Location', editable: true },
-    {
-      field: 'start_time',
-      headerName: 'Start Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.start_time),
-      editable: false,
-    },
-    {
-      field: 'end_time',
-      headerName: 'End Time',
-      valueFormatter: (p: any) => this.formatDate(p.value ?? p.data?.end_time),
-      editable: false,
-    },
-    {
-      field: 'is_published',
-      headerName: 'Published',
-      valueFormatter: (p: any) => (p.value ? 'Yes' : 'Draft'),
-      editable: false,
-    },
-    {
-      field: 'registrations_count',
-      headerName: 'Registrations',
-      editable: false,
-    },
-    {
-      field: 'capacity',
-      headerName: 'Capacity',
-      editable: false,
-      valueFormatter: (p: any) => p.value ?? 'Unlimited',
-    },
-  ];
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
   }
 }
 ```
@@ -29276,639 +30546,291 @@ export class ExportsPage extends TRPCService<any> {
 </dialog>
 ```
 
-## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
+## File: apps/frontend/src/app/experiences/forms/ui/public-form.ts
 
 ```typescript
-import {
-  ChangeDetectionStrategy,
-  Component,
-  ElementRef,
-  OnInit,
-  computed,
-  inject,
-  signal,
-  viewChild,
-} from '@angular/core';
-import { DatePipe, NgTemplateOutlet } from '@angular/common';
-import { RouterLink } from '@angular/router';
-import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
+import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
+import { FormField } from '../../../../../../../libs/common/src';
 
-import { AuthService } from '../../../auth/auth-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
-import { FormRenderComponent } from './form-render';
-import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
 
-interface TemplateOption {
-  type: FormType;
-  label: string;
+interface PublicForm {
+  id: string;
+  name: string;
+  description: string | null;
+  submit_label: string | null;
+  thanks_title: string | null;
+  thanks_body: string | null;
+  redirect_url: string | null;
+  fields: FormField[];
 }
 
+type PageState = 'loading' | 'open' | 'closed' | 'notfound' | 'thanks';
+
+/**
+ * Unauthenticated public form page served at /f/:slug, outside the app shell. Fetches the form's
+ * render config from the backend, collects a response with coach-don't-block validation, and posts
+ * it to the existing public submit endpoint.
+ */
 @Component({
-  selector: 'pc-forms-page',
+  selector: 'pc-public-form',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe],
-  templateUrl: './forms-page.html',
+  template: `
+    <div class="flex min-h-screen items-center justify-center bg-base-200 px-4 py-10">
+      @switch (state()) {
+        @case ('loading') {
+          <span class="loading loading-spinner loading-lg text-primary"></span>
+        }
+        @case ('open') {
+          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 shadow-sm">
+            <div class="mb-4 flex items-center gap-2">
+              <div
+                class="flex size-7 items-center justify-center rounded-md bg-primary/10 text-xs font-semibold text-primary"
+              >
+                {{ orgInitials() }}
+              </div>
+              <span class="text-sm font-medium text-base-content">{{ orgName() }}</span>
+            </div>
+
+            <h1 class="mb-1 text-xl font-semibold text-base-content">{{ form()!.name }}</h1>
+            @if (form()!.description) {
+              <p class="mb-6 text-sm leading-relaxed text-base-content/60">{{ form()!.description }}</p>
+            } @else {
+              <div class="mb-6"></div>
+            }
+
+            <form class="flex flex-col gap-5" (submit)="$event.preventDefault(); submit()" novalidate>
+              @for (field of form()!.fields; track field.key) {
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-medium text-base-content">
+                    {{ field.label }}
+                    @if (field.required) {
+                      <span class="text-base-content/50"> *</span>
+                    }
+                  </label>
+
+                  @switch (field.type) {
+                    @case ('area') {
+                      <textarea
+                        class="textarea textarea-bordered min-h-[76px] w-full resize-none text-sm"
+                        [class.textarea-error]="!!errors()[field.key]"
+                        [placeholder]="field.placeholder ?? ''"
+                        (input)="setValue(field.key, $any($event.target).value)"
+                      ></textarea>
+                    }
+                    @case ('select') {
+                      <select
+                        class="select select-bordered w-full text-sm"
+                        [class.select-error]="!!errors()[field.key]"
+                        (change)="setValue(field.key, $any($event.target).value)"
+                      >
+                        <option value="">Choose…</option>
+                        @for (opt of field.options ?? []; track opt) {
+                          <option [value]="opt">{{ opt }}</option>
+                        }
+                      </select>
+                    }
+                    @case ('checks') {
+                      <div class="flex flex-col gap-2">
+                        @for (opt of field.options ?? []; track opt) {
+                          <label class="flex items-center gap-2 text-sm text-base-content">
+                            <input
+                              type="checkbox"
+                              class="checkbox checkbox-sm"
+                              (change)="toggleCheck(field.key, opt)"
+                            />
+                            {{ opt }}
+                          </label>
+                        }
+                      </div>
+                    }
+                    @default {
+                      <input
+                        class="input input-bordered w-full text-sm"
+                        [class.input-error]="!!errors()[field.key]"
+                        [type]="field.key === 'email' ? 'email' : 'text'"
+                        [placeholder]="field.placeholder ?? ''"
+                        (input)="setValue(field.key, $any($event.target).value)"
+                      />
+                    }
+                  }
+
+                  @if (errors()[field.key]) {
+                    <span class="text-xs text-error">{{ errors()[field.key] }}</span>
+                  } @else if (field.help) {
+                    <span class="text-xs text-base-content/50">{{ field.help }}</span>
+                  }
+                </div>
+              }
+
+              @if (submitError()) {
+                <p class="text-sm text-error">{{ submitError() }}</p>
+              }
+
+              <button class="btn btn-primary mt-1 w-full" [disabled]="submitting()" type="submit">
+                @if (submitting()) {
+                  <span class="loading loading-spinner loading-sm"></span>
+                }
+                {{ form()!.submit_label || 'Submit' }}
+              </button>
+            </form>
+
+            <p class="mt-6 text-center text-xs text-base-content/40">Powered by PeopleCRM</p>
+          </div>
+        }
+        @case ('thanks') {
+          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
+            <div class="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-success/10 text-success">
+              ✓
+            </div>
+            <h1 class="mb-2 text-xl font-semibold text-base-content">{{ form()?.thanks_title || 'Thank you!' }}</h1>
+            <p class="text-sm text-base-content/60">{{ form()?.thanks_body || 'Your response has been recorded.' }}</p>
+          </div>
+        }
+        @default {
+          <div class="w-full max-w-[440px] rounded-2xl border border-base-300 bg-base-100 p-8 text-center shadow-sm">
+            <h1 class="mb-2 text-xl font-semibold text-base-content">This form is closed</h1>
+            <p class="text-sm text-base-content/60">{{ orgName() }} isn’t taking new responses here right now.</p>
+          </div>
+        }
+      }
+    </div>
+  `,
 })
-export class FormsPageComponent implements OnInit {
-  private readonly formsSvc = inject(FormsService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly settings = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly confirm = inject(ConfirmDialogService);
-  private readonly auth = inject(AuthService);
+export class PublicFormComponent implements OnInit {
+  private readonly route = inject(ActivatedRoute);
 
-  private readonly _loading = createLoadingGate();
-  protected readonly loading = this._loading.visible;
+  protected readonly state = signal<PageState>('loading');
+  protected readonly orgName = signal('Our organization');
+  protected readonly form = signal<PublicForm | null>(null);
+  protected readonly errors = signal<Record<string, string>>({});
+  protected readonly submitError = signal<string | null>(null);
+  protected readonly submitting = signal(false);
 
-  protected readonly forms = signal<FormDetail[]>([]);
-  protected readonly selectedId = signal<string | null>(null);
-  protected readonly mode = signal<'browse' | 'edit'>('browse');
-  protected readonly tab = signal<'form' | 'responses'>('form');
-  protected readonly archivedOpen = signal(false);
-  protected readonly mutating = signal(false);
-  protected readonly orgName = signal('Your organization');
-  protected readonly lists = signal<{ id: string; name: string }[]>([]);
+  private readonly values = new Map<string, string>();
+  private readonly checks = new Map<string, Set<string>>();
 
-  protected readonly submissions = signal<FormSubmissionRow[]>([]);
-  protected readonly submissionsTotal = signal(0);
-  protected readonly submissionsLoading = signal(false);
-
-  // New-form dialog state.
-  protected readonly newFormName = signal('');
-  protected readonly newFormType = signal<FormType>('signup');
-  protected readonly newFormError = signal<string | null>(null);
-  protected readonly creating = signal(false);
-  private readonly newFormDialog = viewChild<ElementRef<HTMLDialogElement>>('newFormDialog');
-  private readonly embedDialog = viewChild<ElementRef<HTMLDialogElement>>('embedDialog');
-  private readonly confirmEmailDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmEmailDialog');
-
-  protected readonly templateOptions: TemplateOption[] = FORM_TYPES.map((type) => ({
-    type,
-    label: this.templateLabel(type),
-  }));
-
-  protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
-  protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
-  protected readonly archivedForms = computed(() => this.forms().filter((f) => f.status === 'archived'));
-
-  protected readonly totalSubmissions = computed(() =>
-    this.forms().reduce((sum, f) => sum + (f.submission_count ?? 0), 0),
-  );
-
-  protected readonly countSentence = computed(() => {
-    const total = this.forms().length;
-    const subs = this.totalSubmissions();
-    const archived = this.archivedForms().length;
-    const parts = [
-      `${total} ${total === 1 ? 'form' : 'forms'}`,
-      `${subs} ${subs === 1 ? 'submission' : 'submissions'}`,
-    ];
-    if (archived > 0) parts.push(`${archived} archived`);
-    return parts.join(' · ');
+  protected readonly orgInitials = computed(() => {
+    const parts = this.orgName().trim().split(/\s+/).slice(0, 2);
+    return parts.map((p) => p.charAt(0).toUpperCase()).join('') || 'pC';
   });
-
-  protected readonly publicUrl = computed(() => {
-    const form = this.selected();
-    if (!form?.slug) return '';
-    const tenantSlug = this.auth.getUser()?.tenant_slug;
-    const base = environment.publicFormsBaseDomain;
-    if (tenantSlug && base) {
-      return `https://${tenantSlug}.${base}/f/${form.slug}`;
-    }
-    // Dev fallback when no tenant subdomain is configured — current origin.
-    return `${this.appOrigin()}/f/${form.slug}`;
-  });
-
-  private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
-  private pendingPatch: UpdateFormType = {};
 
   public ngOnInit(): void {
-    void Promise.all([this.loadForms(), this.loadOrg(), this.loadLists()]);
+    void this.load();
   }
 
-  // ── Loading ────────────────────────────────────────────────────────────
-
-  private async loadForms(): Promise<void> {
-    const end = this._loading.begin();
+  private async load(): Promise<void> {
+    const slug = this.route.snapshot.paramMap.get('slug');
+    if (!slug) {
+      this.state.set('notfound');
+      return;
+    }
     try {
-      const rows = await this.formsSvc.listForms();
-      this.forms.set(rows);
-      const first = rows[0];
-      if (!this.selectedId() && first) {
-        this.selectedId.set(first.id);
+      const tenant = this.tenantFromHost();
+      const query = tenant ? `?t=${encodeURIComponent(tenant)}` : '';
+      const res = await fetch(`${this.apiBase()}/api/forms/f/${encodeURIComponent(slug)}${query}`);
+      if (res.status === 404) {
+        this.state.set('notfound');
+        return;
       }
-    } catch {
-      this.alerts.showError('Could not load your forms. Please try again.');
-    } finally {
-      end();
-    }
-  }
-
-  private async loadOrg(): Promise<void> {
-    try {
-      await this.settings.load();
-      const name = this.settings.getValue<string>('organization.name', '');
-      if (name) this.orgName.set(name);
-    } catch {
-      /* org name is decorative; fall back to the default */
-    }
-  }
-
-  private async loadLists(): Promise<void> {
-    try {
-      const res = await this.listsSvc.getAllWithCounts();
-      const rows = (res?.rows ?? []) as Array<Record<string, unknown>>;
-      this.lists.set(rows.map((r) => ({ id: String(r['id']), name: String(r['name'] ?? '') })));
-    } catch {
-      /* audience list picker degrades gracefully to empty */
-    }
-  }
-
-  // ── Selection / navigation ─────────────────────────────────────────────
-
-  protected select(id: string): void {
-    if (this.selectedId() === id) return;
-    this.selectedId.set(id);
-    this.tab.set('form');
-    this.submissions.set([]);
-    this.submissionsTotal.set(0);
-  }
-
-  protected setTab(tab: 'form' | 'responses'): void {
-    this.tab.set(tab);
-    if (tab === 'responses') void this.loadSubmissions();
-  }
-
-  protected enterEdit(): void {
-    if (!this.selected()) return;
-    this.mode.set('edit');
-    this.tab.set('form');
-  }
-
-  protected exitEdit(): void {
-    this.mode.set('browse');
-  }
-
-  protected toggleArchived(): void {
-    this.archivedOpen.update((v) => !v);
-  }
-
-  // ── Status verbs ───────────────────────────────────────────────────────
-
-  protected async publish(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.publish(id),
-      (f) => `Published “${f.name}” — the link now accepts responses.`,
-    );
-  }
-
-  protected async unpublish(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.unpublish(id),
-      (f) => `Unpublished “${f.name}” — the public link is paused.`,
-    );
-  }
-
-  protected async archiveForm(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.archive(id),
-      (f) => `Archived “${f.name}” — the public link now shows a closed notice.`,
-    );
-    this.mode.set('browse');
-  }
-
-  protected async restore(): Promise<void> {
-    await this.runVerb(
-      (id) => this.formsSvc.restore(id),
-      (f) => `Restored “${f.name}” as a draft.`,
-    );
-  }
-
-  private async runVerb(
-    action: (id: string) => Promise<FormDetail>,
-    message: (f: FormDetail) => string,
-  ): Promise<void> {
-    const id = this.selectedId();
-    if (!id || this.mutating()) return;
-    this.mutating.set(true);
-    try {
-      const updated = await action(id);
-      this.replaceForm(updated);
-      this.alerts.showSuccess(message(updated));
-    } catch {
-      this.alerts.showError('That action didn’t go through. Please try again.');
-    } finally {
-      this.mutating.set(false);
-    }
-  }
-
-  // ── New form dialog ────────────────────────────────────────────────────
-
-  protected openNewForm(): void {
-    this.newFormName.set('');
-    this.newFormType.set('signup');
-    this.newFormError.set(null);
-    this.newFormDialog()?.nativeElement.showModal();
-  }
-
-  protected closeNewForm(): void {
-    this.newFormDialog()?.nativeElement.close();
-  }
-
-  protected async createForm(): Promise<void> {
-    const name = this.newFormName().trim();
-    if (!name) {
-      this.newFormError.set('Give your form a name so you can find it later.');
-      return;
-    }
-    if (this.creating()) return;
-    this.creating.set(true);
-    try {
-      const type = this.newFormType();
-      const created = await this.formsSvc.createForm({ name, type });
-      this.forms.update((list) => [created, ...list]);
-      this.selectedId.set(created.id);
-      this.closeNewForm();
-      this.mode.set('edit');
-      this.tab.set('form');
-      this.alerts.showSuccess(
-        `Draft created from the ${this.templateLabel(type)} template — adjust its fields, then publish.`,
-      );
-    } catch {
-      this.newFormError.set('Could not create the form. Please try again.');
-    } finally {
-      this.creating.set(false);
-    }
-  }
-
-  // ── Live editing (debounced patch) ─────────────────────────────────────
-
-  protected editName(value: string): void {
-    this.patch({ name: value });
-  }
-
-  protected editDescription(value: string): void {
-    this.patch({ description: value });
-  }
-
-  protected editRedirect(value: string): void {
-    this.patch({ redirect_url: value });
-  }
-
-  protected editSubmitLabel(value: string): void {
-    this.patch({ submit_label: value });
-  }
-
-  protected toggleConfirmEmail(on: boolean): void {
-    this.patch({ confirm_email_on: on });
-  }
-
-  protected toggleNotifyTeam(on: boolean): void {
-    this.patch({ notify_team_on: on });
-  }
-
-  protected toggleField(key: string, on: boolean): void {
-    const form = this.selected();
-    if (!form) return;
-    if (key === 'email') {
-      this.alerts.showInfo('Email stays on every form — it’s how each response is matched to a person.');
-      return;
-    }
-    const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
-    this.patch({ fields });
-  }
-
-  protected toggleRequired(key: string): void {
-    const form = this.selected();
-    if (!form) return;
-    if (key === 'email') {
-      this.alerts.showInfo('Email is always required — a response can’t create a person without it.');
-      return;
-    }
-    const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
-    this.patch({ fields });
-  }
-
-  protected addTag(raw: string): void {
-    const form = this.selected();
-    if (!form) return;
-    const tag = raw
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9-]/g, '');
-    if (!tag) return;
-    if (form.target_tags.includes(tag)) {
-      this.alerts.showInfo(`“${tag}” is already applied to responses.`);
-      return;
-    }
-    this.patch({ target_tags: [...form.target_tags, tag] });
-  }
-
-  protected removeTag(tag: string): void {
-    const form = this.selected();
-    if (!form) return;
-    this.patch({ target_tags: form.target_tags.filter((t) => t !== tag) });
-  }
-
-  protected addList(id: string): void {
-    const form = this.selected();
-    if (!form || !id || form.target_lists.includes(id)) return;
-    this.patch({ target_lists: [...form.target_lists, id] });
-  }
-
-  protected removeList(id: string): void {
-    const form = this.selected();
-    if (!form) return;
-    this.patch({ target_lists: form.target_lists.filter((l) => l !== id) });
-  }
-
-  protected listName(id: string): string {
-    return this.lists().find((l) => l.id === id)?.name ?? id;
-  }
-
-  private patch(p: UpdateFormType): void {
-    const form = this.selected();
-    if (!form) return;
-    // Optimistic local update so the preview reflects the change immediately.
-    this.replaceForm({ ...form, ...(p as Partial<FormDetail>) });
-    Object.assign(this.pendingPatch, p);
-    this.saveDebounced();
-  }
-
-  private async flushPatch(): Promise<void> {
-    const id = this.selectedId();
-    const patch = this.pendingPatch;
-    this.pendingPatch = {};
-    if (!id || Object.keys(patch).length === 0) return;
-    try {
-      const updated = await this.formsSvc.updateLive(id, patch);
-      this.replaceForm(updated);
-    } catch {
-      this.alerts.showError('Couldn’t save that change. Check your connection and try again.');
-    }
-  }
-
-  // ── Archive / delete (edit mode) ───────────────────────────────────────
-
-  protected canDelete(form: FormDetail): boolean {
-    return form.status === 'draft' && (form.submission_count ?? 0) === 0;
-  }
-
-  protected async deleteDraft(): Promise<void> {
-    const form = this.selected();
-    if (!form || !this.canDelete(form)) return;
-    const ok = await this.confirm.confirm({
-      title: `Delete “${form.name}”?`,
-      message: 'This draft has no responses. Deleting it can’t be undone — archiving is the reversible option.',
-      variant: 'danger',
-    });
-    if (!ok) return;
-    try {
-      await this.formsSvc.deleteDraft(form.id);
-      this.forms.update((list) => list.filter((f) => f.id !== form.id));
-      this.selectedId.set(this.forms()[0]?.id ?? null);
-      this.mode.set('browse');
-      this.alerts.showSuccess(`Deleted “${form.name}”.`);
-    } catch {
-      this.alerts.showError('Could not delete the form. Please try again.');
-    }
-  }
-
-  // ── Public link ────────────────────────────────────────────────────────
-
-  protected openPublicLink(): void {
-    const url = this.publicUrl();
-    if (url) window.open(url, '_blank', 'noopener');
-  }
-
-  protected async copyLink(): Promise<void> {
-    const url = this.publicUrl();
-    if (!url) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      this.alerts.showSuccess('Public link copied to your clipboard.');
-    } catch {
-      this.alerts.showError('Couldn’t copy the link — copy it manually from the address bar.');
-    }
-  }
-
-  // ── Embed dialog ───────────────────────────────────────────────────────
-
-  protected readonly embedMode = signal<'iframe' | 'html'>('iframe');
-  protected readonly embedCode = computed(() =>
-    this.embedMode() === 'iframe' ? this.iframeSnippet() : this.rawHtmlSnippet(),
-  );
-
-  protected openEmbed(): void {
-    this.embedMode.set('iframe');
-    this.embedDialog()?.nativeElement.showModal();
-  }
-
-  protected closeEmbed(): void {
-    this.embedDialog()?.nativeElement.close();
-  }
-
-  protected async copyEmbed(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(this.embedCode());
-      this.alerts.showSuccess('Embed code copied to your clipboard.');
-    } catch {
-      this.alerts.showError('Couldn’t copy — select the code and copy it manually.');
-    }
-  }
-
-  private iframeSnippet(): string {
-    const form = this.selected();
-    if (!form) return '';
-    return `<iframe src="${this.publicUrl()}" width="100%" height="640" style="border:0" title="${this.escapeAttr(form.name)}"></iframe>`;
-  }
-
-  private rawHtmlSnippet(): string {
-    const form = this.selected();
-    if (!form) return '';
-    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.id}`;
-    const lines: string[] = [`<form action="${action}" method="POST">`];
-    for (const field of form.fields.filter((f) => f.on)) {
-      const req = field.required ? ' required' : '';
-      const star = field.required ? ' *' : '';
-      const label = this.escapeAttr(field.label);
-      if (field.type === 'area') {
-        lines.push(`  <label>${label}${star}<br><textarea name="${field.key}"${req}></textarea></label>`);
-      } else if (field.type === 'select') {
-        lines.push(`  <label>${label}${star}<br><select name="${field.key}"${req}>`);
-        for (const opt of field.options ?? []) lines.push(`    <option>${this.escapeAttr(opt)}</option>`);
-        lines.push(`  </select></label>`);
-      } else if (field.type === 'checks') {
-        lines.push(`  <fieldset><legend>${label}${star}</legend>`);
-        for (const opt of field.options ?? []) {
-          lines.push(
-            `    <label><input type="checkbox" name="${field.key}" value="${this.escapeAttr(opt)}"> ${this.escapeAttr(opt)}</label>`,
-          );
-        }
-        lines.push(`  </fieldset>`);
+      const data = await res.json();
+      if (data?.orgName) this.orgName.set(String(data.orgName));
+      if (data?.status === 'open' && data.form) {
+        this.form.set(data.form as PublicForm);
+        this.state.set('open');
       } else {
-        const type = field.key === 'email' ? 'email' : 'text';
-        lines.push(`  <label>${label}${star}<br><input type="${type}" name="${field.key}"${req}></label>`);
+        this.state.set('closed');
+      }
+    } catch {
+      this.state.set('notfound');
+    }
+  }
+
+  protected setValue(key: string, value: string): void {
+    this.values.set(key, value);
+    if (this.errors()[key]) {
+      this.errors.update((e) => {
+        const next = { ...e };
+        delete next[key];
+        return next;
+      });
+    }
+  }
+
+  protected toggleCheck(key: string, opt: string): void {
+    const set = this.checks.get(key) ?? new Set<string>();
+    if (set.has(opt)) set.delete(opt);
+    else set.add(opt);
+    this.checks.set(key, set);
+    this.values.set(key, Array.from(set).join(', '));
+    if (this.errors()[key]) {
+      this.errors.update((e) => {
+        const next = { ...e };
+        delete next[key];
+        return next;
+      });
+    }
+  }
+
+  protected async submit(): Promise<void> {
+    const form = this.form();
+    if (!form || this.submitting()) return;
+
+    const errors: Record<string, string> = {};
+    for (const field of form.fields) {
+      if (field.required && !(this.values.get(field.key) ?? '').trim()) {
+        errors[field.key] = `${field.label} is required.`;
       }
     }
-    lines.push(`  <button type="submit">${this.escapeAttr(form.submit_label || 'Submit')}</button>`);
-    lines.push(`</form>`);
-    return lines.join('\n');
-  }
+    if (Object.keys(errors).length > 0) {
+      this.errors.set(errors);
+      return;
+    }
 
-  private escapeAttr(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
-  // ── Confirmation-email dialog ──────────────────────────────────────────
-
-  protected readonly confirmSubjectDraft = signal('');
-  protected readonly confirmBodyDraft = signal('');
-
-  protected openConfirmEmail(): void {
-    const form = this.selected();
-    if (!form) return;
-    this.confirmSubjectDraft.set(form.confirm_subject ?? '');
-    this.confirmBodyDraft.set(form.confirm_body ?? '');
-    this.confirmEmailDialog()?.nativeElement.showModal();
-  }
-
-  protected closeConfirmEmail(): void {
-    this.confirmEmailDialog()?.nativeElement.close();
-  }
-
-  protected saveConfirmEmail(): void {
-    this.patch({ confirm_subject: this.confirmSubjectDraft(), confirm_body: this.confirmBodyDraft() });
-    this.closeConfirmEmail();
-    this.alerts.showSuccess('Confirmation email updated.');
-  }
-
-  // ── Responses ──────────────────────────────────────────────────────────
-
-  private async loadSubmissions(): Promise<void> {
-    const id = this.selectedId();
-    if (!id) return;
-    this.submissionsLoading.set(true);
+    this.submitting.set(true);
+    this.submitError.set(null);
     try {
-      const res = await this.formsSvc.getSubmissions(id);
-      this.submissions.set(res.items);
-      this.submissionsTotal.set(res.total);
+      const payload: Record<string, string> = {};
+      for (const [key, value] of this.values.entries()) payload[key] = value;
+
+      const res = await fetch(`${this.apiBase()}/api/forms/submit/${form.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        this.submitError.set(data?.error || 'Something went wrong. Please try again.');
+        return;
+      }
+      if (data?.redirect_url) {
+        window.location.href = String(data.redirect_url);
+        return;
+      }
+      this.state.set('thanks');
     } catch {
-      this.alerts.showError('Could not load responses. Please try again.');
+      this.submitError.set('Couldn’t reach the server. Check your connection and try again.');
     } finally {
-      this.submissionsLoading.set(false);
+      this.submitting.set(false);
     }
   }
 
-  protected answerSummary(row: FormSubmissionRow): string {
-    const skip = new Set(['email', 'full_name', 'first_name', 'last_name']);
-    const parts: string[] = [];
-    for (const [key, value] of Object.entries(row.answers)) {
-      if (skip.has(key) || value == null || value === '') continue;
-      parts.push(Array.isArray(value) ? value.join(' · ') : String(value));
-      if (parts.length >= 2) break;
-    }
-    return parts.join(' · ');
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────────
-
-  protected requiredFieldsPresent(form: FormDetail): boolean {
-    return form.fields.some((f) => f.on && f.required);
-  }
-
-  private replaceForm(updated: FormDetail): void {
-    this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
-  }
-
-  private appOrigin(): string {
-    if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
+  private apiBase(): string {
     return environment.apiUrl.replace(/\/$/, '');
   }
 
-  private templateLabel(type: FormType): string {
-    const map: Record<FormType, string> = {
-      signup: 'Signup — name, email, availability',
-      pledge: 'Pledge — name, email, amount',
-      rsvp: 'RSVP — name, email, seats',
-      request: 'Request — name, email, address, notes',
-      survey: 'Survey — name, issues, open answer',
-    };
-    return map[type];
+  /** The tenant subdomain the public page is being served on (`riverton.mydomain.com` → `riverton`). */
+  private tenantFromHost(): string | null {
+    const host = window.location.hostname.toLowerCase();
+    const base = environment.publicFormsBaseDomain.toLowerCase();
+    if (!host || host === base) return null;
+    const suffix = `.${base}`;
+    if (!host.endsWith(suffix)) return null;
+    const label = host.slice(0, -suffix.length);
+    if (!label || label.includes('.')) return null;
+    return label;
   }
-
-  protected typeChip(type: FormType | null): string {
-    if (!type) return 'Form';
-    return type.charAt(0).toUpperCase() + type.slice(1);
-  }
-
-  protected templateSubmitLabel(type: FormType): string {
-    return FORM_TEMPLATES[type].submitLabel;
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/fundraising/ui/fundraising-grid.ts
-
-```typescript
-import { Component } from '@angular/core';
-import { DonationPagesService } from '@experiences/forms/services/donation-pages-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Component({
-  selector: 'pc-fundraising-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        title="Donation Pages"
-        i18n-title
-        description="Manage embeddable donation and recurring pledge pages that connect to Stripe."
-        i18n-description
-        [showDescription]="true"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [allowFilter]="false"
-        [disableView]="false"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="plus"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: DonationPagesService },
-    provideDataGridConfig({ messages: { exportEntity: 'forms', exportFileName: 'donation-pages-export.csv' } }),
-  ],
-})
-export class FundraisingGridComponent {
-  protected col = [
-    { field: 'name', headerName: 'Page Name', editable: false },
-    { field: 'description', headerName: 'Description', editable: false },
-    {
-      field: 'form_type',
-      headerName: 'Type',
-      editable: false,
-      valueFormatter: (p: any) => (p.value === 'recurring_donation' ? 'Recurring' : 'One-Time'),
-    },
-    { field: 'status', headerName: 'Status', editable: true },
-    {
-      field: 'created_at',
-      headerName: 'Created At',
-      valueFormatter: (p: any) => (p.value ? new Date(p.value).toLocaleDateString() : ''),
-    },
-  ];
 }
 ```
 
@@ -30633,6 +31555,366 @@ export class HelpArticlePage {
 
   protected scrollTo(anchorId: string): void {
     document.getElementById(anchorId)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
+
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../services/households-service';
+
+@Component({
+  selector: 'pc-households-grid',
+  imports: [DataGrid, CsvImportComponent, FormsModule],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        [showToolbar]="!inline()"
+        title="Households"
+        i18n-title
+        description="Manage household groups, track shared addresses, and organize family relationships."
+        i18n-description
+        [listId]="listId()"
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableMerge]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [confirmDeleteOverride]="onConfirmDeleteBind"
+        [rowCanSelect]="rowCanSelectFn"
+        (importCSV)="openImportDialog()"
+        addRoute="add"
+        i18n-addRoute
+        plusIcon="add-home"
+        i18n-plusIcon
+      ></pc-datagrid>
+    </div>
+
+    <!-- Reusable CSV Importer for Households -->
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Households from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    >
+      <div pc-import-extras class="grid gap-2">
+        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
+        <input
+          class="input input-bordered"
+          placeholder="Comma separated e.g. neighborhood, parish"
+          i18n-placeholder
+          [(ngModel)]="tagsInput"
+        />
+      </div>
+    </pc-csv-importer>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: HouseholdsService },
+    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
+  ],
+})
+export class HouseholdsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly dialogSvc = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly householdsService = inject(HouseholdsService);
+
+  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+
+  public inline = input<boolean>(false);
+
+  protected readonly mappableFields: string[] = [
+    'street_num',
+    'apt',
+    'street1',
+    'street2',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'home_phone',
+    'notes',
+  ];
+
+  protected autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      homephone: 'home_phone',
+      phone: 'home_phone',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  };
+
+  protected col: ColDef[] = [
+    {
+      field: 'persons_count',
+      headerName: 'People',
+      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
+    },
+    { field: 'street_num', headerName: 'Street Number', editable: true },
+    { field: 'apt', headerName: 'Apt', editable: true },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: true,
+      valueFormatter: (params: any) =>
+        params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
+    },
+    { field: 'street2', headerName: 'Street 2', editable: true },
+    { field: 'city', headerName: 'City', editable: true },
+    {
+      field: 'tags',
+      headerName: 'Tags',
+      hide: true,
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'households',
+        obj: UpdateHouseholdsObj,
+        service: this.householdsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    { field: 'state', headerName: 'State/Province', editable: true },
+    { field: 'zip', headerName: 'Zip/Province', editable: true },
+    { field: 'country', headerName: 'Country', editable: true },
+    { field: 'district', headerName: 'District / Riding', editable: false, minWidth: 140 },
+    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, minWidth: 180 },
+    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
+    { field: 'home_phone', headerName: 'Home phone', editable: true },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+  public listId = input<string | null>(null);
+  public showHeader = input<boolean>(true);
+
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  // Importer state
+  protected importerOpen = signal(false);
+  protected tagsInput = '';
+
+  public ngOnInit(): void {
+    void this.loadOnInit();
+  }
+
+  private async loadOnInit(): Promise<void> {
+    await this.loadTagOptions();
+    await this.loadIssueOptions();
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected openEditOnDoubleClick(event: any) {
+    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
+      id: string;
+      persons_count?: number | string | null;
+      is_placeholder?: boolean;
+    }>;
+
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
+    if (selected.some((r) => r.is_placeholder)) {
+      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
+      return true;
+    }
+
+    // Collect IDs for households that have people
+    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
+    const householdIds = selected.map((r) => r.id);
+
+    if (populated.length > 0) {
+      // Fetch person IDs for all households-with-people so we can act on them
+      const personIdArrays = await Promise.all(
+        populated.map(async (h) => {
+          try {
+            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
+            return people.map((p) => p.id);
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const personIds = personIdArrays.flat();
+      const peopleCount = personIds.length;
+
+      // Show the 3-option dialog and wait for user's choice
+      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
+        title: 'Households have people',
+        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
+        variant: 'warning',
+        choices: [
+          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
+          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
+        ],
+        cancelText: 'Cancel',
+      });
+
+      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
+
+      if (choice === 'keep-people') {
+        // Detach each person from their household (moves to blank household)
+        await Promise.all(
+          personIds.map((pid) =>
+            this.personsSvc.removeHousehold(pid).catch(() => {
+              // best-effort; continue
+            }),
+          ),
+        );
+      } else if (choice === 'delete-people') {
+        // Delete all people in those households first
+        if (personIds.length) {
+          try {
+            await this.personsSvc.deleteMany(personIds);
+          } catch {
+            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
+            return true;
+          }
+        }
+      }
+
+      // Now delete the households themselves
+      try {
+        await this.householdsService.deleteMany(householdIds);
+        this.alertSvc.showSuccess('Households deleted successfully.');
+      } catch {
+        this.alertSvc.showError('Failed to delete one or more households.');
+      }
+      return true;
+    } else {
+      // No people attached — delegate to the standard flow
+      return false;
+    }
+  }
+
+  protected onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }) {
+    // Backend households import endpoint not implemented yet; show informative summary
+    const diag = 'Households import is not available yet.';
+    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });
+    this.importerOpen.set(false);
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    this.importerOpen.set(true);
   }
 }
 ```
@@ -31590,123 +32872,394 @@ type StepIndex = 1 | 2 | 3 | 4;
 type TemplatePreset = 'welcome' | 'product' | 'newsletter' | 'empty';
 ```
 
-## File: apps/frontend/src/app/experiences/newsletters/ui/newsletters-grid.ts
+## File: apps/frontend/src/app/experiences/persons/ui/add-connection-drawer.ts
 
 ```typescript
-import { Component, viewChild } from '@angular/core';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { UpdateMarketingEmailType } from '../../../../../../../libs/common/src';
+import { Component, inject, input, output, signal, computed } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { PersonsService } from '../services/persons-service';
+import { RELATION_TYPES, RELATION_TYPE_LABELS } from '../../../../../../../libs/common/src';
+import type { AddConnectionType } from '../../../../../../../libs/common/src';
 
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { NewslettersService } from '../services/newsletters-service';
-import { NewslettersDashboardComponent } from './newsletters-dashboard';
+type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
 
 @Component({
-  selector: 'pc-newsletters-grid',
-  imports: [DataGrid, NewslettersDashboardComponent],
+  selector: 'pc-add-connection-drawer',
+  imports: [SideDrawer, Icon, FormsModule],
   template: `
-    <div class="flex flex-col gap-6">
-      <pc-newsletters-dashboard [rows]="grid?.rows() ?? []"></pc-newsletters-dashboard>
+    <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" i18n-title size="sm" i18n-size (close)="onClose()">
+      <div class="flex flex-col gap-4">
+        <!-- Person search -->
+        <div class="flex flex-col gap-1.5">
+          <label i18n class="text-sm font-semibold text-base-content/80">Search Contact</label>
+          @if (selectedPerson()) {
+            <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
+              <div
+                class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+              >
+                {{ initials(selectedPerson()!) }}
+              </div>
+              <span class="text-sm font-medium flex-1 truncate"
+                >{{ selectedPerson()!.first_name }} {{ selectedPerson()!.last_name }}</span
+              >
+              <button type="button" class="btn btn-ghost btn-xs btn-circle" (click)="clearSelection()">
+                <pc-icon name="x-mark" [size]="3"></pc-icon>
+              </button>
+            </div>
+          } @else {
+            <div class="relative">
+              <input
+                type="text"
+                class="input input-bordered w-full pr-10 text-sm"
+                placeholder="Type a name or email..."
+                i18n-placeholder
+                [ngModel]="searchStr()"
+                (ngModelChange)="onSearchChange($event)"
+              />
+              <pc-icon
+                name="magnifying-glass"
+                [size]="4"
+                class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
+              ></pc-icon>
+            </div>
+            @if (searchResults().length > 0) {
+              <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
+                @for (p of searchResults(); track p.id) {
+                  <button
+                    type="button"
+                    class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
+                    (click)="selectPerson(p)"
+                  >
+                    <div
+                      class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
+                    >
+                      {{ initials(p) }}
+                    </div>
+                    <div class="flex flex-col min-w-0">
+                      <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
+                      @if (p.email) {
+                        <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
+                      }
+                    </div>
+                  </button>
+                }
+              </div>
+            }
+            @if (isSearching() && searchStr().length > 0) {
+              <span i18n class="text-xs text-base-content/40 italic">Searching...</span>
+            }
+          }
+        </div>
 
-      <pc-datagrid
-        #grid
-        [colDefs]="col"
-        [disableDelete]="true"
-        [disableView]="false"
-        [disableImport]="true"
-        [disableExport]="false"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-newsletter"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
+        <!-- Relation type -->
+        <div class="flex flex-col gap-1.5">
+          <label i18n class="text-sm font-semibold text-base-content/80">Relationship Type</label>
+          <select
+            class="select select-bordered w-full text-sm"
+            [ngModel]="relationType()"
+            (ngModelChange)="relationType.set($event)"
+          >
+            @for (type of relationTypes; track type) {
+              <option [value]="type">{{ relationTypeLabels[type] }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Custom label (shown when type = 'custom') -->
+        @if (relationType() === 'custom') {
+          <div class="flex flex-col gap-1.5">
+            <label i18n class="text-sm font-semibold text-base-content/80">Custom Label</label>
+            <input
+              type="text"
+              class="input input-bordered w-full text-sm"
+              placeholder="e.g. Major donor contact, Advisor..."
+              i18n-placeholder
+              maxlength="100"
+              [ngModel]="customLabel()"
+              (ngModelChange)="customLabel.set($event)"
+            />
+          </div>
+        }
+
+        <!-- Mutual toggle -->
+        <div class="flex items-center justify-between">
+          <div class="flex flex-col gap-0.5">
+            <span i18n class="text-sm font-semibold text-base-content/80">Mutual Connection</span>
+            <span i18n class="text-xs text-base-content/50">Shows on both profiles with ↔ indicator</span>
+          </div>
+          <input
+            type="checkbox"
+            class="toggle toggle-sm toggle-primary"
+            [ngModel]="isMutual()"
+            (ngModelChange)="isMutual.set($event)"
+          />
+        </div>
+
+        <!-- Notes -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-sm font-semibold text-base-content/80"
+            >Notes <span i18n class="text-base-content/40 font-normal">(optional)</span></label
+          >
+          <textarea
+            class="textarea textarea-bordered w-full text-sm resize-none"
+            rows="3"
+            placeholder="Add context about this connection..."
+            i18n-placeholder
+            maxlength="1000"
+            [ngModel]="notes()"
+            (ngModelChange)="notes.set($event)"
+          ></textarea>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div pc-drawer-footer class="p-4 border-t border-base-300 flex gap-2">
+        <button i18n type="button" class="btn btn-ghost flex-1" (click)="onClose()" [disabled]="isSaving()">
+          Cancel
+        </button>
+        <button i18n type="button" class="btn btn-primary flex-1" [disabled]="!canSave()" (click)="onSave()">
+          @if (isSaving()) {
+            <span class="loading loading-spinner loading-sm"></span>
+          }
+          Add Connection
+        </button>
+      </div>
+    </pc-side-drawer>
   `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: NewslettersService },
-    provideDataGridConfig({ messages: { exportEntity: 'newsletters', exportFileName: 'newsletters-export.csv' } }),
-  ],
 })
-export class NewslettersGridComponent {
-  protected readonly grid = viewChild<DataGrid<'newsletters', UpdateMarketingEmailType>>('grid');
+export class AddConnectionDrawer {
+  readonly personId = input.required<string>();
+  readonly isOpen = input.required<boolean>();
+  readonly closeDrawer = output<void>();
+  readonly saved = output<any>();
 
-  private readonly countFormatter = new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 0,
-  });
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  private readonly percentFormatter = new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 1,
-    minimumFractionDigits: 0,
+  private readonly connectionsSvc = inject(ConnectionsService);
+  private readonly personsSvc = inject(PersonsService);
+  private readonly alertSvc = inject(AlertService);
+
+  protected readonly searchStr = signal('');
+  protected readonly searchResults = signal<PersonSearchResult[]>([]);
+  protected readonly selectedPerson = signal<PersonSearchResult | null>(null);
+  protected readonly relationType = signal<(typeof RELATION_TYPES)[number]>('close_friend');
+  protected readonly customLabel = signal('');
+  protected readonly isMutual = signal(false);
+  protected readonly notes = signal('');
+  protected readonly isSaving = signal(false);
+  protected readonly isSearching = signal(false);
+
+  protected readonly relationTypes = RELATION_TYPES;
+  protected readonly relationTypeLabels = RELATION_TYPE_LABELS;
+
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly canSave = computed(() => {
+    if (!this.selectedPerson() || this.isSaving()) return false;
+    if (this.relationType() === 'custom' && !this.customLabel().trim()) return false;
+    return true;
   });
 
-  protected col: ColDef[] = [
-    { field: 'name', headerName: 'Newsletter name' },
-    {
-      field: 'status',
-      headerName: 'Status',
-      valueFormatter: (p: CellParams) => this.formatStatus(p.value ?? p.data?.['status']),
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Last updated at',
-      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
-    },
-    {
-      field: 'delivered_count',
-      headerName: 'Delivered',
-      valueFormatter: (p: CellParams) => this.formatCount(p.value ?? p.data?.['delivered_count']),
-    },
-    {
-      field: 'total_recipients',
-      headerName: 'Recipients',
-      valueFormatter: (p: CellParams) => this.formatCount(p.value ?? p.data?.['total_recipients']),
-    },
-    {
-      field: 'open_rate',
-      headerName: 'Open rate',
-      valueFormatter: (p: CellParams) => this.formatPercent(p.value ?? p.data?.['open_rate']),
-    },
-    {
-      field: 'click_rate',
-      headerName: 'Click rate',
-      valueFormatter: (p: CellParams) => this.formatPercent(p.value ?? p.data?.['click_rate']),
-    },
-    {
-      field: 'send_date',
-      headerName: 'Send date',
-      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['send_date']),
-    },
-  ];
-
-  private formatCount(value: unknown): string {
-    const num = Number(value);
-    return Number.isFinite(num) ? this.countFormatter.format(num) : '--';
+  protected initials(p: PersonSearchResult) {
+    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
   }
 
-  private formatDate(value: unknown): string {
-    if (!value) return '--';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '--';
-    return this.dateFormatter.format(date);
+  protected onSearchChange(value: string) {
+    this.searchStr.set(value);
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+    if (!value.trim()) {
+      this.searchResults.set([]);
+      return;
+    }
+    this.isSearching.set(true);
+    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
   }
 
-  private formatPercent(value: unknown): string {
-    const num = Number(value);
-    if (!Number.isFinite(num)) return '--';
-    return `${this.percentFormatter.format(num)}%`;
+  private async executeSearch(value: string): Promise<void> {
+    try {
+      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
+      const currentPersonId = this.personId();
+      this.searchResults.set(
+        ((result as any).rows ?? [])
+          .filter((p: any) => String(p.id) !== String(currentPersonId))
+          .map((p: any) => ({ id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email })),
+      );
+    } catch {
+      this.searchResults.set([]);
+    } finally {
+      this.isSearching.set(false);
+    }
   }
 
-  private formatStatus(value: unknown): string {
-    if (!value) return '--';
-    const text = String(value).trim();
-    if (!text) return '--';
-    return text.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  protected selectPerson(p: PersonSearchResult) {
+    this.selectedPerson.set(p);
+    this.searchStr.set('');
+    this.searchResults.set([]);
+  }
+
+  protected clearSelection() {
+    this.selectedPerson.set(null);
+    this.searchStr.set('');
+    this.searchResults.set([]);
+  }
+
+  protected async onSave() {
+    const person = this.selectedPerson();
+    if (!person) return;
+    this.isSaving.set(true);
+    try {
+      const data: AddConnectionType = {
+        to_person_id: person.id,
+        relation_type: this.relationType(),
+        custom_label: this.relationType() === 'custom' ? this.customLabel().trim() : null,
+        is_mutual: this.isMutual(),
+        notes: this.notes().trim() || null,
+      };
+      const result = await this.connectionsSvc.add(this.personId(), data);
+      this.alertSvc.showSuccess('Connection added');
+      this.saved.emit(result);
+      this.resetForm();
+      this.closeDrawer.emit();
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('already exists')) {
+        this.alertSvc.showError('A connection of this type already exists between these contacts.');
+      }
+    } finally {
+      this.isSaving.set(false);
+    }
+  }
+
+  protected onClose() {
+    this.resetForm();
+    this.closeDrawer.emit();
+  }
+
+  private resetForm() {
+    this.selectedPerson.set(null);
+    this.searchStr.set('');
+    this.searchResults.set([]);
+    this.relationType.set('close_friend');
+    this.customLabel.set('');
+    this.isMutual.set(false);
+    this.notes.set('');
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/person-connections.ts
+
+```typescript
+import { Component, inject, input, output, signal, OnInit } from '@angular/core';
+import { ConnectionsService } from '../../../services/api/connections-service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { ConnectionCard } from './connection-card';
+import { AddConnectionDrawer } from './add-connection-drawer';
+import { Icon } from '@uxcommon/components/icons/icon';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+@Component({
+  selector: 'pc-person-connections',
+  imports: [ConnectionCard, AddConnectionDrawer, Icon],
+  template: `
+    <div class="flex flex-col gap-4">
+      <!-- Header -->
+      <div class="flex items-center justify-between">
+        <h4 i18n class="font-semibold text-base-content/80">
+          Connections
+          @if (connections().length > 0) {
+            <span class="badge badge-sm badge-neutral ml-2">{{ connections().length }}</span>
+          }
+        </h4>
+        <button type="button" class="btn btn-sm btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
+          <pc-icon name="plus" [size]="4"></pc-icon>
+          Add Connection
+        </button>
+      </div>
+
+      <!-- Loading skeleton -->
+      @if (isLoading()) {
+        <div class="flex flex-col gap-2">
+          <div class="skeleton h-16 w-full rounded-xl"></div>
+          <div class="skeleton h-16 w-full rounded-xl"></div>
+        </div>
+      } @else if (connections().length === 0) {
+        <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
+          No connections recorded. Add one to start mapping this contact's network.
+        </div>
+      } @else {
+        <div class="flex flex-col gap-2">
+          @for (conn of connections(); track conn.id) {
+            <pc-connection-card
+              [connection]="conn"
+              [currentPersonId]="personId()"
+              (remove)="onRemove($event)"
+            ></pc-connection-card>
+          }
+        </div>
+      }
+    </div>
+
+    <pc-add-connection-drawer
+      [personId]="personId()"
+      [isOpen]="showAddDrawer()"
+      (closeDrawer)="showAddDrawer.set(false)"
+      (saved)="onConnectionAdded()"
+    ></pc-add-connection-drawer>
+  `,
+})
+export class PersonConnections implements OnInit {
+  readonly personId = input.required<string>();
+  readonly countChange = output<number>();
+
+  private readonly connectionsSvc = inject(ConnectionsService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly connections = signal<any[]>([]);
+  protected readonly showAddDrawer = signal(false);
+
+  public ngOnInit() {
+    void this.load();
+  }
+
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const result = await this.connectionsSvc.getForPerson(this.personId());
+      this.connections.set(result as any[]);
+      this.countChange.emit(result.length);
+    } catch {
+      // silently fail — tab stays empty
+    } finally {
+      end();
+    }
+  }
+
+  protected onConnectionAdded() {
+    void this.load();
+  }
+
+  protected async onRemove(id: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Remove Connection',
+      message: 'Are you sure you want to remove this connection?',
+      confirmText: 'Remove',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.connectionsSvc.remove(id);
+      this.connections.update((list) => list.filter((c) => c.id !== id));
+      this.countChange.emit(this.connections().length);
+      this.alertSvc.showSuccess('Connection removed');
+    } catch {
+      this.alertSvc.showError('Failed to remove connection');
+    }
   }
 }
 ```
@@ -31857,906 +33410,6 @@ export class BillingSettingsComponent extends TRPCService<any> implements OnInit
     });
   }
 }
-```
-
-## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
-
-```typescript
-import { Component, OnInit, signal, computed, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { SettingsService } from '../services/settings-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { TokenService } from '../../../services/api/token-service';
-import { environment } from '../../../../environments/environment';
-import { DonationsService } from '../../../services/api/donations-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-
-export interface TaxCreditTier {
-  limit: number;
-  rate: number;
-}
-
-export interface DonationPeriod {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string | null;
-  limit_amount: number;
-  is_active: boolean;
-}
-
-@Component({
-  selector: 'pc-donations-settings',
-  imports: [FormsModule, Icon],
-  templateUrl: './donations-settings.html',
-})
-export class DonationsSettingsComponent implements OnInit {
-  private readonly settingsSvc = inject(SettingsService);
-  private readonly alerts = inject(AlertService);
-  private readonly tokenSvc = inject(TokenService);
-  private readonly donationsSvc = inject(DonationsService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  protected readonly stripeSecretKey = signal('');
-  protected readonly stripeWebhookSecret = signal('');
-  protected readonly donationLimit = signal(1000);
-  protected readonly restrictResidency = signal(false);
-  protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
-  protected readonly webhookToken = signal('');
-
-  // Donation periods
-  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
-  protected readonly showAddPeriod = signal(false);
-  protected readonly newPeriodName = signal('');
-  protected readonly newPeriodStartDate = signal('');
-  protected readonly newPeriodEndDate = signal('');
-  protected readonly newPeriodLimit = signal<number>(1000);
-  protected readonly isSavingPeriod = signal(false);
-
-  // New multi-country autocomplete & states checkboxes
-  protected readonly selectedCountries = signal<string[]>([]);
-  protected readonly selectedRegions = signal<string[]>([]);
-
-  protected readonly countrySearch = signal('');
-  protected readonly showCountryDropdown = signal(false);
-
-  protected readonly allCountries = [
-    { code: 'CA', name: 'Canada' },
-    { code: 'US', name: 'United States' },
-    { code: 'GB', name: 'United Kingdom' },
-    { code: 'AU', name: 'Australia' },
-    { code: 'NZ', name: 'New Zealand' },
-    { code: 'FR', name: 'France' },
-    { code: 'DE', name: 'Germany' },
-    { code: 'IN', name: 'India' },
-    { code: 'IT', name: 'Italy' },
-    { code: 'ES', name: 'Spain' },
-    { code: 'NL', name: 'Netherlands' },
-  ];
-
-  protected readonly canadaProvinces = [
-    { code: 'ON', name: 'Ontario' },
-    { code: 'QC', name: 'Quebec' },
-    { code: 'BC', name: 'British Columbia' },
-    { code: 'AB', name: 'Alberta' },
-    { code: 'MB', name: 'Manitoba' },
-    { code: 'SK', name: 'Saskatchewan' },
-    { code: 'NS', name: 'Nova Scotia' },
-    { code: 'NB', name: 'New Brunswick' },
-    { code: 'NL', name: 'Newfoundland and Labrador' },
-    { code: 'PE', name: 'Prince Edward Island' },
-    { code: 'NT', name: 'Northwest Territories' },
-    { code: 'YT', name: 'Yukon' },
-    { code: 'NU', name: 'Nunavut' },
-  ];
-
-  protected readonly usStates = [
-    { code: 'AL', name: 'Alabama' },
-    { code: 'AK', name: 'Alaska' },
-    { code: 'AZ', name: 'Arizona' },
-    { code: 'AR', name: 'Arkansas' },
-    { code: 'CA', name: 'California' },
-    { code: 'CO', name: 'Colorado' },
-    { code: 'CT', name: 'Connecticut' },
-    { code: 'DE', name: 'Delaware' },
-    { code: 'FL', name: 'Florida' },
-    { code: 'GA', name: 'Georgia' },
-    { code: 'HI', name: 'Hawaii' },
-    { code: 'ID', name: 'Idaho' },
-    { code: 'IL', name: 'Illinois' },
-    { code: 'IN', name: 'Indiana' },
-    { code: 'IA', name: 'Iowa' },
-    { code: 'KS', name: 'Kansas' },
-    { code: 'KY', name: 'Kentucky' },
-    { code: 'LA', name: 'Louisiana' },
-    { code: 'ME', name: 'Maine' },
-    { code: 'MD', name: 'Maryland' },
-    { code: 'MA', name: 'Massachusetts' },
-    { code: 'MI', name: 'Michigan' },
-    { code: 'MN', name: 'Minnesota' },
-    { code: 'MS', name: 'Mississippi' },
-    { code: 'MO', name: 'Missouri' },
-    { code: 'MT', name: 'Montana' },
-    { code: 'NE', name: 'Nebraska' },
-    { code: 'NV', name: 'Nevada' },
-    { code: 'NH', name: 'New Hampshire' },
-    { code: 'NJ', name: 'New Jersey' },
-    { code: 'NM', name: 'New Mexico' },
-    { code: 'NY', name: 'New York' },
-    { code: 'NC', name: 'North Carolina' },
-    { code: 'ND', name: 'North Dakota' },
-    { code: 'OH', name: 'Ohio' },
-    { code: 'OK', name: 'Oklahoma' },
-    { code: 'OR', name: 'Oregon' },
-    { code: 'PA', name: 'Pennsylvania' },
-    { code: 'RI', name: 'Rhode Island' },
-    { code: 'SC', name: 'South Carolina' },
-    { code: 'SD', name: 'South Dakota' },
-    { code: 'TN', name: 'Tennessee' },
-    { code: 'TX', name: 'Texas' },
-    { code: 'UT', name: 'Utah' },
-    { code: 'VT', name: 'Vermont' },
-    { code: 'VA', name: 'Virginia' },
-    { code: 'WA', name: 'Washington' },
-    { code: 'WV', name: 'West Virginia' },
-    { code: 'WI', name: 'Wisconsin' },
-    { code: 'WY', name: 'Wyoming' },
-  ];
-
-  protected readonly germanyStates = [
-    { code: 'DE-BW', name: 'Baden-Württemberg' },
-    { code: 'DE-BY', name: 'Bavaria' },
-    { code: 'DE-BE', name: 'Berlin' },
-    { code: 'DE-BB', name: 'Brandenburg' },
-    { code: 'DE-HB', name: 'Bremen' },
-    { code: 'DE-HH', name: 'Hamburg' },
-    { code: 'DE-HE', name: 'Hesse' },
-    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
-    { code: 'DE-NI', name: 'Lower Saxony' },
-    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
-    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
-    { code: 'DE-SL', name: 'Saarland' },
-    { code: 'DE-SN', name: 'Saxony' },
-    { code: 'DE-ST', name: 'Saxony-Anhalt' },
-    { code: 'DE-SH', name: 'Schleswig-Holstein' },
-    { code: 'DE-TH', name: 'Thuringia' },
-  ];
-
-  protected readonly franceRegions = [
-    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
-    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
-    { code: 'FR-BRE', name: 'Brittany' },
-    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
-    { code: 'FR-COR', name: 'Corsica' },
-    { code: 'FR-GES', name: 'Grand Est' },
-    { code: 'FR-HDF', name: 'Hauts-de-France' },
-    { code: 'FR-IDF', name: 'Île-de-France' },
-    { code: 'FR-NOR', name: 'Normandy' },
-    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
-    { code: 'FR-OCC', name: 'Occitania' },
-    { code: 'FR-PDL', name: 'Pays de la Loire' },
-    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
-  ];
-
-  protected readonly indiaStates = [
-    { code: 'IN-AP', name: 'Andhra Pradesh' },
-    { code: 'IN-AR', name: 'Arunachal Pradesh' },
-    { code: 'IN-AS', name: 'Assam' },
-    { code: 'IN-BR', name: 'Bihar' },
-    { code: 'IN-CG', name: 'Chhattisgarh' },
-    { code: 'IN-GA', name: 'Goa' },
-    { code: 'IN-GJ', name: 'Gujarat' },
-    { code: 'IN-HR', name: 'Haryana' },
-    { code: 'IN-HP', name: 'Himachal Pradesh' },
-    { code: 'IN-JH', name: 'Jharkhand' },
-    { code: 'IN-KA', name: 'Karnataka' },
-    { code: 'IN-KL', name: 'Kerala' },
-    { code: 'IN-MP', name: 'Madhya Pradesh' },
-    { code: 'IN-MH', name: 'Maharashtra' },
-    { code: 'IN-MN', name: 'Manipur' },
-    { code: 'IN-ML', name: 'Meghalaya' },
-    { code: 'IN-MZ', name: 'Mizoram' },
-    { code: 'IN-NL', name: 'Nagaland' },
-    { code: 'IN-OD', name: 'Odisha' },
-    { code: 'IN-PB', name: 'Punjab' },
-    { code: 'IN-RJ', name: 'Rajasthan' },
-    { code: 'IN-SK', name: 'Sikkim' },
-    { code: 'IN-TN', name: 'Tamil Nadu' },
-    { code: 'IN-TG', name: 'Telangana' },
-    { code: 'IN-TR', name: 'Tripura' },
-    { code: 'IN-UP', name: 'Uttar Pradesh' },
-    { code: 'IN-UT', name: 'Uttarakhand' },
-    { code: 'IN-WB', name: 'West Bengal' },
-    { code: 'IN-DL', name: 'Delhi (UT)' },
-    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
-    { code: 'IN-LA', name: 'Ladakh (UT)' },
-    { code: 'IN-PY', name: 'Puducherry (UT)' },
-  ];
-
-  // Tiers editing inputs
-  protected readonly newLimit = signal<number | null>(null);
-  protected readonly newRate = signal<number | null>(null);
-
-  protected readonly isSaving = signal(false);
-
-  protected readonly tenantId = computed(() => {
-    const token = this.tokenSvc.getAuthToken();
-    if (!token) return '';
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(atob(parts[1]!));
-        return String(payload.tenant_id || '');
-      }
-    } catch (e) {
-      console.error('Failed to parse auth token payload', e);
-    }
-    return '';
-  });
-
-  protected readonly webhookUrl = computed(() => {
-    const token = this.webhookToken();
-    if (!token) return 'Loading Webhook URL...';
-    const base = environment.apiUrl.replace(/\/$/, '');
-    return `${base}/api/donations/webhook?token=${token}`;
-  });
-
-  protected readonly availableCountriesToSelect = computed(() => {
-    const search = this.countrySearch().toLowerCase().trim();
-    const selected = new Set(this.selectedCountries());
-    return this.allCountries.filter(
-      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
-    );
-  });
-
-  protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
-  protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
-  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
-  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
-  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
-
-  // Plain-language calculation summary
-  protected readonly taxCreditSummary = computed(() => {
-    const sorted = [...this.taxCreditTiers()].sort((a, b) => a.limit - b.limit);
-    if (sorted.length === 0) {
-      return ['No tax credit tiers defined. Donations will not receive any tax credit.'];
-    }
-
-    const lines: string[] = [];
-    let previousLimit = 0;
-
-    for (let i = 0; i < sorted.length; i++) {
-      const tier = sorted[i]!;
-      const ratePct = Math.round(tier.rate * 100);
-
-      if (i === 0) {
-        lines.push(`${ratePct}% credit on the first $${tier.limit} donated.`);
-      } else {
-        const range = `$${previousLimit + 1} to $${tier.limit}`;
-        lines.push(`${ratePct}% credit on the next $${tier.limit - previousLimit} donated (amounts from ${range}).`);
-      }
-      previousLimit = tier.limit;
-    }
-
-    lines.push(`0% credit on any amounts exceeding $${previousLimit}.`);
-    return lines;
-  });
-
-  ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    await this.settingsSvc.load();
-    this.loadValues();
-    await this.loadPeriods();
-  }
-
-  private async loadPeriods() {
-    try {
-      const periods = await this.donationsSvc.getDonationPeriods();
-      this.donationPeriods.set(periods as any);
-    } catch {
-      // non-fatal — periods table may not exist yet if migration hasn't run
-    }
-  }
-
-  protected async addPeriod() {
-    const name = this.newPeriodName().trim();
-    const start = this.newPeriodStartDate().trim();
-    const limit = Number(this.newPeriodLimit());
-
-    if (!name) {
-      this.alerts.showError('Period name is required');
-      return;
-    }
-    if (!start) {
-      this.alerts.showError('Start date is required');
-      return;
-    }
-    if (!limit || limit <= 0) {
-      this.alerts.showError('Limit amount must be greater than 0');
-      return;
-    }
-
-    const endDate = this.newPeriodEndDate().trim() || null;
-    if (endDate && endDate <= start) {
-      this.alerts.showError('End date must be after start date');
-      return;
-    }
-
-    this.isSavingPeriod.set(true);
-    try {
-      await this.donationsSvc.createDonationPeriod({
-        name,
-        start_date: start,
-        end_date: endDate,
-        limit_amount: limit * 100,
-      });
-      this.alerts.showSuccess(`Donation period "${name}" created`);
-      this.newPeriodName.set('');
-      this.newPeriodStartDate.set('');
-      this.newPeriodEndDate.set('');
-      this.newPeriodLimit.set(1000);
-      this.showAddPeriod.set(false);
-      await this.loadPeriods();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
-    } finally {
-      this.isSavingPeriod.set(false);
-    }
-  }
-
-  protected async togglePeriodActive(period: DonationPeriod) {
-    try {
-      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
-      await this.loadPeriods();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
-    }
-  }
-
-  protected async deletePeriod(period: DonationPeriod) {
-    const confirmed = await this.dialogs.confirm({
-      title: `Delete period "${period.name}"?`,
-      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
-    try {
-      await this.donationsSvc.deleteDonationPeriod(period.id);
-      this.alerts.showSuccess('Period deleted');
-      await this.loadPeriods();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
-    }
-  }
-
-  protected formatDate(dateStr: string | null): string {
-    if (!dateStr) return 'No end date';
-    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
-  }
-
-  protected isPeriodActive(period: DonationPeriod): boolean {
-    const today = new Date().toISOString().slice(0, 10);
-    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
-  }
-
-  private loadValues() {
-    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
-    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
-    this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
-    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
-
-    // Load countries
-    const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
-    const parsedCountries = countriesStr
-      .split(',')
-      .map((c) => c.trim())
-      .filter(Boolean);
-    this.selectedCountries.set(parsedCountries);
-
-    // Load regions (provinces / states)
-    const regionsStr = this.settingsSvc.getValue<string>('donations.allowed_regions', 'ON');
-    const parsedRegions = regionsStr
-      .split(',')
-      .map((r) => r.trim())
-      .filter(Boolean);
-    this.selectedRegions.set(parsedRegions);
-
-    // Load tax tiers
-    const tiersRaw = this.settingsSvc.getValue<any>('donations.tax_credit_tiers', []);
-    let parsedTiers: TaxCreditTier[] = [];
-    if (typeof tiersRaw === 'string') {
-      try {
-        parsedTiers = JSON.parse(tiersRaw);
-      } catch {
-        parsedTiers = [];
-      }
-    } else if (Array.isArray(tiersRaw)) {
-      parsedTiers = tiersRaw;
-    }
-    this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
-
-    // Load or generate webhook token
-    let token = this.settingsSvc.getValue<string>('donations.webhook_token', '');
-    if (!token) {
-      token = 'wt_' + Array.from({ length: 24 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    }
-    this.webhookToken.set(token);
-  }
-
-  protected selectCountry(country: { code: string; name: string }) {
-    this.selectedCountries.update((list) => [...list, country.code]);
-    this.countrySearch.set('');
-    this.showCountryDropdown.set(false);
-  }
-
-  protected removeCountry(code: string) {
-    this.selectedCountries.update((list) => list.filter((c) => c !== code));
-    // Clean up regions for removed countries
-    if (code === 'CA') {
-      const provinceCodes = new Set(this.canadaProvinces.map((p) => p.code));
-      this.selectedRegions.update((list) => list.filter((r) => !provinceCodes.has(r)));
-    } else if (code === 'US') {
-      const stateCodes = new Set(this.usStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    } else if (code === 'DE') {
-      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    } else if (code === 'FR') {
-      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
-      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
-    } else if (code === 'IN') {
-      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
-      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
-    }
-  }
-
-  protected toggleRegion(code: string) {
-    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
-  }
-
-  protected getCountryName(code: string): string {
-    const found = this.allCountries.find((c) => c.code === code);
-    return found ? found.name : code;
-  }
-
-  protected addTier() {
-    const limit = this.newLimit();
-    const rateInput = this.newRate();
-
-    if (limit === null || limit <= 0) {
-      this.alerts.showError('Limit must be greater than 0');
-      return;
-    }
-    if (rateInput === null || rateInput < 0 || rateInput > 100) {
-      this.alerts.showError('Rate must be between 0% and 100%');
-      return;
-    }
-
-    const rate = rateInput / 100;
-
-    const current = this.taxCreditTiers();
-    if (current.some((t) => t.limit === limit)) {
-      this.alerts.showError('A tier with this limit already exists');
-      return;
-    }
-
-    const updated = [...current, { limit, rate }].sort((a, b) => a.limit - b.limit);
-    this.taxCreditTiers.set(updated);
-
-    this.newLimit.set(null);
-    this.newRate.set(null);
-  }
-
-  protected removeTier(index: number) {
-    const updated = this.taxCreditTiers().filter((_, i) => i !== index);
-    this.taxCreditTiers.set(updated);
-  }
-
-  protected reset() {
-    this.loadValues();
-    this.alerts.showSuccess('Settings reset to saved values');
-  }
-
-  protected async save() {
-    this.isSaving.set(true);
-    try {
-      const entries = [
-        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
-        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
-        { key: 'donations.limit', value: Number(this.donationLimit()) },
-        { key: 'donations.restrict_residency', value: this.restrictResidency() },
-        { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
-        { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
-        { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
-        { key: 'donations.webhook_token', value: this.webhookToken() },
-      ];
-
-      await this.settingsSvc.upsert(entries);
-      this.alerts.showSuccess('Donations configuration saved successfully');
-    } catch (err) {
-      this.alerts.showError(
-        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
-      );
-    } finally {
-      this.isSaving.set(false);
-    }
-  }
-
-  protected copyWebhookUrl() {
-    navigator.clipboard
-      .writeText(this.webhookUrl())
-      .then(() => this.alerts.showSuccess('Webhook URL copied!'))
-      .catch(() => this.alerts.showError('Failed to copy webhook URL'));
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/settings/settings.config.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export type SettingsFieldType =
-  | 'text'
-  | 'textarea'
-  | 'email'
-  | 'tel'
-  | 'number'
-  | 'select'
-  | 'toggle'
-  | 'password'
-  | 'url'
-  | 'date';
-
-export interface SettingsOptionConfig {
-  label: string;
-  value: string;
-}
-
-export interface SettingsFieldConfig {
-  key: string;
-  label: string;
-  type: SettingsFieldType;
-  placeholder?: string;
-  helper?: string;
-  options?: SettingsOptionConfig[];
-  defaultValue?: unknown;
-}
-
-export interface SettingsSectionConfig {
-  id: string;
-  title: string;
-  description: string;
-  icon: PcIconNameType;
-  fields: SettingsFieldConfig[];
-}
-
-export const SETTINGS_SECTIONS: SettingsSectionConfig[] = [
-  {
-    id: 'organization',
-    title: 'Organization',
-    description: 'Tenant branding, contact details, and campaign defaults.',
-    icon: 'cog-6-tooth',
-    fields: [
-      {
-        key: 'organization.name',
-        label: 'Organization name',
-        type: 'text',
-        placeholder: 'PeopleCRM',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.contact_email',
-        label: 'Primary contact email',
-        type: 'email',
-        placeholder: 'hello@example.com',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.phone',
-        label: 'Contact phone',
-        type: 'tel',
-        placeholder: '(555) 555-1234',
-        defaultValue: '',
-      },
-      {
-        key: 'organization.address',
-        label: 'Mailing address',
-        type: 'textarea',
-        placeholder: '123 Main St, Springfield, USA',
-        defaultValue: '',
-      },
-    ],
-  },
-  {
-    id: 'communications',
-    title: 'Communications',
-    description: 'Email delivery, inbox routing, and compliance copy.',
-    icon: 'envelope',
-    fields: [
-      {
-        key: 'communications.default_from_name',
-        label: 'Default from name',
-        type: 'text',
-        placeholder: 'PeopleCRM Team',
-        defaultValue: '',
-      },
-      {
-        key: 'communications.default_from_email',
-        label: 'Default from email',
-        type: 'select',
-        defaultValue: '',
-        options: [],
-      },
-      {
-        key: 'communications.reply_to',
-        label: 'Reply-to email',
-        type: 'select',
-        defaultValue: '',
-        options: [],
-      },
-      {
-        key: 'communications.footer_disclaimer',
-        label: 'Email footer disclaimer',
-        type: 'textarea',
-        placeholder: 'Paid for by PeopleCRM Campaign…',
-        defaultValue: '',
-        helper: 'Appended to the bottom of every newsletter, above the unsubscribe link.',
-      },
-      {
-        key: 'communications.double_opt_in',
-        label: 'Require double opt-in',
-        type: 'toggle',
-        defaultValue: false,
-        helper: 'Require new web-form subscribers to confirm via email before they receive newsletters.',
-      },
-    ],
-  },
-  {
-    id: 'notifications',
-    title: 'Notifications',
-    description: 'Tenant-wide notification defaults and escalation.',
-    icon: 'bell',
-    fields: [
-      {
-        key: 'notifications.mention_in_comment',
-        label: 'Mentioned in comment',
-        type: 'toggle',
-        helper: 'Alerts when someone mentions you in a thread',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.mention_in_comment_in_app',
-        label: 'Mentioned in comment (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_assigned',
-        label: 'Task assigned',
-        type: 'toggle',
-        helper: 'Alerts when a task is assigned to you',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_assigned_in_app',
-        label: 'Task assigned (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_due',
-        label: 'Task due today / overdue',
-        type: 'toggle',
-        helper: 'Daily reminder check of active tasks due',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.task_due_in_app',
-        label: 'Task due today / overdue (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.person_assigned',
-        label: 'Person assigned',
-        type: 'toggle',
-        helper: 'Alerts when a contact ownership is assigned to you',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.person_assigned_in_app',
-        label: 'Person assigned (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.export_ready',
-        label: 'Export ready',
-        type: 'toggle',
-        helper: 'Receive download link when CSV export finishes',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.export_ready_in_app',
-        label: 'Export ready (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.import_summary',
-        label: 'Import summary',
-        type: 'toggle',
-        helper: 'Spreadsheet import completion stats report',
-        defaultValue: true,
-      },
-      {
-        key: 'notifications.import_summary_in_app',
-        label: 'Import summary (in-app)',
-        type: 'toggle',
-        defaultValue: true,
-      },
-    ],
-  },
-  {
-    id: 'access',
-    title: 'Teams & access',
-    description: 'Default role for new invites and tenant-wide MFA enforcement.',
-    icon: 'user-group',
-    fields: [
-      {
-        key: 'access.default_role',
-        label: 'Default invite role',
-        type: 'select',
-        defaultValue: 'editor',
-        options: [
-          { label: 'Viewer', value: 'viewer' },
-          { label: 'Editor', value: 'editor' },
-          { label: 'Admin', value: 'admin' },
-        ],
-      },
-      {
-        key: 'access.mfa_required',
-        label: 'Require MFA for all users',
-        type: 'toggle',
-        defaultValue: false,
-        helper: 'Force email verification codes for every user signing in from a new device or location.',
-      },
-    ],
-  },
-
-  {
-    id: 'sla',
-    title: 'Service levels',
-    description:
-      'Configure Service Level Agreements (SLAs) for tasks and emails, including working days, business hours, and status warning/critical thresholds.',
-    icon: 'clock',
-    fields: [
-      {
-        key: 'sla.tasks_hours',
-        label: 'Task SLA target (working hours)',
-        type: 'number',
-        defaultValue: 24,
-        helper: 'Maximum working hours allowed to resolve or close a task before it is considered an SLA breach.',
-      },
-      {
-        key: 'sla.emails_hours',
-        label: 'Email SLA target (working hours)',
-        type: 'number',
-        defaultValue: 24,
-        helper:
-          'Maximum working hours allowed to reply to an incoming inbox email before it is considered an SLA breach.',
-      },
-      {
-        key: 'sla.email_warning_threshold',
-        label: 'Email SLA warning threshold (breaches)',
-        type: 'number',
-        defaultValue: 1,
-        helper: 'Number of active open email breaches that triggers a "Warning" (yellow) status on the dashboard.',
-      },
-      {
-        key: 'sla.email_critical_threshold',
-        label: 'Email SLA critical threshold (breaches)',
-        type: 'number',
-        defaultValue: 4,
-        helper: 'Number of active open email breaches that triggers a "Critical" (red) status on the dashboard.',
-      },
-      {
-        key: 'sla.task_warning_threshold',
-        label: 'Task SLA warning threshold (breaches)',
-        type: 'number',
-        defaultValue: 1,
-        helper: 'Number of active open task breaches that triggers a "Warning" (yellow) status on the dashboard.',
-      },
-      {
-        key: 'sla.task_critical_threshold',
-        label: 'Task SLA critical threshold (breaches)',
-        type: 'number',
-        defaultValue: 4,
-        helper: 'Number of active open task breaches that triggers a "Critical" (red) status on the dashboard.',
-      },
-      {
-        key: 'sla.working_days',
-        label: 'Working days (comma-separated: 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 0=Sun)',
-        type: 'text',
-        defaultValue: '1,2,3,4,5',
-        helper: 'Days of the week counted towards the SLA response and resolution calculations.',
-      },
-      {
-        key: 'sla.working_hours_start',
-        label: 'Working hours start (HH:MM)',
-        type: 'text',
-        defaultValue: '09:00',
-        helper: 'Beginning of the business day for working time tracking.',
-      },
-      {
-        key: 'sla.working_hours_end',
-        label: 'Working hours end (HH:MM)',
-        type: 'text',
-        defaultValue: '17:00',
-        helper: 'End of the business day for working time tracking.',
-      },
-    ],
-  },
-  {
-    id: 'appearance',
-    title: 'Appearance',
-    description: 'Global UI defaults that users can override locally.',
-    icon: 'sun',
-    fields: [
-      {
-        key: 'appearance.theme',
-        label: 'Default theme',
-        type: 'select',
-        defaultValue: 'system',
-        options: [
-          { label: 'System', value: 'system' },
-          { label: 'Light', value: 'light' },
-          { label: 'Dark', value: 'dark' },
-        ],
-      },
-      {
-        key: 'appearance.date_format',
-        label: 'Date format',
-        type: 'select',
-        defaultValue: 'MMMM d, yyyy',
-        options: [
-          { label: 'January 10, 2025', value: 'MMMM d, yyyy' },
-          { label: '01/10/2025', value: 'MM/dd/yyyy' },
-          { label: '10/01/2025', value: 'dd/MM/yyyy' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'integrations',
-    title: 'Integrations & API',
-    description: 'Storage, webhooks, analytics, and external vendor keys.',
-    icon: 'cloud-arrow-up',
-    fields: [
-      {
-        key: 'integrations.webhook_api_key',
-        label: 'Webhook API key',
-        type: 'text',
-        placeholder: 'Not generated yet',
-        defaultValue: '',
-      },
-      {
-        key: 'integrations.webhook_api_secret',
-        label: 'Webhook API secret',
-        type: 'password',
-        placeholder: 'Not generated yet',
-        defaultValue: '',
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/experiences/summary/services/getting-started.service.ts
@@ -32969,231 +33622,6 @@ export class GettingStartedCard {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/tags/ui/add-issue.ts
-
-```typescript
-import { Component, inject, viewChild, signal } from '@angular/core';
-import { form, submit, FormField, validateStandardSchema } from '@angular/forms/signals';
-import { TagsService } from '@experiences/tags/services/tags-service';
-import { AddTagObj } from '../../../../../../../libs/common/src';
-
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-function randomHexColor(): string {
-  return (
-    '#' +
-    Math.floor(Math.random() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')
-  );
-}
-
-@Component({
-  selector: 'pc-add-issue',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique issue name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Issue Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input
-            class="input input-bordered input-sm w-24"
-            type="color"
-            [formField]="form.color"
-            [class.input-error]="form.color().invalid() && (form.color().dirty() || form.color().touched())"
-          />
-          @if (form.color().invalid() && (form.color().dirty() || form.color().touched())) {
-            @for (err of form.color().errors(); track err) {
-              <span class="text-error text-xs">{{ err.message }}</span>
-            }
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
-      </div>
-    </form>
-  </div>`,
-})
-export class AddIssue {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tagSvc = inject(TagsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    color: randomHexColor(),
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddTagObj);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  public readonly formActions = viewChild(FormActions);
-
-  protected async add(event?: any) {
-    if (event instanceof Event) {
-      event.preventDefault();
-    }
-
-    if (this.isLoading()) return;
-
-    this.form().markAsTouched();
-    if (!this.form().valid) return;
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const formObj = this.payload();
-          await this.tagSvc.add({ ...formObj, type: 'issue' });
-          await this.tagOptionsSvc.invalidate('issue');
-          this.tagSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Issue added successfully.');
-
-          this.payload.set({ name: '', description: '', color: randomHexColor() });
-          this.formActions()?.stayOrCancel();
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/tags/ui/add-tag.ts
-
-```typescript
-import { Component, inject, viewChild, signal } from '@angular/core';
-import { form, submit, required, pattern, FormField } from '@angular/forms/signals';
-import { TagsService } from '@experiences/tags/services/tags-service';
-
-import { FormActions } from '@uxcommon/components/form-actions/form-actions';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-
-function randomHexColor(): string {
-  return (
-    '#' +
-    Math.floor(Math.random() * 0xffffff)
-      .toString(16)
-      .padStart(6, '0')
-  );
-}
-
-@Component({
-  selector: 'pc-add-tag',
-  imports: [PcInput, FormField, FormActions],
-  template: `<div class="flex min-h-full flex-col bg-base-100">
-    <form (submit)="add($event)" class="mx-5 my-10 sm:mx-10" novalidate>
-      <div class="flex flex-col gap-2">
-        <label i18n class="label text-base font-light">
-          Enter a unique tag name (and optionally, give it a description)
-        </label>
-        <pc-input placeholder="Tag Name" i18n-placeholder [formField]="form.name"></pc-input>
-        <pc-input placeholder="Optional description" i18n-placeholder [formField]="form.description"></pc-input>
-        <div class="flex items-center gap-2">
-          <label i18n class="label-text font-light text-sm">Colour</label>
-          <input class="input input-bordered input-sm w-24" type="color" [formField]="form.color" />
-          @if (form.color().invalid() && form.color().touched()) {
-            <span i18n class="text-error text-xs">Use a value like #3366ff</span>
-          }
-        </div>
-        <pc-form-actions [isLoading]="isLoading()" [signalForm]="form" (btn1Clicked)="add()"></pc-form-actions>
-      </div>
-    </form>
-  </div>`,
-})
-export class AddTag {
-  private readonly alertSvc = inject(AlertService);
-  private readonly tagSvc = inject(TagsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-
-  private _loading = createLoadingGate();
-
-  protected readonly payload = signal({
-    name: '',
-    description: '',
-    color: randomHexColor(),
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    required(p.name);
-    pattern(p.color, /^#([0-9a-fA-F]{6})$/);
-  });
-
-  protected isLoading = this._loading.visible;
-
-  public readonly formActions = viewChild(FormActions);
-
-  protected async add(event?: any) {
-    if (event instanceof Event) {
-      event.preventDefault();
-    }
-
-    if (this.isLoading()) {
-      return;
-    }
-
-    // force validation messages to appear
-    this.form().markAsTouched();
-
-    if (!this.form().valid) {
-      return;
-    }
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const formObj = this.payload();
-          await this.tagSvc.add(formObj);
-          await this.tagOptionsSvc.invalidate('tag');
-          this.tagSvc.triggerRefresh();
-          this.alertSvc.showSuccess('Tag added successfully.');
-
-          // Reset the backing signal
-          this.payload.set({
-            name: '',
-            description: '',
-            color: randomHexColor(),
-          });
-
-          this.formActions()?.stayOrCancel();
-        } catch (err) {
-          this.alertSvc.showError(
-            err instanceof Error && err.message ? err.message : "We've hit an unknown error. Please try again.",
-          );
-        } finally {
-          end();
-        }
-        return null;
-      },
-    });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/tasks/ui/task-add.ts
 
 ```typescript
@@ -33352,6 +33780,609 @@ export class TaskAddComponent implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/task-view.ts
+
+```typescript
+import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { Router, RouterModule } from '@angular/router';
+import { IAuthUser } from '../../../../../../../libs/common/src';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { TeamsService } from '../../teams/services/teams-service';
+import { QuillModule } from 'ngx-quill';
+
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
+import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
+import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
+import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
+import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
+import { UserService } from '../../../services/user.service';
+
+import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+@Component({
+  selector: 'pc-task-view',
+  imports: [
+    DatePipe,
+    DecimalPipe,
+    SlicePipe,
+    FormsModule,
+    RouterModule,
+    QuillModule,
+    Icon,
+    SanitizeHtmlPipe,
+    MentionifyPipe,
+    TimeAgoPipe,
+    RecordActivities,
+    UserAvatarComponent,
+  ],
+  templateUrl: './task-view.html',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+})
+export class TaskView {
+  readonly id = input.required<string>();
+
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly tasks = inject(TasksService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  private readonly teams = inject(TeamsService);
+  private readonly userService = inject(UserService);
+
+  protected readonly task = signal<any | null>(null);
+  protected readonly comments = signal<any[]>([]);
+  protected readonly attachments = signal<any[]>([]);
+  protected readonly subtasks = signal<any[]>([]);
+  private readonly _loading = createLoadingGate();
+  protected readonly isLoading = this._loading.visible;
+  protected readonly users = signal<IAuthUser[]>([]);
+  protected readonly assignedTo = signal<string>('');
+  protected readonly teamsList = signal<any[]>([]);
+  protected readonly teamId = signal<string>('');
+
+  // Form Fields & Inline Editing State
+  protected isEditingName = signal(false);
+  protected isEditingDetails = signal(false);
+  protected isEditingDueDate = signal(false);
+  protected tempName = signal('');
+  protected tempDetails = signal('');
+  protected readonly defaultDetails =
+    '<p class="italic text-base-content/40">No details or description provided. Click here to add descriptions...</p>';
+  private readonly activityHistory = viewChild<RecordActivities>('activityHistory');
+
+  private refreshActivities() {
+    const component = this.activityHistory();
+    if (component) {
+      void component.loadActivities();
+    }
+  }
+
+  protected newComment = signal('');
+  protected attName = signal('');
+  protected attUrl = signal('');
+  protected subtaskName = signal('');
+
+  // Expand / collapse sections
+  protected showComments = signal(true);
+  protected showSubtasks = signal(true);
+  protected showAttachments = signal(true);
+
+  // Autocomplete mentions (shared controller)
+  private readonly taskComposer = viewChild<{ nativeElement: HTMLTextAreaElement }>('taskComposer');
+  public mc = new MentionController(() => this.users());
+
+  // Priority classes and options for display/inputs
+  protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
+  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  constructor() {
+    effect(() => {
+      void untracked(() => this.load());
+    });
+  }
+
+  // Load task and its children
+  private async load() {
+    const end = this._loading.begin();
+    try {
+      const [t, us, ts] = await Promise.all([
+        this.tasks.getById(this.id()),
+        this.userService.getUsers(),
+        this.teams.getAll({ limit: 1000 }),
+      ]);
+      if (!t) {
+        this.alertSvc.showError('Task not found.');
+        return;
+      }
+      this.task.set(t as any);
+      this.users.set(us || []);
+      this.teamsList.set(ts?.rows ?? []);
+      const assigned = (t as any)?.assigned_to;
+      this.assignedTo.set(assigned == null ? '' : String(assigned));
+      const team = (t as any)?.team_id;
+      this.teamId.set(team == null ? '' : String(team));
+
+      // Load subtasks, comments, attachments
+      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the task. Please try again.'));
+    } finally {
+      end();
+    }
+  }
+
+  private async loadComments() {
+    const list = await this.tasks.api.tasks.getComments.query(this.id());
+    this.comments.set(list);
+  }
+
+  private async loadAttachments() {
+    const list = await this.tasks.api.tasks.getAttachments.query(this.id());
+    this.attachments.set(list);
+  }
+
+  private async loadSubtasks() {
+    const list = await this.tasks.api.tasks.getSubtasks.query(this.id());
+    this.subtasks.set(list);
+  }
+
+  protected asDate(v: any) {
+    return v ? new Date(v) : null;
+  }
+
+  protected dateOnly(v: any) {
+    if (!v) return '';
+    const s = typeof v === 'string' ? v : new Date(v).toISOString();
+    return s.slice(0, 10);
+  }
+
+  protected async update(patch: any) {
+    if (!this.task()) return;
+    const id = this.id();
+    try {
+      await this.tasks.update(id, patch);
+      this.tasks.triggerRefresh();
+      this.task.update((t) => ({ ...(t ?? {}), ...patch }));
+      if (Object.prototype.hasOwnProperty.call(patch, 'assigned_to')) {
+        const v = patch.assigned_to;
+        this.assignedTo.set(v == null || v === '' ? '' : String(v));
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'team_id')) {
+        const v = patch.team_id;
+        this.teamId.set(v == null || v === '' ? '' : String(v));
+      }
+      this.alertSvc.showSuccess('Task updated successfully');
+      this.refreshActivities();
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
+    }
+  }
+
+  protected onTeamChange(event: any) {
+    const val = event.target.value;
+    void this.update({ team_id: val || null });
+  }
+
+  // Inline name editing trigger & save
+  protected startEditingName() {
+    this.tempName.set(this.task()?.name || '');
+    this.isEditingName.set(true);
+  }
+
+  protected async saveName() {
+    const nextName = this.tempName().trim();
+    if (!nextName) {
+      this.isEditingName.set(false);
+      return;
+    }
+    await this.update({ name: nextName });
+    this.isEditingName.set(false);
+  }
+
+  protected cancelEditingName() {
+    this.isEditingName.set(false);
+  }
+
+  // Inline details (Quill description) editing trigger & save
+  protected startEditingDetails() {
+    this.tempDetails.set(this.task()?.details || '');
+    this.isEditingDetails.set(true);
+  }
+
+  protected async saveDetails() {
+    await this.update({ details: this.tempDetails() });
+    this.isEditingDetails.set(false);
+  }
+
+  protected cancelEditingDetails() {
+    this.isEditingDetails.set(false);
+  }
+
+  // Subtask Actions
+  protected async addSubtask() {
+    const name = this.subtaskName().trim();
+    if (!name) return;
+    const end = this._loading.begin();
+    try {
+      await this.tasks.api.tasks.addSubtask.mutate({ task_id: this.id(), name });
+      this.subtaskName.set('');
+      await this.loadSubtasks();
+      this.refreshActivities();
+    } finally {
+      end();
+    }
+  }
+
+  protected async toggleSubtask(s: any, isDone: boolean) {
+    const end = this._loading.begin();
+    try {
+      await this.tasks.api.tasks.updateSubtask.mutate({
+        id: String(s.id),
+        data: { status: isDone ? 'done' : 'todo' },
+      });
+      await this.loadSubtasks();
+      this.refreshActivities();
+    } finally {
+      end();
+    }
+  }
+
+  // Comment Actions
+  protected async addComment() {
+    const plain = this.newComment().trim();
+    if (!plain) return;
+    const end = this._loading.begin();
+    try {
+      await this.tasks.api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
+      this.newComment.set('');
+      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
+      this.refreshActivities();
+    } finally {
+      end();
+    }
+  }
+
+  // Attachment Actions
+  protected async addAttachment() {
+    const name = this.attName().trim();
+    const url = this.attUrl().trim();
+    if (!name) return;
+    const end = this._loading.begin();
+    try {
+      await this.tasks.api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
+      this.attName.set('');
+      this.attUrl.set('');
+      await this.loadAttachments();
+      this.refreshActivities();
+    } finally {
+      end();
+    }
+  }
+
+  // Status and Priority Dropdown Handlers
+  protected onStatusChange(event: any) {
+    const status = event.target.value;
+    void this.update({ status });
+  }
+
+  protected onPriorityChange(event: any) {
+    const priority = event.target.value;
+    void this.update({ priority });
+  }
+
+  protected onDueDateChange(event: any) {
+    const value = this.normalizeCalendarValue(event);
+    void this.update({ due_at: value });
+  }
+
+  protected onAssignedChange(v: string) {
+    this.assignedTo.set(v);
+    void this.update({ assigned_to: v || null });
+  }
+
+  protected assignToMe() {
+    const me = this.auth.getUser();
+    if (!me?.id) return;
+    void this.update({ assigned_to: me.id });
+  }
+
+  protected isArchived() {
+    return (this.task()?.status || '') === 'archived';
+  }
+
+  protected async archiveTask() {
+    await this.update({ status: 'archived' });
+  }
+
+  protected async unarchiveTask() {
+    await this.update({ status: 'todo' });
+  }
+
+  protected async deleteTask() {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Task',
+      message: 'Are you sure you want to delete this task? This action cannot be undone.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+
+    if (confirmed) {
+      const end = this._loading.begin();
+      try {
+        const deleted = await this.tasks.delete(this.id());
+        if (deleted) {
+          this.tasks.triggerRefresh();
+          this.alertSvc.showSuccess('Task deleted successfully');
+          void this.router.navigate(['/tasks']);
+        } else {
+          this.alertSvc.showError('Failed to delete task.');
+        }
+      } catch (err) {
+        this.alertSvc.showError(getUserErrorMessage(err, 'Could not delete the task. Please try again.'));
+      } finally {
+        end();
+      }
+    }
+  }
+
+  // User display name helpers
+  protected userName(id: string | null | undefined): string {
+    if (!id) return 'Unknown';
+    const uid = String(id);
+    const u = this.users().find((x) => String(x.id) === uid);
+    return u ? `${u.first_name} ${u.last_name || ''}`.trim() : 'Unknown';
+  }
+
+  protected userAvatar(id: string | null | undefined): string | null {
+    if (!id) return null;
+    const uid = String(id);
+    const u = this.users().find((x) => String(x.id) === uid);
+    return u ? this.userService.resolveAvatarUrl(u.avatar_url) : null;
+  }
+
+  protected myUserId(): string | null {
+    return this.auth.getUser()?.id ?? null;
+  }
+
+  // Mention autocomplete text area inputs
+  protected onComposerInput(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    this.newComment.set(el.value);
+    const caret = el.selectionStart ?? this.newComment().length;
+    this.mc.updateFromInput(this.newComment(), caret);
+  }
+
+  protected onComposerClick(ev: Event) {
+    const el = ev.target as HTMLTextAreaElement;
+    const caret = el.selectionStart ?? 0;
+    this.mc.updateFromInput(this.newComment(), caret);
+  }
+
+  protected onComposerKeydown(ev: KeyboardEvent) {
+    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      void this.addComment();
+      return;
+    }
+    this.mc.handleKeydown(ev, (u) => this.selectMention(u));
+  }
+
+  protected selectMention(u: IAuthUser, ev?: Event) {
+    ev?.preventDefault();
+    const res = this.mc.select(u, this.newComment());
+    this.newComment.set(res.text);
+    const el = this.taskComposer()?.nativeElement as HTMLTextAreaElement | undefined;
+    setTimeout(() => {
+      if (el) {
+        el.focus();
+        el.setSelectionRange(res.caret, res.caret);
+      }
+    });
+  }
+
+  protected userDisplay = userDisplay;
+
+  private normalizeCalendarValue(event: any): string | null {
+    const raw =
+      (event?.detail != null && typeof event.detail === 'string' && event.detail) ||
+      (event?.detail?.value != null && event.detail.value) ||
+      (event?.target?.value != null && event.target.value) ||
+      (event?.value != null && event.value) ||
+      (typeof event === 'string' ? event : null);
+
+    if (!raw) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  // Styling helper classes
+  protected getStatusBadgeClass(status: string): string {
+    const s = String(status || '').toLowerCase();
+    switch (s) {
+      case 'done':
+        return 'badge-success text-success-content';
+      case 'in_progress':
+        return 'badge-info text-info-content';
+      case 'blocked':
+        return 'badge-error text-error-content';
+      case 'canceled':
+        return 'badge-neutral text-neutral-content';
+      case 'archived':
+        return 'badge-warning text-warning-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+
+  protected getPriorityBadgeClass(priority: string): string {
+    const p = String(priority || '').toLowerCase();
+    switch (p) {
+      case 'urgent':
+        return 'badge-error text-error-content';
+      case 'high':
+        return 'badge-warning text-warning-content';
+      case 'medium':
+        return 'badge-info text-info-content';
+      default:
+        return 'badge-ghost';
+    }
+  }
+
+  protected toTitleCase(s: string): string {
+    if (!s) return '';
+    return s
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(' ');
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
+
+```typescript
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { email, form, required } from '@angular/forms/signals';
+import { ActivatedRoute, Router } from '@angular/router';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Select as PcSelect } from '@uxcommon/components/select/select';
+
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SettingsService } from '../../settings/services/settings-service';
+import { UserAdminService } from '../services/useradmin-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-user-add',
+  imports: [PcInput, PcSelect, PcDetailHeader],
+  templateUrl: './user-add.html',
+})
+export class UserAddComponent implements OnInit {
+  private readonly alerts = inject(AlertService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly users = inject(UserAdminService);
+  private readonly auth = inject(AuthService);
+  private readonly settings = inject(SettingsService);
+
+  protected readonly error = signal<string | null>(null);
+
+  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
+
+  protected readonly payload = signal({
+    email: '',
+    first_name: '',
+    last_name: '',
+    role: 'user',
+  });
+
+  protected readonly form = form(this.payload, (p) => {
+    required(p.email);
+    email(p.email);
+    required(p.first_name);
+  });
+
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+
+  protected readonly submitting = signal(false);
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
+    const state = window.history.state;
+    if (state && state.cloneData) {
+      const data = state.cloneData;
+      this.payload.set({
+        email: data.email || '',
+        first_name: data.first_name || '',
+        last_name: data.last_name || '',
+        role: data.role || '',
+      });
+      return;
+    }
+
+    // Prefill the role with the tenant's configured default invite role (best-effort).
+    try {
+      await this.settings.load();
+      const defaultRole = this.settings.getValue<string>('access.default_role');
+      if (defaultRole) {
+        this.payload.update((p) => ({ ...p, role: defaultRole }));
+      }
+    } catch {
+      // Ignore — fall back to the built-in default role.
+    }
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty('this invite');
+  }
+
+  protected cancel() {
+    void this.router.navigate(['../'], { relativeTo: this.route });
+  }
+
+  protected async submit(done?: (() => void) | Event) {
+    if (done instanceof Event) {
+      done.preventDefault();
+    }
+
+    this.form().markAsTouched();
+    if (this.form().invalid()) {
+      return;
+    }
+
+    this.submitting.set(true);
+    this.error.set(null);
+    try {
+      const payload = this.toPayload();
+      await this.users.add(payload);
+      this.users.triggerRefresh();
+      this.alerts.showSuccess('Invitation sent');
+      this.form().reset();
+      if (typeof done === 'function') {
+        done();
+      } else {
+        await this.router.navigate(['../'], { relativeTo: this.route });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to invite user';
+      this.error.set(message);
+      this.alerts.showError(message);
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  private toPayload() {
+    const raw = this.payload();
+    return {
+      email: raw.email?.trim() ?? '',
+      first_name: raw.first_name?.trim() ?? '',
+      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
+      role: raw.role?.trim() ? raw.role.trim() : null,
+    };
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/users/ui/user-view.html
 
 ```html
@@ -33450,6 +34481,192 @@ export class TaskAddComponent implements OnInit {
   </div>
   }
 </pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
+
+```typescript
+import { Component, inject } from '@angular/core';
+import { escapeHtml } from '../../../../../../../libs/common/src';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { UserAdminService } from '../services/useradmin-service';
+
+@Component({
+  selector: 'pc-users-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Users"
+        i18n-title
+        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="true"
+        [disableView]="false"
+        [disableExport]="true"
+        [disableImport]="true"
+        [allowFilter]="false"
+        [addRoute]="'add'"
+        plusIcon="add-users"
+        i18n-plusIcon
+        [isCellEditableOverride]="isCellEditableBind"
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: UserAdminService },
+    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
+  ],
+})
+export class UsersGridComponent {
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+
+  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+
+  protected col: ColDef[] = [
+    {
+      field: 'email',
+      headerName: 'Email',
+      editable: true,
+      cellRenderer: (p: CellParams) => {
+        let avatarUrl = (p.data?.['avatar_url'] as string | null | undefined) ?? null;
+        const firstName = (p.data?.['first_name'] as string | undefined) ?? '';
+        const lastName = (p.data?.['last_name'] as string | undefined) ?? '';
+        const name = [firstName, lastName].filter(Boolean).join(' ') || String(p.value ?? '') || '?';
+        const emailVal = String(p.value ?? '');
+
+        let avatarHtml = '';
+        if (avatarUrl) {
+          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
+          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
+        } else {
+          const PALETTES = [
+            'bg-indigo-500/20 text-indigo-700',
+            'bg-teal-500/20 text-teal-700',
+            'bg-purple-500/20 text-purple-700',
+            'bg-rose-500/20 text-rose-700',
+            'bg-amber-500/20 text-amber-700',
+            'bg-emerald-500/20 text-emerald-700',
+            'bg-blue-500/20 text-blue-700',
+            'bg-orange-500/20 text-orange-700',
+            'bg-pink-500/20 text-pink-700',
+            'bg-cyan-500/20 text-cyan-700',
+          ];
+          let sum = 0;
+          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+          const colorClass = PALETTES[sum % PALETTES.length];
+          const parts = name.split(/\s+/);
+          const first = parts[0];
+          const last = parts[parts.length - 1];
+          const initials =
+            parts.length >= 2 && first && last
+              ? (first.charAt(0) + last.charAt(0)).toUpperCase()
+              : name.charAt(0).toUpperCase();
+          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
+            <span>${escapeHtml(initials)}</span>
+          </div>`;
+        }
+
+        return `<div class="flex items-center gap-2 py-0.5 h-full">
+          ${avatarHtml}
+          <span>${escapeHtml(emailVal)}</span>
+        </div>`;
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true },
+    {
+      field: 'role',
+      headerName: 'Role',
+      editable: true,
+      cellEditorParams: () => {
+        const currentUserRole = this.auth.getUser()?.role;
+        const values = [];
+        if (currentUserRole !== 'admin') {
+          values.push({ value: 'owner', label: 'Owner' });
+        }
+        values.push({ value: 'admin', label: 'Admin' });
+        values.push({ value: 'user', label: 'User' });
+        values.push({ value: 'viewer', label: 'Viewer' });
+        return { values };
+      },
+      valueFormatter: (p: CellParams) => {
+        const val = p.value ?? p.data?.['role'];
+        if (val === 'owner') return 'Owner';
+        if (val === 'admin') return 'Admin';
+        if (val === 'user') return 'User';
+        if (val === 'viewer') return 'Viewer';
+        return (val as string | undefined) || '';
+      },
+    },
+    {
+      field: 'verified',
+      headerName: 'Verified',
+      editable: false,
+      valueFormatter: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
+      cellRenderer: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Updated',
+      hide: true,
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
+    },
+    {
+      field: 'created_at',
+      headerName: 'Created',
+      hide: true,
+      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['created_at']),
+    },
+  ];
+
+  public readonly isCellEditableBind = (row: GridRow, col: ColDef): boolean => {
+    if (!col.editable) return false;
+
+    const currentUserRole = this.auth.getUser()?.role;
+
+    if (currentUserRole === 'admin') {
+      if (row['role'] === 'owner') {
+        if (col.field === 'role' || col.field === 'verified') {
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  private formatDate(value: unknown): string {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) return '';
+    return this.dateFormatter.format(date);
+  }
+
+  private coerceBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value !== 0;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (['yes', 'true', '1'].includes(normalized)) return true;
+      if (['no', 'false', '0'].includes(normalized)) return false;
+    }
+    return false;
+  }
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/workflows/ui/workflow-form.ts
@@ -34434,464 +35651,6 @@ const DRAWER_STATE_KEY = 'pc-drawerState';
 const SIDEBAR_FAVOURITES_KEY = 'pc-sidebar-favourites';
 ```
 
-## File: apps/frontend/src/app/layout/sidebar/sidebar.ts
-
-```typescript
-import { Component, DestroyRef, WritableSignal, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { NgTemplateOutlet } from '@angular/common';
-import {
-  NavigationCancel,
-  NavigationError,
-  NavigationStart,
-  Router,
-  RouterLink,
-  RouterLinkActive,
-} from '@angular/router';
-import { filter, map } from 'rxjs';
-import { Icon } from '@icons/icon';
-import { Swap } from '@uxcommon/components/swap/swap';
-
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { ISidebarItem } from './sidebar-items';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-@Component({
-  selector: 'pc-sidebar',
-  imports: [NgTemplateOutlet, Icon, RouterLink, RouterLinkActive, Swap, AnimateIfDirective],
-  templateUrl: './sidebar.html',
-  styles: [
-    `
-      .tooltip:before {
-        z-index: 100 !important;
-      }
-    `,
-  ],
-})
-export class Sidebar {
-  private readonly sidebarSvc = inject(SidebarService);
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly destroyRef = inject(DestroyRef);
-
-  // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
-  private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
-  private readonly _isLargeScreen = signal(this._mql?.matches ?? true);
-
-  // True when the sidebar is visually in icon-only mode (either user preference or responsive CSS)
-  protected readonly isEffectivelyNarrow = computed(
-    () => !this.isMobileOpen() && (!this._isLargeScreen() || this.isDrawerHalf()),
-  );
-
-  protected readonly pendingRoute = toSignal(
-    this.router.events.pipe(
-      filter((e) => e instanceof NavigationStart || e instanceof NavigationCancel || e instanceof NavigationError),
-      map((e) => (e instanceof NavigationStart ? e.url : null)),
-    ),
-    { initialValue: null },
-  );
-
-  private readonly visibilitySignals = new Map<string, WritableSignal<boolean>>();
-
-  protected readonly items = computed(() => {
-    const role = this.auth.getUser()?.role;
-    const allItems = this.sidebarSvc.getItems()();
-    if (role === 'user') {
-      return allItems.map((item) => {
-        if (item.children) {
-          return {
-            ...item,
-            children: item.children.filter((child) => !child.adminOnly),
-          };
-        }
-        return item;
-      });
-    }
-    return allItems;
-  });
-
-  constructor() {
-    if (this._mql) {
-      const handler = (e: MediaQueryListEvent) => this._isLargeScreen.set(e.matches);
-      this._mql.addEventListener('change', handler);
-      this.destroyRef.onDestroy(() => this._mql!.removeEventListener('change', handler));
-    }
-
-    effect(() => {
-      const flatItems = this.flattenItems(this.items());
-      for (const item of flatItems) {
-        const key = this.getItemKey(item);
-        const visible = !item.hidden && !item.hiddenByFavourite;
-        const existing = this.visibilitySignals.get(key);
-        if (existing) {
-          existing.set(visible);
-        } else {
-          this.visibilitySignals.set(key, signal(visible));
-        }
-      }
-    });
-  }
-
-  protected closeMobile() {
-    this.sidebarSvc.closeMobile();
-  }
-
-  private flattenItems(items: ISidebarItem[]): ISidebarItem[] {
-    return items.flatMap((item) => (item.children ? [item, ...this.flattenItems(item.children)] : [item]));
-  }
-
-  private getItemKey(item: ISidebarItem): string {
-    const prefix = item.parent?.type === 'bookmark' ? 'bookmark:' : '';
-    return prefix + item.name + (item.route ?? '');
-  }
-
-  protected getVisibilitySignal(item: ISidebarItem): WritableSignal<boolean> {
-    const key = this.getItemKey(item);
-    return this.visibilitySignals.get(key) ?? signal(!item.hidden && !item.hiddenByFavourite);
-  }
-
-  protected isCollapsed(name: string): boolean {
-    return this.sidebarSvc.isCollapsed(name);
-  }
-
-  protected isDrawerFull() {
-    return this.sidebarSvc.isFull();
-  }
-
-  protected isDrawerHalf() {
-    return this.sidebarSvc.isHalf();
-  }
-
-  protected isMobileOpen() {
-    return this.sidebarSvc.isMobileOpen();
-  }
-
-  protected toggleCollapse(name: string) {
-    this.sidebarSvc.toggleCollapsed(name);
-  }
-
-  protected toggleDrawer() {
-    return this.sidebarSvc.toggleDrawer();
-  }
-}
-```
-
-## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
-
-```typescript
-import type { Router } from '@angular/router';
-import type { TRPCLink } from '@trpc/client';
-import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
-import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
-import superjson from 'superjson';
-
-import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-import { environment } from '../../../environments/environment';
-import type { TokenService } from './token-service';
-
-interface JwtPayload {
-  exp?: number;
-
-  [key: string]: unknown;
-}
-
-type NextLink = (op: Operation) => ObservableLike;
-
-/* ------------------------------------------------------------------ */
-/* Local helper types                                                 */
-/* ------------------------------------------------------------------ */
-type ObservableLike<T = unknown, E = unknown> = {
-  subscribe(args: Observer<T, E>): Unsubscribable;
-};
-
-/* ------------------------------------------------------------------ */
-/* Core helpers                                                       */
-/* ------------------------------------------------------------------ */
-
-function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
-  next(op).subscribe({
-    next: (value) => observer.next(value),
-    error: (err) => observer.error(err),
-    complete: () => observer.complete(),
-  });
-}
-
-let activeRefreshPromise: Promise<string | null> | null = null;
-
-async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
-  const authToken = tokenSvc.getAuthToken();
-  if (!authToken) return null;
-
-  if (isTokenExpired(authToken)) {
-    if (activeRefreshPromise) {
-      return activeRefreshPromise;
-    }
-
-    const refreshToken = tokenSvc.getRefreshToken();
-    if (!refreshToken) throw new TRPCClientError('No refresh token available');
-
-    activeRefreshPromise = (async () => {
-      try {
-        const payload = await trpcRetryClient.auth.renewAuthToken.mutate({
-          auth_token: authToken,
-          refresh_token: refreshToken,
-        });
-
-        tokenSvc.set({
-          auth_token: payload.auth_token,
-          refresh_token: payload.refresh_token,
-        });
-        return payload.auth_token;
-      } finally {
-        activeRefreshPromise = null;
-      }
-    })();
-
-    return activeRefreshPromise;
-  }
-  return authToken;
-}
-
-function handleRefreshFailure(
-  err: unknown,
-  tokenSvc: TokenService,
-  router: Router,
-  observer: Observer<unknown, unknown>,
-): void {
-  tokenSvc.clearAll();
-  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
-  observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
-}
-
-function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
-  if (!token) return true;
-
-  const payload = parseJwt(token);
-  if (!payload?.exp) return true;
-
-  const now = Math.floor(Date.now() / 1000);
-  return payload.exp < now + leewaySeconds;
-}
-
-function parseJwt(token: string): JwtPayload | null {
-  try {
-    const [, payload = ''] = token.split('.');
-    // JWT payloads are base64url-encoded and unpadded; atob only accepts
-    // standard base64, so convert the alphabet and restore padding first.
-    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-    return JSON.parse(atob(padded)) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Public TRPC link                                                   */
-/* ------------------------------------------------------------------ */
-
-export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
-  return () => {
-    return ({ op, next }: { op: Operation; next: NextLink }) =>
-      observable<unknown, unknown>((observer) => {
-        void (async () => {
-          try {
-            const authToken = await getValidAuthToken(tokenSvc);
-
-            // Guest user — just forward.
-            if (!authToken) {
-              forwardOp(op, next, observer);
-              return;
-            }
-
-            // Authenticated user — forward with (possibly refreshed) token.
-            forwardOp(op, next, observer);
-          } catch (err) {
-            handleRefreshFailure(err, tokenSvc, router, observer);
-          }
-        })();
-
-        // No teardown logic needed.
-        return;
-      });
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* Dedicated client for token refreshes only                          */
-/* ------------------------------------------------------------------ */
-const trpcRetryClient = createTRPCClient<TRPCRouter>({
-  links: [
-    httpLink({
-      url: environment.apiUrl,
-      transformer: superjson,
-    }),
-  ],
-});
-```
-
-## File: apps/frontend/src/app/services/api/trpc-service.ts
-
-```typescript
-import { inject, Service } from '@angular/core';
-import { Router } from '@angular/router';
-import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
-import { ErrorService } from '../error.service';
-import {
-  TRPCClient,
-  TRPCClientError,
-  TRPCLink,
-  createTRPCClient,
-  httpLink as trpcHttpLink,
-  loggerLink,
-} from '@trpc/client';
-import { observable } from '@trpc/server/observable';
-import superjson from 'superjson';
-
-import { get, set } from 'idb-keyval';
-
-import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
-import { environment } from '../../../environments/environment';
-import { TokenService } from './token-service';
-import { refreshLink } from './trpc-refreshlink';
-import { ApiError } from './api-error';
-
-@Service()
-export class TRPCService<T> {
-  protected readonly errorSvc = inject(ErrorService);
-
-  protected readonly router = inject(Router);
-
-  protected readonly tokenService = inject(TokenService);
-
-  protected ac = new AbortController();
-
-  public readonly api: TRPCClient<TRPCRouter>;
-
-  constructor() {
-    this.api = createTRPCClient<TRPCRouter>({
-      links: [
-        loggerLink(),
-        refreshLink(this.tokenService, this.router),
-        errorLink(this.errorSvc),
-        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
-      ],
-    });
-  }
-
-  public abort() {
-    this.ac.abort();
-    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
-  }
-
-  protected async runCachedCall(
-    apiCall: Promise<Partial<T>[]>,
-    apiName: string,
-    options: getAllOptionsType,
-    refresh: boolean,
-  ) {
-    const keyToHash = JSON.stringify({ apiName, ...options });
-    const hashedKey = this.hash(keyToHash);
-    const payload = await get(hashedKey);
-    let data = payload?.expires > Date.now() ? payload.data : null;
-
-    if (refresh || !data || data.length === 0) {
-      data = await apiCall;
-      await set(hashedKey, { expires: this.addDays(1), data });
-    }
-
-    return data;
-  }
-
-  private addDays(days: number) {
-    const date = new Date(Date.now());
-    date.setDate(date.getDate() + days);
-    return date;
-  }
-
-  private hash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return (hash >>> 0).toString(36);
-  }
-}
-
-function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
-  const GENERIC_INPUT_MSG = 'Please check your input and try again';
-
-  return () =>
-    ({ next, op }) =>
-      observable((observer) => {
-        const unsubscribe = next(op).subscribe({
-          next: (value) => observer.next(value),
-          error: (err) => {
-            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
-            let finalErr: any = err;
-
-            if (err instanceof TRPCClientError) {
-              const code = err.data?.code as string | undefined;
-              const path = op.path ?? '';
-              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
-
-              let msg = err.message;
-              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
-                // Server formatter should already do this; this is just a client fallback
-                msg = GENERIC_SIGNIN_ERROR;
-              } else if (code === 'BAD_REQUEST') {
-                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
-                if (isValidationError) {
-                  msg = GENERIC_INPUT_MSG;
-                }
-              }
-              finalErr = new ApiError(msg, err);
-            }
-
-            // Aborted requests (component teardown, superseded loads) are not
-            // user-facing failures — never toast them.
-            if (!meta?.skipErrorHandler && !isAbortError(err)) {
-              errorSvc.handle(finalErr);
-            }
-
-            observer.error(finalErr);
-          },
-          complete: () => observer.complete(),
-        });
-        return unsubscribe;
-      });
-}
-
-function isAbortError(err: unknown): boolean {
-  if (err instanceof DOMException && err.name === 'AbortError') return true;
-  if (err instanceof TRPCClientError) {
-    const cause: unknown = err.cause;
-    return cause instanceof DOMException && cause.name === 'AbortError';
-  }
-  return false;
-}
-
-function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
-  return trpcHttpLink({
-    url: environment.apiUrl,
-    transformer: superjson,
-    // Combine the per-request signal tRPC provides with the service-level
-    // controller so TRPCService.abort() actually cancels in-flight requests.
-    fetch(input, init) {
-      const signals: AbortSignal[] = [getAbortSignal()];
-      if (init?.signal) signals.push(init.signal);
-      return globalThis.fetch(input, { ...init, signal: AbortSignal.any(signals) });
-    },
-    headers() {
-      const authToken = tokenSvc.getAuthToken();
-      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
-    },
-  });
-}
-```
-
 ## File: apps/frontend/src/app/services/command-palette.service.ts
 
 ```typescript
@@ -35005,53 +35764,6 @@ export class CommandPaletteService {
 
   private go(url: string): void {
     void this.router.navigateByUrl(url);
-  }
-}
-```
-
-## File: apps/frontend/src/app/services/user.service.ts
-
-```typescript
-import { inject, Service } from '@angular/core';
-import { IAuthUser, UpdateAuthUserType } from '../../../../../libs/common/src';
-import { environment } from '../../environments/environment';
-import { AuthService } from '../auth/auth-service';
-import { TRPCService } from './api/trpc-service';
-
-@Service()
-export class UserService extends TRPCService<any> {
-  private readonly authService = inject(AuthService);
-
-  public getUsers() {
-    return this.api.users.getUsers.query() as unknown as Promise<IAuthUser[]>;
-  }
-
-  public getProfileById(id: string) {
-    return this.api.users.getProfileById.query(id);
-  }
-
-  public async updateUserProfile(id: string, data: UpdateAuthUserType) {
-    const updated = await this.api.users.updateUserProfile.mutate({ id, data });
-    // If the updated user is the current user, update our local signal
-    const current = this.authService.getUser();
-    if (current && current.id === id) {
-      this.authService.getUserSignal().set({
-        ...current,
-        ...updated,
-        first_name: (updated.first_name as string | undefined) ?? current.first_name,
-      });
-    }
-    return updated;
-  }
-
-  public resolveAvatarUrl(url: string | null | undefined): string | null {
-    if (!url) return null;
-    // Backend avatar URLs arrive pre-signed (short-lived, single-file scope),
-    // so no session token is appended — tokens in URLs leak into history/logs.
-    if (url.startsWith('/') && !url.startsWith('//')) {
-      return environment.apiUrl + url;
-    }
-    return url;
   }
 }
 ```
@@ -35564,137 +36276,6 @@ export class GridStoreService {
 }
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/services/grid-tag-filter.service.ts
-
-```typescript
-import { computed, signal } from '@angular/core';
-
-import type { TagOptionsService } from './tag-options.service';
-
-export class GridTagFilterService {
-  // ── Tag filter signals ────────────────────────────────────────────────────
-  readonly allAvailableTags = signal<string[]>([]);
-  readonly selectedTags = signal<string[]>([]);
-  readonly tagSearchQuery = signal<string>('');
-
-  // ── Issue filter signals ──────────────────────────────────────────────────
-  readonly allAvailableIssues = signal<string[]>([]);
-  readonly selectedIssues = signal<string[]>([]);
-  readonly issueSearchQuery = signal<string>('');
-
-  // ── Computeds ─────────────────────────────────────────────────────────────
-  readonly filteredAvailableTags = computed(() => {
-    const query = this.tagSearchQuery().toLowerCase().trim();
-    const all = this.allAvailableTags();
-    if (!query) return all;
-    return all.filter((tag) => tag.toLowerCase().includes(query));
-  });
-
-  readonly filteredAvailableIssues = computed(() => {
-    const query = this.issueSearchQuery().toLowerCase().trim();
-    const all = this.allAvailableIssues();
-    if (!query) return all;
-    return all.filter((issue) => issue.toLowerCase().includes(query));
-  });
-
-  // showTagFilter / showIssueFilter are kept on DataGrid because they depend
-  // on the `colDefs` input signal, which belongs to the component.
-
-  // ── Initialisation ────────────────────────────────────────────────────────
-
-  async init(params: {
-    limitToTags: string[];
-    limitToIssues: string[];
-    tagOptionsSvc: TagOptionsService;
-    doRefresh: () => void;
-  }): Promise<void> {
-    this._doRefresh = params.doRefresh;
-
-    this.selectedTags.set([...params.limitToTags]);
-    this.selectedIssues.set([...params.limitToIssues]);
-
-    try {
-      const tags = await params.tagOptionsSvc.getTagNames('tag');
-      this.allAvailableTags.set(tags);
-    } catch {
-      this.allAvailableTags.set([]);
-    }
-
-    try {
-      const issues = await params.tagOptionsSvc.getTagNames('issue');
-      this.allAvailableIssues.set(issues);
-    } catch {
-      this.allAvailableIssues.set([]);
-    }
-  }
-
-  // ── Tag filter actions ────────────────────────────────────────────────────
-
-  toggleTagFilter(tag: string, checked: boolean): void {
-    const current = this.selectedTags();
-    const next = checked ? [...current, tag] : current.filter((t) => t !== tag);
-    this.selectedTags.set(next);
-    this._doRefresh();
-  }
-
-  clearTagsFilter(): void {
-    this.selectedTags.set([]);
-    this.tagSearchQuery.set('');
-    this._doRefresh();
-  }
-
-  selectAllTags(): void {
-    const visible = this.filteredAvailableTags();
-    const current = new Set(this.selectedTags());
-    for (const tag of visible) current.add(tag);
-    this.selectedTags.set(Array.from(current));
-    this._doRefresh();
-  }
-
-  clearAllTagsVisible(): void {
-    const visibleSet = new Set(this.filteredAvailableTags());
-    const next = this.selectedTags().filter((tag) => !visibleSet.has(tag));
-    this.selectedTags.set(next);
-    this._doRefresh();
-  }
-
-  // ── Issue filter actions ──────────────────────────────────────────────────
-
-  toggleIssueFilter(issue: string, checked: boolean): void {
-    const current = this.selectedIssues();
-    const next = checked ? [...current, issue] : current.filter((i) => i !== issue);
-    this.selectedIssues.set(next);
-    this._doRefresh();
-  }
-
-  clearIssuesFilter(): void {
-    this.selectedIssues.set([]);
-    this.issueSearchQuery.set('');
-    this._doRefresh();
-  }
-
-  selectAllIssues(): void {
-    const visible = this.filteredAvailableIssues();
-    const current = new Set(this.selectedIssues());
-    for (const issue of visible) current.add(issue);
-    this.selectedIssues.set(Array.from(current));
-    this._doRefresh();
-  }
-
-  clearAllIssuesVisible(): void {
-    const visibleSet = new Set(this.filteredAvailableIssues());
-    const next = this.selectedIssues().filter((issue) => !visibleSet.has(issue));
-    this.selectedIssues.set(next);
-    this._doRefresh();
-  }
-
-  // ── Private ───────────────────────────────────────────────────────────────
-  private _doRefresh: () => void = () => {
-    /*noop */
-  };
-}
-```
-
 ## File: apps/frontend/src/app/shared/components/datagrid/services/table.service.ts
 
 ```typescript
@@ -35796,73 +36377,6 @@ export class DataGridTableService {
         enableResizing: true,
       })) as unknown as TSColumnDef<GridRow, unknown>[];
   }
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-columns-dropdown.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-import type { DataGrid } from '../datagrid';
-import type { ColumnDef as ColDef } from '../grid-defaults';
-import type { Models } from '../../../../../../../../libs/common/src/lib/kysely.models';
-
-/**
- * Column visibility dropdown shared by the mobile and desktop toolbars.
- * Rendered as the projected content of a `pc-grid-tool-btn` dropdown, so it
- * uses `display: contents` to stay a direct child of the DaisyUI `<details>`.
- *
- * The grid is passed in as an input rather than injected: as projected
- * content it does not reliably resolve the same `DataGrid` instance.
- *
- * `getColDefsForToolbar()` returns a plain (non-signal) array that is filled
- * in after init, so as an isolated component this would render once and stay
- * empty. `cols` reads the reactive `getColVisibilityMap()` (the colVisibility
- * signal) to recompute once the columns are populated.
- */
-@Component({
-  selector: 'pc-dg-columns-dropdown',
-  template: `
-    <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow">
-      <li class="px-2 py-1 flex gap-2">
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().showAllColsPublic()">Show all</button>
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().hideAllColsPublic()">Hide all</button>
-        <button i18n class="btn btn-ghost btn-xs" (click)="grid().resetAllWidthsPublic()">Reset widths</button>
-      </li>
-      @for (col of cols(); track col.field) {
-        @if (col.field) {
-          <li>
-            <label tabindex="-1" class="label cursor-pointer justify-start gap-2">
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                [checked]="grid().getColVisibilityMap()[col.field!] !== false"
-                (change)="grid().toggleColPublic(col.field!, $any($event.target).checked)"
-              />
-              <span class="label-text">{{ col.headerName || col.field }}</span>
-            </label>
-          </li>
-        }
-      }
-    </ul>
-  `,
-  styles: [
-    `
-      :host {
-        display: contents;
-      }
-    `,
-  ],
-})
-export class DataGridColumnsDropdownComponent {
-  public readonly grid = input.required<DataGrid<keyof Models, unknown>>();
-
-  protected readonly cols = computed<ColDef[]>(() => {
-    // Establish a reactive dependency on the colVisibility signal so the list
-    // recomputes once the (non-signal) column defs are populated after init.
-    this.grid().getColVisibilityMap();
-    return this.grid().getColDefsForToolbar();
-  });
 }
 ```
 
@@ -36187,102 +36701,99 @@ export class DataGridColumnsDropdownComponent {
 </ul>
 ```
 
-## File: apps/frontend/src/app/shared/components/datagrid/datagrid.tokens.ts
+## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
 
 ```typescript
-import type { Provider } from '@angular/core';
-import { InjectionToken } from '@angular/core';
-import type { BaseDialogOptions } from '@frontend/services/shared-dialog.service';
-import type { QueueExportInputType } from '../../../../../../../libs/common/src';
+import { Component, computed, inject } from '@angular/core';
+import { DataGrid } from '../datagrid';
+import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
+import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
+import { DataGridFilterSectionComponent } from './datagrid-filter-section';
+import { GridActionComponent } from '../tool-button';
+import { Icon } from '@icons/icon';
+import { MultiselectFilterComponent } from './multiselect-filter';
+import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
 
-export interface DataGridConfig {
-  filterToolPanelId: string;
-  messages: {
-    noDeletePermission: string;
-    editBlocked: string;
-    editFailed: string;
-    loadFailed: string;
+@Component({
+  selector: 'pc-dg-toolbar',
+  imports: [
+    GridActionComponent,
+    Icon,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
+    DataGridColumnsDropdownComponent,
+    DataGridFilterDropdownComponent,
+    DataGridFilterSectionComponent,
+  ],
+  templateUrl: 'datagrid-toolbar.html',
+})
+export class DataGridToolbarComponent {
+  public readonly grid = inject(DataGrid);
 
-    deleteConfirmTitle: string;
-    deleteConfirmMessage: string;
-    deleteConfirmIcon: BaseDialogOptions['icon'];
-    deleteConfirmVariant: 'danger' | 'info' | 'warning' | 'success';
-    deleteConfirmText: string;
-    deleteCancelText: string;
-    deleteNoneSelected: string;
-    deleteSystemValues: string;
-    deleteFailed: string;
-    deleteSuccess: string;
+  readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
 
-    exportTitle: string;
-    exportMessage: string;
-    exportIcon: BaseDialogOptions['icon'];
-    exportConfirmText: string;
-    exportCancelText: string;
-    exportFailed: string;
-    exportInProgress: string;
-    exportReady: string;
-    exportNavigateWarning: string;
-    exportFileName: string;
-    exportEntity: QueueExportInputType['entity'] | '';
+  public onAdd() {
+    this.grid.doAdd();
+  }
 
-    /** Noun used in selection & bulk-bar copy, e.g. "person"/"people". Defaults to row/rows. */
-    entityNoun?: string;
-    entityNounPlural?: string;
-  };
-  pageSize: number;
+  public onClone() {
+    this.grid.doClone();
+  }
+
+  public onMergeSelected() {
+    this.grid.doConfirmMerge();
+  }
+
+  public onDeleteSelected() {
+    this.grid.doConfirmDelete();
+  }
+
+  public onExportCsv() {
+    this.grid.doConfirmExport();
+  }
+
+  public onImportCsv() {
+    this.grid.doImportCSV();
+  }
+
+  public onRedo() {
+    this.grid.redo();
+  }
+
+  public onRefresh() {
+    void this.grid.doRefresh();
+  }
+
+  public onToggleArchive() {
+    this.grid.toggleArchiveModePublic();
+  }
+
+  public onToggleFilters() {
+    this.grid.filter();
+  }
+
+  public onUndo() {
+    this.grid.undo();
+  }
+
+  public onResetAllWidths() {
+    this.grid.resetAllWidthsPublic();
+  }
+
+  public onHideAllCols() {
+    this.grid.hideAllColsPublic();
+  }
+
+  public onShowAllCols() {
+    this.grid.showAllColsPublic();
+  }
+
+  public onToggleCol(colId: string, visible: boolean) {
+    this.grid.toggleColPublic(colId, visible);
+  }
 }
-
-export function provideDataGridConfig(
-  overrides?: Partial<Omit<DataGridConfig, 'messages'>> & { messages?: Partial<DataGridConfig['messages']> },
-): Provider {
-  const merged: DataGridConfig = {
-    ...DEFAULT_DATA_GRID_CONFIG,
-    ...overrides,
-    messages: {
-      ...DEFAULT_DATA_GRID_CONFIG.messages,
-      ...(overrides?.messages ?? {}),
-    },
-  };
-  return { provide: DATA_GRID_CONFIG, useValue: merged };
-}
-
-export const DATA_GRID_CONFIG = new InjectionToken<DataGridConfig>('DATA_GRID_CONFIG');
-
-export const DEFAULT_DATA_GRID_CONFIG: DataGridConfig = {
-  pageSize: 25,
-  filterToolPanelId: 'filters-new',
-  messages: {
-    noDeletePermission: 'You do not have the permission to delete rows from this table.',
-    editBlocked: 'This cell cannot be edited or deleted.',
-    editFailed: 'Could not edit the row. Please try again later.',
-    loadFailed: 'Could not load the data. Please try again later.',
-
-    deleteConfirmTitle: 'Are you sure?',
-    deleteConfirmMessage: 'The selected rows will be deleted permanently. You cannot undo this.',
-    deleteConfirmIcon: 'trash',
-    deleteConfirmVariant: 'danger',
-    deleteConfirmText: 'Delete',
-    deleteCancelText: 'Cancel',
-    deleteNoneSelected: 'Please select at least one row to delete.',
-    deleteSystemValues: 'Some rows cannot be deleted because these are system values.',
-    deleteFailed: 'Could not delete. Please try again later.',
-    deleteSuccess: 'Selected rows were successfully deleted.',
-
-    exportTitle: 'Choose export scope',
-    exportMessage:
-      'Select whether to export only the displayed rows or all matching rows. Only the columns visible in the grid are included.',
-    exportIcon: 'arrow-down-tray',
-    exportConfirmText: 'All rows',
-    exportCancelText: 'Displayed rows',
-    exportFailed: 'Export failed. Please try again.',
-    exportInProgress: 'Preparing your export. Keep this tab open until the download starts.',
-    exportReady: 'Export ready. Your download should begin momentarily.',
-    exportNavigateWarning: 'Exporting all rows can take a while. Please avoid navigating away until it completes.',
-    exportFileName: 'grid-export.csv',
-    exportEntity: '',
-  },
-};
 ```
 
 ## File: apps/frontend/src/app/shared/components/datagrid/grid-defaults.ts
@@ -36332,78 +36843,68 @@ type CellRendererResult = string | HTMLElement;
 export const SELECTION_COLUMN: ColumnDef = {};
 ```
 
-## File: apps/frontend/src/app/app.routes.ts
+## File: apps/frontend/src/app/app.config.ts
 
 ```typescript
-import type { Routes } from '@angular/router';
+import type { ApplicationConfig } from '@angular/core';
+import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
+import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
+import { ENVIRONMENT } from './environment-token';
+import { RouteReuseStrategy, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { Loader } from '@googlemaps/js-api-loader';
+import { environment } from '../environments/environment';
 
-import { authGuard } from './auth/auth-guard';
-import { loginGuard } from './auth/login/login-guard';
+import { appRoutes } from './app.routes';
+import { AppTitleStrategy } from './services/tab-title.service';
+import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { jsendInterceptor } from './services/jsend.interceptor';
+import { GlobalErrorHandler } from './services/global-error-handler';
 
-export const appRoutes = [
-  // Default redirect to summary inside the dashboard shell
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
+export function initSession(authService: AuthService) {
+  return async () => {
+    await authService.init();
+  };
+}
 
-  // Auth pages
-  {
-    path: 'signin',
-    canActivate: [loginGuard],
-    loadComponent: () => import('./auth/signin-page/signin-page').then((m) => m.SignInPage),
-  },
-  {
-    path: 'signup',
-    loadComponent: () => import('./auth/signup-page/signup-page').then((m) => m.SignUpPage),
-  },
-  {
-    path: 'resetpassword',
-    loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
-  },
-  {
-    path: 'newpassword',
-    loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
-  },
-  {
-    path: 'verify-sender-email',
-    loadComponent: () =>
-      import('./auth/verify-sender-email-page/verify-sender-email-page').then((m) => m.VerifySenderEmailPage),
-  },
-  {
-    path: 'confirm-subscription',
-    loadComponent: () =>
-      import('./auth/confirm-subscription-page/confirm-subscription-page').then((m) => m.ConfirmSubscriptionPage),
-  },
-  {
-    path: 'f/:slug',
-    loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
-  },
-  {
-    path: 'verify-email',
-    loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
-  },
-  {
-    path: 'cancel-deletion',
-    loadComponent: () => import('./auth/cancel-deletion-page/cancel-deletion-page').then((m) => m.CancelDeletionPage),
-  },
-  {
-    path: 'resume-account',
-    loadComponent: () => import('./auth/resume-account-page/resume-account-page').then((m) => m.ResumeAccountPage),
-  },
+export const appConfig: ApplicationConfig = {
+  providers: [
+    { provide: ENVIRONMENT, useValue: environment },
+    provideTanStackQuery(new QueryClient()),
+    {
+      provide: Loader,
+      useFactory: () => {
+        const env = inject(ENVIRONMENT);
+        return new Loader({
+          apiKey: env.googleMapsApiKey,
+          libraries: ['places'],
+        });
+      },
+    },
 
-  // Main dashboard shell + children (protected)
-  {
-    path: '',
-    canActivate: [authGuard],
-    // optionally also: canActivateChild: [authGuard],
-    loadComponent: () => import('./layout/dashboards/dashboard').then((m) => m.Dashboard),
-    loadChildren: () => import('./dashboard.routes').then((m) => m.dashboardRoutes),
-  },
+    {
+      provide: RouteReuseStrategy,
+      useClass: CustomRouteReuseStrategy,
+    },
+    {
+      provide: TitleStrategy,
+      useClass: AppTitleStrategy,
+    },
+    provideRouter(appRoutes, withComponentInputBinding()),
 
-  // Fallback
-  {
-    path: '**',
-    loadComponent: () => import('@uxcommon/components/not-found/not-found').then((m) => m.NotFound),
-  },
-] as const satisfies Routes;
+    provideZonelessChangeDetection(),
+
+    provideAppInitializer(() => {
+      const initializerFn = initSession(inject(AuthService));
+      return initializerFn();
+    }),
+
+    provideHttpClient(withInterceptors([jsendInterceptor])),
+
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
+  ],
+};
 ```
 
 ## File: apps/frontend/src/app/auth/cancel-deletion-page/cancel-deletion-page.ts
@@ -36519,171 +37020,6 @@ export class CancelDeletionPage extends TRPCService<any> implements OnInit, OnDe
 }
 ```
 
-## File: apps/frontend/src/app/auth/confirm-subscription-page/confirm-subscription-page.ts
-
-```typescript
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { ConfirmSubscriptionService } from './confirm-subscription-service';
-
-@Component({
-  selector: 'pc-confirm-subscription',
-  imports: [AuthLayoutComponent, Icon],
-  templateUrl: './confirm-subscription-page.html',
-})
-export class ConfirmSubscriptionPage implements OnInit {
-  private readonly route = inject(ActivatedRoute);
-  private readonly confirmSvc = inject(ConfirmSubscriptionService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-
-  protected readonly status = signal<'idle' | 'success' | 'error'>('idle');
-  protected readonly errorMessage = signal<string>('');
-
-  public ngOnInit(): void {
-    void this.loadOnInit();
-  }
-
-  private async loadOnInit(): Promise<void> {
-    const token = this.route.snapshot.queryParamMap.get('token');
-
-    if (!token) {
-      this.status.set('error');
-      this.errorMessage.set('Invalid or missing confirmation token.');
-      return;
-    }
-
-    const end = this._loading.begin();
-    this.status.set('idle');
-
-    try {
-      const result = await this.confirmSvc.confirmSubscription(token);
-      if (result && result.success) {
-        this.status.set('success');
-      } else {
-        this.status.set('error');
-        this.errorMessage.set('Confirmation failed. The link may be invalid or expired.');
-      }
-    } catch (err) {
-      this.status.set('error');
-      this.errorMessage.set(
-        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during confirmation.',
-      );
-    } finally {
-      end();
-    }
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/new-password-page/new-password-page.ts
-
-```typescript
-import { DecimalPipe } from '@angular/common';
-import { Component, OnInit, inject, signal } from '@angular/core';
-import { FormField, form, minLength, required, submit } from '@angular/forms/signals';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-import { AuthLayoutComponent } from 'apps/frontend/src/app/auth/auth-layout';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { passwordBreachNumber, passwordInBreach } from 'apps/frontend/src/app/auth/auth-utils';
-import { getUserErrorMessage } from 'apps/frontend/src/app/services/api/user-message';
-
-@Component({
-  selector: 'pc-new-password',
-  imports: [DecimalPipe, FormField, RouterLink, AuthLayoutComponent, Icon],
-  templateUrl: './new-password-page.html',
-})
-export class NewPasswordPage implements OnInit {
-  private readonly alertSvc = inject(AlertService);
-  private readonly authService = inject(AuthService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-
-  private _loading = createLoadingGate();
-
-  private code: string | null = null;
-
-  protected readonly error = signal(false);
-  protected readonly isLoading = this._loading.visible;
-
-  protected passwordBreachNumber = passwordBreachNumber;
-  protected passwordInBreach = passwordInBreach;
-
-  protected success: string | undefined;
-
-  protected readonly payload = signal({
-    password: '',
-  });
-
-  public readonly form = form(this.payload, (p) => {
-    required(p.password);
-    minLength(p.password, 8);
-  });
-
-  public get password() {
-    return this.form.password();
-  }
-
-  public ngOnInit() {
-    const code = this.route.snapshot.queryParamMap.get('code');
-
-    if (!code) {
-      this.error.set(true);
-      return;
-    }
-
-    this.code = code;
-  }
-
-  public async submit(event?: Event) {
-    event?.preventDefault();
-
-    // force validation messages to appear
-    this.form().markAsTouched();
-
-    if (!this.form().valid) {
-      this.alertSvc.showError('Please check the password.');
-      return;
-    }
-
-    await submit(this.form, {
-      action: async () => {
-        const end = this._loading.begin();
-        try {
-          const passwordVal = this.payload().password;
-          await this.authService.resetPassword({
-            code: this.code || '',
-            password: passwordVal,
-          });
-
-          this.alertSvc.showSuccess('Password reset successfully. Please sign in again');
-          void this.router.navigateByUrl('signin');
-        } catch (err) {
-          // Catch backend/network rejections properly
-          this.alertSvc.showError(getUserErrorMessage(err, 'Could not reset the password. Please try again.'));
-          this.error.set(true);
-        } finally {
-          end();
-        }
-        return null;
-      },
-      onInvalid: () => {
-        this.alertSvc.showError('Please check the password.');
-      },
-    });
-  }
-}
-```
-
 ## File: apps/frontend/src/app/auth/reset-password-page/reset-password-page.ts
 
 ```typescript
@@ -36761,229 +37097,6 @@ export class ResetPasswordPage {
         this.alertSvc.showError('Please check the email address and try again.');
       },
     });
-  }
-}
-```
-
-## File: apps/frontend/src/app/auth/auth-service.ts
-
-```typescript
-import { signal, Service } from '@angular/core';
-import { IAuthUser, IToken, signInInputType, signUpInputType } from '../../../../../libs/common/src';
-import { TRPCService } from '../services/api/trpc-service';
-import { TRPCError } from '@trpc/server';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-
-@Service()
-export class AuthService extends TRPCService<'authusers'> {
-  private user = signal<IAuthUser | null>(null);
-
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
-    if (user) this.user.set(user);
-    return user;
-  }
-
-  public getUser(): IAuthUser | null {
-    return this.user();
-  }
-
-  public getUserSignal() {
-    return this.user;
-  }
-
-  public init() {
-    return this.getCurrentUser();
-  }
-
-  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
-    const dataBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
-        resolve(result.split(',')[1]!);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    const res = (await this.api.auth.uploadAvatar.mutate({
-      dataBase64,
-      mimeType: file.type as any,
-      filename: file.name,
-    })) as { avatar_url: string };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: res.avatar_url,
-      });
-    }
-
-    return res;
-  }
-
-  public async deleteAvatar(): Promise<{ success: boolean }> {
-    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
-
-    const current = this.user();
-    if (current) {
-      this.user.set({
-        ...current,
-        avatar_url: null,
-      });
-    }
-
-    return res;
-  }
-
-  public async cancelEmailChange() {
-    const response = await this.api.auth.cancelEmailChange.mutate();
-    await this.getCurrentUser();
-    return response;
-  }
-
-  public resetPassword(input: { code: string; password: string }) {
-    // The new-password page owns the error UX for this call.
-    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public sendPasswordResetEmail(input: { email: string }) {
-    // The reset-password page owns the error UX for this call.
-    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-  }
-
-  public async signIn(
-    input: signInInputType & { rememberMe?: boolean },
-  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
-    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-
-    if (response && 'requires2FA' in response && response.requires2FA) {
-      return { requires2FA: true, email: response.email };
-    }
-
-    const user = await this.updateTokensAndGetCurrentUser(response);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { requires2FA: false, user };
-  }
-
-  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
-    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
-      context: { skipErrorHandler: true },
-    });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return user;
-  }
-
-  public async signOut() {
-    let apiReturn = null;
-    try {
-      apiReturn = await this.api.auth.signOut.mutate();
-    } catch (error) {
-      console.error('Error during sign out:', error);
-    }
-
-    this.user.set(null);
-    this.tokenService.clearAll();
-    void this.router.navigate(['/signin']);
-
-    return apiReturn;
-  }
-
-  public async signUp(input: signUpInputType) {
-    const token = await this.api.auth.signUp.mutate(input);
-    return this.updateTokensAndGetCurrentUser(token);
-  }
-
-  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
-    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
-  }
-
-  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
-    // Callers toast their own success/failure (and handle rate-limit countdowns).
-    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ success: boolean }>;
-  }
-
-  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
-    // The sign-in page silently falls back to the password step if this fails —
-    // a global error toast here would be noise.
-    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
-      { email },
-      { context: { skipErrorHandler: true } },
-    ) as Promise<{ hasPasskeys: boolean }>;
-  }
-
-  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
-    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
-    let response: any;
-    try {
-      response = await startAuthentication({ optionsJSON: options });
-    } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
-      throw err;
-    }
-    const token = await (
-      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
-    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
-    const user = await this.updateTokensAndGetCurrentUser(token);
-    if (user?.tenant_deletion_scheduled_at) {
-      void this.router.navigate(['/cancel-deletion']);
-    } else if (user?.tenant_paused_at) {
-      void this.router.navigate(['/resume-account']);
-    }
-    return { user, cancelled: false };
-  }
-
-  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
-    const options = await this.api.auth.passkeyRegistrationOptions.query();
-    const response = await startRegistration({ optionsJSON: options as any });
-    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
-      verified: boolean;
-    };
-  }
-
-  public listPasskeys() {
-    return this.api.auth.listPasskeys.query();
-  }
-
-  public deletePasskey(id: string) {
-    return this.api.auth.deletePasskey.mutate({ id });
-  }
-
-  public dismissPasskeyPrompt() {
-    return this.api.auth.dismissPasskeyPrompt.mutate();
-  }
-
-  public updatePasskeyName(id: string, friendlyName: string) {
-    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
-  }
-
-  private async updateTokensAndGetCurrentUser(token: IToken | TRPCError) {
-    if (!token || token instanceof TRPCError) {
-      throw token;
-    }
-    this.tokenService.set(token);
-    return this.getCurrentUser();
   }
 }
 ```
@@ -37341,90 +37454,6 @@ export class EmailActivities {
       default:
         return `performed ${act.activity} on this email`;
     }
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/emails/ui/email-assign/email-assign.ts
-
-```typescript
-import { Component, effect, inject, input, signal } from '@angular/core';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@uxcommon/components/icons/icon';
-
-import { IAuthUser } from '../../../../../../../../libs/common/src';
-import { EmailType } from '../../../../../../../../libs/common/src/lib/models';
-import { UserService } from '../../../../services/user.service';
-import { EmailsStore } from '../../services/store/emailstore';
-
-@Component({
-  selector: 'pc-email-assign',
-  imports: [Icon],
-  template: `<div class="flex items-center gap-2 mt-1">
-    <span i18n class="text-xs text-base-content/70">Owner:</span>
-    <div class="dropdown">
-      <div tabindex="0" class="badge badge-xs text-xs badge-info badge-outline cursor-pointer">
-        <span>{{ getUserName(assignedTo()) }}</span>
-        <span><pc-icon name="chevron-down" [size]="4"></pc-icon></span>
-      </div>
-
-      <ul class="dropdown-content menu bg-base-100 rounded-box z-[1] w-44 p-2 shadow">
-        @for (user of users(); track user.id) {
-          <li>
-            <button type="button" (click)="assign(user.id); closeDropdown()">{{ user.first_name }}</button>
-          </li>
-        }
-        @if (assignedTo()) {
-          <li><button i18n type="button" (click)="assign(null); closeDropdown()">Unassign</button></li>
-        }
-      </ul>
-    </div>
-  </div>`,
-})
-export class EmailAssign {
-  private alertSvc = inject(AlertService);
-  private store = inject(EmailsStore);
-  private userService = inject(UserService);
-
-  protected assignedTo = signal<string | null>(null);
-
-  public email = input.required<EmailType | null>();
-  public users = signal<IAuthUser[]>([]);
-
-  constructor() {
-    void this.userService.getUsers().then((u) => this.users.set(u));
-    // Can't use computed because assignedTo is settable
-    effect(() => {
-      this.assignedTo.set(this.email()?.assigned_to || null);
-    });
-  }
-
-  public async assign(userId: string | number | null) {
-    const email = this.email();
-    if (!email) return;
-
-    const normalizedUserId = userId != null ? String(userId) : null;
-    const assigneeName = normalizedUserId
-      ? (this.users().find((u) => String(u.id) === normalizedUserId)?.first_name ?? null)
-      : null;
-
-    try {
-      await this.store.assignEmailToUser(email.id, normalizedUserId, assigneeName);
-      this.assignedTo.set(normalizedUserId);
-    } catch (_e) {
-      this.alertSvc.showError('Something went wrong, please try again');
-      this.assignedTo.set(null);
-    }
-  }
-
-  public closeDropdown() {
-    const el = document.activeElement as HTMLElement | null;
-    el?.blur?.(); // remove focus -> :focus-within becomes false -> closes
-  }
-
-  public getUserName(id: string | null = null) {
-    if (!id) return 'Noone';
-    return this.users().find((u) => String(u.id) === String(id))?.first_name || 'Noone';
   }
 }
 ```
@@ -38663,6 +38692,707 @@ export class EmailHeader {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/events/ui/event-form.html
+
+```html
+<div class="p-6 max-w-5xl space-y-6">
+  @if (error() && !detail() && !isNew()) {
+  <div class="alert alert-error m-4">
+    <span>{{ error() }}</span>
+  </div>
+  } @else if (!isNew() && !detail()) {
+  <div class="flex flex-col items-center justify-center py-20">
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <p class="text-base-content/60 mt-4">Loading event details...</p>
+  </div>
+  } @else {
+  <div class="space-y-6">
+    <pc-detail-header
+      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
+      [eyebrow]="isNew() ? 'New' : 'Editing'"
+      [crumbs]="crumbs()"
+      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
+      [form]="form"
+      [isLoading]="saving()"
+      [disabled]="slugChecking() || slugUnique() === false"
+      buttonsToShow="two"
+      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
+      [showDelete]="!isNew()"
+      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
+      deleteText="Delete event"
+      (save)="save($event)"
+      (delete)="deleteEvent()"
+    ></pc-detail-header>
+
+    @if (error()) {
+    <div class="alert alert-error shadow-sm py-3 text-sm">
+      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
+      <span>{{ error() }}</span>
+    </div>
+    }
+
+    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
+      <!-- Left 2 cols: Main details -->
+      <div class="md:col-span-2 space-y-6">
+        <pc-card title="Event Details">
+          <pc-input
+            id="event-name"
+            label="Event Name *"
+            [formField]="form.name"
+            placeholder="E.g., Annual Fundraising Dinner"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="event-slug"
+              label="URL Slug *"
+              [formField]="form.slug"
+              placeholder="e.g. annual-fundraising-dinner"
+              [hasError]="slugUnique() === false"
+              (input)="onSlugInput()"
+            >
+              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
+            </pc-input>
+            @if (slugChecking()) {
+            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
+              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
+            </p>
+            } @else if (slugUnique() === true) {
+            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
+            } @else if (slugUnique() === false) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
+            }
+          </div>
+
+          <pc-textarea
+            id="event-desc"
+            label="Description"
+            [formField]="form.description"
+            placeholder="Describe the event, agenda, and what attendees can expect..."
+            [rows]="4"
+          ></pc-textarea>
+
+          <pc-input
+            id="event-location"
+            label="Location Address"
+            [formField]="form.location_address"
+            placeholder="E.g., 123 Main St, City Hall Ballroom"
+          ></pc-input>
+
+          <div class="divider mt-4"></div>
+          <div>
+            <h4 class="font-bold text-md">Collected Fields</h4>
+            <h5>Choose which fields appear on the public RSVP form.</h5>
+            <pc-fields-selector
+              [selectedFields]="selectedFields()"
+              (fieldsChange)="selectedFields.set($event)"
+            ></pc-fields-selector>
+          </div>
+
+          <div class="divider"></div>
+
+          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
+            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
+            Organizer Contact
+          </h4>
+          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <pc-input
+              id="contact-email"
+              label="Contact Email"
+              type="email"
+              [formField]="form.contact_email"
+              placeholder="organizer@example.com"
+            ></pc-input>
+            <pc-input
+              id="contact-phone"
+              label="Contact Phone"
+              [formField]="form.contact_phone"
+              placeholder="E.g., 555-0199"
+            ></pc-input>
+          </div>
+        </pc-card>
+
+        <!-- Ticket Types (only for existing events) -->
+        @if (!isNew()) {
+        <pc-card
+          title="Ticket Types"
+          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
+          icon="tag"
+        >
+          <button
+            pc-card-actions
+            type="button"
+            class="btn btn-xs btn-primary gap-1"
+            (click)="startAddTicket()"
+            [disabled]="addingTicket()"
+          >
+            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
+          </button>
+
+          @if (ticketTypes().length === 0 && !addingTicket()) {
+          <p class="text-sm text-base-content/40 italic">
+            No ticket types defined — this event uses a simple free RSVP.
+          </p>
+          } @else {
+          <div class="overflow-x-auto border border-base-300 rounded-lg">
+            <table class="table table-sm w-full text-xs">
+              <thead>
+                <tr class="bg-base-200 text-base-content/70">
+                  <th>Name</th>
+                  <th>Price</th>
+                  <th>Capacity</th>
+                  <th class="w-16 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-base-200">
+                @for (ticket of ticketTypes(); track ticket.id) {
+                <tr class="hover:bg-base-200/40">
+                  <td>
+                    <div class="font-semibold">{{ ticket.name }}</div>
+                    @if (ticket.description) {
+                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
+                    }
+                  </td>
+                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
+                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
+                  <td>
+                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
+                      <pc-icon name="trash" [size]="4"></pc-icon>
+                    </button>
+                  </td>
+                </tr>
+                } @if (addingTicket()) {
+                <tr class="bg-base-200/30">
+                  <td>
+                    <input
+                      type="text"
+                      class="input input-bordered input-xs w-full"
+                      placeholder="Ticket name *"
+                      [ngModel]="newTicket().name"
+                      (ngModelChange)="setNewTicketName($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="0"
+                      min="0"
+                      step="1"
+                      title="Price in cents (e.g. 2500 = $25.00)"
+                      [ngModel]="newTicket().price_cents"
+                      (ngModelChange)="setNewTicketPrice($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      class="input input-bordered input-xs w-20 font-mono"
+                      placeholder="∞"
+                      min="1"
+                      [ngModel]="newTicket().capacity"
+                      (ngModelChange)="setNewTicketCapacity($event)"
+                      [ngModelOptions]="{standalone: true}"
+                    />
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-1">
+                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
+                        <pc-icon name="check-circle" [size]="4"></pc-icon>
+                      </button>
+                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
+                        <pc-icon name="x-mark" [size]="4"></pc-icon>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          }
+        </pc-card>
+        }
+      </div>
+
+      <!-- Right col: Scheduling, toggles -->
+      <div class="space-y-6">
+        <pc-card title="Scheduling">
+          <pc-input
+            id="start-time"
+            label="Start Date & Time *"
+            type="datetime-local"
+            [formField]="form.start_time"
+          ></pc-input>
+
+          <div>
+            <pc-input
+              id="end-time"
+              label="End Date & Time *"
+              type="datetime-local"
+              [formField]="form.end_time"
+              [hasError]="endBeforeStartError()"
+            ></pc-input>
+            @if (endBeforeStartError()) {
+            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
+            }
+          </div>
+
+          <pc-input
+            id="capacity"
+            label="Total Capacity"
+            type="number"
+            [formField]="form.capacity"
+            placeholder="Unlimited"
+          ></pc-input>
+        </pc-card>
+
+        <pc-card title="Publishing & Notifications">
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  When enabled, this event page is visible to the public.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send a confirmation email when someone RSVPs for this event.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1 shrink-0"
+                [formField]="form.send_registration_confirmation"
+              />
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="form-control">
+            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
+              <div class="flex-1 min-w-0">
+                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
+                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
+                  Send automated reminder emails to registered attendees 24 hours before the event.
+                </p>
+              </div>
+              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
+            </label>
+          </div>
+        </pc-card>
+
+        @if (!isNew()) {
+        <pc-entity-overview
+          title="Event Overview"
+          [createdAt]="detail()?.created_at"
+          createdBy="Representative"
+        ></pc-entity-overview>
+        }
+      </div>
+
+      <!-- Right col: Fields & Public Link -->
+
+      @if (!isNew() && publicUrl()) {
+      <pc-public-link-panel
+        [url]="publicUrl()"
+        label="Public RSVP Link"
+        subtitle="Share this link so people can RSVP for the event."
+      ></pc-public-link-panel>
+      }
+    </form>
+  </div>
+  }
+</div>
+```
+
+## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
+
+```typescript
+import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
+import { Router, RouterModule } from '@angular/router';
+import { Icon } from '@icons/icon';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Card as PcCard } from '@uxcommon/components/card/card';
+import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
+import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
+import { Input as PcInput } from '@uxcommon/components/input/input';
+import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
+import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
+import { environment } from '../../../../environments/environment';
+
+import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
+import { EventsService } from '../../../services/api/events-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { EventsFrontendService } from '../services/events-frontend-service';
+import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
+
+@Component({
+  selector: 'pc-event-form',
+  imports: [
+    FormsModule,
+    FormField,
+    PcInput,
+    PcTextarea,
+    RouterModule,
+    Icon,
+    PcDetailHeader,
+    PcEntityOverview,
+    PcCard,
+    FieldsSelector,
+    PublicLinkPanel,
+  ],
+  templateUrl: './event-form.html',
+  providers: [EventsService],
+})
+export class EventFormComponent implements OnInit {
+  private readonly _loading = createLoadingGate();
+  private readonly alerts = inject(AlertService);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly eventsFrontendSvc = inject(EventsFrontendService);
+  private readonly eventsSvc = inject(EventsService);
+  private readonly router = inject(Router);
+
+  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  protected readonly addingTicket = signal(false);
+  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
+  protected readonly publicUrl = computed(() => {
+    const slug = this.payload().slug;
+    if (!slug || this.isNew()) return '';
+    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+  });
+  protected readonly detail = signal<any>(null);
+
+  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
+    const events: PcBreadcrumb = { label: 'Events', route: '/events/pages' };
+    const id = this.id();
+    if (id) {
+      return [events, { label: this.detail()?.name || 'Event', route: ['/events/pages', id] }, { label: 'Edit' }];
+    }
+    return [events, { label: 'New event' }];
+  });
+
+  protected readonly payload = signal({
+    name: '',
+    slug: '',
+    description: '',
+    location_address: '',
+    start_time: '',
+    end_time: '',
+    capacity: null as number | null,
+    contact_email: '',
+    contact_phone: '',
+    is_published: false,
+    send_reminder: true,
+    send_registration_confirmation: true,
+  });
+  protected readonly endBeforeStartError = computed(() => {
+    const { start_time, end_time } = this.payload();
+    if (!start_time || !end_time) return false;
+    return new Date(end_time) <= new Date(start_time);
+  });
+  protected readonly error = signal<string | null>(null);
+  protected readonly form = form(this.payload, (p) => {
+    validateStandardSchema(p, AddEventObj);
+  });
+  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
+  protected readonly isNew = computed(() => !this.id());
+  protected readonly loading = this._loading.visible;
+  protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
+  protected readonly saving = signal(false);
+  protected readonly slugChecking = signal(false);
+  protected readonly slugUnique = signal<boolean | null>(null);
+
+  // Ticket types
+  protected readonly ticketTypes = signal<any[]>([]);
+
+  protected slugManuallyEdited = false;
+
+  protected setNewTicketName(v: string) {
+    this.newTicket.update((t) => ({ ...t, name: v }));
+  }
+  protected setNewTicketPrice(v: string) {
+    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
+  }
+  protected setNewTicketCapacity(v: string) {
+    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
+  }
+
+  public readonly id = input<string>();
+
+  constructor() {
+    const nameSignal = computed(() => this.payload().name);
+    effect(() => {
+      const name = nameSignal();
+      if (this.isNew() && !this.slugManuallyEdited) {
+        const suggested = this.slugify(name);
+        if (untracked(this.payload).slug !== suggested) {
+          this.payload.update((p) => ({ ...p, slug: suggested }));
+        }
+      }
+    });
+
+    const slugSignal = computed(() => this.payload().slug);
+    effect(() => {
+      const slug = slugSignal();
+      if (this.slugTimeoutId) {
+        clearTimeout(this.slugTimeoutId);
+        this.slugTimeoutId = null;
+      }
+      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+        this.slugUnique.set(null);
+        this.slugChecking.set(false);
+        return;
+      }
+      this.slugChecking.set(true);
+      this.slugTimeoutId = setTimeout(() => {
+        void (async () => {
+          try {
+            const res = await this.eventsFrontendSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
+            if (untracked(slugSignal) === slug) {
+              this.slugUnique.set(res.unique);
+            }
+          } catch (err) {
+            console.error('Failed to check slug uniqueness', err);
+          } finally {
+            if (untracked(slugSignal) === slug) {
+              this.slugChecking.set(false);
+            }
+          }
+        })();
+      }, 300);
+    });
+  }
+
+  public ngOnInit(): void {
+    const end = this._loading.begin();
+    void this.loadEvent().finally(() => end());
+  }
+
+  protected cancelAddTicket() {
+    this.addingTicket.set(false);
+  }
+
+  protected async deleteEvent() {
+    if (!this.id()) return;
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Event Page',
+      message: 'Are you sure you want to delete this event page? All registrations will also be deleted.',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+
+    this.saving.set(true);
+    try {
+      await this.eventsFrontendSvc.delete(this.id()!);
+      this.eventsFrontendSvc.triggerRefresh();
+      this.alerts.showSuccess('Event deleted');
+      await this.router.navigate(['/events/pages']);
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async deleteTicketType(id: string) {
+    const confirmed = await this.dialogs.confirm({
+      title: 'Delete Ticket Type',
+      message: 'Delete this ticket type?',
+      variant: 'danger',
+      confirmText: 'Delete',
+    });
+    if (!confirmed) return;
+    try {
+      await this.eventsSvc.deleteTicketType(id);
+      this.alerts.showSuccess('Ticket type deleted');
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
+    }
+  }
+
+  protected formatPrice(cents: number): string {
+    if (!cents) return 'Free';
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+
+  protected async loadEvent() {
+    if (this.isNew()) return;
+
+    try {
+      const event = (await this.eventsFrontendSvc.getById(this.id()!)) as any;
+      this.detail.set(event);
+      this.payload.set({
+        name: event.name ?? '',
+        slug: event.slug ?? '',
+        description: event.description ?? '',
+        location_address: event.location_address ?? '',
+        start_time: this.toDatetimeLocalString(event.start_time),
+        end_time: this.toDatetimeLocalString(event.end_time),
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? '',
+        contact_phone: event.contact_phone ?? '',
+        is_published: !!event.is_published,
+        send_reminder: event.send_reminder !== false,
+        send_registration_confirmation: event.send_registration_confirmation !== false,
+      });
+      if (Array.isArray(event.fields) && event.fields.length > 0) {
+        this.selectedFields.set(event.fields);
+      }
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
+      this.alerts.showError(this.error()!);
+    }
+  }
+
+  protected async loadTicketTypes() {
+    if (!this.id()) return;
+    try {
+      const types = await this.eventsSvc.getTicketTypes(this.id()!);
+      this.ticketTypes.set(types || []);
+    } catch (err) {
+      console.error('Failed to load ticket types', err);
+    }
+  }
+
+  protected onSlugInput() {
+    this.slugManuallyEdited = true;
+  }
+
+  public canDeactivate(): Promise<boolean> {
+    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this event');
+  }
+
+  protected async save(done?: (() => void) | Event) {
+    if (done instanceof Event) done.preventDefault();
+    this.form().markAsTouched();
+    if (this.form().invalid()) return;
+
+    if (this.endBeforeStartError()) {
+      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
+      return;
+    }
+
+    if (this.slugUnique() === false) {
+      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
+      return;
+    }
+
+    this.saving.set(true);
+    this.error.set(null);
+
+    const raw = this.payload();
+    const data = {
+      name: raw.name.trim(),
+      slug: raw.slug.trim(),
+      description: raw.description?.trim() || null,
+      location_address: raw.location_address?.trim() || null,
+      start_time: new Date(raw.start_time),
+      end_time: new Date(raw.end_time),
+      capacity: raw.capacity ? Number(raw.capacity) : null,
+      contact_email: raw.contact_email?.trim() || null,
+      contact_phone: raw.contact_phone?.trim() || null,
+      is_published: !!raw.is_published,
+      send_reminder: !!raw.send_reminder,
+      send_registration_confirmation: !!raw.send_registration_confirmation,
+      fields: this.selectedFields(),
+    };
+
+    try {
+      if (this.isNew()) {
+        const res = await this.eventsFrontendSvc.add(data as AddEventType);
+        this.eventsFrontendSvc.triggerRefresh();
+        this.alerts.showSuccess('Event created successfully');
+        await this.router.navigate(['/events/pages', (res as any).id]);
+      } else {
+        await this.eventsFrontendSvc.update(this.id()!, data as UpdateEventType);
+        this.eventsFrontendSvc.triggerRefresh();
+        this.alerts.showSuccess('Event updated successfully');
+        if (typeof done === 'function') {
+          done();
+        } else {
+          await this.router.navigate(['/events/pages', this.id()]);
+        }
+      }
+    } catch (err) {
+      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
+      this.alerts.showError(this.error()!);
+    } finally {
+      this.saving.set(false);
+    }
+  }
+
+  protected async saveNewTicket() {
+    const t = this.newTicket();
+    if (!t.name.trim()) {
+      this.alerts.showError('Ticket type name is required');
+      return;
+    }
+    try {
+      await this.eventsSvc.addTicketType({
+        event_id: this.id()!,
+        name: t.name.trim(),
+        description: t.description?.trim() || null,
+        price_cents: Number(t.price_cents) || 0,
+        capacity: t.capacity ? Number(t.capacity) : null,
+      });
+      this.addingTicket.set(false);
+      this.alerts.showSuccess('Ticket type added');
+      await this.loadTicketTypes();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
+    }
+  }
+
+  protected slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+  }
+
+  // Ticket type management
+  protected startAddTicket() {
+    this.newTicket.set({ name: '', description: '', price_cents: 0, capacity: null });
+    this.addingTicket.set(true);
+  }
+
+  protected toDatetimeLocalString(val: any): string {
+    if (!val) return '';
+    const date = new Date(val);
+    if (Number.isNaN(date.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/files/ui/files-grid.ts
 
 ```typescript
@@ -38807,6 +39537,585 @@ export class FilesGrid implements OnInit {
     } catch (_err) {
       this.alertSvc.showError('Failed to delete file');
     }
+  }
+}
+```
+
+## File: apps/frontend/src/app/experiences/forms/ui/forms-page.ts
+
+```typescript
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  OnInit,
+  computed,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
+import { RouterLink } from '@angular/router';
+import { FORM_TEMPLATES, FORM_TYPES, FormType, UpdateFormType, debounce } from '../../../../../../../libs/common/src';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+
+import { AuthService } from '../../../auth/auth-service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-service';
+import { FormRenderComponent } from './form-render';
+import { SettingsService } from '@experiences/settings/services/settings-service';
+import { environment } from '../../../../environments/environment';
+
+interface TemplateOption {
+  type: FormType;
+  label: string;
+}
+
+@Component({
+  selector: 'pc-forms-page',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [Icon, FormRenderComponent, RouterLink, NgTemplateOutlet, DatePipe],
+  templateUrl: './forms-page.html',
+})
+export class FormsPageComponent implements OnInit {
+  private readonly formsSvc = inject(FormsService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly settings = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly confirm = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
+
+  private readonly _loading = createLoadingGate();
+  protected readonly loading = this._loading.visible;
+
+  protected readonly forms = signal<FormDetail[]>([]);
+  protected readonly selectedId = signal<string | null>(null);
+  protected readonly mode = signal<'browse' | 'edit'>('browse');
+  protected readonly tab = signal<'form' | 'responses'>('form');
+  protected readonly archivedOpen = signal(false);
+  protected readonly mutating = signal(false);
+  protected readonly orgName = signal('Your organization');
+  protected readonly lists = signal<{ id: string; name: string }[]>([]);
+
+  protected readonly submissions = signal<FormSubmissionRow[]>([]);
+  protected readonly submissionsTotal = signal(0);
+  protected readonly submissionsLoading = signal(false);
+
+  // New-form dialog state.
+  protected readonly newFormName = signal('');
+  protected readonly newFormType = signal<FormType>('signup');
+  protected readonly newFormError = signal<string | null>(null);
+  protected readonly creating = signal(false);
+  private readonly newFormDialog = viewChild<ElementRef<HTMLDialogElement>>('newFormDialog');
+  private readonly embedDialog = viewChild<ElementRef<HTMLDialogElement>>('embedDialog');
+  private readonly confirmEmailDialog = viewChild<ElementRef<HTMLDialogElement>>('confirmEmailDialog');
+
+  protected readonly templateOptions: TemplateOption[] = FORM_TYPES.map((type) => ({
+    type,
+    label: this.templateLabel(type),
+  }));
+
+  protected readonly selected = computed(() => this.forms().find((f) => f.id === this.selectedId()) ?? null);
+  protected readonly activeForms = computed(() => this.forms().filter((f) => f.status !== 'archived'));
+  protected readonly archivedForms = computed(() => this.forms().filter((f) => f.status === 'archived'));
+
+  protected readonly totalSubmissions = computed(() =>
+    this.forms().reduce((sum, f) => sum + (f.submission_count ?? 0), 0),
+  );
+
+  protected readonly countSentence = computed(() => {
+    const total = this.forms().length;
+    const subs = this.totalSubmissions();
+    const archived = this.archivedForms().length;
+    const parts = [
+      `${total} ${total === 1 ? 'form' : 'forms'}`,
+      `${subs} ${subs === 1 ? 'submission' : 'submissions'}`,
+    ];
+    if (archived > 0) parts.push(`${archived} archived`);
+    return parts.join(' · ');
+  });
+
+  protected readonly publicUrl = computed(() => {
+    const form = this.selected();
+    if (!form?.slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug;
+    const base = environment.publicFormsBaseDomain;
+    if (tenantSlug && base) {
+      return `https://${tenantSlug}.${base}/f/${form.slug}`;
+    }
+    // Dev fallback when no tenant subdomain is configured — current origin.
+    return `${this.appOrigin()}/f/${form.slug}`;
+  });
+
+  private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
+  private pendingPatch: UpdateFormType = {};
+
+  public ngOnInit(): void {
+    void Promise.all([this.loadForms(), this.loadOrg(), this.loadLists()]);
+  }
+
+  // ── Loading ────────────────────────────────────────────────────────────
+
+  private async loadForms(): Promise<void> {
+    const end = this._loading.begin();
+    try {
+      const rows = await this.formsSvc.listForms();
+      this.forms.set(rows);
+      const first = rows[0];
+      if (!this.selectedId() && first) {
+        this.selectedId.set(first.id);
+      }
+    } catch {
+      this.alerts.showError('Could not load your forms. Please try again.');
+    } finally {
+      end();
+    }
+  }
+
+  private async loadOrg(): Promise<void> {
+    try {
+      await this.settings.load();
+      const name = this.settings.getValue<string>('organization.name', '');
+      if (name) this.orgName.set(name);
+    } catch {
+      /* org name is decorative; fall back to the default */
+    }
+  }
+
+  private async loadLists(): Promise<void> {
+    try {
+      const res = await this.listsSvc.getAllWithCounts();
+      const rows = (res?.rows ?? []) as Array<Record<string, unknown>>;
+      this.lists.set(rows.map((r) => ({ id: String(r['id']), name: String(r['name'] ?? '') })));
+    } catch {
+      /* audience list picker degrades gracefully to empty */
+    }
+  }
+
+  // ── Selection / navigation ─────────────────────────────────────────────
+
+  protected select(id: string): void {
+    if (this.selectedId() === id) return;
+    this.selectedId.set(id);
+    this.tab.set('form');
+    this.submissions.set([]);
+    this.submissionsTotal.set(0);
+  }
+
+  protected setTab(tab: 'form' | 'responses'): void {
+    this.tab.set(tab);
+    if (tab === 'responses') void this.loadSubmissions();
+  }
+
+  protected enterEdit(): void {
+    if (!this.selected()) return;
+    this.mode.set('edit');
+    this.tab.set('form');
+  }
+
+  protected exitEdit(): void {
+    this.mode.set('browse');
+  }
+
+  protected toggleArchived(): void {
+    this.archivedOpen.update((v) => !v);
+  }
+
+  // ── Status verbs ───────────────────────────────────────────────────────
+
+  protected async publish(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.publish(id),
+      (f) => `Published “${f.name}” — the link now accepts responses.`,
+    );
+  }
+
+  protected async unpublish(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.unpublish(id),
+      (f) => `Unpublished “${f.name}” — the public link is paused.`,
+    );
+  }
+
+  protected async archiveForm(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.archive(id),
+      (f) => `Archived “${f.name}” — the public link now shows a closed notice.`,
+    );
+    this.mode.set('browse');
+  }
+
+  protected async restore(): Promise<void> {
+    await this.runVerb(
+      (id) => this.formsSvc.restore(id),
+      (f) => `Restored “${f.name}” as a draft.`,
+    );
+  }
+
+  private async runVerb(
+    action: (id: string) => Promise<FormDetail>,
+    message: (f: FormDetail) => string,
+  ): Promise<void> {
+    const id = this.selectedId();
+    if (!id || this.mutating()) return;
+    this.mutating.set(true);
+    try {
+      const updated = await action(id);
+      this.replaceForm(updated);
+      this.alerts.showSuccess(message(updated));
+    } catch {
+      this.alerts.showError('That action didn’t go through. Please try again.');
+    } finally {
+      this.mutating.set(false);
+    }
+  }
+
+  // ── New form dialog ────────────────────────────────────────────────────
+
+  protected openNewForm(): void {
+    this.newFormName.set('');
+    this.newFormType.set('signup');
+    this.newFormError.set(null);
+    this.newFormDialog()?.nativeElement.showModal();
+  }
+
+  protected closeNewForm(): void {
+    this.newFormDialog()?.nativeElement.close();
+  }
+
+  protected async createForm(): Promise<void> {
+    const name = this.newFormName().trim();
+    if (!name) {
+      this.newFormError.set('Give your form a name so you can find it later.');
+      return;
+    }
+    if (this.creating()) return;
+    this.creating.set(true);
+    try {
+      const type = this.newFormType();
+      const created = await this.formsSvc.createForm({ name, type });
+      this.forms.update((list) => [created, ...list]);
+      this.selectedId.set(created.id);
+      this.closeNewForm();
+      this.mode.set('edit');
+      this.tab.set('form');
+      this.alerts.showSuccess(
+        `Draft created from the ${this.templateLabel(type)} template — adjust its fields, then publish.`,
+      );
+    } catch {
+      this.newFormError.set('Could not create the form. Please try again.');
+    } finally {
+      this.creating.set(false);
+    }
+  }
+
+  // ── Live editing (debounced patch) ─────────────────────────────────────
+
+  protected editName(value: string): void {
+    this.patch({ name: value });
+  }
+
+  protected editDescription(value: string): void {
+    this.patch({ description: value });
+  }
+
+  protected editRedirect(value: string): void {
+    this.patch({ redirect_url: value });
+  }
+
+  protected editSubmitLabel(value: string): void {
+    this.patch({ submit_label: value });
+  }
+
+  protected toggleConfirmEmail(on: boolean): void {
+    this.patch({ confirm_email_on: on });
+  }
+
+  protected toggleNotifyTeam(on: boolean): void {
+    this.patch({ notify_team_on: on });
+  }
+
+  protected toggleField(key: string, on: boolean): void {
+    const form = this.selected();
+    if (!form) return;
+    if (key === 'email') {
+      this.alerts.showInfo('Email stays on every form — it’s how each response is matched to a person.');
+      return;
+    }
+    const fields = form.fields.map((f) => (f.key === key ? { ...f, on, required: on ? f.required : false } : f));
+    this.patch({ fields });
+  }
+
+  protected toggleRequired(key: string): void {
+    const form = this.selected();
+    if (!form) return;
+    if (key === 'email') {
+      this.alerts.showInfo('Email is always required — a response can’t create a person without it.');
+      return;
+    }
+    const fields = form.fields.map((f) => (f.key === key ? { ...f, required: !f.required, on: true } : f));
+    this.patch({ fields });
+  }
+
+  protected addTag(raw: string): void {
+    const form = this.selected();
+    if (!form) return;
+    const tag = raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-]/g, '');
+    if (!tag) return;
+    if (form.target_tags.includes(tag)) {
+      this.alerts.showInfo(`“${tag}” is already applied to responses.`);
+      return;
+    }
+    this.patch({ target_tags: [...form.target_tags, tag] });
+  }
+
+  protected removeTag(tag: string): void {
+    const form = this.selected();
+    if (!form) return;
+    this.patch({ target_tags: form.target_tags.filter((t) => t !== tag) });
+  }
+
+  protected addList(id: string): void {
+    const form = this.selected();
+    if (!form || !id || form.target_lists.includes(id)) return;
+    this.patch({ target_lists: [...form.target_lists, id] });
+  }
+
+  protected removeList(id: string): void {
+    const form = this.selected();
+    if (!form) return;
+    this.patch({ target_lists: form.target_lists.filter((l) => l !== id) });
+  }
+
+  protected listName(id: string): string {
+    return this.lists().find((l) => l.id === id)?.name ?? id;
+  }
+
+  private patch(p: UpdateFormType): void {
+    const form = this.selected();
+    if (!form) return;
+    // Optimistic local update so the preview reflects the change immediately.
+    this.replaceForm({ ...form, ...(p as Partial<FormDetail>) });
+    Object.assign(this.pendingPatch, p);
+    this.saveDebounced();
+  }
+
+  private async flushPatch(): Promise<void> {
+    const id = this.selectedId();
+    const patch = this.pendingPatch;
+    this.pendingPatch = {};
+    if (!id || Object.keys(patch).length === 0) return;
+    try {
+      const updated = await this.formsSvc.updateLive(id, patch);
+      this.replaceForm(updated);
+    } catch {
+      this.alerts.showError('Couldn’t save that change. Check your connection and try again.');
+    }
+  }
+
+  // ── Archive / delete (edit mode) ───────────────────────────────────────
+
+  protected canDelete(form: FormDetail): boolean {
+    return form.status === 'draft' && (form.submission_count ?? 0) === 0;
+  }
+
+  protected async deleteDraft(): Promise<void> {
+    const form = this.selected();
+    if (!form || !this.canDelete(form)) return;
+    const ok = await this.confirm.confirm({
+      title: `Delete “${form.name}”?`,
+      message: 'This draft has no responses. Deleting it can’t be undone — archiving is the reversible option.',
+      variant: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await this.formsSvc.deleteDraft(form.id);
+      this.forms.update((list) => list.filter((f) => f.id !== form.id));
+      this.selectedId.set(this.forms()[0]?.id ?? null);
+      this.mode.set('browse');
+      this.alerts.showSuccess(`Deleted “${form.name}”.`);
+    } catch {
+      this.alerts.showError('Could not delete the form. Please try again.');
+    }
+  }
+
+  // ── Public link ────────────────────────────────────────────────────────
+
+  protected openPublicLink(): void {
+    const url = this.publicUrl();
+    if (url) window.open(url, '_blank', 'noopener');
+  }
+
+  protected async copyLink(): Promise<void> {
+    const url = this.publicUrl();
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      this.alerts.showSuccess('Public link copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy the link — copy it manually from the address bar.');
+    }
+  }
+
+  // ── Embed dialog ───────────────────────────────────────────────────────
+
+  protected readonly embedMode = signal<'iframe' | 'html'>('iframe');
+  protected readonly embedCode = computed(() =>
+    this.embedMode() === 'iframe' ? this.iframeSnippet() : this.rawHtmlSnippet(),
+  );
+
+  protected openEmbed(): void {
+    this.embedMode.set('iframe');
+    this.embedDialog()?.nativeElement.showModal();
+  }
+
+  protected closeEmbed(): void {
+    this.embedDialog()?.nativeElement.close();
+  }
+
+  protected async copyEmbed(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.embedCode());
+      this.alerts.showSuccess('Embed code copied to your clipboard.');
+    } catch {
+      this.alerts.showError('Couldn’t copy — select the code and copy it manually.');
+    }
+  }
+
+  private iframeSnippet(): string {
+    const form = this.selected();
+    if (!form) return '';
+    return `<iframe src="${this.publicUrl()}" width="100%" height="640" style="border:0" title="${this.escapeAttr(form.name)}"></iframe>`;
+  }
+
+  private rawHtmlSnippet(): string {
+    const form = this.selected();
+    if (!form) return '';
+    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.id}`;
+    const lines: string[] = [`<form action="${action}" method="POST">`];
+    for (const field of form.fields.filter((f) => f.on)) {
+      const req = field.required ? ' required' : '';
+      const star = field.required ? ' *' : '';
+      const label = this.escapeAttr(field.label);
+      if (field.type === 'area') {
+        lines.push(`  <label>${label}${star}<br><textarea name="${field.key}"${req}></textarea></label>`);
+      } else if (field.type === 'select') {
+        lines.push(`  <label>${label}${star}<br><select name="${field.key}"${req}>`);
+        for (const opt of field.options ?? []) lines.push(`    <option>${this.escapeAttr(opt)}</option>`);
+        lines.push(`  </select></label>`);
+      } else if (field.type === 'checks') {
+        lines.push(`  <fieldset><legend>${label}${star}</legend>`);
+        for (const opt of field.options ?? []) {
+          lines.push(
+            `    <label><input type="checkbox" name="${field.key}" value="${this.escapeAttr(opt)}"> ${this.escapeAttr(opt)}</label>`,
+          );
+        }
+        lines.push(`  </fieldset>`);
+      } else {
+        const type = field.key === 'email' ? 'email' : 'text';
+        lines.push(`  <label>${label}${star}<br><input type="${type}" name="${field.key}"${req}></label>`);
+      }
+    }
+    lines.push(`  <button type="submit">${this.escapeAttr(form.submit_label || 'Submit')}</button>`);
+    lines.push(`</form>`);
+    return lines.join('\n');
+  }
+
+  private escapeAttr(value: string): string {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Confirmation-email dialog ──────────────────────────────────────────
+
+  protected readonly confirmSubjectDraft = signal('');
+  protected readonly confirmBodyDraft = signal('');
+
+  protected openConfirmEmail(): void {
+    const form = this.selected();
+    if (!form) return;
+    this.confirmSubjectDraft.set(form.confirm_subject ?? '');
+    this.confirmBodyDraft.set(form.confirm_body ?? '');
+    this.confirmEmailDialog()?.nativeElement.showModal();
+  }
+
+  protected closeConfirmEmail(): void {
+    this.confirmEmailDialog()?.nativeElement.close();
+  }
+
+  protected saveConfirmEmail(): void {
+    this.patch({ confirm_subject: this.confirmSubjectDraft(), confirm_body: this.confirmBodyDraft() });
+    this.closeConfirmEmail();
+    this.alerts.showSuccess('Confirmation email updated.');
+  }
+
+  // ── Responses ──────────────────────────────────────────────────────────
+
+  private async loadSubmissions(): Promise<void> {
+    const id = this.selectedId();
+    if (!id) return;
+    this.submissionsLoading.set(true);
+    try {
+      const res = await this.formsSvc.getSubmissions(id);
+      this.submissions.set(res.items);
+      this.submissionsTotal.set(res.total);
+    } catch {
+      this.alerts.showError('Could not load responses. Please try again.');
+    } finally {
+      this.submissionsLoading.set(false);
+    }
+  }
+
+  protected answerSummary(row: FormSubmissionRow): string {
+    const skip = new Set(['email', 'full_name', 'first_name', 'last_name']);
+    const parts: string[] = [];
+    for (const [key, value] of Object.entries(row.answers)) {
+      if (skip.has(key) || value == null || value === '') continue;
+      parts.push(Array.isArray(value) ? value.join(' · ') : String(value));
+      if (parts.length >= 2) break;
+    }
+    return parts.join(' · ');
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  protected requiredFieldsPresent(form: FormDetail): boolean {
+    return form.fields.some((f) => f.on && f.required);
+  }
+
+  private replaceForm(updated: FormDetail): void {
+    this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
+  }
+
+  private appOrigin(): string {
+    if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
+    return environment.apiUrl.replace(/\/$/, '');
+  }
+
+  private templateLabel(type: FormType): string {
+    const map: Record<FormType, string> = {
+      signup: 'Signup — name, email, availability',
+      pledge: 'Pledge — name, email, amount',
+      rsvp: 'RSVP — name, email, seats',
+      request: 'Request — name, email, address, notes',
+      survey: 'Survey — name, issues, open answer',
+    };
+    return map[type];
+  }
+
+  protected typeChip(type: FormType | null): string {
+    if (!type) return 'Form';
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+
+  protected templateSubmitLabel(type: FormType): string {
+    return FORM_TEMPLATES[type].submitLabel;
   }
 }
 ```
@@ -39692,753 +41001,577 @@ export const GETTING_STARTED_ARTICLES: HelpArticle[] = [
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/experiences/households/ui/households-grid.ts
+## File: apps/frontend/src/app/experiences/settings/donations/donations-settings.ts
 
 ```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { UpdateHouseholdsObj } from '../../../../../../../libs/common/src';
-
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { SettingsService } from '../services/settings-service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { Icon } from '@icons/icon';
+import { TokenService } from '../../../services/api/token-service';
+import { environment } from '../../../../environments/environment';
+import { DonationsService } from '../../../services/api/donations-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { PersonsService } from '../../persons/services/persons-service';
-import { HouseholdsService } from '../services/households-service';
+
+export interface TaxCreditTier {
+  limit: number;
+  rate: number;
+}
+
+export interface DonationPeriod {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string | null;
+  limit_amount: number;
+  is_active: boolean;
+}
 
 @Component({
-  selector: 'pc-households-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        [showToolbar]="!inline()"
-        title="Households"
-        i18n-title
-        description="Manage household groups, track shared addresses, and organize family relationships."
-        i18n-description
-        [listId]="listId()"
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableMerge]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [confirmDeleteOverride]="onConfirmDeleteBind"
-        [rowCanSelect]="rowCanSelectFn"
-        (importCSV)="openImportDialog()"
-        addRoute="add"
-        i18n-addRoute
-        plusIcon="add-home"
-        i18n-plusIcon
-      ></pc-datagrid>
-    </div>
-
-    <!-- Reusable CSV Importer for Households -->
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Households from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    >
-      <div pc-import-extras class="grid gap-2">
-        <label i18n class="font-semibold">3) Add tags to all imported rows (optional)</label>
-        <input
-          class="input input-bordered"
-          placeholder="Comma separated e.g. neighborhood, parish"
-          i18n-placeholder
-          [(ngModel)]="tagsInput"
-        />
-      </div>
-    </pc-csv-importer>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: HouseholdsService },
-    provideDataGridConfig({ messages: { exportEntity: 'households', exportFileName: 'households-export.csv' } }),
-  ],
+  selector: 'pc-donations-settings',
+  imports: [FormsModule, Icon],
+  templateUrl: './donations-settings.html',
 })
-export class HouseholdsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly dialogSvc = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly householdsService = inject(HouseholdsService);
+export class DonationsSettingsComponent implements OnInit {
+  private readonly settingsSvc = inject(SettingsService);
+  private readonly alerts = inject(AlertService);
+  private readonly tokenSvc = inject(TokenService);
+  private readonly donationsSvc = inject(DonationsService);
+  private readonly dialogs = inject(ConfirmDialogService);
 
-  private readonly grid = viewChild<DataGrid<'households', never>>('grid');
+  protected readonly stripeSecretKey = signal('');
+  protected readonly stripeWebhookSecret = signal('');
+  protected readonly donationLimit = signal(1000);
+  protected readonly restrictResidency = signal(false);
+  protected readonly taxCreditTiers = signal<TaxCreditTier[]>([]);
+  // The webhook token is generated server-side and shown once (SECURITY-REVIEW 2.4). `webhookToken`
+  // only holds the just-generated plaintext; on reload we only know whether one is configured.
+  protected readonly webhookToken = signal('');
+  protected readonly webhookConfigured = signal(false);
+  protected readonly isRegeneratingWebhook = signal(false);
 
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-  public readonly rowCanSelectFn = (row: any) => !row.is_placeholder;
+  // Donation periods
+  protected readonly donationPeriods = signal<DonationPeriod[]>([]);
+  protected readonly showAddPeriod = signal(false);
+  protected readonly newPeriodName = signal('');
+  protected readonly newPeriodStartDate = signal('');
+  protected readonly newPeriodEndDate = signal('');
+  protected readonly newPeriodLimit = signal<number>(1000);
+  protected readonly isSavingPeriod = signal(false);
 
-  public inline = input<boolean>(false);
+  // New multi-country autocomplete & states checkboxes
+  protected readonly selectedCountries = signal<string[]>([]);
+  protected readonly selectedRegions = signal<string[]>([]);
 
-  protected readonly mappableFields: string[] = [
-    'street_num',
-    'apt',
-    'street1',
-    'street2',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'home_phone',
-    'notes',
+  protected readonly countrySearch = signal('');
+  protected readonly showCountryDropdown = signal(false);
+
+  protected readonly allCountries = [
+    { code: 'CA', name: 'Canada' },
+    { code: 'US', name: 'United States' },
+    { code: 'GB', name: 'United Kingdom' },
+    { code: 'AU', name: 'Australia' },
+    { code: 'NZ', name: 'New Zealand' },
+    { code: 'FR', name: 'France' },
+    { code: 'DE', name: 'Germany' },
+    { code: 'IN', name: 'India' },
+    { code: 'IT', name: 'Italy' },
+    { code: 'ES', name: 'Spain' },
+    { code: 'NL', name: 'Netherlands' },
   ];
 
-  protected autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      homephone: 'home_phone',
-      phone: 'home_phone',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  };
-
-  protected col: ColDef[] = [
-    {
-      field: 'persons_count',
-      headerName: 'People',
-      onCellDoubleClicked: this.openEditOnDoubleClick.bind(this),
-    },
-    { field: 'street_num', headerName: 'Street Number', editable: true },
-    { field: 'apt', headerName: 'Apt', editable: true },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: true,
-      valueFormatter: (params: any) =>
-        params.data?.is_placeholder ? 'People with no addresses' : (params.value ?? ''),
-    },
-    { field: 'street2', headerName: 'Street 2', editable: true },
-    { field: 'city', headerName: 'City', editable: true },
-    {
-      field: 'tags',
-      headerName: 'Tags',
-      hide: true,
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'households',
-        obj: UpdateHouseholdsObj,
-        service: this.householdsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    { field: 'state', headerName: 'State/Province', editable: true },
-    { field: 'zip', headerName: 'Zip/Province', editable: true },
-    { field: 'country', headerName: 'Country', editable: true },
-    { field: 'district', headerName: 'District / Riding', editable: false, minWidth: 140 },
-    { field: 'precinct', headerName: 'Precinct / Polling Div.', editable: false, minWidth: 180 },
-    { field: 'ward', headerName: 'Ward', editable: false, minWidth: 100 },
-    { field: 'home_phone', headerName: 'Home phone', editable: true },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
+  protected readonly canadaProvinces = [
+    { code: 'ON', name: 'Ontario' },
+    { code: 'QC', name: 'Quebec' },
+    { code: 'BC', name: 'British Columbia' },
+    { code: 'AB', name: 'Alberta' },
+    { code: 'MB', name: 'Manitoba' },
+    { code: 'SK', name: 'Saskatchewan' },
+    { code: 'NS', name: 'Nova Scotia' },
+    { code: 'NB', name: 'New Brunswick' },
+    { code: 'NL', name: 'Newfoundland and Labrador' },
+    { code: 'PE', name: 'Prince Edward Island' },
+    { code: 'NT', name: 'Northwest Territories' },
+    { code: 'YT', name: 'Yukon' },
+    { code: 'NU', name: 'Nunavut' },
   ];
-  public listId = input<string | null>(null);
-  public showHeader = input<boolean>(true);
 
-  protected importSummary = signal<CsvImportSummary | null>(null);
+  protected readonly usStates = [
+    { code: 'AL', name: 'Alabama' },
+    { code: 'AK', name: 'Alaska' },
+    { code: 'AZ', name: 'Arizona' },
+    { code: 'AR', name: 'Arkansas' },
+    { code: 'CA', name: 'California' },
+    { code: 'CO', name: 'Colorado' },
+    { code: 'CT', name: 'Connecticut' },
+    { code: 'DE', name: 'Delaware' },
+    { code: 'FL', name: 'Florida' },
+    { code: 'GA', name: 'Georgia' },
+    { code: 'HI', name: 'Hawaii' },
+    { code: 'ID', name: 'Idaho' },
+    { code: 'IL', name: 'Illinois' },
+    { code: 'IN', name: 'Indiana' },
+    { code: 'IA', name: 'Iowa' },
+    { code: 'KS', name: 'Kansas' },
+    { code: 'KY', name: 'Kentucky' },
+    { code: 'LA', name: 'Louisiana' },
+    { code: 'ME', name: 'Maine' },
+    { code: 'MD', name: 'Maryland' },
+    { code: 'MA', name: 'Massachusetts' },
+    { code: 'MI', name: 'Michigan' },
+    { code: 'MN', name: 'Minnesota' },
+    { code: 'MS', name: 'Mississippi' },
+    { code: 'MO', name: 'Missouri' },
+    { code: 'MT', name: 'Montana' },
+    { code: 'NE', name: 'Nebraska' },
+    { code: 'NV', name: 'Nevada' },
+    { code: 'NH', name: 'New Hampshire' },
+    { code: 'NJ', name: 'New Jersey' },
+    { code: 'NM', name: 'New Mexico' },
+    { code: 'NY', name: 'New York' },
+    { code: 'NC', name: 'North Carolina' },
+    { code: 'ND', name: 'North Dakota' },
+    { code: 'OH', name: 'Ohio' },
+    { code: 'OK', name: 'Oklahoma' },
+    { code: 'OR', name: 'Oregon' },
+    { code: 'PA', name: 'Pennsylvania' },
+    { code: 'RI', name: 'Rhode Island' },
+    { code: 'SC', name: 'South Carolina' },
+    { code: 'SD', name: 'South Dakota' },
+    { code: 'TN', name: 'Tennessee' },
+    { code: 'TX', name: 'Texas' },
+    { code: 'UT', name: 'Utah' },
+    { code: 'VT', name: 'Vermont' },
+    { code: 'VA', name: 'Virginia' },
+    { code: 'WA', name: 'Washington' },
+    { code: 'WV', name: 'West Virginia' },
+    { code: 'WI', name: 'Wisconsin' },
+    { code: 'WY', name: 'Wyoming' },
+  ];
 
-  // Importer state
-  protected importerOpen = signal(false);
-  protected tagsInput = '';
+  protected readonly germanyStates = [
+    { code: 'DE-BW', name: 'Baden-Württemberg' },
+    { code: 'DE-BY', name: 'Bavaria' },
+    { code: 'DE-BE', name: 'Berlin' },
+    { code: 'DE-BB', name: 'Brandenburg' },
+    { code: 'DE-HB', name: 'Bremen' },
+    { code: 'DE-HH', name: 'Hamburg' },
+    { code: 'DE-HE', name: 'Hesse' },
+    { code: 'DE-MV', name: 'Mecklenburg-Vorpommern' },
+    { code: 'DE-NI', name: 'Lower Saxony' },
+    { code: 'DE-NW', name: 'North Rhine-Westphalia' },
+    { code: 'DE-RP', name: 'Rhineland-Palatinate' },
+    { code: 'DE-SL', name: 'Saarland' },
+    { code: 'DE-SN', name: 'Saxony' },
+    { code: 'DE-ST', name: 'Saxony-Anhalt' },
+    { code: 'DE-SH', name: 'Schleswig-Holstein' },
+    { code: 'DE-TH', name: 'Thuringia' },
+  ];
 
-  public ngOnInit(): void {
+  protected readonly franceRegions = [
+    { code: 'FR-ARA', name: 'Auvergne-Rhône-Alpes' },
+    { code: 'FR-BFC', name: 'Bourgogne-Franche-Comté' },
+    { code: 'FR-BRE', name: 'Brittany' },
+    { code: 'FR-CVL', name: 'Centre-Val de Loire' },
+    { code: 'FR-COR', name: 'Corsica' },
+    { code: 'FR-GES', name: 'Grand Est' },
+    { code: 'FR-HDF', name: 'Hauts-de-France' },
+    { code: 'FR-IDF', name: 'Île-de-France' },
+    { code: 'FR-NOR', name: 'Normandy' },
+    { code: 'FR-NAQ', name: 'Nouvelle-Aquitaine' },
+    { code: 'FR-OCC', name: 'Occitania' },
+    { code: 'FR-PDL', name: 'Pays de la Loire' },
+    { code: 'FR-PAC', name: "Provence-Alpes-Côte d'Azur" },
+  ];
+
+  protected readonly indiaStates = [
+    { code: 'IN-AP', name: 'Andhra Pradesh' },
+    { code: 'IN-AR', name: 'Arunachal Pradesh' },
+    { code: 'IN-AS', name: 'Assam' },
+    { code: 'IN-BR', name: 'Bihar' },
+    { code: 'IN-CG', name: 'Chhattisgarh' },
+    { code: 'IN-GA', name: 'Goa' },
+    { code: 'IN-GJ', name: 'Gujarat' },
+    { code: 'IN-HR', name: 'Haryana' },
+    { code: 'IN-HP', name: 'Himachal Pradesh' },
+    { code: 'IN-JH', name: 'Jharkhand' },
+    { code: 'IN-KA', name: 'Karnataka' },
+    { code: 'IN-KL', name: 'Kerala' },
+    { code: 'IN-MP', name: 'Madhya Pradesh' },
+    { code: 'IN-MH', name: 'Maharashtra' },
+    { code: 'IN-MN', name: 'Manipur' },
+    { code: 'IN-ML', name: 'Meghalaya' },
+    { code: 'IN-MZ', name: 'Mizoram' },
+    { code: 'IN-NL', name: 'Nagaland' },
+    { code: 'IN-OD', name: 'Odisha' },
+    { code: 'IN-PB', name: 'Punjab' },
+    { code: 'IN-RJ', name: 'Rajasthan' },
+    { code: 'IN-SK', name: 'Sikkim' },
+    { code: 'IN-TN', name: 'Tamil Nadu' },
+    { code: 'IN-TG', name: 'Telangana' },
+    { code: 'IN-TR', name: 'Tripura' },
+    { code: 'IN-UP', name: 'Uttar Pradesh' },
+    { code: 'IN-UT', name: 'Uttarakhand' },
+    { code: 'IN-WB', name: 'West Bengal' },
+    { code: 'IN-DL', name: 'Delhi (UT)' },
+    { code: 'IN-JK', name: 'Jammu and Kashmir (UT)' },
+    { code: 'IN-LA', name: 'Ladakh (UT)' },
+    { code: 'IN-PY', name: 'Puducherry (UT)' },
+  ];
+
+  // Tiers editing inputs
+  protected readonly newLimit = signal<number | null>(null);
+  protected readonly newRate = signal<number | null>(null);
+
+  protected readonly isSaving = signal(false);
+
+  protected readonly tenantId = computed(() => {
+    const token = this.tokenSvc.getAuthToken();
+    if (!token) return '';
+    try {
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]!));
+        return String(payload.tenant_id || '');
+      }
+    } catch (e) {
+      console.error('Failed to parse auth token payload', e);
+    }
+    return '';
+  });
+
+  protected readonly webhookUrl = computed(() => {
+    const token = this.webhookToken();
+    if (!token) return 'Loading Webhook URL...';
+    const base = environment.apiUrl.replace(/\/$/, '');
+    return `${base}/api/donations/webhook?token=${token}`;
+  });
+
+  protected readonly availableCountriesToSelect = computed(() => {
+    const search = this.countrySearch().toLowerCase().trim();
+    const selected = new Set(this.selectedCountries());
+    return this.allCountries.filter(
+      (c) => !selected.has(c.code) && (c.name.toLowerCase().includes(search) || c.code.toLowerCase().includes(search)),
+    );
+  });
+
+  protected readonly isCanadaSelected = computed(() => this.selectedCountries().includes('CA'));
+  protected readonly isUsaSelected = computed(() => this.selectedCountries().includes('US'));
+  protected readonly isGermanySelected = computed(() => this.selectedCountries().includes('DE'));
+  protected readonly isFranceSelected = computed(() => this.selectedCountries().includes('FR'));
+  protected readonly isIndiaSelected = computed(() => this.selectedCountries().includes('IN'));
+
+  // Plain-language calculation summary
+  protected readonly taxCreditSummary = computed(() => {
+    const sorted = [...this.taxCreditTiers()].sort((a, b) => a.limit - b.limit);
+    if (sorted.length === 0) {
+      return ['No tax credit tiers defined. Donations will not receive any tax credit.'];
+    }
+
+    const lines: string[] = [];
+    let previousLimit = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const tier = sorted[i]!;
+      const ratePct = Math.round(tier.rate * 100);
+
+      if (i === 0) {
+        lines.push(`${ratePct}% credit on the first $${tier.limit} donated.`);
+      } else {
+        const range = `$${previousLimit + 1} to $${tier.limit}`;
+        lines.push(`${ratePct}% credit on the next $${tier.limit - previousLimit} donated (amounts from ${range}).`);
+      }
+      previousLimit = tier.limit;
+    }
+
+    lines.push(`0% credit on any amounts exceeding $${previousLimit}.`);
+    return lines;
+  });
+
+  ngOnInit(): void {
     void this.loadOnInit();
   }
 
   private async loadOnInit(): Promise<void> {
-    await this.loadTagOptions();
-    await this.loadIssueOptions();
+    await this.settingsSvc.load();
+    this.loadValues();
+    await this.loadPeriods();
+    await this.loadWebhookStatus();
   }
 
-  private async loadTagOptions() {
+  private async loadWebhookStatus(): Promise<void> {
     try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+      const status = await this.donationsSvc.getWebhookTokenStatus();
+      this.webhookConfigured.set(!!status?.configured);
     } catch {
-      this.tagOptionValues = [];
+      // non-fatal — leave as "not configured" if the status can't be read
     }
   }
 
-  private async loadIssueOptions() {
+  private async loadPeriods() {
     try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+      const periods = await this.donationsSvc.getDonationPeriods();
+      this.donationPeriods.set(periods as any);
     } catch {
-      this.issueOptionValues = [];
+      // non-fatal — periods table may not exist yet if migration hasn't run
     }
   }
 
-  protected openEditOnDoubleClick(event: any) {
-    this.grid()?.openEditOnDoubleClick(event?.data ?? event);
-  }
+  protected async addPeriod() {
+    const name = this.newPeriodName().trim();
+    const start = this.newPeriodStartDate().trim();
+    const limit = Number(this.newPeriodLimit());
 
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = (selectedRows || this.grid()?.getSelectedRows() || []) as Array<{
-      id: string;
-      persons_count?: number | string | null;
-      is_placeholder?: boolean;
-    }>;
-
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    // Guard: the tenant's placeholder household is permanent and cannot be deleted.
-    if (selected.some((r) => r.is_placeholder)) {
-      this.alertSvc.showError('The placeholder household cannot be deleted. It holds people who have no address.');
-      return true;
-    }
-
-    // Collect IDs for households that have people
-    const populated = selected.filter((r) => Number(r.persons_count ?? 0) > 0);
-    const householdIds = selected.map((r) => r.id);
-
-    if (populated.length > 0) {
-      // Fetch person IDs for all households-with-people so we can act on them
-      const personIdArrays = await Promise.all(
-        populated.map(async (h) => {
-          try {
-            const people = (await this.personsSvc.getByHouseholdId(h.id, { columns: ['id'] })) as Array<{ id: string }>;
-            return people.map((p) => p.id);
-          } catch {
-            return [];
-          }
-        }),
-      );
-      const personIds = personIdArrays.flat();
-      const peopleCount = personIds.length;
-
-      // Show the 3-option dialog and wait for user's choice
-      const choice = await this.dialogSvc.choose<'delete-people' | 'keep-people'>({
-        title: 'Households have people',
-        message: `${populated.length} household(s) being deleted contain ${peopleCount} person(s).\nWhat would you like to do with those people?`,
-        variant: 'warning',
-        choices: [
-          { label: 'Delete people too', value: 'delete-people', variant: 'danger' },
-          { label: 'Keep people, just remove their address', value: 'keep-people', variant: 'warning' },
-        ],
-        cancelText: 'Cancel',
-      });
-
-      if (!choice) return true; // Handled (user clicked Cancel, so do nothing)
-
-      if (choice === 'keep-people') {
-        // Detach each person from their household (moves to blank household)
-        await Promise.all(
-          personIds.map((pid) =>
-            this.personsSvc.removeHousehold(pid).catch(() => {
-              // best-effort; continue
-            }),
-          ),
-        );
-      } else if (choice === 'delete-people') {
-        // Delete all people in those households first
-        if (personIds.length) {
-          try {
-            await this.personsSvc.deleteMany(personIds);
-          } catch {
-            this.alertSvc.showError('Failed to delete people. Aborting household deletion.');
-            return true;
-          }
-        }
-      }
-
-      // Now delete the households themselves
-      try {
-        await this.householdsService.deleteMany(householdIds);
-        this.alertSvc.showSuccess('Households deleted successfully.');
-      } catch {
-        this.alertSvc.showError('Failed to delete one or more households.');
-      }
-      return true;
-    } else {
-      // No people attached — delegate to the standard flow
-      return false;
-    }
-  }
-
-  protected onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }) {
-    // Backend households import endpoint not implemented yet; show informative summary
-    const diag = 'Households import is not available yet.';
-    this.importSummary.set({ inserted: 0, errors: 0, skipped: payload.skipped, failed: true, message: diag });
-    this.importerOpen.set(false);
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    this.importerOpen.set(true);
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/add-connection-drawer.ts
-
-```typescript
-import { Component, inject, input, output, signal, computed } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { SideDrawer } from '@uxcommon/components/side-drawer/side-drawer';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { PersonsService } from '../services/persons-service';
-import { RELATION_TYPES, RELATION_TYPE_LABELS } from '../../../../../../../libs/common/src';
-import type { AddConnectionType } from '../../../../../../../libs/common/src';
-
-type PersonSearchResult = { id: string; first_name: string | null; last_name: string | null; email: string | null };
-
-@Component({
-  selector: 'pc-add-connection-drawer',
-  imports: [SideDrawer, Icon, FormsModule],
-  template: `
-    <pc-side-drawer [isOpen]="isOpen()" title="Add Connection" i18n-title size="sm" i18n-size (close)="onClose()">
-      <div class="flex flex-col gap-4">
-        <!-- Person search -->
-        <div class="flex flex-col gap-1.5">
-          <label i18n class="text-sm font-semibold text-base-content/80">Search Contact</label>
-          @if (selectedPerson()) {
-            <div class="flex items-center gap-2 px-3 py-2 bg-primary/10 rounded-xl border border-primary/30">
-              <div
-                class="w-7 h-7 rounded-full bg-primary text-primary-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-              >
-                {{ initials(selectedPerson()!) }}
-              </div>
-              <span class="text-sm font-medium flex-1 truncate"
-                >{{ selectedPerson()!.first_name }} {{ selectedPerson()!.last_name }}</span
-              >
-              <button type="button" class="btn btn-ghost btn-xs btn-circle" (click)="clearSelection()">
-                <pc-icon name="x-mark" [size]="3"></pc-icon>
-              </button>
-            </div>
-          } @else {
-            <div class="relative">
-              <input
-                type="text"
-                class="input input-bordered w-full pr-10 text-sm"
-                placeholder="Type a name or email..."
-                i18n-placeholder
-                [ngModel]="searchStr()"
-                (ngModelChange)="onSearchChange($event)"
-              />
-              <pc-icon
-                name="magnifying-glass"
-                [size]="4"
-                class="absolute right-3 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"
-              ></pc-icon>
-            </div>
-            @if (searchResults().length > 0) {
-              <div class="border border-base-300 rounded-xl bg-base-100 shadow-lg max-h-48 overflow-y-auto">
-                @for (p of searchResults(); track p.id) {
-                  <button
-                    type="button"
-                    class="w-full text-left px-3 py-2.5 hover:bg-base-200 transition-colors flex items-center gap-2.5 border-b border-base-200 last:border-0"
-                    (click)="selectPerson(p)"
-                  >
-                    <div
-                      class="w-7 h-7 rounded-full bg-neutral text-neutral-content flex items-center justify-center text-xs font-bold flex-shrink-0"
-                    >
-                      {{ initials(p) }}
-                    </div>
-                    <div class="flex flex-col min-w-0">
-                      <span class="text-sm font-medium truncate">{{ p.first_name }} {{ p.last_name }}</span>
-                      @if (p.email) {
-                        <span class="text-xs text-base-content/50 truncate">{{ p.email }}</span>
-                      }
-                    </div>
-                  </button>
-                }
-              </div>
-            }
-            @if (isSearching() && searchStr().length > 0) {
-              <span i18n class="text-xs text-base-content/40 italic">Searching...</span>
-            }
-          }
-        </div>
-
-        <!-- Relation type -->
-        <div class="flex flex-col gap-1.5">
-          <label i18n class="text-sm font-semibold text-base-content/80">Relationship Type</label>
-          <select
-            class="select select-bordered w-full text-sm"
-            [ngModel]="relationType()"
-            (ngModelChange)="relationType.set($event)"
-          >
-            @for (type of relationTypes; track type) {
-              <option [value]="type">{{ relationTypeLabels[type] }}</option>
-            }
-          </select>
-        </div>
-
-        <!-- Custom label (shown when type = 'custom') -->
-        @if (relationType() === 'custom') {
-          <div class="flex flex-col gap-1.5">
-            <label i18n class="text-sm font-semibold text-base-content/80">Custom Label</label>
-            <input
-              type="text"
-              class="input input-bordered w-full text-sm"
-              placeholder="e.g. Major donor contact, Advisor..."
-              i18n-placeholder
-              maxlength="100"
-              [ngModel]="customLabel()"
-              (ngModelChange)="customLabel.set($event)"
-            />
-          </div>
-        }
-
-        <!-- Mutual toggle -->
-        <div class="flex items-center justify-between">
-          <div class="flex flex-col gap-0.5">
-            <span i18n class="text-sm font-semibold text-base-content/80">Mutual Connection</span>
-            <span i18n class="text-xs text-base-content/50">Shows on both profiles with ↔ indicator</span>
-          </div>
-          <input
-            type="checkbox"
-            class="toggle toggle-sm toggle-primary"
-            [ngModel]="isMutual()"
-            (ngModelChange)="isMutual.set($event)"
-          />
-        </div>
-
-        <!-- Notes -->
-        <div class="flex flex-col gap-1.5">
-          <label class="text-sm font-semibold text-base-content/80"
-            >Notes <span i18n class="text-base-content/40 font-normal">(optional)</span></label
-          >
-          <textarea
-            class="textarea textarea-bordered w-full text-sm resize-none"
-            rows="3"
-            placeholder="Add context about this connection..."
-            i18n-placeholder
-            maxlength="1000"
-            [ngModel]="notes()"
-            (ngModelChange)="notes.set($event)"
-          ></textarea>
-        </div>
-      </div>
-
-      <!-- Footer -->
-      <div pc-drawer-footer class="p-4 border-t border-base-300 flex gap-2">
-        <button i18n type="button" class="btn btn-ghost flex-1" (click)="onClose()" [disabled]="isSaving()">
-          Cancel
-        </button>
-        <button i18n type="button" class="btn btn-primary flex-1" [disabled]="!canSave()" (click)="onSave()">
-          @if (isSaving()) {
-            <span class="loading loading-spinner loading-sm"></span>
-          }
-          Add Connection
-        </button>
-      </div>
-    </pc-side-drawer>
-  `,
-})
-export class AddConnectionDrawer {
-  readonly personId = input.required<string>();
-  readonly isOpen = input.required<boolean>();
-  readonly closeDrawer = output<void>();
-  readonly saved = output<any>();
-
-  private readonly connectionsSvc = inject(ConnectionsService);
-  private readonly personsSvc = inject(PersonsService);
-  private readonly alertSvc = inject(AlertService);
-
-  protected readonly searchStr = signal('');
-  protected readonly searchResults = signal<PersonSearchResult[]>([]);
-  protected readonly selectedPerson = signal<PersonSearchResult | null>(null);
-  protected readonly relationType = signal<(typeof RELATION_TYPES)[number]>('close_friend');
-  protected readonly customLabel = signal('');
-  protected readonly isMutual = signal(false);
-  protected readonly notes = signal('');
-  protected readonly isSaving = signal(false);
-  protected readonly isSearching = signal(false);
-
-  protected readonly relationTypes = RELATION_TYPES;
-  protected readonly relationTypeLabels = RELATION_TYPE_LABELS;
-
-  private searchTimer: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly canSave = computed(() => {
-    if (!this.selectedPerson() || this.isSaving()) return false;
-    if (this.relationType() === 'custom' && !this.customLabel().trim()) return false;
-    return true;
-  });
-
-  protected initials(p: PersonSearchResult) {
-    return `${(p.first_name ?? '').charAt(0)}${(p.last_name ?? '').charAt(0)}`.toUpperCase() || '?';
-  }
-
-  protected onSearchChange(value: string) {
-    this.searchStr.set(value);
-    if (this.searchTimer) clearTimeout(this.searchTimer);
-    if (!value.trim()) {
-      this.searchResults.set([]);
+    if (!name) {
+      this.alerts.showError('Period name is required');
       return;
     }
-    this.isSearching.set(true);
-    this.searchTimer = setTimeout(() => void this.executeSearch(value), 250);
-  }
+    if (!start) {
+      this.alerts.showError('Start date is required');
+      return;
+    }
+    if (!limit || limit <= 0) {
+      this.alerts.showError('Limit amount must be greater than 0');
+      return;
+    }
 
-  private async executeSearch(value: string): Promise<void> {
+    const endDate = this.newPeriodEndDate().trim() || null;
+    if (endDate && endDate <= start) {
+      this.alerts.showError('End date must be after start date');
+      return;
+    }
+
+    this.isSavingPeriod.set(true);
     try {
-      const result = await this.personsSvc.getAllWithAddress({ searchStr: value, startRow: 0, endRow: 10 });
-      const currentPersonId = this.personId();
-      this.searchResults.set(
-        ((result as any).rows ?? [])
-          .filter((p: any) => String(p.id) !== String(currentPersonId))
-          .map((p: any) => ({ id: String(p.id), first_name: p.first_name, last_name: p.last_name, email: p.email })),
-      );
-    } catch {
-      this.searchResults.set([]);
+      await this.donationsSvc.createDonationPeriod({
+        name,
+        start_date: start,
+        end_date: endDate,
+        limit_amount: limit * 100,
+      });
+      this.alerts.showSuccess(`Donation period "${name}" created`);
+      this.newPeriodName.set('');
+      this.newPeriodStartDate.set('');
+      this.newPeriodEndDate.set('');
+      this.newPeriodLimit.set(1000);
+      this.showAddPeriod.set(false);
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to create donation period');
     } finally {
-      this.isSearching.set(false);
+      this.isSavingPeriod.set(false);
     }
   }
 
-  protected selectPerson(p: PersonSearchResult) {
-    this.selectedPerson.set(p);
-    this.searchStr.set('');
-    this.searchResults.set([]);
+  protected async togglePeriodActive(period: DonationPeriod) {
+    try {
+      await this.donationsSvc.updateDonationPeriod({ id: period.id, is_active: !period.is_active });
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to update period');
+    }
   }
 
-  protected clearSelection() {
-    this.selectedPerson.set(null);
-    this.searchStr.set('');
-    this.searchResults.set([]);
+  protected async deletePeriod(period: DonationPeriod) {
+    const confirmed = await this.dialogs.confirm({
+      title: `Delete period "${period.name}"?`,
+      message: 'This cannot be undone. Existing donations collected during this period will not be affected.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    try {
+      await this.donationsSvc.deleteDonationPeriod(period.id);
+      this.alerts.showSuccess('Period deleted');
+      await this.loadPeriods();
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete period');
+    }
   }
 
-  protected async onSave() {
-    const person = this.selectedPerson();
-    if (!person) return;
+  protected formatDate(dateStr: string | null): string {
+    if (!dateStr) return 'No end date';
+    return new Date(dateStr).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  protected isPeriodActive(period: DonationPeriod): boolean {
+    const today = new Date().toISOString().slice(0, 10);
+    return period.is_active && period.start_date <= today && (!period.end_date || period.end_date >= today);
+  }
+
+  private loadValues() {
+    this.stripeSecretKey.set(this.settingsSvc.getValue<string>('donations.stripe_secret_key', ''));
+    this.stripeWebhookSecret.set(this.settingsSvc.getValue<string>('donations.stripe_webhook_secret', ''));
+    this.donationLimit.set(this.settingsSvc.getValue<number>('donations.limit', 1000));
+    this.restrictResidency.set(this.settingsSvc.getValue<boolean>('donations.restrict_residency', false));
+
+    // Load countries
+    const countriesStr = this.settingsSvc.getValue<string>('donations.allowed_countries', 'CA');
+    const parsedCountries = countriesStr
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    this.selectedCountries.set(parsedCountries);
+
+    // Load regions (provinces / states)
+    const regionsStr = this.settingsSvc.getValue<string>('donations.allowed_regions', 'ON');
+    const parsedRegions = regionsStr
+      .split(',')
+      .map((r) => r.trim())
+      .filter(Boolean);
+    this.selectedRegions.set(parsedRegions);
+
+    // Load tax tiers
+    const tiersRaw = this.settingsSvc.getValue<any>('donations.tax_credit_tiers', []);
+    let parsedTiers: TaxCreditTier[] = [];
+    if (typeof tiersRaw === 'string') {
+      try {
+        parsedTiers = JSON.parse(tiersRaw);
+      } catch {
+        parsedTiers = [];
+      }
+    } else if (Array.isArray(tiersRaw)) {
+      parsedTiers = tiersRaw;
+    }
+    this.taxCreditTiers.set(parsedTiers.sort((a, b) => a.limit - b.limit));
+
+    // The webhook token is no longer stored in plaintext, so it can't be re-read here — it's
+    // generated server-side and shown once via regenerateWebhookToken(). Clear any stale plaintext.
+    this.webhookToken.set('');
+  }
+
+  protected selectCountry(country: { code: string; name: string }) {
+    this.selectedCountries.update((list) => [...list, country.code]);
+    this.countrySearch.set('');
+    this.showCountryDropdown.set(false);
+  }
+
+  protected removeCountry(code: string) {
+    this.selectedCountries.update((list) => list.filter((c) => c !== code));
+    // Clean up regions for removed countries
+    if (code === 'CA') {
+      const provinceCodes = new Set(this.canadaProvinces.map((p) => p.code));
+      this.selectedRegions.update((list) => list.filter((r) => !provinceCodes.has(r)));
+    } else if (code === 'US') {
+      const stateCodes = new Set(this.usStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'DE') {
+      const stateCodes = new Set(this.germanyStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    } else if (code === 'FR') {
+      const regionCodes = new Set(this.franceRegions.map((r) => r.code));
+      this.selectedRegions.update((list) => list.filter((r) => !regionCodes.has(r)));
+    } else if (code === 'IN') {
+      const stateCodes = new Set(this.indiaStates.map((s) => s.code));
+      this.selectedRegions.update((list) => list.filter((r) => !stateCodes.has(r)));
+    }
+  }
+
+  protected toggleRegion(code: string) {
+    this.selectedRegions.update((list) => (list.includes(code) ? list.filter((r) => r !== code) : [...list, code]));
+  }
+
+  protected getCountryName(code: string): string {
+    const found = this.allCountries.find((c) => c.code === code);
+    return found ? found.name : code;
+  }
+
+  protected addTier() {
+    const limit = this.newLimit();
+    const rateInput = this.newRate();
+
+    if (limit === null || limit <= 0) {
+      this.alerts.showError('Limit must be greater than 0');
+      return;
+    }
+    if (rateInput === null || rateInput < 0 || rateInput > 100) {
+      this.alerts.showError('Rate must be between 0% and 100%');
+      return;
+    }
+
+    const rate = rateInput / 100;
+
+    const current = this.taxCreditTiers();
+    if (current.some((t) => t.limit === limit)) {
+      this.alerts.showError('A tier with this limit already exists');
+      return;
+    }
+
+    const updated = [...current, { limit, rate }].sort((a, b) => a.limit - b.limit);
+    this.taxCreditTiers.set(updated);
+
+    this.newLimit.set(null);
+    this.newRate.set(null);
+  }
+
+  protected removeTier(index: number) {
+    const updated = this.taxCreditTiers().filter((_, i) => i !== index);
+    this.taxCreditTiers.set(updated);
+  }
+
+  protected reset() {
+    this.loadValues();
+    this.alerts.showSuccess('Settings reset to saved values');
+  }
+
+  protected async save() {
     this.isSaving.set(true);
     try {
-      const data: AddConnectionType = {
-        to_person_id: person.id,
-        relation_type: this.relationType(),
-        custom_label: this.relationType() === 'custom' ? this.customLabel().trim() : null,
-        is_mutual: this.isMutual(),
-        notes: this.notes().trim() || null,
-      };
-      const result = await this.connectionsSvc.add(this.personId(), data);
-      this.alertSvc.showSuccess('Connection added');
-      this.saved.emit(result);
-      this.resetForm();
-      this.closeDrawer.emit();
+      const entries = [
+        { key: 'donations.stripe_secret_key', value: this.stripeSecretKey() },
+        { key: 'donations.stripe_webhook_secret', value: this.stripeWebhookSecret() },
+        { key: 'donations.limit', value: Number(this.donationLimit()) },
+        { key: 'donations.restrict_residency', value: this.restrictResidency() },
+        { key: 'donations.allowed_countries', value: this.selectedCountries().join(',') },
+        { key: 'donations.allowed_regions', value: this.selectedRegions().join(',') },
+        { key: 'donations.tax_credit_tiers', value: JSON.stringify(this.taxCreditTiers()) },
+        // donations.webhook_token is intentionally NOT saved here — it is generated (hashed) and
+        // shown once by regenerateWebhookToken(), never round-tripped through the client.
+      ];
+
+      await this.settingsSvc.upsert(entries);
+      this.alerts.showSuccess('Donations configuration saved successfully');
     } catch (err) {
-      if (err instanceof Error && err.message.includes('already exists')) {
-        this.alertSvc.showError('A connection of this type already exists between these contacts.');
-      }
+      this.alerts.showError(
+        err instanceof Error && err.message ? err.message : 'Failed to save donations configuration',
+      );
     } finally {
       this.isSaving.set(false);
     }
   }
 
-  protected onClose() {
-    this.resetForm();
-    this.closeDrawer.emit();
+  protected copyWebhookUrl() {
+    navigator.clipboard
+      .writeText(this.webhookUrl())
+      .then(() => this.alerts.showSuccess('Webhook URL copied!'))
+      .catch(() => this.alerts.showError('Failed to copy webhook URL'));
   }
 
-  private resetForm() {
-    this.selectedPerson.set(null);
-    this.searchStr.set('');
-    this.searchResults.set([]);
-    this.relationType.set('close_friend');
-    this.customLabel.set('');
-    this.isMutual.set(false);
-    this.notes.set('');
-  }
-}
-```
-
-## File: apps/frontend/src/app/experiences/persons/ui/person-connections.ts
-
-```typescript
-import { Component, inject, input, output, signal, OnInit } from '@angular/core';
-import { ConnectionsService } from '../../../services/api/connections-service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { ConnectionCard } from './connection-card';
-import { AddConnectionDrawer } from './add-connection-drawer';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-
-@Component({
-  selector: 'pc-person-connections',
-  imports: [ConnectionCard, AddConnectionDrawer, Icon],
-  template: `
-    <div class="flex flex-col gap-4">
-      <!-- Header -->
-      <div class="flex items-center justify-between">
-        <h4 i18n class="font-semibold text-base-content/80">
-          Connections
-          @if (connections().length > 0) {
-            <span class="badge badge-sm badge-neutral ml-2">{{ connections().length }}</span>
-          }
-        </h4>
-        <button type="button" class="btn btn-sm btn-primary gap-1.5" (click)="showAddDrawer.set(true)">
-          <pc-icon name="plus" [size]="4"></pc-icon>
-          Add Connection
-        </button>
-      </div>
-
-      <!-- Loading skeleton -->
-      @if (isLoading()) {
-        <div class="flex flex-col gap-2">
-          <div class="skeleton h-16 w-full rounded-xl"></div>
-          <div class="skeleton h-16 w-full rounded-xl"></div>
-        </div>
-      } @else if (connections().length === 0) {
-        <div i18n class="text-center py-10 text-base-content/40 italic text-sm">
-          No connections recorded. Add one to start mapping this contact's network.
-        </div>
-      } @else {
-        <div class="flex flex-col gap-2">
-          @for (conn of connections(); track conn.id) {
-            <pc-connection-card
-              [connection]="conn"
-              [currentPersonId]="personId()"
-              (remove)="onRemove($event)"
-            ></pc-connection-card>
-          }
-        </div>
-      }
-    </div>
-
-    <pc-add-connection-drawer
-      [personId]="personId()"
-      [isOpen]="showAddDrawer()"
-      (closeDrawer)="showAddDrawer.set(false)"
-      (saved)="onConnectionAdded()"
-    ></pc-add-connection-drawer>
-  `,
-})
-export class PersonConnections implements OnInit {
-  readonly personId = input.required<string>();
-  readonly countChange = output<number>();
-
-  private readonly connectionsSvc = inject(ConnectionsService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly connections = signal<any[]>([]);
-  protected readonly showAddDrawer = signal(false);
-
-  public ngOnInit() {
-    void this.load();
-  }
-
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const result = await this.connectionsSvc.getForPerson(this.personId());
-      this.connections.set(result as any[]);
-      this.countChange.emit(result.length);
-    } catch {
-      // silently fail — tab stays empty
-    } finally {
-      end();
+  protected async regenerateWebhookToken() {
+    if (this.webhookConfigured()) {
+      const confirmed = await this.dialogs.confirm({
+        title: 'Generate a new webhook token?',
+        message:
+          'This invalidates the current token. Any Stripe webhook still using the old URL will stop working until you paste the new URL into Stripe. The new token is shown only once.',
+        confirmText: 'Generate new token',
+        cancelText: 'Cancel',
+        variant: 'danger',
+      });
+      if (!confirmed) return;
     }
-  }
 
-  protected onConnectionAdded() {
-    void this.load();
-  }
-
-  protected async onRemove(id: string) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Remove Connection',
-      message: 'Are you sure you want to remove this connection?',
-      confirmText: 'Remove',
-      variant: 'danger',
-    });
-    if (!confirmed) return;
+    this.isRegeneratingWebhook.set(true);
     try {
-      await this.connectionsSvc.remove(id);
-      this.connections.update((list) => list.filter((c) => c.id !== id));
-      this.countChange.emit(this.connections().length);
-      this.alertSvc.showSuccess('Connection removed');
-    } catch {
-      this.alertSvc.showError('Failed to remove connection');
+      const { token } = await this.donationsSvc.regenerateWebhookToken();
+      this.webhookToken.set(token);
+      this.webhookConfigured.set(true);
+      this.alerts.showSuccess('Webhook token generated. Copy the URL now — it will not be shown again.');
+    } catch (err) {
+      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to generate webhook token');
+    } finally {
+      this.isRegeneratingWebhook.set(false);
     }
   }
 }
@@ -42599,478 +43732,6 @@ export class ShiftFormComponent implements OnInit {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/tasks/ui/task-view.ts
-
-```typescript
-import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { Router, RouterModule } from '@angular/router';
-import { IAuthUser } from '../../../../../../../libs/common/src';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { TeamsService } from '../../teams/services/teams-service';
-import { QuillModule } from 'ngx-quill';
-
-import { AuthService } from '../../../auth/auth-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { SanitizeHtmlPipe } from '@uxcommon/pipes/sanitize-html.pipe';
-import { MentionifyPipe } from '@uxcommon/pipes/mention.pipe';
-import { TimeAgoPipe } from '@uxcommon/pipes/timeago.pipe';
-import { MentionController, userDisplay } from '@uxcommon/mentions/mention-controller';
-import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
-import { UserService } from '../../../services/user.service';
-
-import { UserAvatarComponent } from '@uxcommon/components/user-avatar/user-avatar';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-@Component({
-  selector: 'pc-task-view',
-  imports: [
-    DatePipe,
-    DecimalPipe,
-    SlicePipe,
-    FormsModule,
-    RouterModule,
-    QuillModule,
-    Icon,
-    SanitizeHtmlPipe,
-    MentionifyPipe,
-    TimeAgoPipe,
-    RecordActivities,
-    UserAvatarComponent,
-  ],
-  templateUrl: './task-view.html',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
-})
-export class TaskView {
-  readonly id = input.required<string>();
-
-  private readonly auth = inject(AuthService);
-  private readonly router = inject(Router);
-  private readonly tasks = inject(TasksService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  private readonly teams = inject(TeamsService);
-  private readonly userService = inject(UserService);
-
-  protected readonly task = signal<any | null>(null);
-  protected readonly comments = signal<any[]>([]);
-  protected readonly attachments = signal<any[]>([]);
-  protected readonly subtasks = signal<any[]>([]);
-  private readonly _loading = createLoadingGate();
-  protected readonly isLoading = this._loading.visible;
-  protected readonly users = signal<IAuthUser[]>([]);
-  protected readonly assignedTo = signal<string>('');
-  protected readonly teamsList = signal<any[]>([]);
-  protected readonly teamId = signal<string>('');
-
-  // Form Fields & Inline Editing State
-  protected isEditingName = signal(false);
-  protected isEditingDetails = signal(false);
-  protected isEditingDueDate = signal(false);
-  protected tempName = signal('');
-  protected tempDetails = signal('');
-  protected readonly defaultDetails =
-    '<p class="italic text-base-content/40">No details or description provided. Click here to add descriptions...</p>';
-  private readonly activityHistory = viewChild<RecordActivities>('activityHistory');
-
-  private refreshActivities() {
-    const component = this.activityHistory();
-    if (component) {
-      void component.loadActivities();
-    }
-  }
-
-  protected newComment = signal('');
-  protected attName = signal('');
-  protected attUrl = signal('');
-  protected subtaskName = signal('');
-
-  // Expand / collapse sections
-  protected showComments = signal(true);
-  protected showSubtasks = signal(true);
-  protected showAttachments = signal(true);
-
-  // Autocomplete mentions (shared controller)
-  private readonly taskComposer = viewChild<{ nativeElement: HTMLTextAreaElement }>('taskComposer');
-  public mc = new MentionController(() => this.users());
-
-  // Priority classes and options for display/inputs
-  protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-
-  constructor() {
-    effect(() => {
-      void untracked(() => this.load());
-    });
-  }
-
-  // Load task and its children
-  private async load() {
-    const end = this._loading.begin();
-    try {
-      const [t, us, ts] = await Promise.all([
-        this.tasks.getById(this.id()),
-        this.userService.getUsers(),
-        this.teams.getAll({ limit: 1000 }),
-      ]);
-      if (!t) {
-        this.alertSvc.showError('Task not found.');
-        return;
-      }
-      this.task.set(t as any);
-      this.users.set(us || []);
-      this.teamsList.set(ts?.rows ?? []);
-      const assigned = (t as any)?.assigned_to;
-      this.assignedTo.set(assigned == null ? '' : String(assigned));
-      const team = (t as any)?.team_id;
-      this.teamId.set(team == null ? '' : String(team));
-
-      // Load subtasks, comments, attachments
-      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not load the task. Please try again.'));
-    } finally {
-      end();
-    }
-  }
-
-  private async loadComments() {
-    const list = await this.tasks.api.tasks.getComments.query(this.id());
-    this.comments.set(list);
-  }
-
-  private async loadAttachments() {
-    const list = await this.tasks.api.tasks.getAttachments.query(this.id());
-    this.attachments.set(list);
-  }
-
-  private async loadSubtasks() {
-    const list = await this.tasks.api.tasks.getSubtasks.query(this.id());
-    this.subtasks.set(list);
-  }
-
-  protected asDate(v: any) {
-    return v ? new Date(v) : null;
-  }
-
-  protected dateOnly(v: any) {
-    if (!v) return '';
-    const s = typeof v === 'string' ? v : new Date(v).toISOString();
-    return s.slice(0, 10);
-  }
-
-  protected async update(patch: any) {
-    if (!this.task()) return;
-    const id = this.id();
-    try {
-      await this.tasks.update(id, patch);
-      this.tasks.triggerRefresh();
-      this.task.update((t) => ({ ...(t ?? {}), ...patch }));
-      if (Object.prototype.hasOwnProperty.call(patch, 'assigned_to')) {
-        const v = patch.assigned_to;
-        this.assignedTo.set(v == null || v === '' ? '' : String(v));
-      }
-      if (Object.prototype.hasOwnProperty.call(patch, 'team_id')) {
-        const v = patch.team_id;
-        this.teamId.set(v == null || v === '' ? '' : String(v));
-      }
-      this.alertSvc.showSuccess('Task updated successfully');
-      this.refreshActivities();
-    } catch (err) {
-      this.alertSvc.showError(getUserErrorMessage(err, 'Could not update the task. Please try again.'));
-    }
-  }
-
-  protected onTeamChange(event: any) {
-    const val = event.target.value;
-    void this.update({ team_id: val || null });
-  }
-
-  // Inline name editing trigger & save
-  protected startEditingName() {
-    this.tempName.set(this.task()?.name || '');
-    this.isEditingName.set(true);
-  }
-
-  protected async saveName() {
-    const nextName = this.tempName().trim();
-    if (!nextName) {
-      this.isEditingName.set(false);
-      return;
-    }
-    await this.update({ name: nextName });
-    this.isEditingName.set(false);
-  }
-
-  protected cancelEditingName() {
-    this.isEditingName.set(false);
-  }
-
-  // Inline details (Quill description) editing trigger & save
-  protected startEditingDetails() {
-    this.tempDetails.set(this.task()?.details || '');
-    this.isEditingDetails.set(true);
-  }
-
-  protected async saveDetails() {
-    await this.update({ details: this.tempDetails() });
-    this.isEditingDetails.set(false);
-  }
-
-  protected cancelEditingDetails() {
-    this.isEditingDetails.set(false);
-  }
-
-  // Subtask Actions
-  protected async addSubtask() {
-    const name = this.subtaskName().trim();
-    if (!name) return;
-    const end = this._loading.begin();
-    try {
-      await this.tasks.api.tasks.addSubtask.mutate({ task_id: this.id(), name });
-      this.subtaskName.set('');
-      await this.loadSubtasks();
-      this.refreshActivities();
-    } finally {
-      end();
-    }
-  }
-
-  protected async toggleSubtask(s: any, isDone: boolean) {
-    const end = this._loading.begin();
-    try {
-      await this.tasks.api.tasks.updateSubtask.mutate({
-        id: String(s.id),
-        data: { status: isDone ? 'done' : 'todo' },
-      });
-      await this.loadSubtasks();
-      this.refreshActivities();
-    } finally {
-      end();
-    }
-  }
-
-  // Comment Actions
-  protected async addComment() {
-    const plain = this.newComment().trim();
-    if (!plain) return;
-    const end = this._loading.begin();
-    try {
-      await this.tasks.api.tasks.addComment.mutate({ task_id: this.id(), comment: plain });
-      this.newComment.set('');
-      await Promise.all([this.loadComments(), this.loadAttachments(), this.loadSubtasks()]);
-      this.refreshActivities();
-    } finally {
-      end();
-    }
-  }
-
-  // Attachment Actions
-  protected async addAttachment() {
-    const name = this.attName().trim();
-    const url = this.attUrl().trim();
-    if (!name) return;
-    const end = this._loading.begin();
-    try {
-      await this.tasks.api.tasks.addAttachment.mutate({ task_id: this.id(), filename: name, url });
-      this.attName.set('');
-      this.attUrl.set('');
-      await this.loadAttachments();
-      this.refreshActivities();
-    } finally {
-      end();
-    }
-  }
-
-  // Status and Priority Dropdown Handlers
-  protected onStatusChange(event: any) {
-    const status = event.target.value;
-    void this.update({ status });
-  }
-
-  protected onPriorityChange(event: any) {
-    const priority = event.target.value;
-    void this.update({ priority });
-  }
-
-  protected onDueDateChange(event: any) {
-    const value = this.normalizeCalendarValue(event);
-    void this.update({ due_at: value });
-  }
-
-  protected onAssignedChange(v: string) {
-    this.assignedTo.set(v);
-    void this.update({ assigned_to: v || null });
-  }
-
-  protected assignToMe() {
-    const me = this.auth.getUser();
-    if (!me?.id) return;
-    void this.update({ assigned_to: me.id });
-  }
-
-  protected isArchived() {
-    return (this.task()?.status || '') === 'archived';
-  }
-
-  protected async archiveTask() {
-    await this.update({ status: 'archived' });
-  }
-
-  protected async unarchiveTask() {
-    await this.update({ status: 'todo' });
-  }
-
-  protected async deleteTask() {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Task',
-      message: 'Are you sure you want to delete this task? This action cannot be undone.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-
-    if (confirmed) {
-      const end = this._loading.begin();
-      try {
-        const deleted = await this.tasks.delete(this.id());
-        if (deleted) {
-          this.tasks.triggerRefresh();
-          this.alertSvc.showSuccess('Task deleted successfully');
-          void this.router.navigate(['/tasks']);
-        } else {
-          this.alertSvc.showError('Failed to delete task.');
-        }
-      } catch (err) {
-        this.alertSvc.showError(getUserErrorMessage(err, 'Could not delete the task. Please try again.'));
-      } finally {
-        end();
-      }
-    }
-  }
-
-  // User display name helpers
-  protected userName(id: string | null | undefined): string {
-    if (!id) return 'Unknown';
-    const uid = String(id);
-    const u = this.users().find((x) => String(x.id) === uid);
-    return u ? `${u.first_name} ${u.last_name || ''}`.trim() : 'Unknown';
-  }
-
-  protected userAvatar(id: string | null | undefined): string | null {
-    if (!id) return null;
-    const uid = String(id);
-    const u = this.users().find((x) => String(x.id) === uid);
-    return u ? this.userService.resolveAvatarUrl(u.avatar_url) : null;
-  }
-
-  protected myUserId(): string | null {
-    return this.auth.getUser()?.id ?? null;
-  }
-
-  // Mention autocomplete text area inputs
-  protected onComposerInput(ev: Event) {
-    const el = ev.target as HTMLTextAreaElement;
-    this.newComment.set(el.value);
-    const caret = el.selectionStart ?? this.newComment().length;
-    this.mc.updateFromInput(this.newComment(), caret);
-  }
-
-  protected onComposerClick(ev: Event) {
-    const el = ev.target as HTMLTextAreaElement;
-    const caret = el.selectionStart ?? 0;
-    this.mc.updateFromInput(this.newComment(), caret);
-  }
-
-  protected onComposerKeydown(ev: KeyboardEvent) {
-    if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {
-      ev.preventDefault();
-      ev.stopPropagation();
-      void this.addComment();
-      return;
-    }
-    this.mc.handleKeydown(ev, (u) => this.selectMention(u));
-  }
-
-  protected selectMention(u: IAuthUser, ev?: Event) {
-    ev?.preventDefault();
-    const res = this.mc.select(u, this.newComment());
-    this.newComment.set(res.text);
-    const el = this.taskComposer()?.nativeElement as HTMLTextAreaElement | undefined;
-    setTimeout(() => {
-      if (el) {
-        el.focus();
-        el.setSelectionRange(res.caret, res.caret);
-      }
-    });
-  }
-
-  protected userDisplay = userDisplay;
-
-  private normalizeCalendarValue(event: any): string | null {
-    const raw =
-      (event?.detail != null && typeof event.detail === 'string' && event.detail) ||
-      (event?.detail?.value != null && event.detail.value) ||
-      (event?.target?.value != null && event.target.value) ||
-      (event?.value != null && event.value) ||
-      (typeof event === 'string' ? event : null);
-
-    if (!raw) return null;
-    const text = String(raw).trim();
-    if (!text) return null;
-    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
-    const parsed = new Date(text);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
-  }
-
-  // Styling helper classes
-  protected getStatusBadgeClass(status: string): string {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
-      case 'done':
-        return 'badge-success text-success-content';
-      case 'in_progress':
-        return 'badge-info text-info-content';
-      case 'blocked':
-        return 'badge-error text-error-content';
-      case 'canceled':
-        return 'badge-neutral text-neutral-content';
-      case 'archived':
-        return 'badge-warning text-warning-content';
-      default:
-        return 'badge-ghost';
-    }
-  }
-
-  protected getPriorityBadgeClass(priority: string): string {
-    const p = String(priority || '').toLowerCase();
-    switch (p) {
-      case 'urgent':
-        return 'badge-error text-error-content';
-      case 'high':
-        return 'badge-warning text-warning-content';
-      case 'medium':
-        return 'badge-info text-info-content';
-      default:
-        return 'badge-ghost';
-    }
-  }
-
-  protected toTitleCase(s: string): string {
-    if (!s) return '';
-    return s
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(' ');
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/tasks/ui/tasks-board.ts
 
 ```typescript
@@ -43650,137 +44311,6 @@ const STATUS_LABEL: Record<string, string> = {
 </section>
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/user-add.ts
-
-```typescript
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { email, form, required } from '@angular/forms/signals';
-import { ActivatedRoute, Router } from '@angular/router';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Select as PcSelect } from '@uxcommon/components/select/select';
-
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SettingsService } from '../../settings/services/settings-service';
-import { UserAdminService } from '../services/useradmin-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-@Component({
-  selector: 'pc-user-add',
-  imports: [PcInput, PcSelect, PcDetailHeader],
-  templateUrl: './user-add.html',
-})
-export class UserAddComponent implements OnInit {
-  private readonly alerts = inject(AlertService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly users = inject(UserAdminService);
-  private readonly auth = inject(AuthService);
-  private readonly settings = inject(SettingsService);
-
-  protected readonly error = signal<string | null>(null);
-
-  protected readonly currentUserRole = computed(() => this.auth.getUser()?.role);
-
-  protected readonly payload = signal({
-    email: '',
-    first_name: '',
-    last_name: '',
-    role: 'user',
-  });
-
-  protected readonly form = form(this.payload, (p) => {
-    required(p.email);
-    email(p.email);
-    required(p.first_name);
-  });
-
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-
-  protected readonly submitting = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    const state = window.history.state;
-    if (state && state.cloneData) {
-      const data = state.cloneData;
-      this.payload.set({
-        email: data.email || '',
-        first_name: data.first_name || '',
-        last_name: data.last_name || '',
-        role: data.role || '',
-      });
-      return;
-    }
-
-    // Prefill the role with the tenant's configured default invite role (best-effort).
-    try {
-      await this.settings.load();
-      const defaultRole = this.settings.getValue<string>('access.default_role');
-      if (defaultRole) {
-        this.payload.update((p) => ({ ...p, role: defaultRole }));
-      }
-    } catch {
-      // Ignore — fall back to the built-in default role.
-    }
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty('this invite');
-  }
-
-  protected cancel() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  protected async submit(done?: (() => void) | Event) {
-    if (done instanceof Event) {
-      done.preventDefault();
-    }
-
-    this.form().markAsTouched();
-    if (this.form().invalid()) {
-      return;
-    }
-
-    this.submitting.set(true);
-    this.error.set(null);
-    try {
-      const payload = this.toPayload();
-      await this.users.add(payload);
-      this.users.triggerRefresh();
-      this.alerts.showSuccess('Invitation sent');
-      this.form().reset();
-      if (typeof done === 'function') {
-        done();
-      } else {
-        await this.router.navigate(['../'], { relativeTo: this.route });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unable to invite user';
-      this.error.set(message);
-      this.alerts.showError(message);
-    } finally {
-      this.submitting.set(false);
-    }
-  }
-
-  private toPayload() {
-    const raw = this.payload();
-    return {
-      email: raw.email?.trim() ?? '',
-      first_name: raw.first_name?.trim() ?? '',
-      last_name: raw.last_name?.trim() ? raw.last_name.trim() : null,
-      role: raw.role?.trim() ? raw.role.trim() : null,
-    };
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/users/ui/user-edit.html
 
 ```html
@@ -44314,192 +44844,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/users/ui/users-grid.ts
-
-```typescript
-import { Component, inject } from '@angular/core';
-import { escapeHtml } from '../../../../../../../libs/common/src';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { GridRow } from '@frontend/shared/components/datagrid/types';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { UserAdminService } from '../services/useradmin-service';
-
-@Component({
-  selector: 'pc-users-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Users"
-        i18n-title
-        description="Manage administrator and staff user accounts, assign security roles, and monitor system access."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="true"
-        [disableView]="false"
-        [disableExport]="true"
-        [disableImport]="true"
-        [allowFilter]="false"
-        [addRoute]="'add'"
-        plusIcon="add-users"
-        i18n-plusIcon
-        [isCellEditableOverride]="isCellEditableBind"
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: UserAdminService },
-    provideDataGridConfig({ messages: { exportEntity: 'users', exportFileName: 'users-export.csv' } }),
-  ],
-})
-export class UsersGridComponent {
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-
-  private readonly dateFormatter = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
-
-  protected col: ColDef[] = [
-    {
-      field: 'email',
-      headerName: 'Email',
-      editable: true,
-      cellRenderer: (p: CellParams) => {
-        let avatarUrl = (p.data?.['avatar_url'] as string | null | undefined) ?? null;
-        const firstName = (p.data?.['first_name'] as string | undefined) ?? '';
-        const lastName = (p.data?.['last_name'] as string | undefined) ?? '';
-        const name = [firstName, lastName].filter(Boolean).join(' ') || String(p.value ?? '') || '?';
-        const emailVal = String(p.value ?? '');
-
-        let avatarHtml = '';
-        if (avatarUrl) {
-          avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-          // Names and avatar URLs are user-controlled — escape before interpolating into HTML
-          avatarHtml = `<img src="${escapeHtml(avatarUrl ?? '')}" alt="${escapeHtml(name)}" class="w-5 h-5 rounded-full object-cover ring-1 ring-base-200" />`;
-        } else {
-          const PALETTES = [
-            'bg-indigo-500/20 text-indigo-700',
-            'bg-teal-500/20 text-teal-700',
-            'bg-purple-500/20 text-purple-700',
-            'bg-rose-500/20 text-rose-700',
-            'bg-amber-500/20 text-amber-700',
-            'bg-emerald-500/20 text-emerald-700',
-            'bg-blue-500/20 text-blue-700',
-            'bg-orange-500/20 text-orange-700',
-            'bg-pink-500/20 text-pink-700',
-            'bg-cyan-500/20 text-cyan-700',
-          ];
-          let sum = 0;
-          for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
-          const colorClass = PALETTES[sum % PALETTES.length];
-          const parts = name.split(/\s+/);
-          const first = parts[0];
-          const last = parts[parts.length - 1];
-          const initials =
-            parts.length >= 2 && first && last
-              ? (first.charAt(0) + last.charAt(0)).toUpperCase()
-              : name.charAt(0).toUpperCase();
-          avatarHtml = `<div class="w-5 h-5 rounded-full ${colorClass} flex items-center justify-center font-bold text-[10px] ring-1 ring-base-200">
-            <span>${escapeHtml(initials)}</span>
-          </div>`;
-        }
-
-        return `<div class="flex items-center gap-2 py-0.5 h-full">
-          ${avatarHtml}
-          <span>${escapeHtml(emailVal)}</span>
-        </div>`;
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true },
-    {
-      field: 'role',
-      headerName: 'Role',
-      editable: true,
-      cellEditorParams: () => {
-        const currentUserRole = this.auth.getUser()?.role;
-        const values = [];
-        if (currentUserRole !== 'admin') {
-          values.push({ value: 'owner', label: 'Owner' });
-        }
-        values.push({ value: 'admin', label: 'Admin' });
-        values.push({ value: 'user', label: 'User' });
-        values.push({ value: 'viewer', label: 'Viewer' });
-        return { values };
-      },
-      valueFormatter: (p: CellParams) => {
-        const val = p.value ?? p.data?.['role'];
-        if (val === 'owner') return 'Owner';
-        if (val === 'admin') return 'Admin';
-        if (val === 'user') return 'User';
-        if (val === 'viewer') return 'Viewer';
-        return (val as string | undefined) || '';
-      },
-    },
-    {
-      field: 'verified',
-      headerName: 'Verified',
-      editable: false,
-      valueFormatter: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
-      cellRenderer: (p: CellParams) => (this.coerceBoolean(p.value ?? p.data?.['verified']) ? 'Yes' : 'No'),
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Updated',
-      hide: true,
-      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['updated_at']),
-    },
-    {
-      field: 'created_at',
-      headerName: 'Created',
-      hide: true,
-      valueFormatter: (p: CellParams) => this.formatDate(p.value ?? p.data?.['created_at']),
-    },
-  ];
-
-  public readonly isCellEditableBind = (row: GridRow, col: ColDef): boolean => {
-    if (!col.editable) return false;
-
-    const currentUserRole = this.auth.getUser()?.role;
-
-    if (currentUserRole === 'admin') {
-      if (row['role'] === 'owner') {
-        if (col.field === 'role' || col.field === 'verified') {
-          return false;
-        }
-      }
-    }
-
-    return true;
-  };
-
-  private formatDate(value: unknown): string {
-    if (!value) return '';
-    const date = value instanceof Date ? value : new Date(value as string);
-    if (Number.isNaN(date.getTime())) return '';
-    return this.dateFormatter.format(date);
-  }
-
-  private coerceBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') {
-      const normalized = value.trim().toLowerCase();
-      if (['yes', 'true', '1'].includes(normalized)) return true;
-      if (['no', 'false', '0'].includes(normalized)) return false;
-    }
-    return false;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/layout/favourite-toggle/favourite-toggle.ts
 
 ```typescript
@@ -44619,6 +44963,173 @@ export class FavouriteToggle {
 }
 ```
 
+## File: apps/frontend/src/app/services/api/trpc-refreshlink.ts
+
+```typescript
+import type { Router } from '@angular/router';
+import type { TRPCLink } from '@trpc/client';
+import { type Operation, TRPCClientError, createTRPCClient, httpLink } from '@trpc/client';
+import { type Observer, type Unsubscribable, observable } from '@trpc/server/observable';
+import superjson from 'superjson';
+
+import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { environment } from '../../../environments/environment';
+import type { TokenService } from './token-service';
+
+interface JwtPayload {
+  exp?: number;
+
+  [key: string]: unknown;
+}
+
+type NextLink = (op: Operation) => ObservableLike;
+
+/* ------------------------------------------------------------------ */
+/* Local helper types                                                 */
+/* ------------------------------------------------------------------ */
+type ObservableLike<T = unknown, E = unknown> = {
+  subscribe(args: Observer<T, E>): Unsubscribable;
+};
+
+/* ------------------------------------------------------------------ */
+/* Core helpers                                                       */
+/* ------------------------------------------------------------------ */
+
+function forwardOp(op: Operation, next: NextLink, observer: Observer<unknown, unknown>): void {
+  next(op).subscribe({
+    next: (value) => observer.next(value),
+    error: (err) => observer.error(err),
+    complete: () => observer.complete(),
+  });
+}
+
+let activeRefreshPromise: Promise<string> | null = null;
+
+/**
+ * Mint a fresh access token from the HttpOnly refresh cookie (SECURITY-REVIEW.md 2.1). No token is
+ * read from JS/storage — the browser attaches the cookie because the refresh client sends
+ * credentials. Concurrent callers share one in-flight request. Rejects if the cookie is missing or
+ * the session is gone.
+ */
+function performRefresh(tokenSvc: TokenService): Promise<string> {
+  if (activeRefreshPromise) return activeRefreshPromise;
+
+  activeRefreshPromise = (async () => {
+    try {
+      const payload = await trpcRetryClient.auth.renewAuthToken.mutate();
+      tokenSvc.setAuthToken(payload.auth_token);
+      return payload.auth_token;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  })();
+
+  return activeRefreshPromise;
+}
+
+/**
+ * Attempt a silent re-auth on a cold page load: the in-memory access token is gone but the refresh
+ * cookie may still be valid. Returns the new token, or null for a genuine guest. Never throws.
+ */
+export async function silentRefresh(tokenSvc: TokenService): Promise<string | null> {
+  try {
+    return await performRefresh(tokenSvc);
+  } catch {
+    tokenSvc.clearAll();
+    return null;
+  }
+}
+
+async function getValidAuthToken(tokenSvc: TokenService): Promise<string | null> {
+  const authToken = tokenSvc.getAuthToken();
+  // No in-memory token → treat as guest. Startup already ran silentRefresh, so we don't re-probe the
+  // refresh endpoint on every guest request.
+  if (!authToken) return null;
+
+  // Still valid → use it. Expired → swap it for a fresh one via the refresh cookie.
+  return isTokenExpired(authToken) ? performRefresh(tokenSvc) : authToken;
+}
+
+function handleRefreshFailure(
+  err: unknown,
+  tokenSvc: TokenService,
+  router: Router,
+  observer: Observer<unknown, unknown>,
+): void {
+  tokenSvc.clearAll();
+  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
+  observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
+}
+
+function isTokenExpired(token: string | null | undefined, leewaySeconds = 30): boolean {
+  if (!token) return true;
+
+  const payload = parseJwt(token);
+  if (!payload?.exp) return true;
+
+  const now = Math.floor(Date.now() / 1000);
+  return payload.exp < now + leewaySeconds;
+}
+
+function parseJwt(token: string): JwtPayload | null {
+  try {
+    const [, payload = ''] = token.split('.');
+    // JWT payloads are base64url-encoded and unpadded; atob only accepts
+    // standard base64, so convert the alphabet and restore padding first.
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    return JSON.parse(atob(padded)) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Public TRPC link                                                   */
+/* ------------------------------------------------------------------ */
+
+export function refreshLink(tokenSvc: TokenService, router: Router): TRPCLink<TRPCRouter> {
+  return () => {
+    return ({ op, next }: { op: Operation; next: NextLink }) =>
+      observable<unknown, unknown>((observer) => {
+        void (async () => {
+          try {
+            const authToken = await getValidAuthToken(tokenSvc);
+
+            // Guest user — just forward.
+            if (!authToken) {
+              forwardOp(op, next, observer);
+              return;
+            }
+
+            // Authenticated user — forward with (possibly refreshed) token.
+            forwardOp(op, next, observer);
+          } catch (err) {
+            handleRefreshFailure(err, tokenSvc, router, observer);
+          }
+        })();
+
+        // No teardown logic needed.
+        return;
+      });
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* Dedicated client for token refreshes only                          */
+/* ------------------------------------------------------------------ */
+const trpcRetryClient = createTRPCClient<TRPCRouter>({
+  links: [
+    httpLink({
+      url: environment.apiUrl,
+      transformer: superjson,
+      // Send the HttpOnly refresh cookie with the renew call.
+      fetch: (input, init) => globalThis.fetch(input, { ...init, credentials: 'include' }),
+    }),
+  ],
+});
+```
+
 ## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-row.ts
 
 ```typescript
@@ -44639,101 +45150,6 @@ export class DataGridRowComponent {
   toId = input<(row: GridRow) => string>((r) => String(r?.['id'] ?? ''));
   onRowCheckboxChange = input<(row: GridRow, checked: boolean) => void>((_r, _c) => undefined);
   onMouseOverRow = input<(row: GridRow) => void>((_r) => undefined);
-}
-```
-
-## File: apps/frontend/src/app/shared/components/datagrid/ui/datagrid-toolbar.ts
-
-```typescript
-import { Component, computed, inject } from '@angular/core';
-import { DataGrid } from '../datagrid';
-import { DataGridColumnsDropdownComponent } from './datagrid-columns-dropdown';
-import { DataGridFilterDropdownComponent } from './datagrid-filter-dropdown';
-import { DataGridFilterSectionComponent } from './datagrid-filter-section';
-import { GridActionComponent } from '../tool-button';
-import { Icon } from '@icons/icon';
-import { MultiselectFilterComponent } from './multiselect-filter';
-import { SingleselectFilterComponent, SingleSelectOption } from './singleselect-filter';
-
-@Component({
-  selector: 'pc-dg-toolbar',
-  imports: [
-    GridActionComponent,
-    Icon,
-    MultiselectFilterComponent,
-    SingleselectFilterComponent,
-    DataGridColumnsDropdownComponent,
-    DataGridFilterDropdownComponent,
-    DataGridFilterSectionComponent,
-  ],
-  templateUrl: 'datagrid-toolbar.html',
-})
-export class DataGridToolbarComponent {
-  public readonly grid = inject(DataGrid);
-
-  readonly listOptions = computed<SingleSelectOption[]>(() =>
-    this.grid.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
-  );
-
-  public onAdd() {
-    this.grid.doAdd();
-  }
-
-  public onClone() {
-    this.grid.doClone();
-  }
-
-  public onMergeSelected() {
-    this.grid.doConfirmMerge();
-  }
-
-  public onDeleteSelected() {
-    this.grid.doConfirmDelete();
-  }
-
-  public onExportCsv() {
-    this.grid.doConfirmExport();
-  }
-
-  public onImportCsv() {
-    this.grid.doImportCSV();
-  }
-
-  public onRedo() {
-    this.grid.redo();
-  }
-
-  public onRefresh() {
-    void this.grid.doRefresh();
-  }
-
-  public onToggleArchive() {
-    this.grid.toggleArchiveModePublic();
-  }
-
-  public onToggleFilters() {
-    this.grid.filter();
-  }
-
-  public onUndo() {
-    this.grid.undo();
-  }
-
-  public onResetAllWidths() {
-    this.grid.resetAllWidthsPublic();
-  }
-
-  public onHideAllCols() {
-    this.grid.hideAllColsPublic();
-  }
-
-  public onShowAllCols() {
-    this.grid.showAllColsPublic();
-  }
-
-  public onToggleCol(colId: string, visible: boolean) {
-    this.grid.toggleColPublic(colId, visible);
-  }
 }
 ```
 
@@ -44795,68 +45211,233 @@ export interface GridHost {
 }
 ```
 
-## File: apps/frontend/src/app/app.config.ts
+## File: apps/frontend/src/app/auth/auth-service.ts
 
 ```typescript
-import type { ApplicationConfig } from '@angular/core';
-import { ErrorHandler, inject, provideAppInitializer, provideZonelessChangeDetection } from '@angular/core';
-import { provideTanStackQuery, QueryClient } from '@tanstack/angular-query-experimental';
-import { ENVIRONMENT } from './environment-token';
-import { RouteReuseStrategy, TitleStrategy, provideRouter, withComponentInputBinding } from '@angular/router';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
-import { Loader } from '@googlemaps/js-api-loader';
-import { environment } from '../environments/environment';
+import { signal, Service } from '@angular/core';
+import { IAuthUser, signInInputType, signUpInputType } from '../../../../../libs/common/src';
+import { TRPCService } from '../services/api/trpc-service';
+import { silentRefresh } from '../services/api/trpc-refreshlink';
+import { TRPCError } from '@trpc/server';
+import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 
-import { appRoutes } from './app.routes';
-import { AppTitleStrategy } from './services/tab-title.service';
-import { CustomRouteReuseStrategy } from './routing/route-reuse-strategy';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { jsendInterceptor } from './services/jsend.interceptor';
-import { GlobalErrorHandler } from './services/global-error-handler';
+@Service()
+export class AuthService extends TRPCService<'authusers'> {
+  private user = signal<IAuthUser | null>(null);
 
-export function initSession(authService: AuthService) {
-  return async () => {
-    await authService.init();
-  };
+  public async getCurrentUser() {
+    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+    if (user) this.user.set(user);
+    return user;
+  }
+
+  public getUser(): IAuthUser | null {
+    return this.user();
+  }
+
+  public getUserSignal() {
+    return this.user;
+  }
+
+  public async init() {
+    // Cold load: the in-memory access token is gone. Re-mint one from the HttpOnly refresh cookie
+    // before asking who the user is, so a page reload doesn't look like a sign-out (SECURITY-REVIEW 2.1).
+    await silentRefresh(this.tokenService);
+    return this.getCurrentUser();
+  }
+
+  public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+    const dataBase64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // Strip the data URL prefix (e.g. "data:image/jpeg;base64,")
+        resolve(result.split(',')[1]!);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = (await this.api.auth.uploadAvatar.mutate({
+      dataBase64,
+      mimeType: file.type as any,
+      filename: file.name,
+    })) as { avatar_url: string };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: res.avatar_url,
+      });
+    }
+
+    return res;
+  }
+
+  public async deleteAvatar(): Promise<{ success: boolean }> {
+    const res = (await this.api.auth.deleteAvatar.mutate()) as { success: boolean };
+
+    const current = this.user();
+    if (current) {
+      this.user.set({
+        ...current,
+        avatar_url: null,
+      });
+    }
+
+    return res;
+  }
+
+  public async cancelEmailChange() {
+    const response = await this.api.auth.cancelEmailChange.mutate();
+    await this.getCurrentUser();
+    return response;
+  }
+
+  public resetPassword(input: { code: string; password: string }) {
+    // The new-password page owns the error UX for this call.
+    return (this.api.auth.resetPassword.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public sendPasswordResetEmail(input: { email: string }) {
+    // The reset-password page owns the error UX for this call.
+    return (this.api.auth.sendPasswordResetEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+  }
+
+  public async signIn(
+    input: signInInputType & { rememberMe?: boolean },
+  ): Promise<{ requires2FA: boolean; email?: string; user?: IAuthUser | null }> {
+    const response = await (this.api.auth.signIn.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+
+    if (response && 'requires2FA' in response && response.requires2FA) {
+      return { requires2FA: true, email: response.email };
+    }
+
+    const user = await this.updateTokensAndGetCurrentUser(response);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { requires2FA: false, user };
+  }
+
+  public async verify2FA(input: { email: string; code: string; rememberMe?: boolean }) {
+    const token = await (this.api.auth.verify2FA.mutate as unknown as (input: any, opts: any) => Promise<any>)(input, {
+      context: { skipErrorHandler: true },
+    });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if ((user as IAuthUser | null)?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if ((user as IAuthUser | null)?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return user;
+  }
+
+  public async signOut() {
+    let apiReturn = null;
+    try {
+      apiReturn = await this.api.auth.signOut.mutate();
+    } catch (error) {
+      console.error('Error during sign out:', error);
+    }
+
+    this.user.set(null);
+    this.tokenService.clearAll();
+    void this.router.navigate(['/signin']);
+
+    return apiReturn;
+  }
+
+  public async signUp(input: signUpInputType) {
+    const token = await this.api.auth.signUp.mutate(input);
+    return this.updateTokensAndGetCurrentUser(token);
+  }
+
+  public verifyEmail(input: { code: string }): Promise<{ success: boolean }> {
+    return this.api.auth.verifyEmail.mutate(input) as Promise<{ success: boolean }>;
+  }
+
+  public resendVerificationEmail(email: string): Promise<{ success: boolean }> {
+    // Callers toast their own success/failure (and handle rate-limit countdowns).
+    return (this.api.auth.resendVerificationEmail.mutate as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ success: boolean }>;
+  }
+
+  public checkEmail(email: string): Promise<{ hasPasskeys: boolean }> {
+    // The sign-in page silently falls back to the password step if this fails —
+    // a global error toast here would be noise.
+    return (this.api.auth.checkEmail.query as unknown as (input: any, opts: any) => Promise<any>)(
+      { email },
+      { context: { skipErrorHandler: true } },
+    ) as Promise<{ hasPasskeys: boolean }>;
+  }
+
+  public async signInWithPasskey(rememberMe?: boolean): Promise<{ user: IAuthUser | null; cancelled: boolean }> {
+    const { options, nonce } = (await this.api.auth.passkeyAuthenticationOptions.query()) as any;
+    let response: any;
+    try {
+      response = await startAuthentication({ optionsJSON: options });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'NotAllowedError') return { user: null, cancelled: true };
+      throw err;
+    }
+    const token = await (
+      this.api.auth.verifyPasskeyAuthentication.mutate as unknown as (input: any, opts: any) => Promise<any>
+    )({ response, nonce, rememberMe }, { context: { skipErrorHandler: true } });
+    const user = await this.updateTokensAndGetCurrentUser(token);
+    if (user?.tenant_deletion_scheduled_at) {
+      void this.router.navigate(['/cancel-deletion']);
+    } else if (user?.tenant_paused_at) {
+      void this.router.navigate(['/resume-account']);
+    }
+    return { user, cancelled: false };
+  }
+
+  public async registerPasskey(friendlyName?: string): Promise<{ verified: boolean }> {
+    const options = await this.api.auth.passkeyRegistrationOptions.query();
+    const response = await startRegistration({ optionsJSON: options as any });
+    return (await this.api.auth.verifyPasskeyRegistration.mutate({ response: response as any, friendlyName })) as {
+      verified: boolean;
+    };
+  }
+
+  public listPasskeys() {
+    return this.api.auth.listPasskeys.query();
+  }
+
+  public deletePasskey(id: string) {
+    return this.api.auth.deletePasskey.mutate({ id });
+  }
+
+  public dismissPasskeyPrompt() {
+    return this.api.auth.dismissPasskeyPrompt.mutate();
+  }
+
+  public updatePasskeyName(id: string, friendlyName: string) {
+    return this.api.auth.updatePasskeyName.mutate({ id, friendlyName });
+  }
+
+  private async updateTokensAndGetCurrentUser(token: { auth_token?: string | null } | TRPCError) {
+    if (!token || token instanceof TRPCError) {
+      throw token;
+    }
+    // Only the access token comes back in the body now; the refresh token is set as an HttpOnly
+    // cookie by the server (SECURITY-REVIEW 2.1).
+    this.tokenService.set(token);
+    return this.getCurrentUser();
+  }
 }
-
-export const appConfig: ApplicationConfig = {
-  providers: [
-    { provide: ENVIRONMENT, useValue: environment },
-    provideTanStackQuery(new QueryClient()),
-    {
-      provide: Loader,
-      useFactory: () => {
-        const env = inject(ENVIRONMENT);
-        return new Loader({
-          apiKey: env.googleMapsApiKey,
-          libraries: ['places'],
-        });
-      },
-    },
-
-    {
-      provide: RouteReuseStrategy,
-      useClass: CustomRouteReuseStrategy,
-    },
-    {
-      provide: TitleStrategy,
-      useClass: AppTitleStrategy,
-    },
-    provideRouter(appRoutes, withComponentInputBinding()),
-
-    provideZonelessChangeDetection(),
-
-    provideAppInitializer(() => {
-      const initializerFn = initSession(inject(AuthService));
-      return initializerFn();
-    }),
-
-    provideHttpClient(withInterceptors([jsendInterceptor])),
-
-    { provide: ErrorHandler, useClass: GlobalErrorHandler },
-  ],
-};
 ```
 
 ## File: apps/frontend/src/app/experiences/duplicates/base-duplicates-manager.ts
@@ -45652,707 +46233,6 @@ export class EmailList {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/events/ui/event-form.html
-
-```html
-<div class="p-6 max-w-5xl space-y-6">
-  @if (error() && !detail() && !isNew()) {
-  <div class="alert alert-error m-4">
-    <span>{{ error() }}</span>
-  </div>
-  } @else if (!isNew() && !detail()) {
-  <div class="flex flex-col items-center justify-center py-20">
-    <span class="loading loading-spinner loading-lg text-primary"></span>
-    <p class="text-base-content/60 mt-4">Loading event details...</p>
-  </div>
-  } @else {
-  <div class="space-y-6">
-    <pc-detail-header
-      [title]="isNew() ? 'New event' : detail()?.name || 'Event'"
-      [eyebrow]="isNew() ? 'New' : 'Editing'"
-      [crumbs]="crumbs()"
-      [subtitle]="isNew() ? 'Create a public event page for RSVPs and ticketing.' : 'Manage event settings and ticket types.'"
-      [form]="form"
-      [isLoading]="saving()"
-      [disabled]="slugChecking() || slugUnique() === false"
-      buttonsToShow="two"
-      [btn1Text]="isNew() ? 'Create event' : 'Save event'"
-      [showDelete]="!isNew()"
-      [dirtyFieldCount]="unsavedChanges.dirtyCount()"
-      deleteText="Delete event"
-      (save)="save($event)"
-      (delete)="deleteEvent()"
-    ></pc-detail-header>
-
-    @if (error()) {
-    <div class="alert alert-error shadow-sm py-3 text-sm">
-      <pc-icon name="exclamation-circle" [size]="5"></pc-icon>
-      <span>{{ error() }}</span>
-    </div>
-    }
-
-    <form (submit)="save($event)" class="grid grid-cols-1 md:grid-cols-3 gap-6" novalidate>
-      <!-- Left 2 cols: Main details -->
-      <div class="md:col-span-2 space-y-6">
-        <pc-card title="Event Details">
-          <pc-input
-            id="event-name"
-            label="Event Name *"
-            [formField]="form.name"
-            placeholder="E.g., Annual Fundraising Dinner"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="event-slug"
-              label="URL Slug *"
-              [formField]="form.slug"
-              placeholder="e.g. annual-fundraising-dinner"
-              [hasError]="slugUnique() === false"
-              (input)="onSlugInput()"
-            >
-              <span pc-prefix class="text-xs text-base-content/50 font-mono">/events/</span>
-            </pc-input>
-            @if (slugChecking()) {
-            <p class="text-xs text-base-content/50 mt-0.5 flex items-center gap-1 pl-1">
-              <span class="loading loading-spinner loading-xs"></span> Checking slug availability...
-            </p>
-            } @else if (slugUnique() === true) {
-            <p class="text-xs text-success mt-0.5 pl-1">✓ This slug is available!</p>
-            } @else if (slugUnique() === false) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ This slug is already in use. Please choose a different one.</p>
-            }
-          </div>
-
-          <pc-textarea
-            id="event-desc"
-            label="Description"
-            [formField]="form.description"
-            placeholder="Describe the event, agenda, and what attendees can expect..."
-            [rows]="4"
-          ></pc-textarea>
-
-          <pc-input
-            id="event-location"
-            label="Location Address"
-            [formField]="form.location_address"
-            placeholder="E.g., 123 Main St, City Hall Ballroom"
-          ></pc-input>
-
-          <div class="divider mt-4"></div>
-          <div>
-            <h4 class="font-bold text-md">Collected Fields</h4>
-            <h5>Choose which fields appear on the public RSVP form.</h5>
-            <pc-fields-selector
-              [selectedFields]="selectedFields()"
-              (fieldsChange)="selectedFields.set($event)"
-            ></pc-fields-selector>
-          </div>
-
-          <div class="divider"></div>
-
-          <h4 class="font-bold text-sm text-base-content flex items-center gap-2">
-            <pc-icon name="user-circle" class="text-primary" [size]="5"></pc-icon>
-            Organizer Contact
-          </h4>
-          <p class="text-xs text-base-content/60">Contact info for attendees who have questions about this event.</p>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <pc-input
-              id="contact-email"
-              label="Contact Email"
-              type="email"
-              [formField]="form.contact_email"
-              placeholder="organizer@example.com"
-            ></pc-input>
-            <pc-input
-              id="contact-phone"
-              label="Contact Phone"
-              [formField]="form.contact_phone"
-              placeholder="E.g., 555-0199"
-            ></pc-input>
-          </div>
-        </pc-card>
-
-        <!-- Ticket Types (only for existing events) -->
-        @if (!isNew()) {
-        <pc-card
-          title="Ticket Types"
-          subtitle="Define ticket tiers for this event. Leave empty for a free, unticketed RSVP."
-          icon="tag"
-        >
-          <button
-            pc-card-actions
-            type="button"
-            class="btn btn-xs btn-primary gap-1"
-            (click)="startAddTicket()"
-            [disabled]="addingTicket()"
-          >
-            <pc-icon name="plus" [size]="3"></pc-icon> Add Ticket Type
-          </button>
-
-          @if (ticketTypes().length === 0 && !addingTicket()) {
-          <p class="text-sm text-base-content/40 italic">
-            No ticket types defined — this event uses a simple free RSVP.
-          </p>
-          } @else {
-          <div class="overflow-x-auto border border-base-300 rounded-lg">
-            <table class="table table-sm w-full text-xs">
-              <thead>
-                <tr class="bg-base-200 text-base-content/70">
-                  <th>Name</th>
-                  <th>Price</th>
-                  <th>Capacity</th>
-                  <th class="w-16 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-base-200">
-                @for (ticket of ticketTypes(); track ticket.id) {
-                <tr class="hover:bg-base-200/40">
-                  <td>
-                    <div class="font-semibold">{{ ticket.name }}</div>
-                    @if (ticket.description) {
-                    <div class="text-[10px] text-base-content/50 mt-0.5">{{ ticket.description }}</div>
-                    }
-                  </td>
-                  <td class="font-mono">{{ formatPrice(ticket.price_cents) }}</td>
-                  <td>{{ ticket.capacity ?? 'Unlimited' }}</td>
-                  <td>
-                    <button type="button" class="btn btn-ghost btn-xs text-error" (click)="deleteTicketType(ticket.id)">
-                      <pc-icon name="trash" [size]="4"></pc-icon>
-                    </button>
-                  </td>
-                </tr>
-                } @if (addingTicket()) {
-                <tr class="bg-base-200/30">
-                  <td>
-                    <input
-                      type="text"
-                      class="input input-bordered input-xs w-full"
-                      placeholder="Ticket name *"
-                      [ngModel]="newTicket().name"
-                      (ngModelChange)="setNewTicketName($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="0"
-                      min="0"
-                      step="1"
-                      title="Price in cents (e.g. 2500 = $25.00)"
-                      [ngModel]="newTicket().price_cents"
-                      (ngModelChange)="setNewTicketPrice($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                    <span class="text-[10px] text-base-content/40 ml-1">cents</span>
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      class="input input-bordered input-xs w-20 font-mono"
-                      placeholder="∞"
-                      min="1"
-                      [ngModel]="newTicket().capacity"
-                      (ngModelChange)="setNewTicketCapacity($event)"
-                      [ngModelOptions]="{standalone: true}"
-                    />
-                  </td>
-                  <td>
-                    <div class="flex items-center gap-1">
-                      <button type="button" class="btn btn-ghost btn-xs text-success" (click)="saveNewTicket()">
-                        <pc-icon name="check-circle" [size]="4"></pc-icon>
-                      </button>
-                      <button type="button" class="btn btn-ghost btn-xs text-error" (click)="cancelAddTicket()">
-                        <pc-icon name="x-mark" [size]="4"></pc-icon>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-          }
-        </pc-card>
-        }
-      </div>
-
-      <!-- Right col: Scheduling, toggles -->
-      <div class="space-y-6">
-        <pc-card title="Scheduling">
-          <pc-input
-            id="start-time"
-            label="Start Date & Time *"
-            type="datetime-local"
-            [formField]="form.start_time"
-          ></pc-input>
-
-          <div>
-            <pc-input
-              id="end-time"
-              label="End Date & Time *"
-              type="datetime-local"
-              [formField]="form.end_time"
-              [hasError]="endBeforeStartError()"
-            ></pc-input>
-            @if (endBeforeStartError()) {
-            <p class="text-xs text-error mt-0.5 pl-1">✗ End date & time must be after the start date & time.</p>
-            }
-          </div>
-
-          <pc-input
-            id="capacity"
-            label="Total Capacity"
-            type="number"
-            [formField]="form.capacity"
-            placeholder="Unlimited"
-          ></pc-input>
-        </pc-card>
-
-        <pc-card title="Publishing & Notifications">
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Published</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  When enabled, this event page is visible to the public.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.is_published" />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send Registration Confirmation</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send a confirmation email when someone RSVPs for this event.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1 shrink-0"
-                [formField]="form.send_registration_confirmation"
-              />
-            </label>
-          </div>
-
-          <div class="divider"></div>
-
-          <div class="form-control">
-            <label class="label cursor-pointer flex justify-between items-start gap-4 whitespace-normal">
-              <div class="flex-1 min-w-0">
-                <span class="label-text font-bold text-sm whitespace-normal">Send 24h Reminder</span>
-                <p class="text-[11px] text-base-content/60 font-normal mt-0.5 whitespace-normal break-words">
-                  Send automated reminder emails to registered attendees 24 hours before the event.
-                </p>
-              </div>
-              <input type="checkbox" class="toggle toggle-primary mt-1 shrink-0" [formField]="form.send_reminder" />
-            </label>
-          </div>
-        </pc-card>
-
-        @if (!isNew()) {
-        <pc-entity-overview
-          title="Event Overview"
-          [createdAt]="detail()?.created_at"
-          createdBy="Representative"
-        ></pc-entity-overview>
-        }
-      </div>
-
-      <!-- Right col: Fields & Public Link -->
-
-      @if (!isNew() && publicUrl()) {
-      <pc-public-link-panel
-        [url]="publicUrl()"
-        label="Public RSVP Link"
-        subtitle="Share this link so people can RSVP for the event."
-      ></pc-public-link-panel>
-      }
-    </form>
-  </div>
-  }
-</div>
-```
-
-## File: apps/frontend/src/app/experiences/events/ui/event-form.ts
-
-```typescript
-import { Component, computed, effect, inject, input, signal, untracked, OnInit } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { FormField, form, validateStandardSchema } from '@angular/forms/signals';
-import { Router, RouterModule } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { Card as PcCard } from '@uxcommon/components/card/card';
-import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-header/detail-header';
-import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
-import { Input as PcInput } from '@uxcommon/components/input/input';
-import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
-import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-import { environment } from '../../../../environments/environment';
-
-import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
-import { EventsService } from '../../../services/api/events-service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { EventsFrontendService } from '../services/events-frontend-service';
-import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
-
-@Component({
-  selector: 'pc-event-form',
-  imports: [
-    FormsModule,
-    FormField,
-    PcInput,
-    PcTextarea,
-    RouterModule,
-    Icon,
-    PcDetailHeader,
-    PcEntityOverview,
-    PcCard,
-    FieldsSelector,
-    PublicLinkPanel,
-  ],
-  templateUrl: './event-form.html',
-  providers: [EventsService],
-})
-export class EventFormComponent implements OnInit {
-  private readonly _loading = createLoadingGate();
-  private readonly alerts = inject(AlertService);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly eventsFrontendSvc = inject(EventsFrontendService);
-  private readonly eventsSvc = inject(EventsService);
-  private readonly router = inject(Router);
-
-  private slugTimeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  protected readonly addingTicket = signal(false);
-  protected readonly selectedFields = signal<string[]>(['first_name', 'last_name', 'email', 'mobile', 'notes']);
-  protected readonly publicUrl = computed(() => {
-    const slug = this.payload().slug;
-    if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
-  });
-  protected readonly detail = signal<any>(null);
-
-  protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
-    const events: PcBreadcrumb = { label: 'Events', route: '/events/pages' };
-    const id = this.id();
-    if (id) {
-      return [events, { label: this.detail()?.name || 'Event', route: ['/events/pages', id] }, { label: 'Edit' }];
-    }
-    return [events, { label: 'New event' }];
-  });
-
-  protected readonly payload = signal({
-    name: '',
-    slug: '',
-    description: '',
-    location_address: '',
-    start_time: '',
-    end_time: '',
-    capacity: null as number | null,
-    contact_email: '',
-    contact_phone: '',
-    is_published: false,
-    send_reminder: true,
-    send_registration_confirmation: true,
-  });
-  protected readonly endBeforeStartError = computed(() => {
-    const { start_time, end_time } = this.payload();
-    if (!start_time || !end_time) return false;
-    return new Date(end_time) <= new Date(start_time);
-  });
-  protected readonly error = signal<string | null>(null);
-  protected readonly form = form(this.payload, (p) => {
-    validateStandardSchema(p, AddEventObj);
-  });
-  protected readonly unsavedChanges = injectUnsavedChanges(this.form, this.payload);
-  protected readonly isNew = computed(() => !this.id());
-  protected readonly loading = this._loading.visible;
-  protected readonly newTicket = signal({ name: '', description: '', price_cents: 0, capacity: null as number | null });
-  protected readonly saving = signal(false);
-  protected readonly slugChecking = signal(false);
-  protected readonly slugUnique = signal<boolean | null>(null);
-
-  // Ticket types
-  protected readonly ticketTypes = signal<any[]>([]);
-
-  protected slugManuallyEdited = false;
-
-  protected setNewTicketName(v: string) {
-    this.newTicket.update((t) => ({ ...t, name: v }));
-  }
-  protected setNewTicketPrice(v: string) {
-    this.newTicket.update((t) => ({ ...t, price_cents: +v }));
-  }
-  protected setNewTicketCapacity(v: string) {
-    this.newTicket.update((t) => ({ ...t, capacity: v ? +v : null }));
-  }
-
-  public readonly id = input<string>();
-
-  constructor() {
-    const nameSignal = computed(() => this.payload().name);
-    effect(() => {
-      const name = nameSignal();
-      if (this.isNew() && !this.slugManuallyEdited) {
-        const suggested = this.slugify(name);
-        if (untracked(this.payload).slug !== suggested) {
-          this.payload.update((p) => ({ ...p, slug: suggested }));
-        }
-      }
-    });
-
-    const slugSignal = computed(() => this.payload().slug);
-    effect(() => {
-      const slug = slugSignal();
-      if (this.slugTimeoutId) {
-        clearTimeout(this.slugTimeoutId);
-        this.slugTimeoutId = null;
-      }
-      if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
-        this.slugUnique.set(null);
-        this.slugChecking.set(false);
-        return;
-      }
-      this.slugChecking.set(true);
-      this.slugTimeoutId = setTimeout(() => {
-        void (async () => {
-          try {
-            const res = await this.eventsFrontendSvc.checkSlugUnique(slug, this.isNew() ? null : (this.id() ?? null));
-            if (untracked(slugSignal) === slug) {
-              this.slugUnique.set(res.unique);
-            }
-          } catch (err) {
-            console.error('Failed to check slug uniqueness', err);
-          } finally {
-            if (untracked(slugSignal) === slug) {
-              this.slugChecking.set(false);
-            }
-          }
-        })();
-      }, 300);
-    });
-  }
-
-  public ngOnInit(): void {
-    const end = this._loading.begin();
-    void this.loadEvent().finally(() => end());
-  }
-
-  protected cancelAddTicket() {
-    this.addingTicket.set(false);
-  }
-
-  protected async deleteEvent() {
-    if (!this.id()) return;
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Event Page',
-      message: 'Are you sure you want to delete this event page? All registrations will also be deleted.',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-
-    this.saving.set(true);
-    try {
-      await this.eventsFrontendSvc.delete(this.id()!);
-      this.eventsFrontendSvc.triggerRefresh();
-      this.alerts.showSuccess('Event deleted');
-      await this.router.navigate(['/events/pages']);
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete event');
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async deleteTicketType(id: string) {
-    const confirmed = await this.dialogs.confirm({
-      title: 'Delete Ticket Type',
-      message: 'Delete this ticket type?',
-      variant: 'danger',
-      confirmText: 'Delete',
-    });
-    if (!confirmed) return;
-    try {
-      await this.eventsSvc.deleteTicketType(id);
-      this.alerts.showSuccess('Ticket type deleted');
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to delete ticket type');
-    }
-  }
-
-  protected formatPrice(cents: number): string {
-    if (!cents) return 'Free';
-    return `$${(cents / 100).toFixed(2)}`;
-  }
-
-  protected async loadEvent() {
-    if (this.isNew()) return;
-
-    try {
-      const event = (await this.eventsFrontendSvc.getById(this.id()!)) as any;
-      this.detail.set(event);
-      this.payload.set({
-        name: event.name ?? '',
-        slug: event.slug ?? '',
-        description: event.description ?? '',
-        location_address: event.location_address ?? '',
-        start_time: this.toDatetimeLocalString(event.start_time),
-        end_time: this.toDatetimeLocalString(event.end_time),
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? '',
-        contact_phone: event.contact_phone ?? '',
-        is_published: !!event.is_published,
-        send_reminder: event.send_reminder !== false,
-        send_registration_confirmation: event.send_registration_confirmation !== false,
-      });
-      if (Array.isArray(event.fields) && event.fields.length > 0) {
-        this.selectedFields.set(event.fields);
-      }
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to load event');
-      this.alerts.showError(this.error()!);
-    }
-  }
-
-  protected async loadTicketTypes() {
-    if (!this.id()) return;
-    try {
-      const types = await this.eventsSvc.getTicketTypes(this.id()!);
-      this.ticketTypes.set(types || []);
-    } catch (err) {
-      console.error('Failed to load ticket types', err);
-    }
-  }
-
-  protected onSlugInput() {
-    this.slugManuallyEdited = true;
-  }
-
-  public canDeactivate(): Promise<boolean> {
-    return this.unsavedChanges.confirmDiscardIfDirty(this.detail()?.name || 'this event');
-  }
-
-  protected async save(done?: (() => void) | Event) {
-    if (done instanceof Event) done.preventDefault();
-    this.form().markAsTouched();
-    if (this.form().invalid()) return;
-
-    if (this.endBeforeStartError()) {
-      this.alerts.showError('The event cannot end before it starts, please check the dates and times again.');
-      return;
-    }
-
-    if (this.slugUnique() === false) {
-      this.alerts.showError('This URL slug is already in use. Please choose a different one.');
-      return;
-    }
-
-    this.saving.set(true);
-    this.error.set(null);
-
-    const raw = this.payload();
-    const data = {
-      name: raw.name.trim(),
-      slug: raw.slug.trim(),
-      description: raw.description?.trim() || null,
-      location_address: raw.location_address?.trim() || null,
-      start_time: new Date(raw.start_time),
-      end_time: new Date(raw.end_time),
-      capacity: raw.capacity ? Number(raw.capacity) : null,
-      contact_email: raw.contact_email?.trim() || null,
-      contact_phone: raw.contact_phone?.trim() || null,
-      is_published: !!raw.is_published,
-      send_reminder: !!raw.send_reminder,
-      send_registration_confirmation: !!raw.send_registration_confirmation,
-      fields: this.selectedFields(),
-    };
-
-    try {
-      if (this.isNew()) {
-        const res = await this.eventsFrontendSvc.add(data as AddEventType);
-        this.eventsFrontendSvc.triggerRefresh();
-        this.alerts.showSuccess('Event created successfully');
-        await this.router.navigate(['/events/pages', (res as any).id]);
-      } else {
-        await this.eventsFrontendSvc.update(this.id()!, data as UpdateEventType);
-        this.eventsFrontendSvc.triggerRefresh();
-        this.alerts.showSuccess('Event updated successfully');
-        if (typeof done === 'function') {
-          done();
-        } else {
-          await this.router.navigate(['/events/pages', this.id()]);
-        }
-      }
-    } catch (err) {
-      this.error.set(err instanceof Error && err.message ? err.message : 'Failed to save event');
-      this.alerts.showError(this.error()!);
-    } finally {
-      this.saving.set(false);
-    }
-  }
-
-  protected async saveNewTicket() {
-    const t = this.newTicket();
-    if (!t.name.trim()) {
-      this.alerts.showError('Ticket type name is required');
-      return;
-    }
-    try {
-      await this.eventsSvc.addTicketType({
-        event_id: this.id()!,
-        name: t.name.trim(),
-        description: t.description?.trim() || null,
-        price_cents: Number(t.price_cents) || 0,
-        capacity: t.capacity ? Number(t.capacity) : null,
-      });
-      this.addingTicket.set(false);
-      this.alerts.showSuccess('Ticket type added');
-      await this.loadTicketTypes();
-    } catch (err) {
-      this.alerts.showError(err instanceof Error && err.message ? err.message : 'Failed to add ticket type');
-    }
-  }
-
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
-  }
-
-  // Ticket type management
-  protected startAddTicket() {
-    this.newTicket.set({ name: '', description: '', price_cents: 0, capacity: null });
-    this.addingTicket.set(true);
-  }
-
-  protected toDatetimeLocalString(val: any): string {
-    if (!val) return '';
-    const date = new Date(val);
-    if (Number.isNaN(date.getTime())) return '';
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/events/ui/event-view.html
 
 ```html
@@ -46882,6 +46762,553 @@ export class EventFormComponent implements OnInit {
   </div>
   }
 </pc-detail-layout>
+```
+
+## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
+
+```typescript
+import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
+import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
+import { Icon } from '@icons/icon';
+import { PcIconNameType } from '@icons/icons.index';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
+
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+
+import {
+  DATA_GRID_CONFIG,
+  DEFAULT_DATA_GRID_CONFIG,
+  provideDataGridConfig,
+} from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { ConfirmDialogService } from '../../../services/shared-dialog.service';
+import { DATA_TYPE, PersonsService } from '../services/persons-service';
+
+@Component({
+  selector: 'pc-persons-grid',
+  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  templateUrl: './persons-grid.html',
+  providers: [
+    { provide: AbstractAPIService, useExisting: PersonsService },
+    provideDataGridConfig({
+      messages: {
+        exportEntity: 'persons',
+        exportFileName: 'persons-export.csv',
+        entityNoun: 'person',
+        entityNounPlural: 'people',
+      },
+    }),
+  ],
+})
+export class PersonsGrid implements OnInit {
+  private readonly utils = inject(DataGridUtilsService);
+  private readonly tagOptionsSvc = inject(TagOptionsService);
+  private readonly router = inject(Router);
+  private readonly dialogs = inject(ConfirmDialogService);
+  private readonly alertSvc = inject(AlertService);
+  public readonly _loading = createLoadingGate();
+  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
+  private readonly personsService = inject(PersonsService);
+
+  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
+
+  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
+
+  public inline = input<boolean>(false);
+
+  private addressChangeModalId: string | null = null;
+  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
+  private tagOptionValues: string[] = [];
+  private issueOptionValues: string[] = [];
+
+  protected readonly mappableFields = [
+    'first_name',
+    'middle_names',
+    'last_name',
+    'email',
+    'email2',
+    'mobile',
+    'home_phone',
+    'street_num',
+    'street1',
+    'street2',
+    'apt',
+    'city',
+    'state',
+    'zip',
+    'country',
+    'notes',
+  ];
+
+  protected col: ColDef[] = [
+    {
+      // Combined identity column: the door that opens the record. Non-editable and
+      // non-hidable; first/last name remain separately editable to its right.
+      field: 'name',
+      headerName: 'Name',
+      editable: false,
+      doorColumn: true,
+      noHide: true,
+      minWidth: 160,
+      valueGetter: (params: CellParams) => {
+        const data = params?.data as Record<string, unknown> | undefined;
+        if (!data) return '';
+        return [data['first_name'], data['last_name']]
+          .filter((p) => typeof p === 'string' && p.trim().length)
+          .join(' ')
+          .trim();
+      },
+    },
+    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
+    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
+    { field: 'email', headerName: 'Email', editable: true },
+    { field: 'mobile', headerName: 'Mobile', editable: true },
+    { field: 'company_name', headerName: 'Company', editable: false },
+    {
+      field: 'home_phone',
+      headerName: 'Home phone',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'tags',
+      hide: true,
+      headerName: 'Tags',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'tag',
+      },
+      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'issues',
+      hide: true,
+      headerName: 'Issues',
+      editable: true,
+      tagColumn: true,
+      cellDataType: 'object',
+      cellRendererParams: {
+        type: 'persons',
+        obj: UpdatePersonsObj,
+        service: this.personsService,
+        tagType: 'issue',
+      },
+      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
+      equals: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
+        0,
+      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
+      comparator: (tagsA: unknown, tagsB: unknown) =>
+        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
+    },
+    {
+      field: 'address',
+      headerName: 'Address',
+      editable: false,
+      onCellClicked: this.onAddressCellClicked.bind(this),
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+      isCellInteractive: (row: any) => !row.household_is_placeholder,
+      valueGetter: (params: any) => {
+        const data = params?.data;
+        if (!data) return '';
+        const parts: string[] = [];
+        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
+          Boolean,
+        );
+        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
+        if (streetParts.length) parts.push(streetParts.join(' ').trim());
+        if (locationParts.length) parts.push(locationParts.join(', ').trim());
+        // §2: empty address renders as "—" (the grid cell falls back on ''); an
+        // unassigned household is surfaced as a guided empty state on the person view, not here.
+        return parts.join(', ').trim();
+      },
+    },
+    {
+      field: 'street_num',
+      headerName: 'Street Number',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'apt',
+      headerName: 'Apt',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street1',
+      headerName: 'Street 1',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'street2',
+      headerName: 'Street 2',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'state',
+      headerName: 'State/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'zip',
+      headerName: 'Zip/Province',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'country',
+      headerName: 'Country',
+      editable: false,
+      hide: true,
+      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
+    },
+    {
+      field: 'notes',
+      headerName: 'Notes',
+      editable: true,
+      cellEditorParams: { textarea: true, rows: 5 },
+    },
+  ];
+
+  // Generic CSV importer integration
+  protected importerOpen = signal(false);
+  protected importSummary = signal<CsvImportSummary | null>(null);
+
+  public listId = input<string | null>(null);
+
+  protected readonly narrowTypeOptions = signal<
+    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
+  >([
+    { label: 'All', value: null, tags: [] },
+    { label: 'Donors', value: 'donor', tags: ['donor'] },
+    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
+  ]);
+
+  protected tagsInput = '';
+
+  public ngOnInit() {
+    void this.initializeComponent();
+  }
+
+  private async initializeComponent(): Promise<void> {
+    try {
+      await this.loadTagOptions();
+      await this.loadIssueOptions();
+      void this.loadViewCounts();
+    } catch (error) {
+      console.error('Initialization failed', error);
+    }
+  }
+
+  /**
+   * Absolute per-view counts for the system-views segmented control (All / Donors /
+   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
+   * regardless of the grid's other active filters (§2).
+   */
+  private async loadViewCounts(): Promise<void> {
+    try {
+      const opts = this.narrowTypeOptions();
+      const counts = await Promise.all(
+        opts.map(async (o) => {
+          if (o.value === null) return this.personsService.count();
+          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
+          return res?.count ?? 0;
+        }),
+      );
+      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
+    } catch (err) {
+      console.error('Failed to load view counts', err);
+    }
+  }
+
+  private async loadTagOptions() {
+    try {
+      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
+    } catch {
+      this.tagOptionValues = [];
+    }
+  }
+
+  private async loadIssueOptions() {
+    try {
+      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
+    } catch {
+      this.issueOptionValues = [];
+    }
+  }
+
+  protected getPlusIcon(): PcIconNameType {
+    return 'user-plus';
+  }
+
+  // paging/preview managed by CsvImportComponent
+
+  protected confirmOpenEditOnDoubleClick(event: any) {
+    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
+    this.confirmAddressChange();
+  }
+
+  protected onAddressCellClicked(event: any) {
+    const householdId = event?.data?.household_id ?? event?.household_id;
+    if (householdId) {
+      void this.router.navigate(['households', householdId]);
+    }
+  }
+
+  protected getTitle() {
+    return 'People';
+  }
+
+  protected getDescription() {
+    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
+  }
+
+  // --- Import CSV Flow ---
+  protected openImportDialog() {
+    // Clear any prior summary to avoid stale dialogs
+    this.importSummary.set(null);
+    this.tagsInput = '';
+    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
+    this.importerOpen.set(true);
+  }
+
+  protected routeToHouseholds() {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.close();
+
+    if (this.addressChangeModalId !== null) {
+      void this.router.navigate(['households', this.addressChangeModalId]);
+    }
+  }
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+    const inputTags = this.tagsInput
+      .split(',')
+      .map((t) => t.trim())
+      .filter((t) => !!t);
+    const tags = inputTags;
+
+    try {
+      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        tag: res?.tag ?? undefined,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  public autoMapHeader(h: string): string {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      firstname: 'first_name',
+      fname: 'first_name',
+      middlename: 'middle_names',
+      lastname: 'last_name',
+      lname: 'last_name',
+      name: 'first_name',
+      email: 'email',
+      emailaddress: 'email',
+      email1address: 'email',
+      email2: 'email2',
+      email2address: 'email2',
+      mobile: 'mobile',
+      mobilephone: 'mobile',
+      cellphone: 'mobile',
+      primaryphone: 'mobile',
+      businessphone: 'mobile',
+      homephone: 'home_phone',
+      streetnum: 'street_num',
+      streetnumber: 'street_num',
+      homestreet: 'street1',
+      homestreet1: 'street1',
+      homestreet2: 'street2',
+      homestreet3: 'street2',
+      homeaddress: 'street1',
+      homeaddresspobox: 'street2',
+      homecity: 'city',
+      homestate: 'state',
+      homepostalcode: 'zip',
+      homecountry: 'country',
+      businessstreet: 'street1',
+      businessstreet1: 'street1',
+      businessstreet2: 'street2',
+      businessstreet3: 'street2',
+      businessaddress: 'street1',
+      businessaddresspobox: 'street2',
+      businesscity: 'city',
+      businessstate: 'state',
+      businesspostalcode: 'zip',
+      businesscountry: 'country',
+      address1: 'street1',
+      address2: 'street2',
+      street1: 'street1',
+      street2: 'street2',
+      apt: 'apt',
+      apartment: 'apt',
+      city: 'city',
+      state: 'state',
+      province: 'state',
+      zip: 'zip',
+      postal: 'zip',
+      country: 'country',
+      notes: 'notes',
+      note: 'notes',
+    };
+    return map[key] || '';
+  }
+
+  private confirmAddressChange(): void {
+    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
+    dialog.showModal();
+  }
+
+  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
+    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
+    if (!selected.length) {
+      this.alertSvc.showError('No rows selected.');
+      return true;
+    }
+
+    const ids = selected.map((r: any) => r.id);
+
+    // Show standard delete confirmation
+    const selectedCount = selected.length;
+    const dynamicMessage = selectedCount
+      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
+      : this.config.messages.deleteConfirmMessage;
+
+    const ok = await this.dialogs.confirm({
+      title: this.config.messages.deleteConfirmTitle,
+      message: dynamicMessage,
+      variant: this.config.messages.deleteConfirmVariant,
+      icon: this.config.messages.deleteConfirmIcon,
+      confirmText: this.config.messages.deleteConfirmText,
+      cancelText: this.config.messages.deleteCancelText,
+      allowBackdropClose: false,
+    });
+    if (!ok) return true; // Handled
+
+    const end = this._loading.begin();
+    try {
+      // Call deleteMany without force, skipping global error toast
+      await this.personsService.deleteMany(ids, undefined, true);
+      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+    } catch (err) {
+      // Check if it's the captain error message
+      const errMsg =
+        err instanceof Error && err.message
+          ? err.message
+          : isRecord(err) &&
+              isRecord(err['data']) &&
+              typeof err['data']['message'] === 'string' &&
+              err['data']['message']
+            ? err['data']['message']
+            : '';
+      if (errMsg.includes('team captains')) {
+        // Ask the user if they want to proceed despite being a team captain
+        const forceOk = await this.dialogs.confirm({
+          title: 'Team Captain Warning',
+          message: errMsg,
+          variant: 'warning',
+          confirmText: 'Yes, delete anyway',
+          cancelText: 'Cancel',
+        });
+        if (forceOk) {
+          try {
+            await this.personsService.deleteMany(ids, true, true);
+            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
+          } catch (forceErr) {
+            const forceErrMsg =
+              forceErr instanceof Error && forceErr.message
+                ? forceErr.message
+                : isRecord(forceErr) &&
+                    isRecord(forceErr['data']) &&
+                    typeof forceErr['data']['message'] === 'string' &&
+                    forceErr['data']['message']
+                  ? forceErr['data']['message']
+                  : 'Delete failed';
+            this.alertSvc.showError(forceErrMsg);
+          }
+        }
+      } else {
+        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
+      }
+    } finally {
+      end();
+      this.grid()?.clearAllSelection();
+      await this.grid()?.refresh();
+    }
+    return true;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
 ```
 
 ## File: apps/frontend/src/app/experiences/settings/settings-page.ts
@@ -47957,6 +48384,457 @@ export class Summary implements OnInit {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
+
+```typescript
+import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
+import { UserService } from '@frontend/services/user.service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import type { GridRow } from '@frontend/shared/components/datagrid/types';
+import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
+import { createLoadingGate } from '@uxcommon/loading-gate';
+import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+
+@Component({
+  selector: 'pc-tasks-grid',
+  imports: [DataGrid, CsvImportComponent, FormsModule],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Tasks"
+        i18n-title
+        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [disableImport]="false"
+        [showArchiveIcon]="true"
+        (importCSV)="openImportDialog()"
+        plusIcon="add-task"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+    </div>
+
+    <pc-csv-importer
+      [open]="importerOpen()"
+      [title]="'Import Tasks from CSV'"
+      [mappableFields]="mappableFields"
+      [autoMapHeader]="autoMapHeader"
+      [summary]="importSummary()"
+      (submit)="onImportSubmit($event)"
+      (close)="importerOpen.set(false); importSummary.set(null)"
+      (closeSummary)="importSummary.set(null)"
+    />
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: TasksService },
+    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
+  ],
+})
+export class TasksGrid implements OnInit {
+  private readonly userService = inject(UserService);
+  private readonly tasksService = inject(TasksService);
+  public readonly _loading = createLoadingGate();
+  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
+
+  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
+  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
+  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
+  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+
+  private readonly unassignedLabel = 'Not Assigned';
+
+  // Users for Assigned To (populated via AuthService on init)
+  private userIds: string[] = [];
+  private userLabels: string[] = [];
+  private usersById = new Map<string, string>();
+  private usersAvatarById = new Map<string, string | null>();
+
+  // Fields we will accept from CSV for future import support
+  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
+
+  protected col: ColDef[] = [
+    { field: 'id', headerName: 'ID' },
+    {
+      field: 'assigned_to',
+      headerName: 'Assigned To',
+      editable: true,
+      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
+      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
+      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
+      cellEditorParams: () => ({
+        values: [null, ...this.userIds],
+        labels: [this.unassignedLabel, ...this.userLabels],
+      }),
+      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
+    },
+    { field: 'name', headerName: 'Task', editable: true },
+    {
+      field: 'status',
+      headerName: 'Status',
+      editable: true,
+      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
+      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
+      valueSetter: (p: CellParams) => this.statusValueSetter(p),
+    },
+    {
+      field: 'priority',
+      headerName: 'Priority',
+      editable: true,
+      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
+      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
+      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
+    },
+    {
+      field: 'due_at',
+      headerName: 'Due',
+      editable: true,
+      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
+      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
+      valueFormatter: (p: CellParams) => this.formatDate(p.value),
+      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
+    },
+    {
+      field: 'createdby_id',
+      headerName: 'Created By',
+      editable: false,
+      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
+      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
+      // Provide filter options using known user labels
+      cellEditorParams: () => ({ values: this.userLabels }),
+    },
+  ];
+  protected importSummary = signal<CsvImportSummary | null>(null);
+  protected importerOpen = signal(false);
+  protected isArchiveMode = signal(false);
+
+  public ngOnInit() {
+    void this.initialize();
+  }
+
+  private async initialize() {
+    // Load users to drive Assigned To options and name mapping
+    try {
+      const users = await this.userService.getUsers();
+      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
+      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
+      this.userIds = users.map((u) => String(u.id));
+      this.userLabels = users.map((u) => `${u.first_name}`);
+    } catch {
+      /* no op */
+    }
+  }
+
+  protected readonly autoMapHeader = (h: string): string => {
+    const raw = (h || '').toLowerCase().trim();
+    const key = raw.replace(/[^a-z0-9]/g, '');
+    const map: Record<string, string> = {
+      task: 'name',
+      title: 'name',
+      subject: 'name',
+      status: 'status',
+      priority: 'priority',
+      due: 'due_at',
+      duedate: 'due_at',
+      dueat: 'due_at',
+      assignedto: 'assigned_to',
+      assignee: 'assigned_to',
+      owner: 'assigned_to',
+    };
+    return map[key] || '';
+  };
+
+  protected async onImportSubmit(payload: {
+    rows: Array<Record<string, string>>;
+    skipped: number;
+    fileName?: string | null;
+  }): Promise<void> {
+    const rows = payload?.rows ?? [];
+    const skippedReported = Number(payload?.skipped ?? 0) || 0;
+    const fileName = (payload?.fileName ?? '').trim();
+
+    try {
+      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
+
+      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
+      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
+
+      this.importSummary.set({
+        inserted: 0,
+        errors: 0,
+        skipped,
+        queued: true,
+        failed: false,
+        message: msg,
+      });
+      this.importerOpen.set(false);
+      await this.grid()?.refresh();
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
+            ? e['data']['message']
+            : 'Import failed';
+      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
+      this.importerOpen.set(false);
+    }
+  }
+
+  protected openImportDialog() {
+    this.importSummary.set(null);
+    this.importerOpen.set(true);
+  }
+
+  private assignToValueSetter(p: CellParams) {
+    const val =
+      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
+        ? null
+        : String(p.newValue);
+    const data = p.data;
+    if (!data) return false;
+    if (data['assigned_to'] !== val) {
+      data['assigned_to'] = val;
+      return true;
+    }
+    return false;
+  }
+
+  private assignedToValueFormatter(p: CellParams) {
+    const v = p.value;
+    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
+    return this.usersById.get(String(v)) ?? String(v ?? '');
+  }
+
+  private assignedToValueGetter(p: CellParams) {
+    const id = p.data?.['assigned_to'] ?? p.value;
+    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
+    return String(id);
+  }
+
+  private dueAtValueSetter(p: CellParams) {
+    const val = String(p.newValue || p.value || '');
+    // ensure only YYYY-MM-DD is stored
+    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
+    const data = p.data;
+    if (!data) return false;
+    if (data['due_at'] !== dateOnly) {
+      data['due_at'] = dateOnly;
+      return true;
+    }
+    return false;
+  }
+
+  private formatDate(value: unknown) {
+    if (!value) return '';
+    const d = new Date(this.toDateOnly(value));
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString();
+  }
+
+  private isOverdue(row: GridRow | undefined): boolean {
+    if (!row) return false;
+
+    const status = String(row['status'] ?? '').toLowerCase();
+    if (status === 'done' || status === 'canceled') return false;
+
+    const due = this.toDateOnly(row['due_at']);
+    if (!due) return false;
+
+    const today = this.toDateOnly(new Date());
+    // Simple lexical compare works for YYYY-MM-DD
+    return due < today;
+  }
+
+  private normalizeChoice(value: string) {
+    return value.replace(/[_\s-]+/g, '').toLowerCase();
+  }
+
+  private parsePriorityLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.priorityOptions[idx];
+    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
+  }
+
+  private parseStatusLabel(label: string) {
+    const norm = this.normalizeChoice(label);
+    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
+    if (idx >= 0) return this.statusOptions[idx];
+    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
+    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
+  }
+
+  private priorityValueSetter(p: CellParams) {
+    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['priority'] !== v) {
+      data['priority'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private renderAssignedCell(value: unknown) {
+    const v = value == null ? '' : String(value);
+    const isUnassigned = !v || v === this.unassignedLabel;
+    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeLabel = escapeHtml(label);
+    if (isUnassigned) {
+      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
+    }
+    let avatarUrl = this.usersAvatarById.get(v);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeLabel}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
+      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
+      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
+      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
+      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeLabel}</span>
+      </div>
+    `;
+  }
+
+  private renderCreatedByCell(value: unknown) {
+    const label = value == null ? '' : String(value);
+    if (!label) {
+      return `<span class="text-base-content/30">—</span>`;
+    }
+    const resolvedName = this.usersById.get(label) ?? label;
+    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
+    const safeName = escapeHtml(resolvedName);
+    let avatarUrl = this.usersAvatarById.get(label);
+    if (avatarUrl) {
+      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
+      return `
+        <div class="flex items-center gap-1.5 py-0.5">
+          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
+          <span class="text-xs font-medium">${safeName}</span>
+        </div>
+      `;
+    }
+    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
+    const colors = [
+      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
+      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
+      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
+      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
+      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
+    ];
+    let sum = 0;
+    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
+    const colorClass = colors[sum % colors.length];
+
+    return `
+      <div class="flex items-center gap-1.5 py-0.5">
+        <div class="avatar placeholder">
+          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
+            <span>${initial}</span>
+          </div>
+        </div>
+        <span class="text-xs font-medium">${safeName}</span>
+      </div>
+    `;
+  }
+
+  private renderPriorityBadge(value: unknown) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private renderStatusBadge(value: unknown) {
+    if (!value) return '';
+    const v = String(value);
+    const cls =
+      v === 'done'
+        ? 'badge-success'
+        : v === 'in_progress'
+          ? 'badge-info'
+          : v === 'blocked'
+            ? 'badge-error'
+            : v === 'canceled'
+              ? 'badge-neutral'
+              : 'badge-ghost';
+    const label = this.toTitle(v);
+    return `<span class="badge ${cls} badge-sm">${label}</span>`;
+  }
+
+  private statusValueSetter(p: CellParams) {
+    const v = this.parseStatusLabel(String(p.newValue ?? ''));
+    const data = p.data;
+    if (!data) return false;
+    if (data['status'] !== v) {
+      data['status'] = v;
+      return true;
+    }
+    return false;
+  }
+
+  private toDateOnly(v: unknown): string {
+    if (!v) return '';
+    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
+    return str.length > 10 ? str.slice(0, 10) : str;
+  }
+
+  private toTitle(v: string) {
+    return v
+      .replace(/[_-]+/g, ' ')
+      .split(' ')
+      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
+      .join(' ');
+  }
+
+  private userNameForId(id: unknown) {
+    if (id === null || id === undefined || id === '') return '';
+    const key = String(id);
+    return this.usersById.get(key) ?? '';
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+```
+
 ## File: apps/frontend/src/app/experiences/teams/ui/team-form.ts
 
 ```typescript
@@ -48388,6 +49266,162 @@ export class TeamFormComponent implements OnInit {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/services/api/trpc-service.ts
+
+```typescript
+import { inject, Service } from '@angular/core';
+import { Router } from '@angular/router';
+import { GENERIC_SIGNIN_ERROR, getAllOptionsType } from '../../../../../../libs/common/src';
+import { ErrorService } from '../error.service';
+import {
+  TRPCClient,
+  TRPCClientError,
+  TRPCLink,
+  createTRPCClient,
+  httpLink as trpcHttpLink,
+  loggerLink,
+} from '@trpc/client';
+import { observable } from '@trpc/server/observable';
+import superjson from 'superjson';
+
+import { get, set } from 'idb-keyval';
+
+import { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
+import { environment } from '../../../environments/environment';
+import { TokenService } from './token-service';
+import { refreshLink } from './trpc-refreshlink';
+import { ApiError } from './api-error';
+
+@Service()
+export class TRPCService<T> {
+  protected readonly errorSvc = inject(ErrorService);
+
+  protected readonly router = inject(Router);
+
+  protected readonly tokenService = inject(TokenService);
+
+  protected ac = new AbortController();
+
+  public readonly api: TRPCClient<TRPCRouter>;
+
+  constructor() {
+    this.api = createTRPCClient<TRPCRouter>({
+      links: [
+        loggerLink(),
+        refreshLink(this.tokenService, this.router),
+        errorLink(this.errorSvc),
+        httpUnbatchedLink(this.tokenService, () => this.ac.signal),
+      ],
+    });
+  }
+
+  public abort() {
+    this.ac.abort();
+    this.ac = new AbortController(); // create a fresh controller so future calls are not auto-aborted
+  }
+
+  protected async runCachedCall(
+    apiCall: Promise<Partial<T>[]>,
+    apiName: string,
+    options: getAllOptionsType,
+    refresh: boolean,
+  ) {
+    // Use the full serialized (apiName + options) as the IndexedDB key. IDB string
+    // keys can be arbitrarily long, so there's no need to fold it into a 32-bit hash
+    // — that hash collided, letting one query serve another query's cached rows.
+    const cacheKey = `trpc:${JSON.stringify({ apiName, ...options })}`;
+    const payload = await get(cacheKey);
+    let data = payload?.expires > Date.now() ? payload.data : null;
+
+    if (refresh || !data || data.length === 0) {
+      data = await apiCall;
+      await set(cacheKey, { expires: this.addDays(1), data });
+    }
+
+    return data;
+  }
+
+  private addDays(days: number) {
+    const date = new Date(Date.now());
+    date.setDate(date.getDate() + days);
+    return date;
+  }
+}
+
+function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
+  const GENERIC_INPUT_MSG = 'Please check your input and try again';
+
+  return () =>
+    ({ next, op }) =>
+      observable((observer) => {
+        const unsubscribe = next(op).subscribe({
+          next: (value) => observer.next(value),
+          error: (err) => {
+            const meta = op.context as { skipErrorHandler?: boolean } | undefined;
+            let finalErr: any = err;
+
+            if (err instanceof TRPCClientError) {
+              const code = err.data?.code as string | undefined;
+              const path = op.path ?? '';
+              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
+
+              let msg = err.message;
+              if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
+                // Server formatter should already do this; this is just a client fallback
+                msg = GENERIC_SIGNIN_ERROR;
+              } else if (code === 'BAD_REQUEST') {
+                const isValidationError = (err.data as { isZodError?: boolean })?.isZodError;
+                if (isValidationError) {
+                  msg = GENERIC_INPUT_MSG;
+                }
+              }
+              finalErr = new ApiError(msg, err);
+            }
+
+            // Aborted requests (component teardown, superseded loads) are not
+            // user-facing failures — never toast them.
+            if (!meta?.skipErrorHandler && !isAbortError(err)) {
+              errorSvc.handle(finalErr);
+            }
+
+            observer.error(finalErr);
+          },
+          complete: () => observer.complete(),
+        });
+        return unsubscribe;
+      });
+}
+
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  if (err instanceof TRPCClientError) {
+    const cause: unknown = err.cause;
+    return cause instanceof DOMException && cause.name === 'AbortError';
+  }
+  return false;
+}
+
+function httpUnbatchedLink(tokenSvc: TokenService, getAbortSignal: () => AbortSignal) {
+  return trpcHttpLink({
+    url: environment.apiUrl,
+    transformer: superjson,
+    // Combine the per-request signal tRPC provides with the service-level
+    // controller so TRPCService.abort() actually cancels in-flight requests.
+    // `credentials: 'include'` is required so the browser honors Set-Cookie on the
+    // sign-in/out responses and attaches the HttpOnly refresh cookie (SECURITY-REVIEW 2.1).
+    fetch(input, init) {
+      const signals: AbortSignal[] = [getAbortSignal()];
+      if (init?.signal) signals.push(init.signal);
+      return globalThis.fetch(input, { ...init, credentials: 'include', signal: AbortSignal.any(signals) });
+    },
+    headers() {
+      const authToken = tokenSvc.getAuthToken();
+      return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+    },
+  });
 }
 ```
 
@@ -50804,6 +51838,229 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
+## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
+
+```typescript
+import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
+import { UpdateListType } from '../../../../../../../libs/common/src';
+import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
+import { ListsService } from '@experiences/lists/services/lists-service';
+import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
+import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { AbstractAPIService } from '../../../services/api/abstract-api.service';
+import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
+import { getUserErrorMessage } from '@frontend/services/api/user-message';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+@Component({
+  selector: 'pc-lists-grid',
+  imports: [DataGrid],
+  template: `
+    <div class="flex flex-col gap-6">
+      <pc-datagrid
+        #grid
+        title="Lists"
+        i18n-title
+        description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
+        i18n-description
+        [colDefs]="col"
+        [disableDelete]="false"
+        [disableView]="false"
+        [allowFilter]="false"
+        plusIcon="add-list"
+        i18n-plusIcon
+        addRoute="add"
+        i18n-addRoute
+      ></pc-datagrid>
+    </div>
+  `,
+  providers: [
+    { provide: AbstractAPIService, useExisting: ListsService },
+    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
+  ],
+})
+export class ListsGridComponent implements OnDestroy {
+  private readonly refreshSvc = inject(ListsRefreshService);
+  private readonly listsSvc = inject(ListsService);
+  private readonly alerts = inject(AlertService);
+  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
+
+  constructor() {
+    effect(() => {
+      const count = this.refreshSvc.refreshCount();
+      if (count > 0) {
+        void untracked(() => this.grid()?.refresh());
+      }
+    });
+  }
+
+  protected col: ColDef[] = [
+    { field: 'name', headerName: 'List Name', editable: true },
+    { field: 'description', headerName: 'Description', editable: true },
+    {
+      field: 'object',
+      headerName: 'Target Object',
+      valueFormatter: (p: CellParams) => {
+        const val = p?.value;
+        if (val === 'people') return 'People';
+        if (val === 'households') return 'Households';
+        return (val as string | undefined) ?? '—';
+      },
+    },
+    {
+      field: 'is_dynamic',
+      headerName: 'List Type',
+      cellRenderer: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        return isDynamic
+          ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
+          : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
+      },
+    },
+    {
+      field: 'list_size',
+      headerName: 'Size',
+      valueFormatter: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (isDynamic === true || isDynamic === 'true' || isDynamic === 1) {
+          return 'N/A';
+        }
+        return (p?.value as number | undefined) ?? 0;
+      },
+    },
+    {
+      field: 'last_refreshed_at',
+      headerName: 'Last Refreshed',
+      valueFormatter: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (!isDynamic) return '—';
+        if (!p?.value) return 'Never';
+        const date = new Date(p.value as string | number | Date);
+        if (isNaN(date.getTime())) return 'Never';
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      },
+    },
+    {
+      field: 'refresh_action',
+      headerName: 'Refresh',
+      cellRenderer: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        if (!isDynamic) return '—';
+        const status = p?.data?.['status'];
+        const isLocallyRefreshing = this.refreshingIds.has(String(p?.data?.['id'] ?? ''));
+        if (status === 'refreshing' || isLocallyRefreshing) {
+          return `
+            <div class="flex items-center justify-center h-full w-full">
+              <span class="loading loading-ring loading-lg text-primary"></span>
+            </div>
+          `;
+        }
+        return `
+          <div class="flex items-center justify-center h-full w-full">
+            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh dynamic list">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            </button>
+          </div>
+        `;
+      },
+      onCellClicked: (p: CellParams) => {
+        const isDynamic = p?.data?.['is_dynamic'];
+        const id = String(p?.data?.['id'] ?? '');
+        const isRefreshing = p?.data?.['status'] === 'refreshing' || this.refreshingIds.has(id);
+        if (isDynamic && !isRefreshing) {
+          void this.refreshList(id, p);
+        }
+      },
+    },
+    {
+      field: 'updated_at',
+      headerName: 'Last Updated',
+      valueFormatter: (p: CellParams) => {
+        if (!p?.value) return '—';
+        const date = new Date(p.value as string | number | Date);
+        if (isNaN(date.getTime())) return '—';
+        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      },
+    },
+    { field: 'created_by', headerName: 'Created By' },
+  ];
+
+  private readonly refreshingIds = new Set<string>();
+
+  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
+
+  private async refreshList(id: string, cellParams: CellParams) {
+    try {
+      this.refreshingIds.add(id);
+      // Re-render the cell immediately to show the loading spinner.
+      this.refreshCellIfPossible(cellParams);
+
+      this.alerts.showSuccess('Refresh job scheduled in background');
+      await this.listsSvc.refreshList(id);
+      this.pollRefreshStatus(id);
+    } catch (e) {
+      this.refreshingIds.delete(id);
+      this.refreshCellIfPossible(cellParams);
+      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
+    }
+  }
+
+  /** Best-effort refresh of a single grid cell, if the underlying table API supports it. */
+  private refreshCellIfPossible(cellParams: unknown): void {
+    if (!isRecord(cellParams)) return;
+    const api = cellParams['api'];
+    if (!isRecord(api) || typeof api['refreshCells'] !== 'function') return;
+    (api['refreshCells'] as (opts: unknown) => void)({
+      rowNodes: [cellParams['node']],
+      columns: ['refresh_action'],
+      force: true,
+    });
+  }
+
+  private pollRefreshStatus(id: string) {
+    const existing = this.pollIntervals.get(id);
+    if (existing) clearInterval(existing);
+
+    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
+
+    this.pollIntervals.set(id, interval);
+  }
+
+  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
+    try {
+      const list = await this.listsSvc.getById(id);
+      if (isRecord(list) && list['status'] !== 'refreshing') {
+        clearInterval(interval);
+        this.pollIntervals.delete(id);
+        this.refreshingIds.delete(id);
+        if (isRecord(list) && list['status'] === 'failed') {
+          this.alerts.showError('List refresh failed in background');
+        } else {
+          this.alerts.showSuccess('List refreshed successfully');
+        }
+        void this.grid()?.refresh();
+      }
+    } catch {
+      clearInterval(interval);
+      this.pollIntervals.delete(id);
+      this.refreshingIds.delete(id);
+    }
+  }
+
+  public ngOnDestroy() {
+    for (const interval of this.pollIntervals.values()) {
+      clearInterval(interval);
+    }
+  }
+}
+```
+
 ## File: apps/frontend/src/app/experiences/persons/ui/person-form.html
 
 ```html
@@ -51138,553 +52395,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 </div>
 ```
 
-## File: apps/frontend/src/app/experiences/persons/ui/persons-grid.ts
-
-```typescript
-import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
-import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { UpdatePersonsObj, UpdatePersonsType } from '../../../../../../../libs/common/src';
-
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-
-import {
-  DATA_GRID_CONFIG,
-  DEFAULT_DATA_GRID_CONFIG,
-  provideDataGridConfig,
-} from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { ConfirmDialogService } from '../../../services/shared-dialog.service';
-import { DATA_TYPE, PersonsService } from '../services/persons-service';
-
-@Component({
-  selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
-  templateUrl: './persons-grid.html',
-  providers: [
-    { provide: AbstractAPIService, useExisting: PersonsService },
-    provideDataGridConfig({
-      messages: {
-        exportEntity: 'persons',
-        exportFileName: 'persons-export.csv',
-        entityNoun: 'person',
-        entityNounPlural: 'people',
-      },
-    }),
-  ],
-})
-export class PersonsGrid implements OnInit {
-  private readonly utils = inject(DataGridUtilsService);
-  private readonly tagOptionsSvc = inject(TagOptionsService);
-  private readonly router = inject(Router);
-  private readonly dialogs = inject(ConfirmDialogService);
-  private readonly alertSvc = inject(AlertService);
-  public readonly _loading = createLoadingGate();
-  private readonly config = inject(DATA_GRID_CONFIG, { optional: true }) ?? DEFAULT_DATA_GRID_CONFIG;
-  private readonly personsService = inject(PersonsService);
-
-  private readonly grid = viewChild<DataGrid<DATA_TYPE, UpdatePersonsType>>('grid');
-
-  public readonly onConfirmDeleteBind = (selected: any[]) => this.confirmDelete(selected);
-
-  public inline = input<boolean>(false);
-
-  private addressChangeModalId: string | null = null;
-  private importProgressTimer: ReturnType<typeof setInterval> | undefined;
-  private tagOptionValues: string[] = [];
-  private issueOptionValues: string[] = [];
-
-  protected readonly mappableFields = [
-    'first_name',
-    'middle_names',
-    'last_name',
-    'email',
-    'email2',
-    'mobile',
-    'home_phone',
-    'street_num',
-    'street1',
-    'street2',
-    'apt',
-    'city',
-    'state',
-    'zip',
-    'country',
-    'notes',
-  ];
-
-  protected col: ColDef[] = [
-    {
-      // Combined identity column: the door that opens the record. Non-editable and
-      // non-hidable; first/last name remain separately editable to its right.
-      field: 'name',
-      headerName: 'Name',
-      editable: false,
-      doorColumn: true,
-      noHide: true,
-      minWidth: 160,
-      valueGetter: (params: CellParams) => {
-        const data = params?.data as Record<string, unknown> | undefined;
-        if (!data) return '';
-        return [data['first_name'], data['last_name']]
-          .filter((p) => typeof p === 'string' && p.trim().length)
-          .join(' ')
-          .trim();
-      },
-    },
-    { field: 'first_name', headerName: 'First Name', editable: true, hide: true },
-    { field: 'last_name', headerName: 'Last Name', editable: true, hide: true },
-    { field: 'email', headerName: 'Email', editable: true },
-    { field: 'mobile', headerName: 'Mobile', editable: true },
-    { field: 'company_name', headerName: 'Company', editable: false },
-    {
-      field: 'home_phone',
-      headerName: 'Home phone',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'tags',
-      hide: true,
-      headerName: 'Tags',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'tag',
-      },
-      cellEditorParams: () => ({ values: this.tagOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'issues',
-      hide: true,
-      headerName: 'Issues',
-      editable: true,
-      tagColumn: true,
-      cellDataType: 'object',
-      cellRendererParams: {
-        type: 'persons',
-        obj: UpdatePersonsObj,
-        service: this.personsService,
-        tagType: 'issue',
-      },
-      cellEditorParams: () => ({ values: this.issueOptionValues, multiple: true }),
-      equals: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)) ===
-        0,
-      valueFormatter: (params: CellParams) => this.utils.tagsToString(this.utils.normalizeTagSelection(params.value)),
-      comparator: (tagsA: unknown, tagsB: unknown) =>
-        this.utils.tagArrayEquals(this.utils.normalizeTagSelection(tagsA), this.utils.normalizeTagSelection(tagsB)),
-    },
-    {
-      field: 'address',
-      headerName: 'Address',
-      editable: false,
-      onCellClicked: this.onAddressCellClicked.bind(this),
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-      isCellInteractive: (row: any) => !row.household_is_placeholder,
-      valueGetter: (params: any) => {
-        const data = params?.data;
-        if (!data) return '';
-        const parts: string[] = [];
-        const streetParts = [data.apt ? `Apt ${data.apt}` : null, data.street_num, data.street1, data.street2].filter(
-          Boolean,
-        );
-        const locationParts = [data.city, data.state, data.zip, data.country].filter(Boolean);
-        if (streetParts.length) parts.push(streetParts.join(' ').trim());
-        if (locationParts.length) parts.push(locationParts.join(', ').trim());
-        // §2: empty address renders as "—" (the grid cell falls back on ''); an
-        // unassigned household is surfaced as a guided empty state on the person view, not here.
-        return parts.join(', ').trim();
-      },
-    },
-    {
-      field: 'street_num',
-      headerName: 'Street Number',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'apt',
-      headerName: 'Apt',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street1',
-      headerName: 'Street 1',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'street2',
-      headerName: 'Street 2',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'city',
-      headerName: 'City',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'state',
-      headerName: 'State/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'zip',
-      headerName: 'Zip/Province',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'country',
-      headerName: 'Country',
-      editable: false,
-      hide: true,
-      onCellDoubleClicked: this.confirmOpenEditOnDoubleClick.bind(this),
-    },
-    {
-      field: 'notes',
-      headerName: 'Notes',
-      editable: true,
-      cellEditorParams: { textarea: true, rows: 5 },
-    },
-  ];
-
-  // Generic CSV importer integration
-  protected importerOpen = signal(false);
-  protected importSummary = signal<CsvImportSummary | null>(null);
-
-  public listId = input<string | null>(null);
-
-  protected readonly narrowTypeOptions = signal<
-    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
-  >([
-    { label: 'All', value: null, tags: [] },
-    { label: 'Donors', value: 'donor', tags: ['donor'] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
-  ]);
-
-  protected tagsInput = '';
-
-  public ngOnInit() {
-    void this.initializeComponent();
-  }
-
-  private async initializeComponent(): Promise<void> {
-    try {
-      await this.loadTagOptions();
-      await this.loadIssueOptions();
-      void this.loadViewCounts();
-    } catch (error) {
-      console.error('Initialization failed', error);
-    }
-  }
-
-  /**
-   * Absolute per-view counts for the system-views segmented control (All / Donors /
-   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
-   * regardless of the grid's other active filters (§2).
-   */
-  private async loadViewCounts(): Promise<void> {
-    try {
-      const opts = this.narrowTypeOptions();
-      const counts = await Promise.all(
-        opts.map(async (o) => {
-          if (o.value === null) return this.personsService.count();
-          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
-          return res?.count ?? 0;
-        }),
-      );
-      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
-    } catch (err) {
-      console.error('Failed to load view counts', err);
-    }
-  }
-
-  private async loadTagOptions() {
-    try {
-      this.tagOptionValues = await this.tagOptionsSvc.getTagNames('tag');
-    } catch {
-      this.tagOptionValues = [];
-    }
-  }
-
-  private async loadIssueOptions() {
-    try {
-      this.issueOptionValues = await this.tagOptionsSvc.getTagNames('issue');
-    } catch {
-      this.issueOptionValues = [];
-    }
-  }
-
-  protected getPlusIcon(): PcIconNameType {
-    return 'user-plus';
-  }
-
-  // paging/preview managed by CsvImportComponent
-
-  protected confirmOpenEditOnDoubleClick(event: any) {
-    this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
-    this.confirmAddressChange();
-  }
-
-  protected onAddressCellClicked(event: any) {
-    const householdId = event?.data?.household_id ?? event?.household_id;
-    if (householdId) {
-      void this.router.navigate(['households', householdId]);
-    }
-  }
-
-  protected getTitle() {
-    return 'People';
-  }
-
-  protected getDescription() {
-    return 'Manage individual contact records, edit detail fields, track issues/tags, and configure household assignments.';
-  }
-
-  // --- Import CSV Flow ---
-  protected openImportDialog() {
-    // Clear any prior summary to avoid stale dialogs
-    this.importSummary.set(null);
-    this.tagsInput = '';
-    if (this.importProgressTimer) clearInterval(this.importProgressTimer);
-    this.importerOpen.set(true);
-  }
-
-  protected routeToHouseholds() {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.close();
-
-    if (this.addressChangeModalId !== null) {
-      void this.router.navigate(['households', this.addressChangeModalId]);
-    }
-  }
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-    const inputTags = this.tagsInput
-      .split(',')
-      .map((t) => t.trim())
-      .filter((t) => !!t);
-    const tags = inputTags;
-
-    try {
-      const res = await this.personsService.import(rows, tags, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        tag: res?.tag ?? undefined,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  public autoMapHeader(h: string): string {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      firstname: 'first_name',
-      fname: 'first_name',
-      middlename: 'middle_names',
-      lastname: 'last_name',
-      lname: 'last_name',
-      name: 'first_name',
-      email: 'email',
-      emailaddress: 'email',
-      email1address: 'email',
-      email2: 'email2',
-      email2address: 'email2',
-      mobile: 'mobile',
-      mobilephone: 'mobile',
-      cellphone: 'mobile',
-      primaryphone: 'mobile',
-      businessphone: 'mobile',
-      homephone: 'home_phone',
-      streetnum: 'street_num',
-      streetnumber: 'street_num',
-      homestreet: 'street1',
-      homestreet1: 'street1',
-      homestreet2: 'street2',
-      homestreet3: 'street2',
-      homeaddress: 'street1',
-      homeaddresspobox: 'street2',
-      homecity: 'city',
-      homestate: 'state',
-      homepostalcode: 'zip',
-      homecountry: 'country',
-      businessstreet: 'street1',
-      businessstreet1: 'street1',
-      businessstreet2: 'street2',
-      businessstreet3: 'street2',
-      businessaddress: 'street1',
-      businessaddresspobox: 'street2',
-      businesscity: 'city',
-      businessstate: 'state',
-      businesspostalcode: 'zip',
-      businesscountry: 'country',
-      address1: 'street1',
-      address2: 'street2',
-      street1: 'street1',
-      street2: 'street2',
-      apt: 'apt',
-      apartment: 'apt',
-      city: 'city',
-      state: 'state',
-      province: 'state',
-      zip: 'zip',
-      postal: 'zip',
-      country: 'country',
-      notes: 'notes',
-      note: 'notes',
-    };
-    return map[key] || '';
-  }
-
-  private confirmAddressChange(): void {
-    const dialog = document.querySelector('#confirmAddressEdit') as HTMLDialogElement;
-    dialog.showModal();
-  }
-
-  protected async confirmDelete(selectedRows?: any[]): Promise<boolean> {
-    const selected = selectedRows || this.grid()?.getSelectedRows() || [];
-    if (!selected.length) {
-      this.alertSvc.showError('No rows selected.');
-      return true;
-    }
-
-    const ids = selected.map((r: any) => r.id);
-
-    // Show standard delete confirmation
-    const selectedCount = selected.length;
-    const dynamicMessage = selectedCount
-      ? `${selectedCount} row(s) will be deleted permanently. You cannot undo this.`
-      : this.config.messages.deleteConfirmMessage;
-
-    const ok = await this.dialogs.confirm({
-      title: this.config.messages.deleteConfirmTitle,
-      message: dynamicMessage,
-      variant: this.config.messages.deleteConfirmVariant,
-      icon: this.config.messages.deleteConfirmIcon,
-      confirmText: this.config.messages.deleteConfirmText,
-      cancelText: this.config.messages.deleteCancelText,
-      allowBackdropClose: false,
-    });
-    if (!ok) return true; // Handled
-
-    const end = this._loading.begin();
-    try {
-      // Call deleteMany without force, skipping global error toast
-      await this.personsService.deleteMany(ids, undefined, true);
-      this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-    } catch (err) {
-      // Check if it's the captain error message
-      const errMsg =
-        err instanceof Error && err.message
-          ? err.message
-          : isRecord(err) &&
-              isRecord(err['data']) &&
-              typeof err['data']['message'] === 'string' &&
-              err['data']['message']
-            ? err['data']['message']
-            : '';
-      if (errMsg.includes('team captains')) {
-        // Ask the user if they want to proceed despite being a team captain
-        const forceOk = await this.dialogs.confirm({
-          title: 'Team Captain Warning',
-          message: errMsg,
-          variant: 'warning',
-          confirmText: 'Yes, delete anyway',
-          cancelText: 'Cancel',
-        });
-        if (forceOk) {
-          try {
-            await this.personsService.deleteMany(ids, true, true);
-            this.alertSvc.showSuccess(this.config.messages.deleteSuccess);
-          } catch (forceErr) {
-            const forceErrMsg =
-              forceErr instanceof Error && forceErr.message
-                ? forceErr.message
-                : isRecord(forceErr) &&
-                    isRecord(forceErr['data']) &&
-                    typeof forceErr['data']['message'] === 'string' &&
-                    forceErr['data']['message']
-                  ? forceErr['data']['message']
-                  : 'Delete failed';
-            this.alertSvc.showError(forceErrMsg);
-          }
-        }
-      } else {
-        this.alertSvc.showError(errMsg || this.config.messages.deleteFailed);
-      }
-    } finally {
-      end();
-      this.grid()?.clearAllSelection();
-      await this.grid()?.refresh();
-    }
-    return true;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
 ## File: apps/frontend/src/app/experiences/shifts/ui/shift-view.ts
 
 ```typescript
@@ -51863,457 +52573,6 @@ export class ShiftViewComponent {
       default:
         return 'ghost';
     }
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-```
-
-## File: apps/frontend/src/app/experiences/tasks/ui/tasks-grid.ts
-
-```typescript
-import { Component, OnInit, inject, signal, viewChild } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { TasksService } from '@experiences/tasks/services/tasks-service';
-import { UserService } from '@frontend/services/user.service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import type { GridRow } from '@frontend/shared/components/datagrid/types';
-import { CsvImportComponent, type CsvImportSummary } from '@uxcommon/components/csv-import/csv-import';
-import { createLoadingGate } from '@uxcommon/loading-gate';
-import { UpdateTaskType, escapeHtml } from '../../../../../../../libs/common/src';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-
-@Component({
-  selector: 'pc-tasks-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Tasks"
-        i18n-title
-        description="Track action items, assign tasks to staff, manage due dates, and monitor completion progress."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [disableImport]="false"
-        [showArchiveIcon]="true"
-        (importCSV)="openImportDialog()"
-        plusIcon="add-task"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-
-    <pc-csv-importer
-      [open]="importerOpen()"
-      [title]="'Import Tasks from CSV'"
-      [mappableFields]="mappableFields"
-      [autoMapHeader]="autoMapHeader"
-      [summary]="importSummary()"
-      (submit)="onImportSubmit($event)"
-      (close)="importerOpen.set(false); importSummary.set(null)"
-      (closeSummary)="importSummary.set(null)"
-    />
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: TasksService },
-    provideDataGridConfig({ messages: { exportEntity: 'tasks', exportFileName: 'tasks-export.csv' } }),
-  ],
-})
-export class TasksGrid implements OnInit {
-  private readonly userService = inject(UserService);
-  private readonly tasksService = inject(TasksService);
-  public readonly _loading = createLoadingGate();
-  private readonly grid = viewChild<DataGrid<'tasks', UpdateTaskType>>('grid');
-
-  private readonly priorityLabels = ['Low', 'Medium', 'High', 'Urgent'];
-  private readonly priorityOptions = ['low', 'medium', 'high', 'urgent'];
-  private readonly statusLabels = ['Todo', 'In Progress', 'Blocked', 'Done', 'Canceled'];
-  private readonly statusOptions = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
-
-  private readonly unassignedLabel = 'Not Assigned';
-
-  // Users for Assigned To (populated via AuthService on init)
-  private userIds: string[] = [];
-  private userLabels: string[] = [];
-  private usersById = new Map<string, string>();
-  private usersAvatarById = new Map<string, string | null>();
-
-  // Fields we will accept from CSV for future import support
-  protected readonly mappableFields: string[] = ['name', 'status', 'priority', 'due_at', 'assigned_to'];
-
-  protected col: ColDef[] = [
-    { field: 'id', headerName: 'ID' },
-    {
-      field: 'assigned_to',
-      headerName: 'Assigned To',
-      editable: true,
-      valueGetter: (p: CellParams) => this.assignedToValueGetter(p),
-      valueFormatter: (p: CellParams) => this.assignedToValueFormatter(p),
-      cellRenderer: (p: CellParams) => this.renderAssignedCell(p.data?.['assigned_to']),
-      cellEditorParams: () => ({
-        values: [null, ...this.userIds],
-        labels: [this.unassignedLabel, ...this.userLabels],
-      }),
-      valueSetter: (p: CellParams) => this.assignToValueSetter(p),
-    },
-    { field: 'name', headerName: 'Task', editable: true },
-    {
-      field: 'status',
-      headerName: 'Status',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderStatusBadge(p.value),
-      cellEditorParams: { values: this.statusOptions, labels: this.statusLabels },
-      valueSetter: (p: CellParams) => this.statusValueSetter(p),
-    },
-    {
-      field: 'priority',
-      headerName: 'Priority',
-      editable: true,
-      cellRenderer: (p: CellParams) => this.renderPriorityBadge(p.value),
-      cellEditorParams: { values: this.priorityOptions, labels: this.priorityLabels },
-      valueSetter: (p: CellParams) => this.priorityValueSetter(p),
-    },
-    {
-      field: 'due_at',
-      headerName: 'Due',
-      editable: true,
-      valueGetter: (p: CellParams) => this.toDateOnly(p.data?.['due_at'] ?? p.value),
-      valueSetter: (p: CellParams) => this.dueAtValueSetter(p),
-      valueFormatter: (p: CellParams) => this.formatDate(p.value),
-      cellClass: (p: CellParams) => (this.isOverdue(p.data) ? 'text-error font-semibold' : undefined),
-    },
-    {
-      field: 'createdby_id',
-      headerName: 'Created By',
-      editable: false,
-      valueFormatter: (p: CellParams) => this.userNameForId(p.value),
-      cellRenderer: (p: CellParams) => this.renderCreatedByCell(p.data?.['createdby_id']),
-      // Provide filter options using known user labels
-      cellEditorParams: () => ({ values: this.userLabels }),
-    },
-  ];
-  protected importSummary = signal<CsvImportSummary | null>(null);
-  protected importerOpen = signal(false);
-  protected isArchiveMode = signal(false);
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    // Load users to drive Assigned To options and name mapping
-    try {
-      const users = await this.userService.getUsers();
-      this.usersById = new Map(users.map((u) => [String(u.id), `${u.first_name}`]));
-      this.usersAvatarById = new Map(users.map((u) => [String(u.id), u.avatar_url ?? null]));
-      this.userIds = users.map((u) => String(u.id));
-      this.userLabels = users.map((u) => `${u.first_name}`);
-    } catch {
-      /* no op */
-    }
-  }
-
-  protected readonly autoMapHeader = (h: string): string => {
-    const raw = (h || '').toLowerCase().trim();
-    const key = raw.replace(/[^a-z0-9]/g, '');
-    const map: Record<string, string> = {
-      task: 'name',
-      title: 'name',
-      subject: 'name',
-      status: 'status',
-      priority: 'priority',
-      due: 'due_at',
-      duedate: 'due_at',
-      dueat: 'due_at',
-      assignedto: 'assigned_to',
-      assignee: 'assigned_to',
-      owner: 'assigned_to',
-    };
-    return map[key] || '';
-  };
-
-  protected async onImportSubmit(payload: {
-    rows: Array<Record<string, string>>;
-    skipped: number;
-    fileName?: string | null;
-  }): Promise<void> {
-    const rows = payload?.rows ?? [];
-    const skippedReported = Number(payload?.skipped ?? 0) || 0;
-    const fileName = (payload?.fileName ?? '').trim();
-
-    try {
-      const res = await this.tasksService.import(rows, skippedReported, fileName || undefined);
-
-      const skipped = typeof res?.skipped === 'number' ? res.skipped : skippedReported;
-      const msg = `Import has been queued in the background. You can check its progress on the Imports page. File: ${res?.file_name || fileName}`;
-
-      this.importSummary.set({
-        inserted: 0,
-        errors: 0,
-        skipped,
-        queued: true,
-        failed: false,
-        message: msg,
-      });
-      this.importerOpen.set(false);
-      await this.grid()?.refresh();
-    } catch (e) {
-      const msg =
-        e instanceof Error && e.message
-          ? e.message
-          : isRecord(e) && isRecord(e['data']) && typeof e['data']['message'] === 'string' && e['data']['message']
-            ? e['data']['message']
-            : 'Import failed';
-      this.importSummary.set({ inserted: 0, errors: 0, skipped: skippedReported, failed: true, message: msg });
-      this.importerOpen.set(false);
-    }
-  }
-
-  protected openImportDialog() {
-    this.importSummary.set(null);
-    this.importerOpen.set(true);
-  }
-
-  private assignToValueSetter(p: CellParams) {
-    const val =
-      p.newValue === '' || p.newValue === null || p.newValue === undefined || p.newValue === this.unassignedLabel
-        ? null
-        : String(p.newValue);
-    const data = p.data;
-    if (!data) return false;
-    if (data['assigned_to'] !== val) {
-      data['assigned_to'] = val;
-      return true;
-    }
-    return false;
-  }
-
-  private assignedToValueFormatter(p: CellParams) {
-    const v = p.value;
-    if (v === null || v === undefined || v === '' || v === this.unassignedLabel) return this.unassignedLabel;
-    return this.usersById.get(String(v)) ?? String(v ?? '');
-  }
-
-  private assignedToValueGetter(p: CellParams) {
-    const id = p.data?.['assigned_to'] ?? p.value;
-    if (id === null || id === undefined || id === '' || id === this.unassignedLabel) return '';
-    return String(id);
-  }
-
-  private dueAtValueSetter(p: CellParams) {
-    const val = String(p.newValue || p.value || '');
-    // ensure only YYYY-MM-DD is stored
-    const dateOnly = val.length > 10 ? val.slice(0, 10) : val;
-    const data = p.data;
-    if (!data) return false;
-    if (data['due_at'] !== dateOnly) {
-      data['due_at'] = dateOnly;
-      return true;
-    }
-    return false;
-  }
-
-  private formatDate(value: unknown) {
-    if (!value) return '';
-    const d = new Date(this.toDateOnly(value));
-    if (isNaN(d.getTime())) return '';
-    return d.toLocaleDateString();
-  }
-
-  private isOverdue(row: GridRow | undefined): boolean {
-    if (!row) return false;
-
-    const status = String(row['status'] ?? '').toLowerCase();
-    if (status === 'done' || status === 'canceled') return false;
-
-    const due = this.toDateOnly(row['due_at']);
-    if (!due) return false;
-
-    const today = this.toDateOnly(new Date());
-    // Simple lexical compare works for YYYY-MM-DD
-    return due < today;
-  }
-
-  private normalizeChoice(value: string) {
-    return value.replace(/[_\s-]+/g, '').toLowerCase();
-  }
-
-  private parsePriorityLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.priorityLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.priorityOptions[idx];
-    const optionIdx = this.priorityOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.priorityOptions[optionIdx] : label;
-  }
-
-  private parseStatusLabel(label: string) {
-    const norm = this.normalizeChoice(label);
-    const idx = this.statusLabels.findIndex((l) => this.normalizeChoice(l) === norm);
-    if (idx >= 0) return this.statusOptions[idx];
-    const optionIdx = this.statusOptions.findIndex((opt) => this.normalizeChoice(opt) === norm);
-    return optionIdx >= 0 ? this.statusOptions[optionIdx] : label;
-  }
-
-  private priorityValueSetter(p: CellParams) {
-    const v = this.parsePriorityLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['priority'] !== v) {
-      data['priority'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private renderAssignedCell(value: unknown) {
-    const v = value == null ? '' : String(value);
-    const isUnassigned = !v || v === this.unassignedLabel;
-    const label = isUnassigned ? this.unassignedLabel : (this.usersById.get(v) ?? v);
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeLabel = escapeHtml(label);
-    if (isUnassigned) {
-      return `<span class="badge badge-error badge-sm">${safeLabel}</span>`;
-    }
-    let avatarUrl = this.usersAvatarById.get(v);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeLabel}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeLabel}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(label.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < label.length; i++) sum += label.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeLabel}</span>
-      </div>
-    `;
-  }
-
-  private renderCreatedByCell(value: unknown) {
-    const label = value == null ? '' : String(value);
-    if (!label) {
-      return `<span class="text-base-content/30">—</span>`;
-    }
-    const resolvedName = this.usersById.get(label) ?? label;
-    // User names and avatar URLs are user-controlled — escape before interpolating into HTML
-    const safeName = escapeHtml(resolvedName);
-    let avatarUrl = this.usersAvatarById.get(label);
-    if (avatarUrl) {
-      avatarUrl = this.userService.resolveAvatarUrl(avatarUrl);
-      return `
-        <div class="flex items-center gap-1.5 py-0.5">
-          <img src="${escapeHtml(avatarUrl ?? '')}" alt="${safeName}" class="w-5 h-5 rounded-full object-cover" />
-          <span class="text-xs font-medium">${safeName}</span>
-        </div>
-      `;
-    }
-    const initial = escapeHtml(resolvedName.slice(0, 1).toUpperCase() || '?');
-    const colors = [
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-violet-500/20 text-violet-700 dark:text-violet-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-    ];
-    let sum = 0;
-    for (let i = 0; i < resolvedName.length; i++) sum += resolvedName.charCodeAt(i);
-    const colorClass = colors[sum % colors.length];
-
-    return `
-      <div class="flex items-center gap-1.5 py-0.5">
-        <div class="avatar placeholder">
-          <div class="${colorClass} w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]">
-            <span>${initial}</span>
-          </div>
-        </div>
-        <span class="text-xs font-medium">${safeName}</span>
-      </div>
-    `;
-  }
-
-  private renderPriorityBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'urgent' ? 'badge-error' : v === 'high' ? 'badge-warning' : v === 'medium' ? 'badge-info' : 'badge-neutral';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private renderStatusBadge(value: unknown) {
-    if (!value) return '';
-    const v = String(value);
-    const cls =
-      v === 'done'
-        ? 'badge-success'
-        : v === 'in_progress'
-          ? 'badge-info'
-          : v === 'blocked'
-            ? 'badge-error'
-            : v === 'canceled'
-              ? 'badge-neutral'
-              : 'badge-ghost';
-    const label = this.toTitle(v);
-    return `<span class="badge ${cls} badge-sm">${label}</span>`;
-  }
-
-  private statusValueSetter(p: CellParams) {
-    const v = this.parseStatusLabel(String(p.newValue ?? ''));
-    const data = p.data;
-    if (!data) return false;
-    if (data['status'] !== v) {
-      data['status'] = v;
-      return true;
-    }
-    return false;
-  }
-
-  private toDateOnly(v: unknown): string {
-    if (!v) return '';
-    const str = typeof v === 'string' ? v : new Date(v as number | Date).toISOString();
-    return str.length > 10 ? str.slice(0, 10) : str;
-  }
-
-  private toTitle(v: string) {
-    return v
-      .replace(/[_-]+/g, ' ')
-      .split(' ')
-      .map((s) => (s ? s[0]!.toUpperCase() + s.slice(1) : s))
-      .join(' ');
-  }
-
-  private userNameForId(id: unknown) {
-    if (id === null || id === undefined || id === '') return '';
-    const key = String(id);
-    return this.usersById.get(key) ?? '';
   }
 }
 
@@ -52536,6 +52795,330 @@ export class TeamViewComponent {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+```
+
+## File: apps/frontend/src/app/layout/navbar/navbar.ts
+
+```typescript
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
+import { Icon } from '@icons/icon';
+import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
+import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
+import { Swap } from '@uxcommon/components/swap/swap';
+import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { Router, RouterLink } from '@angular/router';
+
+import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
+import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
+import { SearchService } from '../../services/api/search-service';
+import { FullScreenService } from '../../services/fullscreen.service';
+import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
+import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
+import { UserService } from '@frontend/services/user.service';
+import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
+import { NotificationsService } from '../../services/api/notifications-service';
+
+type NotificationItem = {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  link: string | null;
+  created_at: string | Date;
+};
+
+@Component({
+  selector: 'pc-navbar',
+  imports: [
+    Icon,
+    Swap,
+    ReactiveFormsModule,
+    AnimateIfDirective,
+    RouterLink,
+    FavouriteToggle,
+    Breadcrumbs,
+    PersonalSettingsDialog,
+  ],
+  templateUrl: './navbar.html',
+  host: {
+    '(window:keydown)': 'handleKeyDown($event)',
+  },
+})
+export class Navbar implements OnDestroy {
+  protected readonly emailActions = inject(EmailActionsStore);
+  protected readonly breadcrumbs = inject(BreadcrumbsService);
+  private readonly auth = inject(AuthService);
+  private readonly userService = inject(UserService);
+  private readonly fullscreen = inject(FullScreenService);
+  private readonly searchSvc = inject(SearchService);
+  private readonly sideBarSvc = inject(SidebarService);
+  private readonly notificationsSvc = inject(NotificationsService);
+  private readonly router = inject(Router);
+
+  protected readonly currentUser = this.auth.getUserSignal();
+  protected readonly currentUserAvatar = computed(() => {
+    const user = this.currentUser();
+    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
+  });
+
+  /** Initials shown in the avatar circle when the user has no picture. */
+  protected readonly userInitials = computed(() => {
+    const user = this.currentUser();
+    if (!user) return '';
+    const first = (user.first_name ?? '').trim();
+    const last = (user.last_name ?? '').trim();
+    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
+    return (initials || user.email?.charAt(0) || '?').toUpperCase();
+  });
+
+  private pollInterval?: ReturnType<typeof setInterval>;
+
+  public readonly notifications = signal<NotificationItem[]>([]);
+  public readonly unreadCount = signal<number>(0);
+  public readonly isLoadingMore = signal<boolean>(false);
+  public readonly hasMore = signal<boolean>(true);
+
+  protected isMobileOpen() {
+    return this.sideBarSvc.isMobileOpen();
+  }
+  protected readonly searchBarVisible = signal(false);
+
+  /** Personal Settings popup (§5a) — opened from the avatar menu. */
+  protected readonly settingsOpen = signal(false);
+
+  protected openSettings(): void {
+    this.closeDropdown();
+    this.settingsOpen.set(true);
+  }
+
+  protected readonly searchStr = signal('');
+  protected readonly themeSvc = inject(ThemeService);
+
+  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
+
+  constructor() {
+    // Move focus to the search bar whenever it becomes visible
+    effect(() => {
+      if (this.searchBarVisible())
+        queueMicrotask(() => {
+          this.searchInputRef()?.nativeElement?.focus();
+        });
+    });
+
+    void this.initNotifications();
+    this.pollInterval = setInterval(() => {
+      void this.refreshCount();
+    }, 60000);
+  }
+
+  public ngOnDestroy() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+    }
+  }
+
+  private async initNotifications() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      this.unreadCount.set(count || 0);
+      await this.fetchInitial();
+    } catch (err) {
+      console.error('Failed to initialize notifications', err);
+    }
+  }
+
+  protected async fetchInitial() {
+    this.isLoadingMore.set(true);
+    try {
+      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
+      this.notifications.set(list || []);
+      this.hasMore.set((list || []).length === 5);
+    } catch (err) {
+      console.error('Failed to fetch initial notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async refreshCount() {
+    try {
+      const count = await this.notificationsSvc.getUnreadCount();
+      const oldCount = this.unreadCount();
+      this.unreadCount.set(count || 0);
+      if (count > oldCount) {
+        // Notification count increased, fetch first 5 notifications in background
+        await this.fetchInitial();
+      }
+    } catch (err) {
+      console.error('Failed to poll notification count', err);
+    }
+  }
+
+  protected onNotificationOpen() {
+    if (this.notifications().length === 0) {
+      void this.fetchInitial();
+    }
+  }
+
+  protected onScroll(event: Event) {
+    const target = event.target as HTMLElement;
+    const threshold = 20; // px from bottom
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
+    if (isNearBottom) {
+      void this.loadMore();
+    }
+  }
+
+  protected async loadMore() {
+    if (this.isLoadingMore() || !this.hasMore()) return;
+    this.isLoadingMore.set(true);
+    try {
+      const nextBatch = await this.notificationsSvc.getLatest({
+        limit: 5,
+        offset: this.notifications().length,
+      });
+      if (!nextBatch || nextBatch.length < 5) {
+        this.hasMore.set(false);
+      }
+      if (nextBatch && nextBatch.length > 0) {
+        const existingIds = new Set(this.notifications().map((n) => n.id));
+        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
+        if (uniqueNext.length > 0) {
+          this.notifications.set([...this.notifications(), ...uniqueNext]);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load more notifications', err);
+    } finally {
+      this.isLoadingMore.set(false);
+    }
+  }
+
+  protected async clickNotification(notif: NotificationItem) {
+    if (!notif.read) {
+      try {
+        await this.notificationsSvc.markRead(notif.id);
+        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
+        this.unreadCount.update((c) => Math.max(0, c - 1));
+      } catch (err) {
+        console.error('Failed to mark notification read', err);
+      }
+    }
+    if (notif.link) {
+      void this.router.navigateByUrl(notif.link);
+    }
+    this.closeDropdown();
+  }
+
+  protected async markAllAsRead(event: Event) {
+    event.stopPropagation();
+    try {
+      await this.notificationsSvc.markAllRead();
+      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
+      this.unreadCount.set(0);
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  }
+
+  protected formatTime(dateStr: string | Date | null | undefined): string {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+
+  public clearSearch(): void {
+    this.searchStr.set('');
+    this.searchSvc.clearSearch();
+  }
+
+  public handleKeyDown(event: KeyboardEvent): void {
+    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
+    const isK = event?.key?.toLowerCase() === 'k';
+
+    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
+    if (isCtrlOrCmd && isK && !event.shiftKey) {
+      event.preventDefault();
+
+      this.showSearchBar();
+    } else if (event.key === 'Escape' && this.searchBarVisible()) {
+      this.clearSearch();
+      this.hideSearchBar();
+    }
+  }
+
+  protected hideSearchBar(): void {
+    this.searchBarVisible.set(false);
+  }
+
+  protected isFullScreenMode(): boolean {
+    return this.fullscreen.isFullScreenMode();
+  }
+
+  protected onBlurSearchBar() {
+    if (!this.searchStr().length) {
+      this.hideSearchBar();
+    }
+  }
+
+  protected onSearchEnter(): void {
+    this.searchSvc.doSearchImmediate(this.searchStr());
+  }
+
+  protected onSearchInput(event: Event) {
+    const input = event.target as HTMLInputElement;
+    this.searchStr.set(input.value);
+    this.search();
+  }
+
+  protected search(): void {
+    this.searchSvc.doSearch(this.searchStr());
+  }
+
+  protected showSearchBar(): void {
+    this.searchBarVisible.set(true);
+  }
+
+  protected signOut(): void {
+    void this.auth.signOut();
+  }
+
+  protected closeDropdown(): void {
+    const activeEl = document.activeElement as HTMLElement | null;
+    if (activeEl) {
+      activeEl.blur();
+    }
+  }
+
+  protected toggleFullScreen(): void {
+    void this.fullscreen.toggleFullScreen();
+  }
+
+  protected toggleMobile(): void {
+    this.sideBarSvc.toggleMobile();
+  }
+
+  protected toggleSearch(): void {
+    this.searchBarVisible.set(!this.searchBarVisible());
+  }
+
+  protected toggleTheme(): void {
+    this.themeSvc.toggleTheme();
+  }
 }
 ```
 
@@ -53527,229 +54110,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 ```
 
-## File: apps/frontend/src/app/experiences/lists/ui/lists-grid.ts
-
-```typescript
-import { Component, OnDestroy, effect, inject, untracked, viewChild } from '@angular/core';
-import { UpdateListType } from '../../../../../../../libs/common/src';
-import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
-import { ListsService } from '@experiences/lists/services/lists-service';
-import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
-import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-import { AbstractAPIService } from '../../../services/api/abstract-api.service';
-import { provideDataGridConfig } from '@frontend/shared/components/datagrid/datagrid.tokens';
-import { getUserErrorMessage } from '@frontend/services/api/user-message';
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-@Component({
-  selector: 'pc-lists-grid',
-  imports: [DataGrid],
-  template: `
-    <div class="flex flex-col gap-6">
-      <pc-datagrid
-        #grid
-        title="Lists"
-        i18n-title
-        description="Organize contacts into custom static or dynamic lists for targeted outreach and campaigns."
-        i18n-description
-        [colDefs]="col"
-        [disableDelete]="false"
-        [disableView]="false"
-        [allowFilter]="false"
-        plusIcon="add-list"
-        i18n-plusIcon
-        addRoute="add"
-        i18n-addRoute
-      ></pc-datagrid>
-    </div>
-  `,
-  providers: [
-    { provide: AbstractAPIService, useExisting: ListsService },
-    provideDataGridConfig({ messages: { exportEntity: 'lists', exportFileName: 'lists-export.csv' } }),
-  ],
-})
-export class ListsGridComponent implements OnDestroy {
-  private readonly refreshSvc = inject(ListsRefreshService);
-  private readonly listsSvc = inject(ListsService);
-  private readonly alerts = inject(AlertService);
-  private readonly grid = viewChild<DataGrid<'lists', UpdateListType>>('grid');
-
-  constructor() {
-    effect(() => {
-      const count = this.refreshSvc.refreshCount();
-      if (count > 0) {
-        void untracked(() => this.grid()?.refresh());
-      }
-    });
-  }
-
-  protected col: ColDef[] = [
-    { field: 'name', headerName: 'List Name', editable: true },
-    { field: 'description', headerName: 'Description', editable: true },
-    {
-      field: 'object',
-      headerName: 'Target Object',
-      valueFormatter: (p: CellParams) => {
-        const val = p?.value;
-        if (val === 'people') return 'People';
-        if (val === 'households') return 'Households';
-        return (val as string | undefined) ?? '—';
-      },
-    },
-    {
-      field: 'is_dynamic',
-      headerName: 'List Type',
-      cellRenderer: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        return isDynamic
-          ? `<span class="badge badge-primary font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Dynamic</span>`
-          : `<span class="badge badge-neutral font-semibold text-xs py-1 px-2.5 rounded-md shadow-sm">Static</span>`;
-      },
-    },
-    {
-      field: 'list_size',
-      headerName: 'Size',
-      valueFormatter: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        if (isDynamic === true || isDynamic === 'true' || isDynamic === 1) {
-          return 'N/A';
-        }
-        return (p?.value as number | undefined) ?? 0;
-      },
-    },
-    {
-      field: 'last_refreshed_at',
-      headerName: 'Last Refreshed',
-      valueFormatter: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        if (!isDynamic) return '—';
-        if (!p?.value) return 'Never';
-        const date = new Date(p.value as string | number | Date);
-        if (isNaN(date.getTime())) return 'Never';
-        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-      },
-    },
-    {
-      field: 'refresh_action',
-      headerName: 'Refresh',
-      cellRenderer: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        if (!isDynamic) return '—';
-        const status = p?.data?.['status'];
-        const isLocallyRefreshing = this.refreshingIds.has(String(p?.data?.['id'] ?? ''));
-        if (status === 'refreshing' || isLocallyRefreshing) {
-          return `
-            <div class="flex items-center justify-center h-full w-full">
-              <span class="loading loading-ring loading-lg text-primary"></span>
-            </div>
-          `;
-        }
-        return `
-          <div class="flex items-center justify-center h-full w-full">
-            <button class="btn btn-xs btn-circle btn-ghost group" title="Refresh dynamic list">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4 group-hover:text-primary group-hover:animate-bounce">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-            </button>
-          </div>
-        `;
-      },
-      onCellClicked: (p: CellParams) => {
-        const isDynamic = p?.data?.['is_dynamic'];
-        const id = String(p?.data?.['id'] ?? '');
-        const isRefreshing = p?.data?.['status'] === 'refreshing' || this.refreshingIds.has(id);
-        if (isDynamic && !isRefreshing) {
-          void this.refreshList(id, p);
-        }
-      },
-    },
-    {
-      field: 'updated_at',
-      headerName: 'Last Updated',
-      valueFormatter: (p: CellParams) => {
-        if (!p?.value) return '—';
-        const date = new Date(p.value as string | number | Date);
-        if (isNaN(date.getTime())) return '—';
-        return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
-      },
-    },
-    { field: 'created_by', headerName: 'Created By' },
-  ];
-
-  private readonly refreshingIds = new Set<string>();
-
-  private readonly pollIntervals = new Map<string, ReturnType<typeof setInterval>>();
-
-  private async refreshList(id: string, cellParams: CellParams) {
-    try {
-      this.refreshingIds.add(id);
-      // Re-render the cell immediately to show the loading spinner.
-      this.refreshCellIfPossible(cellParams);
-
-      this.alerts.showSuccess('Refresh job scheduled in background');
-      await this.listsSvc.refreshList(id);
-      this.pollRefreshStatus(id);
-    } catch (e) {
-      this.refreshingIds.delete(id);
-      this.refreshCellIfPossible(cellParams);
-      this.alerts.showError(getUserErrorMessage(e, 'Could not refresh the list. Please try again.'));
-    }
-  }
-
-  /** Best-effort refresh of a single grid cell, if the underlying table API supports it. */
-  private refreshCellIfPossible(cellParams: unknown): void {
-    if (!isRecord(cellParams)) return;
-    const api = cellParams['api'];
-    if (!isRecord(api) || typeof api['refreshCells'] !== 'function') return;
-    (api['refreshCells'] as (opts: unknown) => void)({
-      rowNodes: [cellParams['node']],
-      columns: ['refresh_action'],
-      force: true,
-    });
-  }
-
-  private pollRefreshStatus(id: string) {
-    const existing = this.pollIntervals.get(id);
-    if (existing) clearInterval(existing);
-
-    const interval = setInterval(() => void this.pollRefreshStep(id, interval), 1500);
-
-    this.pollIntervals.set(id, interval);
-  }
-
-  private async pollRefreshStep(id: string, interval: ReturnType<typeof setInterval>): Promise<void> {
-    try {
-      const list = await this.listsSvc.getById(id);
-      if (isRecord(list) && list['status'] !== 'refreshing') {
-        clearInterval(interval);
-        this.pollIntervals.delete(id);
-        this.refreshingIds.delete(id);
-        if (isRecord(list) && list['status'] === 'failed') {
-          this.alerts.showError('List refresh failed in background');
-        } else {
-          this.alerts.showSuccess('List refreshed successfully');
-        }
-        void this.grid()?.refresh();
-      }
-    } catch {
-      clearInterval(interval);
-      this.pollIntervals.delete(id);
-      this.refreshingIds.delete(id);
-    }
-  }
-
-  public ngOnDestroy() {
-    for (const interval of this.pollIntervals.values()) {
-      clearInterval(interval);
-    }
-  }
-}
-```
-
 ## File: apps/frontend/src/app/experiences/persons/ui/person-view.html
 
 ```html
@@ -54304,328 +54664,237 @@ export class ListsGridComponent implements OnDestroy {
 </pc-detail-layout>
 ```
 
-## File: apps/frontend/src/app/layout/navbar/navbar.ts
+## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
 
 ```typescript
-import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild, computed } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { Breadcrumbs } from '@uxcommon/components/breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '@uxcommon/components/breadcrumbs/breadcrumbs.service';
-import { Swap } from '@uxcommon/components/swap/swap';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-import { Router, RouterLink } from '@angular/router';
+import type { PcIconNameType } from '@icons/icons.index';
 
-import { FavouriteToggle } from '../favourite-toggle/favourite-toggle';
-import { PersonalSettingsDialog } from '../../experiences/settings/personal-settings-dialog/personal-settings-dialog';
-import { SearchService } from '../../services/api/search-service';
-import { FullScreenService } from '../../services/fullscreen.service';
-import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
-import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
-import { ThemeService } from 'apps/frontend/src/app/layout/theme/theme-service';
-import { UserService } from '@frontend/services/user.service';
-import { EmailActionsStore } from '../../experiences/emails/services/store/email-actions.store';
-import { NotificationsService } from '../../services/api/notifications-service';
-
-type NotificationItem = {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: string | Date;
-};
-
-@Component({
-  selector: 'pc-navbar',
-  imports: [
-    Icon,
-    Swap,
-    ReactiveFormsModule,
-    AnimateIfDirective,
-    RouterLink,
-    FavouriteToggle,
-    Breadcrumbs,
-    PersonalSettingsDialog,
-  ],
-  templateUrl: './navbar.html',
-  host: {
-    '(window:keydown)': 'handleKeyDown($event)',
-  },
-})
-export class Navbar implements OnDestroy {
-  protected readonly emailActions = inject(EmailActionsStore);
-  protected readonly breadcrumbs = inject(BreadcrumbsService);
-  private readonly auth = inject(AuthService);
-  private readonly userService = inject(UserService);
-  private readonly fullscreen = inject(FullScreenService);
-  private readonly searchSvc = inject(SearchService);
-  private readonly sideBarSvc = inject(SidebarService);
-  private readonly notificationsSvc = inject(NotificationsService);
-  private readonly router = inject(Router);
-
-  protected readonly currentUser = this.auth.getUserSignal();
-  protected readonly currentUserAvatar = computed(() => {
-    const user = this.currentUser();
-    return user ? this.userService.resolveAvatarUrl(user.avatar_url) : null;
-  });
-
-  /** Initials shown in the avatar circle when the user has no picture. */
-  protected readonly userInitials = computed(() => {
-    const user = this.currentUser();
-    if (!user) return '';
-    const first = (user.first_name ?? '').trim();
-    const last = (user.last_name ?? '').trim();
-    const initials = `${first.charAt(0)}${last.charAt(0)}`.trim();
-    return (initials || user.email?.charAt(0) || '?').toUpperCase();
-  });
-
-  private pollInterval?: ReturnType<typeof setInterval>;
-
-  public readonly notifications = signal<NotificationItem[]>([]);
-  public readonly unreadCount = signal<number>(0);
-  public readonly isLoadingMore = signal<boolean>(false);
-  public readonly hasMore = signal<boolean>(true);
-
-  protected isMobileOpen() {
-    return this.sideBarSvc.isMobileOpen();
-  }
-  protected readonly searchBarVisible = signal(false);
-
-  /** Personal Settings popup (§5a) — opened from the avatar menu. */
-  protected readonly settingsOpen = signal(false);
-
-  protected openSettings(): void {
-    this.closeDropdown();
-    this.settingsOpen.set(true);
-  }
-
-  protected readonly searchStr = signal('');
-  protected readonly themeSvc = inject(ThemeService);
-
-  public readonly searchInputRef = viewChild<ElementRef<HTMLInputElement>>('searchInput');
-
-  constructor() {
-    // Move focus to the search bar whenever it becomes visible
-    effect(() => {
-      if (this.searchBarVisible())
-        queueMicrotask(() => {
-          this.searchInputRef()?.nativeElement?.focus();
-        });
-    });
-
-    void this.initNotifications();
-    this.pollInterval = setInterval(() => {
-      void this.refreshCount();
-    }, 60000);
-  }
-
-  public ngOnDestroy() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-    }
-  }
-
-  private async initNotifications() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      this.unreadCount.set(count || 0);
-      await this.fetchInitial();
-    } catch (err) {
-      console.error('Failed to initialize notifications', err);
-    }
-  }
-
-  protected async fetchInitial() {
-    this.isLoadingMore.set(true);
-    try {
-      const list = await this.notificationsSvc.getLatest({ limit: 5, offset: 0 });
-      this.notifications.set(list || []);
-      this.hasMore.set((list || []).length === 5);
-    } catch (err) {
-      console.error('Failed to fetch initial notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async refreshCount() {
-    try {
-      const count = await this.notificationsSvc.getUnreadCount();
-      const oldCount = this.unreadCount();
-      this.unreadCount.set(count || 0);
-      if (count > oldCount) {
-        // Notification count increased, fetch first 5 notifications in background
-        await this.fetchInitial();
-      }
-    } catch (err) {
-      console.error('Failed to poll notification count', err);
-    }
-  }
-
-  protected onNotificationOpen() {
-    if (this.notifications().length === 0) {
-      void this.fetchInitial();
-    }
-  }
-
-  protected onScroll(event: Event) {
-    const target = event.target as HTMLElement;
-    const threshold = 20; // px from bottom
-    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < threshold;
-    if (isNearBottom) {
-      void this.loadMore();
-    }
-  }
-
-  protected async loadMore() {
-    if (this.isLoadingMore() || !this.hasMore()) return;
-    this.isLoadingMore.set(true);
-    try {
-      const nextBatch = await this.notificationsSvc.getLatest({
-        limit: 5,
-        offset: this.notifications().length,
-      });
-      if (!nextBatch || nextBatch.length < 5) {
-        this.hasMore.set(false);
-      }
-      if (nextBatch && nextBatch.length > 0) {
-        const existingIds = new Set(this.notifications().map((n) => n.id));
-        const uniqueNext = nextBatch.filter((n: NotificationItem) => !existingIds.has(n.id));
-        if (uniqueNext.length > 0) {
-          this.notifications.set([...this.notifications(), ...uniqueNext]);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load more notifications', err);
-    } finally {
-      this.isLoadingMore.set(false);
-    }
-  }
-
-  protected async clickNotification(notif: NotificationItem) {
-    if (!notif.read) {
-      try {
-        await this.notificationsSvc.markRead(notif.id);
-        this.notifications.update((list) => list.map((n) => (n.id === notif.id ? { ...n, read: true } : n)));
-        this.unreadCount.update((c) => Math.max(0, c - 1));
-      } catch (err) {
-        console.error('Failed to mark notification read', err);
-      }
-    }
-    if (notif.link) {
-      void this.router.navigateByUrl(notif.link);
-    }
-    this.closeDropdown();
-  }
-
-  protected async markAllAsRead(event: Event) {
-    event.stopPropagation();
-    try {
-      await this.notificationsSvc.markAllRead();
-      this.notifications.update((list) => list.map((n) => ({ ...n, read: true })));
-      this.unreadCount.set(0);
-    } catch (err) {
-      console.error('Failed to mark all read', err);
-    }
-  }
-
-  protected formatTime(dateStr: string | Date | null | undefined): string {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  }
-
-  public clearSearch(): void {
-    this.searchStr.set('');
-    this.searchSvc.clearSearch();
-  }
-
-  public handleKeyDown(event: KeyboardEvent): void {
-    const isCtrlOrCmd = event.ctrlKey || event.metaKey;
-    const isK = event?.key?.toLowerCase() === 'k';
-
-    // ⌘K opens inline search; ⌘⇧K is reserved for the command palette (handled there).
-    if (isCtrlOrCmd && isK && !event.shiftKey) {
-      event.preventDefault();
-
-      this.showSearchBar();
-    } else if (event.key === 'Escape' && this.searchBarVisible()) {
-      this.clearSearch();
-      this.hideSearchBar();
-    }
-  }
-
-  protected hideSearchBar(): void {
-    this.searchBarVisible.set(false);
-  }
-
-  protected isFullScreenMode(): boolean {
-    return this.fullscreen.isFullScreenMode();
-  }
-
-  protected onBlurSearchBar() {
-    if (!this.searchStr().length) {
-      this.hideSearchBar();
-    }
-  }
-
-  protected onSearchEnter(): void {
-    this.searchSvc.doSearchImmediate(this.searchStr());
-  }
-
-  protected onSearchInput(event: Event) {
-    const input = event.target as HTMLInputElement;
-    this.searchStr.set(input.value);
-    this.search();
-  }
-
-  protected search(): void {
-    this.searchSvc.doSearch(this.searchStr());
-  }
-
-  protected showSearchBar(): void {
-    this.searchBarVisible.set(true);
-  }
-
-  protected signOut(): void {
-    void this.auth.signOut();
-  }
-
-  protected closeDropdown(): void {
-    const activeEl = document.activeElement as HTMLElement | null;
-    if (activeEl) {
-      activeEl.blur();
-    }
-  }
-
-  protected toggleFullScreen(): void {
-    void this.fullscreen.toggleFullScreen();
-  }
-
-  protected toggleMobile(): void {
-    this.sideBarSvc.toggleMobile();
-  }
-
-  protected toggleSearch(): void {
-    this.searchBarVisible.set(!this.searchBarVisible());
-  }
-
-  protected toggleTheme(): void {
-    this.themeSvc.toggleTheme();
-  }
+export interface ISidebarItem {
+  adminOnly?: boolean;
+  children?: ISidebarItem[];
+  collapsed?: boolean;
+  favourite?: boolean;
+  hidden?: boolean;
+  hiddenByFavourite?: boolean;
+  icon?: PcIconNameType;
+  indicator?: boolean;
+  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
+  justPinned?: boolean;
+  name: string;
+  parent?: ISidebarItem;
+  pathMatchExact?: boolean;
+  route?: string;
+  /**
+   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
+   * A single lowercase letter, unique across all items. Rendered as a hint in the
+   * sidebar and consumed by KeyboardShortcutsService to route there.
+   */
+  shortcut?: string;
+  type?: 'item' | 'subheading' | 'bookmark';
 }
+
+export const SidebarItems: ISidebarItem[] = [
+  {
+    name: 'App',
+    route: '/',
+    hidden: true,
+  },
+  {
+    name: `Dashboard`,
+    route: '/summary',
+    icon: 'presentation-chart-line',
+    pathMatchExact: true,
+    shortcut: 'h',
+  },
+  {
+    name: `PINS`,
+    type: 'bookmark',
+    hidden: true,
+  },
+  {
+    name: `ENGAGE`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Inbox',
+        route: '/inbox',
+        icon: 'envelope',
+        shortcut: 'i',
+      },
+      {
+        name: 'Newsletters',
+        route: '/newsletters',
+        icon: 'megaphone',
+        shortcut: 'n',
+      },
+
+      {
+        name: 'Lists',
+        route: '/lists',
+        icon: 'queue-list',
+        shortcut: 'l',
+      },
+      {
+        name: `Automations`,
+        route: '/workflows',
+        icon: 'cog',
+        shortcut: 'a',
+      },
+    ],
+  },
+  {
+    name: `CONTACTS`,
+    type: 'subheading',
+    children: [
+      {
+        name: `People`,
+        route: '/people',
+        icon: 'identification',
+        shortcut: 'p',
+      },
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+        shortcut: 'u',
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+        shortcut: 'c',
+      },
+      {
+        name: `Duplicates`,
+        route: '/duplicates',
+        icon: 'document-duplicate',
+        shortcut: 'd',
+      },
+    ],
+  },
+  {
+    name: `CAMPAIGN`,
+    type: 'subheading',
+    children: [
+      {
+        name: 'Teams',
+        route: '/teams',
+        icon: 'user-group',
+        shortcut: 't',
+      },
+      {
+        name: 'Donations',
+        route: '/donations',
+        icon: 'currency-dollar',
+        shortcut: 'o',
+      },
+    ],
+  },
+  {
+    name: 'FORMS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: 'Forms',
+        route: '/forms',
+        icon: 'clipboard-document-list',
+        shortcut: 'f',
+      },
+      {
+        name: 'Shifts',
+        route: '/events/shifts',
+        icon: 'add-schedule',
+        shortcut: 's',
+      },
+      {
+        name: 'Events',
+        route: '/events/pages',
+        icon: 'ticket',
+        shortcut: 'e',
+      },
+      {
+        name: 'Fundraising',
+        route: '/donation-pages',
+        icon: 'currency-dollar',
+        shortcut: 'r',
+      },
+    ],
+  },
+  {
+    name: 'TOOLS',
+    type: 'subheading',
+    collapsed: true,
+    children: [
+      {
+        name: `Tasks`,
+        route: '/tasks',
+        icon: 'task',
+        shortcut: 'k',
+      },
+      {
+        name: `Task Board`,
+        route: '/board',
+        icon: 'view-kanban',
+        shortcut: 'b',
+      },
+      {
+        name: 'Files',
+        route: '/files',
+        icon: 'document',
+        shortcut: 'm',
+      },
+      {
+        name: 'Imports',
+        route: '/imports',
+        icon: 'arrow-up-tray',
+      },
+      {
+        name: 'Exports',
+        route: '/exports',
+        icon: 'arrow-down-tray',
+      },
+    ],
+  },
+  {
+    name: `SYSTEM`,
+    type: 'subheading',
+    adminOnly: true,
+    collapsed: true,
+    children: [
+      {
+        name: 'Activity Log',
+        route: '/activities',
+        icon: 'clipboard-document-list',
+      },
+      {
+        name: 'Tags',
+        route: '/tags',
+        icon: 'label',
+      },
+      {
+        name: 'Issues',
+        route: '/issues',
+        icon: 'shield-exclamation',
+      },
+      {
+        name: 'Users',
+        route: '/users',
+        icon: 'users',
+      },
+      {
+        name: 'Workspace',
+        route: '/workspace',
+        icon: 'wrench-screwdriver',
+      },
+      {
+        name: 'Help',
+        route: '/help',
+        icon: 'information-circle',
+      },
+    ],
+  },
+];
 ```
 
 ## File: apps/frontend/src/app/layout/navbar/navbar.html
@@ -54894,239 +55163,6 @@ export class Navbar implements OnDestroy {
 
 <!-- Personal Settings popup (§5a) — instant apply -->
 <pc-personal-settings-dialog [(open)]="settingsOpen"></pc-personal-settings-dialog>
-```
-
-## File: apps/frontend/src/app/layout/sidebar/sidebar-items.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface ISidebarItem {
-  adminOnly?: boolean;
-  children?: ISidebarItem[];
-  collapsed?: boolean;
-  favourite?: boolean;
-  hidden?: boolean;
-  hiddenByFavourite?: boolean;
-  icon?: PcIconNameType;
-  indicator?: boolean;
-  /** Transient: set on a pin clone so the sidebar plays the `up` entry once. */
-  justPinned?: boolean;
-  name: string;
-  parent?: ISidebarItem;
-  pathMatchExact?: boolean;
-  route?: string;
-  /**
-   * Second key of the Gmail-style `g` navigation chord (press `g` then this key).
-   * A single lowercase letter, unique across all items. Rendered as a hint in the
-   * sidebar and consumed by KeyboardShortcutsService to route there.
-   */
-  shortcut?: string;
-  type?: 'item' | 'subheading' | 'bookmark';
-}
-
-export const SidebarItems: ISidebarItem[] = [
-  {
-    name: 'App',
-    route: '/',
-    hidden: true,
-  },
-  {
-    name: `Dashboard`,
-    route: '/summary',
-    icon: 'presentation-chart-line',
-    pathMatchExact: true,
-    shortcut: 'h',
-  },
-  {
-    name: `PINS`,
-    type: 'bookmark',
-    hidden: true,
-  },
-  {
-    name: `ENGAGE`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Inbox',
-        route: '/inbox',
-        icon: 'envelope',
-        shortcut: 'i',
-      },
-      {
-        name: 'Newsletters',
-        route: '/newsletters',
-        icon: 'megaphone',
-        shortcut: 'n',
-      },
-
-      {
-        name: 'Lists',
-        route: '/lists',
-        icon: 'queue-list',
-        shortcut: 'l',
-      },
-      {
-        name: `Automations`,
-        route: '/workflows',
-        icon: 'cog',
-        shortcut: 'a',
-      },
-    ],
-  },
-  {
-    name: `CONTACTS`,
-    type: 'subheading',
-    children: [
-      {
-        name: `People`,
-        route: '/people',
-        icon: 'identification',
-        shortcut: 'p',
-      },
-      {
-        name: `Households`,
-        route: '/households',
-        icon: 'house-modern',
-        shortcut: 'u',
-      },
-      {
-        name: `Companies`,
-        route: '/companies',
-        icon: 'briefcase',
-        shortcut: 'c',
-      },
-      {
-        name: `Duplicates`,
-        route: '/duplicates',
-        icon: 'document-duplicate',
-        shortcut: 'd',
-      },
-    ],
-  },
-  {
-    name: `CAMPAIGN`,
-    type: 'subheading',
-    children: [
-      {
-        name: 'Teams',
-        route: '/teams',
-        icon: 'user-group',
-        shortcut: 't',
-      },
-      {
-        name: 'Donations',
-        route: '/donations',
-        icon: 'currency-dollar',
-        shortcut: 'o',
-      },
-    ],
-  },
-  {
-    name: 'FORMS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: 'Forms',
-        route: '/forms',
-        icon: 'clipboard-document-list',
-        shortcut: 'f',
-      },
-      {
-        name: 'Shifts',
-        route: '/events/shifts',
-        icon: 'add-schedule',
-        shortcut: 's',
-      },
-      {
-        name: 'Events',
-        route: '/events/pages',
-        icon: 'ticket',
-        shortcut: 'e',
-      },
-      {
-        name: 'Fundraising',
-        route: '/donation-pages',
-        icon: 'currency-dollar',
-        shortcut: 'r',
-      },
-    ],
-  },
-  {
-    name: 'TOOLS',
-    type: 'subheading',
-    collapsed: true,
-    children: [
-      {
-        name: `Tasks`,
-        route: '/tasks',
-        icon: 'task',
-        shortcut: 'k',
-      },
-      {
-        name: `Task Board`,
-        route: '/board',
-        icon: 'view-kanban',
-        shortcut: 'b',
-      },
-      {
-        name: 'Files',
-        route: '/files',
-        icon: 'document',
-        shortcut: 'm',
-      },
-      {
-        name: 'Imports',
-        route: '/imports',
-        icon: 'arrow-up-tray',
-      },
-      {
-        name: 'Exports',
-        route: '/exports',
-        icon: 'arrow-down-tray',
-      },
-    ],
-  },
-  {
-    name: `SYSTEM`,
-    type: 'subheading',
-    adminOnly: true,
-    collapsed: true,
-    children: [
-      {
-        name: 'Activity Log',
-        route: '/activities',
-        icon: 'clipboard-document-list',
-      },
-      {
-        name: 'Tags',
-        route: '/tags',
-        icon: 'label',
-      },
-      {
-        name: 'Issues',
-        route: '/issues',
-        icon: 'shield-exclamation',
-      },
-      {
-        name: 'Users',
-        route: '/users',
-        icon: 'users',
-      },
-      {
-        name: 'Workspace',
-        route: '/workspace',
-        icon: 'wrench-screwdriver',
-      },
-      {
-        name: 'Help',
-        route: '/help',
-        icon: 'information-circle',
-      },
-    ],
-  },
-];
 ```
 
 ## File: apps/frontend/src/app/layout/sidebar/sidebar.html
@@ -58446,25 +58482,44 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
 
   protected readonly sanitizer = inject(DomSanitizer);
 
+  // Memoized sanitized cell HTML. callCellRenderer runs inside a template binding, so
+  // it re-fires on every change-detection pass for every visible cell; without this it
+  // would re-run the renderer AND DOMPurify O(rows × cols) times per CD cycle. Keyed by
+  // the (stable) ColDef then the row data object — both WeakMap keys, so entries are
+  // evicted automatically when a column or row is garbage-collected — and invalidated
+  // when the cell's value changes.
+  private readonly cellHtmlCache = new WeakMap<object, WeakMap<object, { value: unknown; html: SafeHtml }>>();
+  private readonly emptyCellHtml: SafeHtml = this.sanitizer.bypassSecurityTrustHtml('');
+
   protected callCellRenderer(row: GridRow, col: ColDef): SafeHtml {
     const fn = col.cellRenderer;
-    if (typeof fn === 'function') {
-      const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
-
-      const raw = fn({ data: row, value, colDef: col });
-
-      // Renderer strings may interpolate row data, so they are never trusted
-      // as-is: DOMPurify strips script/event-handler payloads while keeping
-      // the markup (class/style/img) renderers legitimately produce.
-      if (typeof raw === 'string') {
-        return this.sanitizer.bypassSecurityTrustHtml(DOMPurify.sanitize(raw));
-      }
-
-      // If you later allow SafeHtml from some renderers, just return it.
-      return raw as SafeHtml;
+    if (typeof fn !== 'function') {
+      // Empty string is still valid SafeHtml
+      return this.emptyCellHtml;
     }
-    // Empty string is still valid SafeHtml
-    return this.sanitizer.bypassSecurityTrustHtml('');
+
+    const value = this.hasValueFormatter(col) ? this.callValueFormatter(row, col) : this.getCellValue(row, col);
+
+    let byRow = this.cellHtmlCache.get(col);
+    if (!byRow) {
+      byRow = new WeakMap<object, { value: unknown; html: SafeHtml }>();
+      this.cellHtmlCache.set(col, byRow);
+    }
+    const cached = byRow.get(row);
+    if (cached && Object.is(cached.value, value)) {
+      return cached.html;
+    }
+
+    const raw = fn({ data: row, value, colDef: col });
+
+    // Renderer strings may interpolate row data, so they are never trusted as-is:
+    // DOMPurify strips script/event-handler payloads while keeping the markup
+    // (class/style/img) renderers legitimately produce. SafeHtml is returned as-is.
+    const html: SafeHtml =
+      typeof raw === 'string' ? this.sanitizer.bypassSecurityTrustHtml(DOMPurify.sanitize(raw)) : (raw as SafeHtml);
+
+    byRow.set(row, { value, html });
+    return html;
   }
 
   protected callValueFormatter(row: GridRow, col: ColDef): unknown {
