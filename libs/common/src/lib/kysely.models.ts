@@ -88,6 +88,7 @@ export interface Models {
   webhook_events: WebhookEvents;
   data_exports: DataExports;
   potential_duplicates: PotentialDuplicates;
+  dismissed_duplicate_groups: DismissedDuplicateGroups;
   workflows: Workflows;
   workflow_steps: WorkflowSteps;
   workflow_enrollments: WorkflowEnrollments;
@@ -709,6 +710,15 @@ export interface PotentialDuplicates {
   reason: string;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
+}
+
+/** §9.3 Duplicates: a "Not duplicates" dismissal, keyed by the same `group_key` the nightly
+ * sweep uses. No surrogate id — `(tenant_id, group_key)` is the natural primary key. */
+export interface DismissedDuplicateGroups {
+  tenant_id: string;
+  group_key: string;
+  dismissed_by_id: string;
+  dismissed_at: Generated<Timestamp>;
 }
 
 interface MsOauthTokens {
