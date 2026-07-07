@@ -1,5 +1,5 @@
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
 import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
@@ -41,6 +41,7 @@ export class PersonsGrid implements OnInit {
   private readonly utils = inject(DataGridUtilsService);
   private readonly tagOptionsSvc = inject(TagOptionsService);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly alertSvc = inject(AlertService);
   public readonly _loading = createLoadingGate();
@@ -229,7 +230,20 @@ export class PersonsGrid implements OnInit {
   /** Grain total sentence for the header (spec §5): "{n} people total". */
   protected readonly totalSentence = signal<string | null>(null);
 
+  /** Pre-filter the grid from a door link — Tags admin's PEOPLE count (`?tag=`, spec §9.1) and
+   * Issues admin's PEOPLE INTERESTED count (`?issue=`, spec §9.2) both land here. Read once on
+   * arrival; the grid's own filter chips take over from there (§2 disclosure-over-suppression —
+   * the chip shows what's filtering, not a hidden query param). */
+  protected readonly initialTagFilter = signal<string[]>([]);
+  protected readonly initialIssueFilter = signal<string[]>([]);
+
   public ngOnInit() {
+    const params = this.route.snapshot.queryParamMap;
+    const tag = params.get('tag');
+    const issue = params.get('issue');
+    if (tag) this.initialTagFilter.set([tag]);
+    if (issue) this.initialIssueFilter.set([issue]);
+
     void this.initializeComponent();
   }
 
