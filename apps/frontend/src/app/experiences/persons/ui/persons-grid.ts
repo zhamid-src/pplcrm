@@ -219,14 +219,6 @@ export class PersonsGrid implements OnInit {
 
   public listId = input<string | null>(null);
 
-  protected readonly narrowTypeOptions = signal<
-    Array<{ label: string; value: string | null; tags: string[]; count?: number }>
-  >([
-    { label: 'All', value: null, tags: [] },
-    { label: 'Donors', value: 'donor', tags: ['donor'] },
-    { label: 'Volunteers', value: 'volunteer', tags: ['volunteer'] },
-  ]);
-
   /** Grain total sentence for the header (spec §5): "{n} people total". */
   protected readonly totalSentence = signal<string | null>(null);
 
@@ -251,32 +243,23 @@ export class PersonsGrid implements OnInit {
     try {
       await this.loadTagOptions();
       await this.loadIssueOptions();
-      void this.loadViewCounts();
+      void this.loadTotalCount();
     } catch (error) {
       console.error('Initialization failed', error);
     }
   }
 
   /**
-   * Absolute per-view counts for the system-views segmented control (All / Donors /
-   * Volunteers). Fetched once with only the view's tag filter, so counts stay fixed
-   * regardless of the grid's other active filters (§2).
+   * Total people count for the grain header sentence (spec §5): "{n} people total".
+   * The All/Donors/Volunteers segmented control was removed per the owner screenshot —
+   * donor/volunteer are just tag filters now — so only the overall total is fetched.
    */
-  private async loadViewCounts(): Promise<void> {
+  private async loadTotalCount(): Promise<void> {
     try {
-      const opts = this.narrowTypeOptions();
-      const counts = await Promise.all(
-        opts.map(async (o) => {
-          if (o.value === null) return this.personsService.count();
-          const res = await this.personsService.getAll({ tags: o.tags, limit: 1 });
-          return res?.count ?? 0;
-        }),
-      );
-      this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
-      const total = counts[0] ?? 0;
+      const total = await this.personsService.count();
       this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
     } catch (err) {
-      console.error('Failed to load view counts', err);
+      console.error('Failed to load total count', err);
     }
   }
 

@@ -504,6 +504,13 @@ export class PersonView {
     }
   }
 
+  /** Take the user to the People duplicates review UI (spec §5 / §9.3, Track D) to merge this
+   * person into another. The pair-card comparison there is the one place merges are resolved,
+   * so the safe "keep" choice always lives with the operator on that screen. */
+  protected mergeIntoAnother(): void {
+    void this.router.navigate(['/duplicates/people']);
+  }
+
   /** Export the contact as a downloadable vCard (§3 overflow) — fully client-side. */
   protected exportVCard(): void {
     const p = this.person();

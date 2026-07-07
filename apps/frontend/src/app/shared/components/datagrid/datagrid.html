@@ -32,18 +32,19 @@
   </div>
   } @if (isLoading()) {
   <progress class="progress h-1"></progress>
-  } @if (filterChips().length) {
-  <div class="mb-2 flex flex-wrap items-center gap-2 rounded border border-base-300 bg-base-100 px-3 py-2 text-xs">
-    <span
-      class="font-semibold uppercase tracking-wider text-base-content/50"
-      i18n="Datagrid|Label preceding the active filter chips@@datagrid.chips.label"
-      >Filters</span
-    >
+  } @if (showToolbar() && (allowFilter() || showTagFilter() || showIssueFilter() || showListFilter())) {
+  <!-- Filter chip row (spec §5): muted funnel marker · active chips · Clear all · dashed entry pills.
+       No surrounding box — sits directly on the page. -->
+  <div class="mb-2 flex flex-wrap items-center gap-2 text-xs">
+    <pc-icon name="funnel" [size]="4" class="shrink-0 text-base-content/40"></pc-icon>
+
     @for (chip of filterChips(); track chip.kind + ':' + chip.key) {
-    <span class="badge badge-outline gap-1 border-primary/30 bg-primary/10 text-primary">
+    <span class="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-primary">
       @if (chip.kind === 'advanced') {
       <button type="button" class="hover:underline" (click)="openAdvancedFilterBuilder()">{{ chip.label }}</button>
-      } @else { {{ chip.label }} }
+      } @else {
+      <span>{{ chip.label }}</span>
+      }
       <button
         type="button"
         class="opacity-70 hover:opacity-100"
@@ -53,8 +54,7 @@
         <pc-icon name="x-mark" [size]="3"></pc-icon>
       </button>
     </span>
-    }
-    <span class="flex-1"></span>
+    } @if (filterChips().length) {
     <button
       type="button"
       class="link text-primary hover:no-underline"
@@ -63,6 +63,183 @@
     >
       Clear all
     </button>
+    }
+
+    <!-- + Add filter: quick single field → operator → value chip entry -->
+    @if (allowFilter()) {
+    <details class="dropdown" #addFilterDd>
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+      >
+        <pc-icon name="plus" [size]="3"></pc-icon>
+        <span i18n="Datagrid|Add-filter pill label@@datagrid.pills.addFilter">Add filter</span>
+      </summary>
+      <div
+        tabindex="0"
+        class="dropdown-content z-[60] mt-1 flex w-64 flex-col gap-2 rounded-box border border-base-200 bg-base-100 p-3 shadow-lg"
+      >
+        <select
+          class="select select-bordered select-xs w-full"
+          [ngModel]="addFilterField()"
+          (ngModelChange)="addFilterField.set($event)"
+        >
+          <option value="" disabled i18n="Datagrid|Add-filter field placeholder@@datagrid.pills.addFilter.field">
+            Choose field…
+          </option>
+          @for (f of addFilterFields(); track f.field) {
+          <option [value]="f.field">{{ f.label }}</option>
+          }
+        </select>
+        <select
+          class="select select-bordered select-xs w-full"
+          [ngModel]="addFilterOp()"
+          (ngModelChange)="addFilterOp.set($event)"
+        >
+          @for (op of addFilterOperators; track op.value) {
+          <option [value]="op.value">{{ op.label }}</option>
+          }
+        </select>
+        @if (addFilterNeedsValue()) {
+        <input
+          type="text"
+          class="input input-bordered input-xs w-full"
+          placeholder="Value"
+          i18n-placeholder="Datagrid|Add-filter value placeholder@@datagrid.pills.addFilter.value"
+          [ngModel]="addFilterValue()"
+          (ngModelChange)="addFilterValue.set($event)"
+          (keydown.enter)="applyAddFilter(); addFilterDd.removeAttribute('open')"
+        />
+        }
+        <div class="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            class="btn btn-ghost btn-xs"
+            (click)="addFilterDd.removeAttribute('open')"
+            i18n="Datagrid|Cancel add-filter@@datagrid.pills.addFilter.cancel"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            class="btn btn-primary btn-xs"
+            [disabled]="!addFilterField() || (addFilterNeedsValue() && !addFilterValue().trim())"
+            (click)="applyAddFilter(); addFilterDd.removeAttribute('open')"
+            i18n="Datagrid|Apply add-filter@@datagrid.pills.addFilter.apply"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </details>
+    }
+
+    <!-- Tags dashed pill — opens the OR checkbox picker -->
+    @if (showTagFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedTags().length > 0"
+        [class.!text-primary]="selectedTags().length > 0"
+      >
+        <pc-icon name="label" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Tags filter pill label@@datagrid.pills.tags">Tags</span>
+        @if (selectedTags().length) {
+        <span class="tabular-nums">({{ selectedTags().length }})</span>
+        }
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by Tags'"
+        [active]="selectedTags().length > 0"
+        (clear)="clearTagsFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Tags'"
+          [options]="filteredAvailableTags()"
+          [selected]="selectedTags()"
+          [searchQuery]="tagSearchQuery()"
+          (searchQueryChange)="tagSearchQuery.set($event)"
+          [maxHeight]="14"
+          (selectAll)="selectAllTags()"
+          (clearVisible)="clearAllTagsVisible()"
+          (toggle)="toggleTagFilter($event.value, $event.checked)"
+        />
+        <p
+          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+          i18n="Datagrid|Explainer that checked tags combine with OR@@datagrid.tags.orFooter"
+        >
+          Checked tags combine with OR and land as one chip.
+        </p>
+      </pc-dg-filter-dropdown>
+    </details>
+    }
+
+    <!-- Issues dashed pill -->
+    @if (showIssueFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedIssues().length > 0"
+        [class.!text-primary]="selectedIssues().length > 0"
+      >
+        <pc-icon name="shield-exclamation" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Issues filter pill label@@datagrid.pills.issues">Issues</span>
+        @if (selectedIssues().length) {
+        <span class="tabular-nums">({{ selectedIssues().length }})</span>
+        }
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by Issues'"
+        [active]="selectedIssues().length > 0"
+        (clear)="clearIssuesFilter()"
+      >
+        <pc-multiselect-filter
+          [label]="'Issues'"
+          [options]="filteredAvailableIssues()"
+          [selected]="selectedIssues()"
+          [searchQuery]="issueSearchQuery()"
+          (searchQueryChange)="issueSearchQuery.set($event)"
+          [maxHeight]="14"
+          (selectAll)="selectAllIssues()"
+          (clearVisible)="clearAllIssuesVisible()"
+          (toggle)="toggleIssueFilter($event.value, $event.checked)"
+        />
+        <p
+          class="mt-1 border-t border-base-200 px-1 pt-1.5 text-[11px] leading-snug text-base-content/50"
+          i18n="Datagrid|Explainer that checked issues combine with OR@@datagrid.issues.orFooter"
+        >
+          Checked issues combine with OR and land as one chip.
+        </p>
+      </pc-dg-filter-dropdown>
+    </details>
+    }
+
+    <!-- Lists dashed pill — apply a saved list as a chip -->
+    @if (showListFilter()) {
+    <details class="dropdown">
+      <summary
+        class="inline-flex cursor-pointer list-none items-center gap-1 rounded-full border border-dashed border-base-300 px-2.5 py-1 text-base-content/60 transition-colors hover:border-primary/40 hover:text-primary"
+        [class.!border-primary]="selectedListId() !== null"
+        [class.!text-primary]="selectedListId() !== null"
+      >
+        <pc-icon name="queue-list" [size]="4"></pc-icon>
+        <span i18n="Datagrid|Lists filter pill label@@datagrid.pills.lists">Lists</span>
+      </summary>
+      <pc-dg-filter-dropdown
+        [title]="'Filter by List'"
+        [active]="selectedListId() !== null"
+        (clear)="clearListFilter()"
+      >
+        <pc-singleselect-filter
+          [label]="'List'"
+          [options]="listOptions()"
+          [selected]="selectedListId()"
+          [radioName]="'selectedListPill'"
+          [maxHeight]="14"
+          (select)="selectListFilter($event)"
+        />
+      </pc-dg-filter-dropdown>
+    </details>
+    }
   </div>
   } @if (isPageFullySelected() && displayedCount() < totalCountAll()) {
   <div class="alert alert-success flex items-center gap-2 py-2 text-sm">
@@ -589,8 +766,14 @@
               >Unnamed person</span
             >
             } } @else if (col.field === 'address') {
+            <!-- Address underlines only when the row links to a real (non-placeholder) household. -->
             <div class="absolute inset-0 px-2 py-3 overflow-hidden" [attr.title]="rawValue">
-              <div class="whitespace-normal break-words">{{ rawValue || '—' }}</div>
+              <div
+                class="whitespace-normal break-words decoration-base-content/30 underline-offset-[3px]"
+                [class.underline]="!!rawValue && isCellPointerInteractive(r.original, col)"
+              >
+                {{ rawValue || '—' }}
+              </div>
             </div>
             } @else {
             <span class="flex items-center gap-1 w-full">
