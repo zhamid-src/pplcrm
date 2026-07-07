@@ -77,6 +77,12 @@ export type {
   RegistrationType,
   UpdateRegistrationType,
   AddConnectionType,
+  AddTurfType,
+  UpdateTurfType,
+  CutTurfsType,
+  AssignTurfType,
+  FieldReportRangeType,
+  LogKnockType,
 } from './lib/models';
 
 export {
@@ -177,6 +183,21 @@ export {
   RELATION_TYPES,
   RELATION_TYPE_LABELS,
   relationTypeSchema,
+  AddTurfObj,
+  UpdateTurfObj,
+  CutTurfsObj,
+  AssignTurfObj,
+  FieldReportRangeObj,
+  LogKnockObj,
+  TURF_STATUSES,
+  KNOCK_OUTCOMES,
+  KNOCK_RESPONSES,
+  DOORS_PER_TURF_PRESETS,
+  turfStatusSchema,
+  knockOutcomeSchema,
+  knockResponseSchema,
+  isTurfStatus,
+  isKnockOutcome,
 } from './lib/schema';
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
@@ -187,6 +208,7 @@ export type {
   WorkflowStepConfigType,
   WorkflowRunType,
 } from './lib/schemas/workflows.schema';
+export type { TurfStatus, KnockOutcome, KnockResponse } from './lib/schemas/canvassing.schema';
 
 export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
 export {

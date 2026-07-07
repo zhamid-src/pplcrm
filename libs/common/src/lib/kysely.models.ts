@@ -96,6 +96,10 @@ export interface Models {
   person_connections: PersonConnections;
   passkeys: Passkeys;
   zapier_subscriptions: ZapierSubscriptions;
+  turfs: Turfs;
+  turf_households: TurfHouseholds;
+  turf_assignments: TurfAssignments;
+  turf_knocks: TurfKnocks;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -259,6 +263,53 @@ interface MapTeamsPersons extends JunctionRecordType {
 interface MapTeamsLists extends JunctionRecordType {
   team_id: string;
   list_id: string;
+}
+
+/**
+ * Canvassing §13. A turf is a geographic slice of a smart-list universe cut into
+ * a walkable door list. `status` is the stored lifecycle only —
+ * 'draft' (unassigned) | 'active' (assigned/in the field) | 'retired'. Display
+ * state ("In field now", "Complete") and all progress numbers are DERIVED from
+ * turf_knocks at read time, never stored here (§22.6).
+ */
+interface Turfs extends RecordType {
+  name: string;
+  status: string;
+  list_id: string | null;
+  target_doors: number | null;
+  centroid_lat: number | null;
+  centroid_lng: number | null;
+  ward: string | null;
+  notes: string | null;
+}
+
+/** The doors of a turf — one row per household. */
+interface TurfHouseholds extends JunctionRecordType {
+  turf_id: string;
+  household_id: string;
+}
+
+/** A turf handed to a team and/or opened via a tokenised Companion link. */
+interface TurfAssignments extends RecordType {
+  turf_id: string;
+  team_id: string | null;
+  token: string;
+  status: string;
+  assigned_at: Timestamp;
+}
+
+/** One door interaction, synced live from a Canvass Companion. */
+interface TurfKnocks extends RecordType {
+  turf_id: string;
+  household_id: string;
+  person_id: string | null;
+  outcome: string;
+  response: string | null;
+  notes: string | null;
+  source: string;
+  canvasser_name: string | null;
+  client_knock_id: string | null;
+  knocked_at: Timestamp;
 }
 
 export interface MapListsPersons extends JunctionRecordType {
