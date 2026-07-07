@@ -170,16 +170,12 @@ export const SidebarItems: ISidebarItem[] = [
     collapsed: true,
     children: [
       {
+        // Wave 1E (spec §17): History page with Imports/Exports tabs, plus the
+        // CSV import wizard at /imports/new. Exports' standalone entry folded
+        // in here — see the redirect in dashboard.routes.ts.
         name: 'Import / export',
         route: '/imports',
         icon: 'arrow-up-tray',
-      },
-      // Wave 1E: the Exports page folds into the Import / export wizard (§17).
-      // Kept as its own entry until then so exports stay reachable.
-      {
-        name: 'Exports',
-        route: '/exports',
-        icon: 'arrow-down-tray',
       },
       {
         name: `Duplicates`,
