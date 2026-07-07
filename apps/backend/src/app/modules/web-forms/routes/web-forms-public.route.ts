@@ -520,8 +520,11 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       reply.type('text/html');
       return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
     } catch (err) {
+      // Never surface internal error detail to an unauthenticated visitor — log it, show generic
+      // copy (SECURITY-REVIEW 5.2, consistent with the tRPC sanitization boundary).
+      fastify.log.error(err, 'Failed to render public form');
       reply.status(500).type('text/html');
-      return reply.send(errorHtml(err instanceof Error && err.message ? err.message : 'Failed to load form.'));
+      return reply.send(errorHtml('Failed to load form.'));
     }
   });
 
@@ -550,8 +553,12 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       fastify.log.error(err);
       const statusCode =
         (isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined) || 500;
+      // Client errors (4xx: validation, rate limit) carry user-actionable copy; anything 5xx is an
+      // unexpected internal failure whose detail must not leak to the public (SECURITY-REVIEW 5.2).
       const message =
-        err instanceof Error && err.message ? err.message : 'An unexpected error occurred during submission.';
+        statusCode < 500 && err instanceof Error && err.message
+          ? err.message
+          : 'An unexpected error occurred during submission.';
 
       if (isJsonExpected) {
         return reply.status(statusCode).send({ error: message });
