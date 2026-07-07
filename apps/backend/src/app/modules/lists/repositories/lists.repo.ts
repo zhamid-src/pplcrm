@@ -127,6 +127,10 @@ export class ListsRepo extends BaseRepository<'lists'> {
       ])
       .groupBy([
         'lists.id',
+        // tenant_id is referenced by the correlated last_used_in subquery, so it
+        // must be grouped too — otherwise "subquery uses ungrouped column
+        // lists.tenant_id from outer query".
+        'lists.tenant_id',
         'lists.name',
         'lists.description',
         'lists.object',
