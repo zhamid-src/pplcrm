@@ -68,6 +68,9 @@ import { TagOptionsService } from './services/tag-options.service';
 import { DataGridUtilsService } from './services/utils.service';
 import { DataGridFilterPanelComponent } from './ui/datagrid-filter-panel';
 import { DataGridToolbarComponent } from './ui/datagrid-toolbar';
+import { DataGridFilterDropdownComponent } from './ui/datagrid-filter-dropdown';
+import { MultiselectFilterComponent } from './ui/multiselect-filter';
+import { SingleselectFilterComponent, type SingleSelectOption } from './ui/singleselect-filter';
 
 interface MergeableService {
   merge?(target: string, source: string): Promise<unknown>;
@@ -110,6 +113,9 @@ import { RecordNavigationService } from '@frontend/services/record-navigation.se
     HeaderResizeDirective,
     QueryBuilderComponent,
     GridHeaderComponent,
+    DataGridFilterDropdownComponent,
+    MultiselectFilterComponent,
+    SingleselectFilterComponent,
   ],
   templateUrl: './datagrid.html',
   styleUrl: './datagrid.css',
@@ -299,10 +305,8 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
     }
 
     for (const [field, value] of Object.entries(this.filterValues())) {
-      if (value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
-        continue;
-      }
-      const text = Array.isArray(value) ? value.join(', ') : String(value);
+      const text = this.describeFilterValue(value);
+      if (!text) continue;
       chips.push({ kind: 'column', key: field, label: `${this.columnLabelFor(field)}: ${text}` });
     }
 
@@ -361,6 +365,81 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
       void this.loadPage(0);
     }
   }
+
+  /** Human-readable value text for a column-filter chip, from the stored `{op,value}` /
+   * array / plain-string shapes. Returns '' when the filter carries nothing to show. */
+  private describeFilterValue(value: unknown): string {
+    if (value === undefined || value === null) return '';
+    if (Array.isArray(value)) return value.length ? value.join(', ') : '';
+    if (typeof value === 'object' && 'value' in value) {
+      const rec = value as { op?: unknown; value?: unknown };
+      const op = String(rec.op ?? 'contains');
+      if (op === 'isEmpty') return 'is empty';
+      if (op === 'isNotEmpty') return 'is not empty';
+      const v = rec.value;
+      if (Array.isArray(v)) return v.length ? v.join(', ') : '';
+      const s = v == null ? '' : String(v);
+      return s;
+    }
+    return String(value);
+  }
+
+  // ── "+ Add filter" quick pill — a single field → operator → value entry that lands as one
+  //    removable column chip. Reuses the same `filterValues` model the column/panel filters use
+  //    (so removal, persistence, and the server filterModel all flow through the existing path);
+  //    it does NOT fork a parallel filter representation.
+  public readonly addFilterField = signal<string>('');
+  public readonly addFilterOp = signal<string>('contains');
+  public readonly addFilterValue = signal<string>('');
+  public readonly addFilterOperators: ReadonlyArray<{ value: string; label: string }> = [
+    { value: 'contains', label: 'contains' },
+    { value: 'notContains', label: 'does not contain' },
+    { value: 'equals', label: 'equals' },
+    { value: 'notEquals', label: 'does not equal' },
+    { value: 'startsWith', label: 'starts with' },
+    { value: 'endsWith', label: 'ends with' },
+    { value: 'isEmpty', label: 'is empty' },
+    { value: 'isNotEmpty', label: 'is not empty' },
+  ];
+
+  /** Fields offered in the Add-filter pill — every real column except the tag/issue columns
+   * (those have their own dashed pills) and non-data columns. */
+  public readonly addFilterFields = computed<Array<{ field: string; label: string }>>(() =>
+    this.colDefs().flatMap((c) =>
+      c.field && c.field !== 'actions' && c.field !== 'tags' && c.field !== 'issues' && c.tagColumn !== true
+        ? [{ field: c.field, label: c.headerName || c.field }]
+        : [],
+    ),
+  );
+
+  /** Whether the currently-selected operator needs a value (isEmpty/isNotEmpty do not). */
+  public readonly addFilterNeedsValue = computed(() => {
+    const op = this.addFilterOp();
+    return op !== 'isEmpty' && op !== 'isNotEmpty';
+  });
+
+  /** Commit the Add-filter pill selection as a column chip, then reload from page 1. */
+  public applyAddFilter(): void {
+    const field = this.addFilterField();
+    if (!field) return;
+    const op = this.addFilterOp();
+    const needsValue = op !== 'isEmpty' && op !== 'isNotEmpty';
+    const value = this.addFilterValue().trim();
+    if (needsValue && !value) return;
+    const next = { ...this.filterValues() };
+    next[field] = { op, value: needsValue ? value : '' };
+    this.filterValues.set(next);
+    this.addFilterField.set('');
+    this.addFilterOp.set('contains');
+    this.addFilterValue.set('');
+    void this.loadPage(0);
+    this.store?.requestPersist();
+  }
+
+  /** Saved-list options for the dashed "Lists" pill (mirrors the toolbar's mapping). */
+  public readonly listOptions = computed<SingleSelectOption[]>(() =>
+    this.availableLists().map((l) => ({ value: String(l['id'] ?? ''), label: String(l['name'] ?? '') })),
+  );
 
   public isColFiltered(field: string): boolean {
     const fv = this.filterValues();
