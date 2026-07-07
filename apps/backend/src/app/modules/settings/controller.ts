@@ -1,4 +1,7 @@
+import { TRPCError } from '@trpc/server';
+import { createSigner, createVerifier } from 'fast-jwt';
 import type { IAuthKeyPayload, SettingsEntryType } from '../../../../../../libs/common/src';
+import { env } from '../../../env';
 
 interface VerifiedDomainEntry {
   domain: string;
@@ -12,14 +15,11 @@ interface VerifiedDomainEntry {
   domainAuthDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
   linkBrandingDns?: Record<string, { valid?: boolean; host?: string; data?: string } | undefined>;
 }
-import { TRPCError } from '@trpc/server';
-import { createSigner, createVerifier } from 'fast-jwt';
-import { env } from '../../../env';
 
-import { SettingsRepo } from './repositories/settings.repo';
 import { BaseController } from '../../lib/base.controller';
-import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { SendGridWhitelabelService } from '../../lib/mail/sendgrid-whitelabel.service';
+import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { SettingsRepo } from './repositories/settings.repo';
 
 // Rate limiting in-memory storage to prevent verification spam/abuse
 const verificationRequestTimestamps = new Map<string, number>(); // key: `${tenant_id}:${email}`, value: timestamp
@@ -179,9 +179,9 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
     await this.mailService.enqueueMail({
       to: normalized,
       tenant_id: auth.tenant_id,
-      subject: 'Verify sender email address for your CampaignRaven campaign',
+      subject: 'Verify sender email address for your PplCRM campaign',
       text: `Hi,\n\nPlease verify your email address by clicking this link: ${verificationLink}\n\nThis link will expire in 24 hours.`,
-      html: `<h3>Verify Sender Email</h3><p>Please click the link below to verify your email address for your CampaignRaven campaign:</p><p><a href="${verificationLink}">${verificationLink}</a></p><p>This link will expire in 24 hours.</p>`,
+      html: `<h3>Verify Sender Email</h3><p>Please click the link below to verify your email address for your PplCRM campaign:</p><p><a href="${verificationLink}">${verificationLink}</a></p><p>This link will expire in 24 hours.</p>`,
     });
 
     // Record timestamps if successful
@@ -346,7 +346,7 @@ export class SettingsController extends BaseController<'settings', SettingsRepo>
       await this.mailService.sendMail({
         to: admin.email,
         tenant_id: auth.tenant_id,
-        subject: 'CampaignRaven - Organization Deletion Canceled',
+        subject: 'PplCRM - Organization Deletion Canceled',
         text: `Your request to delete organization ${tenant.name} has been successfully canceled, and your organization is fully restored.`,
         html: `<h2>Organization Deletion Canceled</h2>
 <p>Your request to delete organization <strong>${tenant.name}</strong> has been successfully canceled. Your organization and all associated campaign data are fully restored.</p>`,

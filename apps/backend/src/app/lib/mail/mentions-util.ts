@@ -1,5 +1,5 @@
-import { TransactionalEmailService } from './transactional-mail.service';
 import { logger } from '../../logger';
+import { TransactionalEmailService } from './transactional-mail.service';
 
 export async function processMentions(
   db: any,
@@ -53,7 +53,7 @@ export async function processMentions(
         if (optedIn) {
           await mailService.sendMail({
             to: user.email,
-            subject: 'You were mentioned in CampaignRaven',
+            subject: 'You were mentioned in PplCRM',
             text: `Hi ${user.first_name || 'there'},\n\nYou were mentioned in a comment:\n\n"${commentText}"\n\nView comment: ${commentLink}`,
             html: `<p>Hi ${user.first_name || 'there'},</p><p>You were mentioned in a comment:</p><blockquote>"${commentText}"</blockquote><p><a href="${commentLink}">View Comment</a></p>`,
           });

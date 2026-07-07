@@ -1,12 +1,12 @@
+import { sql } from 'kysely';
 import Stripe from 'stripe';
 import { env } from '../../../env';
-import { TenantsRepo } from '../auth/repositories/tenants.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
-import { WebhookEventsRepo } from './repositories/webhook-events.repo';
-import { WorkflowsController } from '../workflows/controller';
-import { sql } from 'kysely';
-import { getPlanLimits } from './usage-limits';
 import { logger } from '../../logger';
+import { TenantsRepo } from '../auth/repositories/tenants.repo';
+import { WorkflowsController } from '../workflows/controller';
+import { WebhookEventsRepo } from './repositories/webhook-events.repo';
+import { getPlanLimits } from './usage-limits';
 
 const stripeSecretKey = env.stripeSecretKey;
 const stripe = stripeSecretKey && !stripeSecretKey.includes('MockKey') ? new Stripe(stripeSecretKey) : null;
@@ -362,7 +362,7 @@ export class BillingController {
 
             await mailService.sendMail({
               to: admin.email,
-              subject: `Receipt for your CampaignRaven Subscription`,
+              subject: `Receipt for your PplCRM Subscription`,
               text: `Hi ${admin.first_name || 'Admin'},\n\nThis is a receipt confirming your subscription payment of $${amountPaid.toFixed(2)} was successfully processed.\n\n${summaryOfCharges}\n\nView invoice: ${pdfUrl}`,
               html: `<p>Hi ${admin.first_name || 'Admin'},</p><p>This is a receipt confirming your subscription payment of <strong>$${amountPaid.toFixed(2)}</strong> was successfully processed.</p>${summaryOfChargesHtml}<p><a href="${pdfUrl}">View/Download Invoice Receipt</a></p>`,
             });
@@ -408,7 +408,7 @@ export class BillingController {
             const amountDue = (invoice.amount_due || 0) / 100;
             await mailService.sendMail({
               to: admin.email,
-              subject: `[WARNING] Action Required: Payment Failed for CampaignRaven`,
+              subject: `[WARNING] Action Required: Payment Failed for PplCRM`,
               text: `Hi ${admin.first_name || 'Admin'},\n\nWe were unable to process the subscription payment of $${amountDue.toFixed(2)} for your organization.\n\n[WARNING] Please update your payment card immediately to prevent suspension of your organization's account.\n\nUpdate billing information here: ${billingPageUrl}`,
               html: `<p>Hi ${admin.first_name || 'Admin'},</p>
 <p>We were unable to process the subscription payment of <strong>$${amountDue.toFixed(2)}</strong> for your organization.</p>
