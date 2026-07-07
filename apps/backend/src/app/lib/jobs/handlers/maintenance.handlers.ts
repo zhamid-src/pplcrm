@@ -22,7 +22,7 @@ export async function handleEnrichCompanyGoogle(
   const { CompaniesEnrichmentService } =
     await import('../../../modules/companies/services/companies-enrichment.service');
   const enrichmentSvc = new CompaniesEnrichmentService(db);
-  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id);
+  await enrichmentSvc.enrichCompany(payload.company_id, payload.tenant_id, payload.force ?? false);
 }
 
 export async function handleRefreshCompaniesGoogle(

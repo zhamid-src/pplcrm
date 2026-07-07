@@ -13,11 +13,16 @@ import { Persons } from '../../../../../../../libs/common/src/lib/kysely.models'
       }
       @for (person of peopleInCompany(); track person.id) {
         <li class="flex items-center gap-2">
-          <a routerLink="/people/{{ person.id }}" class="link hover:no-underline font-medium text-primary">
-            {{ person.full_name }}
-          </a>
-          @if (person.email) {
-            <span class="text-xs text-base-content/40">({{ person.email }})</span>
+          @if (person.full_name) {
+            <a routerLink="/people/{{ person.id }}" class="link hover:no-underline font-medium text-primary">
+              {{ person.full_name }}
+            </a>
+            @if (person.email) {
+              <span class="text-xs text-base-content/40">({{ person.email }})</span>
+            }
+          } @else {
+            <!-- Grouped by the employer field but never fleshed out into a named person (§7) -->
+            <span i18n class="text-sm text-base-content/50 italic">Employer field only — no person record yet</span>
           }
         </li>
       }

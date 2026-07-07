@@ -1,5 +1,6 @@
 <pc-detail-layout
   [title]="company()?.name || 'Company'"
+  [subtitle]="subtitle()"
   [eyebrow]="'Company'"
   [crumbs]="crumbs()"
   [isLoading]="isLoading()"
@@ -18,7 +19,20 @@
   (prevRecord)="recordNav.goToPrev()"
   (nextRecord)="recordNav.goToNext()"
 >
+  <!-- §7 Enrich / Re-check Google — queues a Places lookup; icon spins while queuing -->
   @if (company()) {
+  <button
+    pc-actions-prefix
+    type="button"
+    class="btn btn-sm btn-ghost gap-2"
+    [disabled]="enriching()"
+    [title]="'Queue a Google Places lookup — fills website, phone, industry and description where blank'"
+    (click)="enrichCompany()"
+  >
+    <pc-icon name="magnifying-glass" [size]="4" [class.animate-spin]="enriching()"></pc-icon>
+    {{ enrichLabel() }}
+  </button>
+  } @if (company()) {
   <!-- Main Content Grid -->
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Left Column: Company Details Card -->
@@ -98,6 +112,25 @@
           [valueColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
           [iconColorClass]="isEnriched() ? 'text-green-500' : 'text-amber-500'"
         ></pc-stat-card>
+      </div>
+
+      <!-- GOOGLE ENRICHMENT card (§7) -->
+      <div class="card bg-base-100 border border-base-300 rounded-xl p-4 flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <pc-icon name="globe-americas" [size]="4" class="text-primary"></pc-icon>
+            <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60">Google enrichment</span>
+          </div>
+          @if (isEnriched()) {
+          <pc-status-badge type="success">Enriched</pc-status-badge>
+          } @else {
+          <pc-status-badge type="neutral">Not enriched</pc-status-badge>
+          }
+        </div>
+        <p class="text-sm text-base-content/65 font-light leading-relaxed">
+          Runs as a background job — a Places text search finds the business, then place details fill website, phone,
+          industry and description <em>where they are blank</em>. Fields you typed are never overwritten.
+        </p>
       </div>
 
       <!-- Tabs Panel -->
