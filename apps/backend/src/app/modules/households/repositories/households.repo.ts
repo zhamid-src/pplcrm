@@ -633,7 +633,10 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     }
 
     const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
       .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
 
     return { groups: sortedGroups, total };

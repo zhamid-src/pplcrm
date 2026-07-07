@@ -154,7 +154,10 @@ export class CompaniesRepo extends BaseRepository<'companies'> {
     }
 
     const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
+      .map((key) => {
+        const group = groupsMap.get(key);
+        return group ? { ...group, group_key: key } : undefined;
+      })
       .filter((g): g is NonNullable<typeof g> => !!(g && g.companies.length > 1));
 
     return { groups: sortedGroups, total };
