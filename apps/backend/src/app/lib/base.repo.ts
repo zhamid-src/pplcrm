@@ -510,6 +510,12 @@ export class BaseRepository<T extends keyof Models> {
     return ret as unknown as UpdateQueryBuilder<Models, T, T, UpdateResult>;
   }
 
+  // SECURITY (S-8, schema review 2026-07-06): `column` is interpolated verbatim via
+  // sql.raw() and MUST NEVER contain client input. Callers resolve it from a
+  // server-side columnMapping allow-list (see applyAdvancedFilters); a client's
+  // raw field string is only ever used as a lookup key into that map, never passed
+  // here directly. Filter *values* are always bound parameters. Preserve this
+  // invariant when adding call sites.
   protected buildRuleExpression(eb: any, column: string, isCast: boolean, op: string, val: unknown) {
     // Allow users to type * as a wildcard; normalize to SQL %.
     // The operator's own wrapping is always applied — Postgres collapses %% naturally.
