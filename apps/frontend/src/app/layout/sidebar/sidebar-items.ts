@@ -2,7 +2,8 @@ import type { PcIconNameType } from '@icons/icons.index';
 
 export interface ISidebarItem {
   adminOnly?: boolean;
-  /** Live numeric badge (e.g. Tasks' SLA-breach count). Populated at runtime — never static data. */
+  /** Live numeric badge (e.g. Tasks' SLA-breach count, Duplicates' queue size). Populated at
+   * runtime by Sidebar's `applyBadges` — never part of the static SidebarItems data below. */
   badgeCount?: number | null;
   children?: ISidebarItem[];
   collapsed?: boolean;
@@ -185,8 +186,8 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/duplicates',
         icon: 'document-duplicate',
         shortcut: 'd',
-        // TODO(badge): show merge-queue count (spec §9). Needs a tenant-scoped
-        // `duplicates.countQueue` query; no such endpoint yet.
+        // Badge = merge-queue size (spec §9.3), via the tenant-scoped `duplicates.countQueue`
+        // query. Count is fetched and applied in Sidebar (sidebar.ts) — see `badgeCount`.
       },
       {
         name: 'Tags',

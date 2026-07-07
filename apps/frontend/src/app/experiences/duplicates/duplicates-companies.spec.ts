@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ConfirmDialogService } from '@uxcommon/components/confirm-dialog.service';
 import { CompaniesService } from '@experiences/companies/services/companies-service';
+import { DuplicatesService } from './services/duplicates-service';
 import { CompanyDuplicatesComponent } from './duplicates-companies';
 
 const company1 = { id: 'c1', name: 'Acme Corp', created_at: '2024-01-01T00:00:00Z' };
@@ -16,11 +17,12 @@ describe('CompanyDuplicatesComponent', () => {
   let mockCompaniesSvc: any;
   let mockAlertSvc: any;
   let mockDialogSvc: any;
+  let mockDuplicatesSvc: any;
 
   beforeEach(async () => {
     mockCompaniesSvc = {
       getPotentialDuplicates: vi.fn().mockResolvedValue({
-        groups: [{ reason: 'Same name', companies: [company1, company2] }],
+        groups: [{ reason: 'Same name', group_key: 'gk1', companies: [company1, company2] }],
         total: 1,
       }),
       mergeCompanies: vi.fn().mockResolvedValue({ id: 'c1' }),
@@ -28,6 +30,11 @@ describe('CompanyDuplicatesComponent', () => {
 
     mockAlertSvc = { showError: vi.fn(), showSuccess: vi.fn() };
     mockDialogSvc = { confirm: vi.fn().mockResolvedValue(true) };
+    mockDuplicatesSvc = {
+      getSweepInfo: vi.fn().mockResolvedValue({ lastSweepAt: null, queueCount: 1 }),
+      countQueue: vi.fn().mockResolvedValue(1),
+      dismissGroup: vi.fn().mockResolvedValue(undefined),
+    };
 
     await TestBed.configureTestingModule({
       imports: [CompanyDuplicatesComponent],
@@ -36,6 +43,7 @@ describe('CompanyDuplicatesComponent', () => {
         { provide: CompaniesService, useValue: mockCompaniesSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
+        { provide: DuplicatesService, useValue: mockDuplicatesSvc },
       ],
     }).compileComponents();
 

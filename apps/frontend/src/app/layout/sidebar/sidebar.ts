@@ -15,6 +15,7 @@ import { Swap } from '@uxcommon/components/swap/swap';
 
 import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-service';
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
+import { DuplicatesService } from '@experiences/duplicates/services/duplicates-service';
 import { ISidebarItem } from './sidebar-items';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
@@ -37,10 +38,15 @@ export class Sidebar {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly tasksSvc = inject(TasksService);
+  private readonly duplicatesSvc = inject(DuplicatesService);
 
   /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
    *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
   protected readonly taskSlaBreaches = signal<number | null>(null);
+
+  /** Live merge-queue size for the Duplicates sidebar badge (spec §9.3). Same one-shot-per-
+   *  session loading shape as `taskSlaBreaches` above. */
+  protected readonly duplicatesQueueCount = signal<number | null>(null);
 
   // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
   private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
@@ -101,6 +107,7 @@ export class Sidebar {
     });
 
     void this.loadTaskSlaBreaches();
+    void this.loadDuplicatesQueueCount();
   }
 
   private async loadTaskSlaBreaches(): Promise<void> {
@@ -111,13 +118,28 @@ export class Sidebar {
     }
   }
 
-  /** Stamps the live `badgeCount` onto the Tasks entry only — every other item is untouched. */
+  /** Duplicates badge = merge-queue size (spec §9.3). One fetch per session — the queue only
+   *  meaningfully changes after a nightly sweep or a merge, so it isn't polled. */
+  private async loadDuplicatesQueueCount(): Promise<void> {
+    try {
+      this.duplicatesQueueCount.set(await this.duplicatesSvc.countQueue());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Stamps the live `badgeCount` onto the Tasks and Duplicates entries — every other item is
+   *  untouched. */
   private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
     const breaches = this.taskSlaBreaches();
+    const duplicatesQueue = this.duplicatesQueueCount();
     return items.map((item) => {
       const children = item.children ? this.applyBadges(item.children) : undefined;
       if (item.route === '/tasks') {
         return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
+      }
+      if (item.route === '/duplicates') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: duplicatesQueue };
       }
       return children ? { ...item, children } : item;
     });
