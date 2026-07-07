@@ -127,7 +127,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .where('country', 'is', null)
       .where('file_id', 'is', null)
       .where('notes', 'is', null)
-      .where('json', 'is', null)
       .selectAll()
       .limit(1)
       .executeTakeFirst();
@@ -333,7 +332,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
         'households.createdby_id',
         'households.updatedby_id',
         'households.file_id',
-        'households.json',
         'households.address_fp_street',
         'households.address_fp_full',
         'households.tenant_id',
@@ -349,7 +347,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
               'createdby_id',
               'file_id',
               'home_phone',
-              'json',
               'notes',
               'address_fp_street',
               'address_fp_full',

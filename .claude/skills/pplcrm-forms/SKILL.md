@@ -34,7 +34,11 @@ grid + form-editor model is gone; `forms-grid.ts` and `form-editor.ts` were dele
   `UpdateFormObj`, `FormSubmissionObj`. Legacy `AddWebFormObj`/`UpdateWebFormObj` still exist for the
   donation path.
 - **Backend** — `apps/backend/src/app/modules/web-forms/`: `controller.ts` (lifecycle methods +
-  `submitFormPublic` + `getPublicFormBySlug`), `repositories/web-forms.repo.ts`
+  `submitFormPublic` + `getPublicFormBySlug`). **List targeting** lives in the `map_web_forms_lists`
+  join table (FK ON DELETE CASCADE — source of truth; the controller write paths sync it via
+  `syncTargetLists` and the submit path reads it). The JSONB `web_forms.target_lists` column is
+  legacy dual-write only, slated to drop. `target_tags` stays JSONB deliberately: it holds tag
+  _names_ with get-or-create-at-submit semantics, not ids. `repositories/web-forms.repo.ts`
   (`listForms`/`getFormSubmissions`/`countSubmissions`/`slugExists`/`getBySlugAnyTenant`),
   `trpc.router.ts` (`list`/`getForEdit`/`create`/`updateLive`/`publish`/`unpublish`/`archive`/
   `restore`/`deleteDraft`/`submissions`), `routes/web-forms-public.route.ts` (public REST:

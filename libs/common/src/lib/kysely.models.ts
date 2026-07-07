@@ -42,6 +42,8 @@ export interface Models {
   teams: Teams;
   map_teams_persons: MapTeamsPersons;
   map_teams_lists: MapTeamsLists;
+  map_newsletters_lists: MapNewslettersLists;
+  map_web_forms_lists: MapWebFormsLists;
   tasks: Tasks;
   persons: Persons;
   profiles: Profiles;
@@ -200,7 +202,6 @@ interface Campaigns extends Omit<RecordType, 'createdby_id'> {
   startdate: string | null;
   enddate: string | null;
   name: string;
-  json: Json | null;
   notes: string | null;
 }
 
@@ -209,7 +210,6 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   createdby_id: string;
   file_id: string | null;
   home_phone: string | null;
-  json: Json | null;
   notes: string | null;
   address_fp_street: string | null;
   address_fp_full: string | null;
@@ -268,6 +268,26 @@ interface MapListsHouseholds extends JunctionRecordType {
   household_id: string;
 }
 
+/**
+ * Normalized newsletter list targeting (replaces the JSONB
+ * newsletters.target_lists document as the source of truth). `mode` carries
+ * the {include, exclude} split; list_id/newsletter_id cascade on delete.
+ */
+export interface MapNewslettersLists extends JunctionRecordType {
+  newsletter_id: string;
+  list_id: string;
+  mode: Generated<'include' | 'exclude'>;
+}
+
+/**
+ * Normalized web-form list targeting (replaces the JSONB
+ * web_forms.target_lists document as the source of truth).
+ */
+export interface MapWebFormsLists extends JunctionRecordType {
+  web_form_id: string;
+  list_id: string;
+}
+
 export interface Persons extends Omit<RecordType, 'createdby_id'> {
   campaign_id: string;
   household_id: string | null;
@@ -281,7 +301,6 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   home_phone: string | null;
   file_id: string | null;
   company_id: string | null;
-  json: Json | null;
   notes: string | null;
   linkedin: string | null;
   twitter: string | null;
@@ -300,7 +319,8 @@ interface Profiles extends RecordType, AddressType {
   email2: string | null;
   mobile: string | null;
   home_phone: string | null;
-  json: Json | null;
+  /** Typed contract: ProfilePreferencesObj ({ notifications: {...} }). */
+  preferences: Json | null;
 }
 
 interface Settings extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
@@ -408,7 +428,6 @@ interface Tenants extends RecordType, AddressType {
   email: string | null;
   email2: string | null;
   mobile: string | null;
-  json: Json | null;
   notes: string | null;
   placeholder_household_id: string | null;
   stripe_customer_id: string | null;
@@ -740,7 +759,8 @@ export interface Companies extends RecordType {
   phone: string | null;
   industry: string | null;
   notes: string | null;
-  json: Json | null;
+  /** Typed contract: CompanyEnrichmentObj (Google Places enrichment payload). */
+  enrichment: Json | null;
   file_id: string | null;
 }
 

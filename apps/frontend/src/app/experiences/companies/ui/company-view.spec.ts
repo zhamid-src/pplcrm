@@ -19,7 +19,7 @@ const mockCompanyData = {
   phone: '555-0100',
   description: 'Widgets and gadgets',
   notes: 'VIP client',
-  json: null,
+  enrichment: null,
   createdby_id: 'u1',
   updatedby_id: 'u1',
   created_at: '2026-01-01T00:00:00Z',
@@ -135,25 +135,25 @@ describe('CompanyView', () => {
     expect(component['crumbs']()).toEqual([{ label: 'Companies', route: '/companies' }, { label: 'Acme Corp' }]);
   });
 
-  it('should detect Google enrichment from the json field', async () => {
+  it('should detect Google enrichment from the enrichment field', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    component['company'].set({ ...mockCompanyData, json: JSON.stringify({ google_enriched: true }) });
+    component['company'].set({ ...mockCompanyData, enrichment: JSON.stringify({ google_enriched: true }) });
     expect(component['isEnriched']()).toBe(true);
 
-    component['company'].set({ ...mockCompanyData, json: JSON.stringify({ google_enriched: false }) });
+    component['company'].set({ ...mockCompanyData, enrichment: JSON.stringify({ google_enriched: false }) });
     expect(component['isEnriched']()).toBe(false);
 
-    component['company'].set({ ...mockCompanyData, json: null });
+    component['company'].set({ ...mockCompanyData, enrichment: null });
     expect(component['isEnriched']()).toBe(false);
   });
 
-  it('should treat malformed json as not enriched', async () => {
+  it('should treat malformed enrichment payload as not enriched', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    component['company'].set({ ...mockCompanyData, json: '{not valid json' });
+    component['company'].set({ ...mockCompanyData, enrichment: '{not valid json' });
     expect(component['isEnriched']()).toBe(false);
   });
 

@@ -14,7 +14,6 @@ const HouseholdsType = {
   state: { type: 'string' },
   zip: { type: 'string' },
   country: { type: 'string' },
-  json: { type: 'string' },
   created_at: { type: 'string' },
   updated_at: { type: 'string' },
 };

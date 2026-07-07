@@ -2,6 +2,7 @@ import type { Kysely } from 'kysely';
 import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../../logger';
+import { notificationEnabled } from '../../profile-preferences';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
@@ -370,7 +371,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
         'authusers.id as user_id',
         'authusers.email as user_email',
         'authusers.first_name',
-        'profiles.json as profile_json',
+        'profiles.preferences as profile_preferences',
       ])
       .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
       .where('tasks.due_at', '<=', now)
@@ -395,19 +396,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
       if (!firstRow) continue;
       const userEmail = firstRow.user_email;
       const firstName = firstRow.first_name;
-      const profileJson = firstRow.profile_json;
-
-      let optedIn = true;
-      if (profileJson) {
-        try {
-          const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-          if (json?.notifications?.task_due === false) {
-            optedIn = false;
-          }
-        } catch (e) {
-          logger.error({ err: e }, 'Failed to parse profile json in checkDueTasks');
-        }
-      }
+      const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
 
       if (optedIn && userEmail) {
         let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;

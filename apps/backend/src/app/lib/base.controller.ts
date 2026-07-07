@@ -14,6 +14,7 @@ import type { ReferenceExpression, Transaction } from 'kysely';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
 import type { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
+import { notificationEnabled } from './profile-preferences';
 import type { UserActivityType } from './user-activity.repo';
 import { UserActivityRepo } from './user-activity.repo';
 import { TransactionalEmailService } from './mail/transactional-mail.service';
@@ -314,24 +315,11 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         const user = await this.repo.db
           .selectFrom('authusers')
           .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'profiles.json as profile_json'])
+          .select(['authusers.email', 'profiles.preferences as profile_preferences'])
           .where('authusers.id', '=', auth.user_id)
           .executeTakeFirst();
         if (user && user.email) {
-          let optedIn = true;
-          const profileJson = user.profile_json;
-          if (profileJson) {
-            try {
-              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-              if (json?.notifications?.export_ready === false) {
-                optedIn = false;
-              }
-            } catch (e) {
-              logger.error({ err: e }, 'Failed to parse profile json in exportCsv');
-            }
-          }
-
-          if (optedIn) {
+          if (notificationEnabled(user.profile_preferences, 'export_ready')) {
             const mailService = new TransactionalEmailService();
             await mailService.sendMail({
               to: user.email,

@@ -1,4 +1,5 @@
 import { logger } from '../../logger';
+import { notificationEnabled } from '../profile-preferences';
 import { TransactionalEmailService } from './transactional-mail.service';
 
 export async function processMentions(
@@ -19,7 +20,12 @@ export async function processMentions(
     const users = await db
       .selectFrom('authusers')
       .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.id', 'authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .select([
+        'authusers.id',
+        'authusers.email',
+        'authusers.first_name',
+        'profiles.preferences as profile_preferences',
+      ])
       .where('authusers.tenant_id', '=', tenantId)
       .execute();
 
@@ -37,20 +43,7 @@ export async function processMentions(
       const isMentioned = matches.includes(firstNameLower) || matches.includes(emailPrefix);
 
       if (isMentioned && user.email) {
-        let optedIn = true;
-        const profileJson = user.profile_json;
-        if (profileJson) {
-          try {
-            const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-            if (json?.notifications?.mention_in_comment === false) {
-              optedIn = false;
-            }
-          } catch (e) {
-            logger.error({ err: e }, 'Failed to parse profile json in processMentions');
-          }
-        }
-
-        if (optedIn) {
+        if (notificationEnabled(user.profile_preferences, 'mention_in_comment')) {
           await mailService.sendMail({
             to: user.email,
             subject: 'You were mentioned in PplCRM',

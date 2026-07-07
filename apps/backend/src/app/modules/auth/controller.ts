@@ -37,6 +37,7 @@ import { BaseController } from '../../lib/base.controller';
 import type { QueryParams } from '../../lib/base.repo';
 import { COMMON_PASSWORDS } from '../../lib/common-passwords';
 import { getPwnedCount } from '../../lib/hibp';
+import { parseProfilePreferences } from '../../lib/profile-preferences';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { hashPassword, verifyPassword } from '../../lib/password-hash';
 import { StorageService } from '../../lib/storage.service';
@@ -1883,19 +1884,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       import_summary_in_app: true,
     };
 
-    const profileJson = (record['profile'] as Record<string, unknown>)?.['json'] ?? record['json'];
-    if (profileJson) {
-      try {
-        const parsed = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-        if (parsed && typeof parsed === 'object' && parsed.notifications) {
-          notificationPreferences = {
-            ...notificationPreferences,
-            ...parsed.notifications,
-          };
-        }
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to parse profile json for preferences');
-      }
+    const rawPreferences = (record['profile'] as Record<string, unknown>)?.['preferences'] ?? record['preferences'];
+    const parsedPreferences = parseProfilePreferences(rawPreferences);
+    if (parsedPreferences?.notifications) {
+      notificationPreferences = {
+        ...notificationPreferences,
+        ...parsedPreferences.notifications,
+      };
     }
 
     return {
@@ -1920,20 +1915,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const existingProfile = (await this.profiles.getOneByAuthId(authUserId)) as Models['profiles'] | undefined;
     const profileId = existingProfile?.id != null ? String(existingProfile.id) : authUserId;
 
-    let finalJson: Record<string, unknown> | null = null;
-    if (existingProfile?.json) {
-      try {
-        finalJson = typeof existingProfile.json === 'string' ? JSON.parse(existingProfile.json) : existingProfile.json;
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to parse existing profile json');
-      }
-    }
+    let finalPreferences: Record<string, unknown> | null = existingProfile?.preferences
+      ? ((parseProfilePreferences(existingProfile.preferences) as Record<string, unknown> | null) ?? null)
+      : null;
 
     if (data.notification_preferences) {
-      finalJson = {
-        ...(finalJson || {}),
+      finalPreferences = {
+        ...(finalPreferences || {}),
         notifications: {
-          ...(((finalJson || {})['notifications'] as Record<string, unknown>) || {}),
+          ...(((finalPreferences || {})['notifications'] as Record<string, unknown>) || {}),
           ...data.notification_preferences,
         },
       };
@@ -1947,8 +1937,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       if (data.last_name !== undefined) {
         row['last_name'] = data.last_name ?? null;
       }
-      if (finalJson !== null) {
-        row['json'] = JSON.stringify(finalJson);
+      if (finalPreferences !== null) {
+        row['preferences'] = JSON.stringify(finalPreferences);
       }
 
       if (data.last_name !== undefined || data.notification_preferences !== undefined) {
@@ -1962,7 +1952,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       tenant_id: auth.tenant_id,
       auth_id: authUserId,
       last_name: data.last_name ?? null,
-      json: finalJson ? JSON.stringify(finalJson) : null,
+      preferences: finalPreferences ? JSON.stringify(finalPreferences) : null,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     } as OperationDataType<'profiles', 'insert'>;

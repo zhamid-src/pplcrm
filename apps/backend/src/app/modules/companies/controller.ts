@@ -15,11 +15,11 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
   public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
     const company = (await super.getOneById(input)) as any;
     if (company) {
-      let currentJson: any = {};
-      if (company.json) {
-        currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
+      let enrichment: any = {};
+      if (company.enrichment) {
+        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
       }
-      if (!currentJson || !currentJson.google_enriched) {
+      if (!enrichment || !enrichment.google_enriched) {
         await this.getRepo()
           .db.insertInto('background_jobs')
           .values({

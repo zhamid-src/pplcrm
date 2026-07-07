@@ -21,11 +21,11 @@ export class CompaniesEnrichmentService {
     }
 
     // Check if already enriched
-    let currentJson: any = {};
-    if (company.json) {
-      currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
+    let currentEnrichment: any = {};
+    if (company.enrichment) {
+      currentEnrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
     }
-    if (currentJson?.google_enriched) {
+    if (currentEnrichment?.google_enriched) {
       logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
       return;
     }
@@ -93,14 +93,14 @@ export class CompaniesEnrichmentService {
       logger.info(`Mock Google enrichment completed for company ${companyId}`);
     }
 
-    const updatedJson = {
-      ...currentJson,
+    const updatedEnrichment = {
+      ...currentEnrichment,
       google_enriched: true,
       place_details: rawResult,
     };
 
     const updatePayload: any = {
-      json: JSON.stringify(updatedJson),
+      enrichment: JSON.stringify(updatedEnrichment),
       updated_at: new Date(),
     };
 
@@ -129,7 +129,7 @@ export class CompaniesEnrichmentService {
     let query = this.db
       .selectFrom('companies')
       .select(['id', 'tenant_id'])
-      .where((eb) => eb.or([eb('json', 'is', null), sql<boolean>`json->>'google_enriched' is null`]));
+      .where((eb) => eb.or([eb('enrichment', 'is', null), sql<boolean>`enrichment->>'google_enriched' is null`]));
 
     if (tenantId) {
       query = query.where('tenant_id', '=', tenantId);

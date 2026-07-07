@@ -1,4 +1,6 @@
 import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
 
 import { BaseController } from '../../lib/base.controller';
@@ -21,6 +23,119 @@ export interface SendTestEmailInput {
 export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
   constructor() {
     super(new NewslettersRepo());
+  }
+
+  /**
+   * map_newsletters_lists is the source of truth for list targeting (the
+   * legacy JSONB target_lists column is still dual-written by callers during
+   * the transition, but nothing reads it for behavior anymore).
+   */
+  public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    const result = await super.add(row, trx);
+    const rowObj = row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (resultObj?.['id'] != null && rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        String(rowObj['tenant_id']),
+        String(resultObj['id']),
+        rowObj['target_lists'],
+        String(rowObj['createdby_id'] ?? resultObj['createdby_id']),
+        trx,
+      );
+    }
+    return result;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'newsletters', 'update'>;
+  }) {
+    const result = await super.update(input);
+    const rowObj = input.row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        input.tenant_id,
+        input.id,
+        rowObj['target_lists'],
+        String(rowObj['updatedby_id'] ?? resultObj?.['createdby_id']),
+      );
+    }
+    return result;
+  }
+
+  /** Tolerates every legacy payload shape: {include, exclude}, bare array, JSON string, CSV string. */
+  private parseTargetListSets(value: unknown): { include: string[]; exclude: string[] } {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+      const raw = parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return {
+          include: raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          exclude: [],
+        };
+      }
+    }
+    if (Array.isArray(parsed)) {
+      return { include: parsed.map((v) => String(v)), exclude: [] };
+    }
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
+    }
+    return { include: [], exclude: [] };
+  }
+
+  /** Replace the newsletter's map_newsletters_lists rows; ids that don't resolve to a live list in the tenant are dropped. */
+  private async syncTargetLists(
+    tenant_id: string,
+    newsletterId: string,
+    rawTargetLists: unknown,
+    actorId: string,
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    const db = trx ?? this.getRepo().db;
+    const { include, exclude } = this.parseTargetListSets(rawTargetLists);
+
+    const candidates = [...new Set([...include, ...exclude])].filter((id) => /^\d+$/.test(id));
+    let liveIds = new Set<string>();
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = new Set(rows.map((r) => String(r.id)));
+    }
+
+    await db
+      .deleteFrom('map_newsletters_lists')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', newsletterId)
+      .execute();
+
+    const values = [
+      ...[...new Set(include)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'include' as const })),
+      ...[...new Set(exclude)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'exclude' as const })),
+    ].map((v) => ({
+      tenant_id,
+      newsletter_id: newsletterId,
+      list_id: v.list_id,
+      mode: v.mode,
+      createdby_id: actorId,
+      updatedby_id: actorId,
+    }));
+    if (values.length > 0) {
+      await db.insertInto('map_newsletters_lists').values(values).execute();
+    }
   }
 
   public override async exportCsv(
@@ -53,13 +168,22 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     return super.exportCsv(input, auth);
   }
 
-  public buildRecipientQuery(tenant_id: string, newsletter: any): any {
-    let includeListIds: string[] = [];
-    let excludeListIds: string[] = [];
+  public async buildRecipientQuery(tenant_id: string, newsletter: any): Promise<any> {
     let includeTags: string[] = [];
     let excludeTags: string[] = [];
 
-    // target_lists is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    // List targeting lives in map_newsletters_lists (FK-backed, so no dangling ids).
+    const listRows = await this.getRepo()
+      .db.selectFrom('map_newsletters_lists')
+      .select(['list_id', 'mode'])
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', String(newsletter.id))
+      .execute();
+    const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
+    const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
+
+    // segments is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    // It stays JSONB deliberately: it holds tag *names*, not ids.
     const parseJsonField = (value: unknown): unknown => {
       if (value == null) return null;
       if (typeof value === 'string') {
@@ -71,20 +195,6 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       }
       return value; // already parsed object from jsonb column
     };
-
-    const listsObj = parseJsonField(newsletter.target_lists);
-    if (Array.isArray(listsObj)) {
-      includeListIds = listsObj as string[];
-    } else if (listsObj && typeof listsObj === 'object') {
-      const obj = listsObj as Record<string, unknown>;
-      includeListIds = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-      excludeListIds = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
-    } else if (typeof listsObj === 'string' && listsObj) {
-      includeListIds = (listsObj as string)
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
 
     const segmentsObj = parseJsonField(newsletter.segments);
     if (Array.isArray(segmentsObj)) {
@@ -187,7 +297,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     }
 
     const db = this.getRepo().db;
-    const baseQuery = this.buildRecipientQuery(tenant_id, newsletter);
+    const baseQuery = await this.buildRecipientQuery(tenant_id, newsletter);
 
     // Get total count of unique recipients using a distinct count query
     const countResult = await baseQuery

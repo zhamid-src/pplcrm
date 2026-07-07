@@ -371,7 +371,6 @@ export class BaseRepository<T extends keyof Models> {
                 'home_phone',
                 'file_id',
                 'company_id',
-                'json',
                 'notes',
                 'linkedin',
                 'twitter',

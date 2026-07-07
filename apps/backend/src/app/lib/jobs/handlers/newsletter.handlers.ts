@@ -34,7 +34,7 @@ export async function handleSendNewsletter(
   // 2. Build the recipient query using NewslettersController
   const { NewslettersController } = await import('../../../modules/newsletters/controller');
   const controller = new NewslettersController();
-  const baseQuery = controller.buildRecipientQuery(tenantId, newsletter);
+  const baseQuery = await controller.buildRecipientQuery(tenantId, newsletter);
 
   // 3. Count total recipients
   let offset = payload.offset ?? 0;

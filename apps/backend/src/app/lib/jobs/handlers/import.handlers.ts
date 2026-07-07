@@ -7,6 +7,7 @@ import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo'
 import { PersonsService } from '../../../modules/persons/services/persons.service';
 import { TasksController } from '../../../modules/tasks/controller';
 import { StorageService } from '../../storage.service';
+import { notificationEnabled } from '../../profile-preferences';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import type { LegacyImportJobPayload } from '../job-payloads';
 
@@ -82,24 +83,12 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
     const user = await db
       .selectFrom('authusers')
       .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
       .where('authusers.id', '=', payload.user_id)
       .executeTakeFirst();
 
     if (user && user.email) {
-      let optedIn = true;
-      if (user.profile_json) {
-        try {
-          const json = typeof user.profile_json === 'string' ? JSON.parse(user.profile_json) : user.profile_json;
-          if (json?.notifications?.import_summary === false) {
-            optedIn = false;
-          }
-        } catch (e) {
-          logger.error({ err: e }, 'Failed to parse profile json for import summary check');
-        }
-      }
-
-      if (optedIn) {
+      if (notificationEnabled(user.profile_preferences, 'import_summary')) {
         const importRecord = await db
           .selectFrom('data_imports')
           .select(['inserted_count', 'error_count', 'skipped_count'])

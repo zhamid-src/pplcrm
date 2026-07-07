@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { phoneSchema, notesSchema, jsonSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
+import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
 
 export const PersonsObj = z.object({
   id: z.string(),
@@ -12,7 +12,6 @@ export const PersonsObj = z.object({
   home_phone: z.string(),
   mobile: z.string(),
   notes: z.string(),
-  json: z.string(),
   linkedin: z.string().nullable().optional(),
   twitter: z.string().nullable().optional(),
   facebook: z.string().nullable().optional(),
@@ -24,7 +23,6 @@ export const PersonsObj = z.object({
 export const UpdateHouseholdsObj = addressSchema.extend({
   home_phone: phoneSchema('Home phone'),
   notes: notesSchema,
-  json: jsonSchema,
 });
 
 export const UpdatePersonsObj = z.object({
@@ -39,7 +37,6 @@ export const UpdatePersonsObj = z.object({
   home_phone: phoneSchema('Home phone'),
   mobile: phoneSchema('Mobile phone'),
   notes: notesSchema,
-  json: jsonSchema,
   linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
   twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
   facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),

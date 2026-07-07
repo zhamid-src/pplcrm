@@ -3,6 +3,7 @@ import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../li
 import { TRPCError } from '@trpc/server';
 
 import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
+import { notificationEnabled } from '../../../lib/profile-preferences';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
 import { SettingsController } from '../../settings/controller';
 import { TagsRepo } from '../../tags/repositories/tags.repo';
@@ -104,19 +105,11 @@ export class PersonsService {
           const assignee = await this.personsRepo.db
             .selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
             .where('authusers.id', '=', String(payload.assigned_to))
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            let optedIn = true;
-            if (assignee.profile_json) {
-              const json =
-                typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
-              if (json?.notifications?.person_assigned === false) {
-                optedIn = false;
-              }
-            }
-            if (optedIn) {
+            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
               const createdPerson = result as Record<string, unknown>;
               const personName =
                 `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
@@ -204,21 +197,13 @@ export class PersonsService {
             const assignee = await this.personsRepo.db
               .selectFrom('authusers')
               .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-              .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
               // String conversion ensures precision is maintained down to the database driver level
               .where('authusers.id', '=', String(newAssigneeId))
               .executeTakeFirst();
 
             if (assignee && assignee.email) {
-              let optedIn = true;
-              if (assignee.profile_json) {
-                const json =
-                  typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
-                if (json?.notifications?.person_assigned === false) {
-                  optedIn = false;
-                }
-              }
-              if (optedIn) {
+              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
                 const personName =
                   `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
                   'unnamed contact';
@@ -865,7 +850,6 @@ export class PersonsService {
               address_fp_street: fp_street,
               address_fp_full: fp_full,
               notes: null,
-              json: null,
               file_id: import_id,
             } as OperationDataType<'households', 'insert'>;
             const household = await households.add({ row: hhRow }, trx);
@@ -889,7 +873,6 @@ export class PersonsService {
             home_phone: null,
             file_id: import_id,
             notes: sanitized.notes ?? null,
-            json: null,
           }));
           const insertedPersons = await trx
             .insertInto('persons')
