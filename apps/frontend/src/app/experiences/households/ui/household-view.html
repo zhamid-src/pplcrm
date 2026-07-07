@@ -1,5 +1,6 @@
 <pc-detail-layout
   [title]="addressString()"
+  [subtitle]="subtitle()"
   [eyebrow]="'Household'"
   [crumbs]="crumbs()"
   [isLoading]="isLoading()"
@@ -80,21 +81,10 @@
             }
           </div>
 
-          <!-- Geocoding Status Badge -->
+          <!-- Geocoding status — binding chip (Located / Locating… / Address problem), never hidden -->
           <div class="flex justify-between items-center mt-2 pt-2 border-t border-base-300/40 text-xs">
-            <span class="text-base-content/60">Geocoding Status:</span>
-            @if (h.geocoding_status === 'success') {
-            <span class="badge badge-success badge-sm font-medium">Success</span>
-            } @else if (h.geocoding_status === 'pending') {
-            <span class="badge badge-warning badge-sm font-medium gap-1 flex items-center">
-              <span class="loading loading-spinner loading-xs scale-75"></span>
-              Pending
-            </span>
-            } @else if (h.geocoding_status === 'failed') {
-            <span class="badge badge-error badge-sm text-xs">Unresolved</span>
-            } @else {
-            <span class="badge badge-ghost badge-sm font-medium">Skipped</span>
-            }
+            <span class="text-base-content/60">Geocoding status</span>
+            <pc-geocode-chip [status]="h.geocoding_status"></pc-geocode-chip>
           </div>
         </div>
         }
@@ -108,21 +98,35 @@
         ></pc-system-metadata>
       </pc-profile-card>
 
-      <!-- Google Maps Card -->
-      <pc-card title="Map Location" icon="map">
-        <div class="relative w-full h-64 bg-base-200 flex items-center justify-center rounded-lg overflow-hidden">
-          @if (hasMap()) { @defer (on viewport) {
-          <div #mapContainer id="household-map" class="w-full h-full"></div>
-          } @placeholder {
-          <div class="skeleton w-full h-full"></div>
-          } } @else {
-          <!-- Unverified Map Placeholder -->
-          <div class="p-6 flex flex-col items-center gap-2 text-center text-base-content/40 select-none">
+      <!-- Map card — static Google map; clicking opens the maps app. Ward + address chips overlay it. (§6) -->
+      <pc-card title="Map location" icon="map">
+        <div class="relative w-full h-64 rounded-lg overflow-hidden">
+          @if (hasMap()) {
+          <pc-map
+            class="block h-full w-full"
+            [markers]="mapMarkers()"
+            [interactive]="false"
+            [deepLink]="true"
+            ariaLabel="Household location"
+          ></pc-map>
+          <!-- Overlays -->
+          <div class="pointer-events-none absolute inset-x-2 top-2 flex flex-wrap gap-2">
+            @if (h.ward) {
+            <span class="badge badge-sm badge-neutral font-semibold shadow">Ward {{ h.ward }}</span>
+            }
+            <span class="badge badge-sm bg-base-100/90 text-base-content font-medium shadow max-w-full truncate">
+              {{ addressString() }}
+            </span>
+          </div>
+          } @else {
+          <!-- No verified pin yet — degrade honestly, never fake a pin (§13 maps ruling) -->
+          <div
+            class="p-6 h-full flex flex-col items-center justify-center gap-2 text-center text-base-content/40 select-none bg-base-200"
+          >
             <pc-icon name="map-pin" [size]="8" class="text-base-content/20 mb-1"></pc-icon>
-            <h4 class="font-semibold text-sm text-base-content/60">Location Not Verified</h4>
+            <h4 class="font-semibold text-sm text-base-content/60">No pin yet</h4>
             <p class="text-xs max-w-[220px] font-light leading-snug">
-              Map pins are only available for addresses geocoded via autocomplete search or when we have verified the
-              address.
+              The map pin appears once the address verifies — it geocodes in the background.
             </p>
           </div>
           }
@@ -214,18 +218,35 @@
 
         <pc-tab-panel id="details" [activeTab]="activeTab()">
           <div class="flex flex-col gap-4">
-            @if (h.notes) {
+            <!-- Details: city, first seen, grouping model (§6) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <pc-detail-item label="City" [value]="h.city" icon="map-pin"></pc-detail-item>
+              <pc-detail-item
+                label="First seen"
+                [value]="h.created_at | date: 'mediumDate'"
+                icon="file-calendar"
+              ></pc-detail-item>
+            </div>
+            <div class="p-3 rounded-lg border border-base-200 bg-base-200/40">
+              <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-1"
+                >Grouping</span
+              >
+              <p class="text-sm text-base-content/70 font-light leading-relaxed">
+                By address — edit a member's address and the household follows.
+              </p>
+            </div>
+
+            <!-- Door notes (§6) -->
             <div class="p-4 rounded-xl border border-base-200 bg-base-50/50">
               <span class="text-xs font-semibold uppercase tracking-wider text-base-content/60 block mb-2"
-                >Household Notes</span
+                >Door notes</span
               >
+              @if (h.notes) {
               <p class="text-sm text-base-content/80 font-light whitespace-pre-line leading-relaxed">{{ h.notes }}</p>
+              } @else {
+              <p class="text-sm text-base-content/40 italic">No door notes recorded for this household.</p>
+              }
             </div>
-            } @else {
-            <div class="text-center py-10 text-base-content/40 italic">
-              No internal notes recorded for this household
-            </div>
-            }
           </div>
         </pc-tab-panel>
       </pc-tabs>
