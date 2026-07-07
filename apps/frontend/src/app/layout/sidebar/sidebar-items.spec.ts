@@ -38,14 +38,14 @@ describe('SidebarItems', () => {
     expect(new Set(keys).size, 'sidebar shortcut keys must be unique').toBe(keys.length);
   });
 
-  it('marks the admin-only SYSTEM section as adminOnly', () => {
-    const system = SidebarItems.find((item) => item.name === 'SYSTEM');
-    expect(system?.adminOnly).toBe(true);
+  it('marks the admin-only ADMIN section as adminOnly', () => {
+    const admin = SidebarItems.find((item) => item.name === 'ADMIN');
+    expect(admin?.adminOnly).toBe(true);
   });
 
-  it('includes the Dashboard entry pointing at /summary with exact path matching', () => {
+  it('includes the Dashboard entry pointing at /dashboard with exact path matching', () => {
     const dashboard = SidebarItems.find((item) => item.name === 'Dashboard');
-    expect(dashboard?.route).toBe('/summary');
+    expect(dashboard?.route).toBe('/dashboard');
     expect(dashboard?.pathMatchExact).toBe(true);
   });
 

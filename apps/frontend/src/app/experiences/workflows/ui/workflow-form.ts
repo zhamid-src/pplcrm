@@ -362,7 +362,7 @@ export class WorkflowFormComponent implements OnInit {
       await this.workflowsSvc.delete(id);
       this.workflowsSvc.triggerRefresh();
       this.alertSvc.showSuccess('Workflow deleted');
-      await this.router.navigate(['/workflows']);
+      await this.router.navigate(['/automations']);
     } catch (err) {
       const message =
         err instanceof Error && err.message
