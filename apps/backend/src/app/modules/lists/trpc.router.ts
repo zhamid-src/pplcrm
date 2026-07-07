@@ -31,4 +31,11 @@ export const ListsRouter = router({
   getListStats: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getListStats(ctx.auth, input)),
 
   getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
+
+  // Live membership (smart = re-run rules, static = saved snapshot). Reused by
+  // turf cutting (§13), automations (§16) and CSV import (§17).
+  getCurrentMembers: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getCurrentMembers(ctx.auth, input)),
+
+  // Consumers (newsletters/forms/turfs) — for LAST USED IN and delete confirms.
+  getConsumers: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getConsumers(ctx.auth, input)),
 });
