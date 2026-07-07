@@ -29,7 +29,7 @@ The content is organized as follows:
 - Some files may have been excluded based on .gitignore rules and Repomix's configuration
 - Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
 - Only files matching these patterns are included: libs/**/*, apps/**/*, scriptis/**/*, apps/backend/src/**/*
-- Files matching these patterns are excluded: **/*.test.ts, **/*.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, **/*.picture, **/*.png, **/*.jpg, **/*.jpeg, **/*.svg, **/*.ico, **/apps/frontend/**, **/apps/libs/uxcommon/**, **/_migrations/schema_dump.sql, **/*.spec.ts
+- Files matching these patterns are excluded: **/*.test.ts, **/*.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, **/*.picture, **/*.png, **/*.jpg, **/*.jpeg, **/*.svg, **/*.ico, apps/frontend/**, apps/libs/**, libs/**, **/STRUCTURE.md, **/_migrations/schema_dump.sql, **/*.spec.ts
 - Files matching patterns in .gitignore are excluded
 - Files matching default ignore patterns are excluded
 - Files are sorted by Git change count (files with more changes are at the bottom)
@@ -46,6 +46,7 @@ apps/
         _migrations/
           0001_baseline.ts
           2026-07-07-record-slugs.ts
+          2026-07-08-import-wizard-stats.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -200,6 +201,8 @@ apps/
           imports/
             repositories/
               imports.repo.ts
+            routes/
+              imports-download.route.ts
             controller.ts
             trpc.router.ts
           lists/
@@ -334,146 +337,6 @@ apps/
     playwright.config.ts
     project.json
     tsconfig.json
-  libs/
-    STRUCTURE.md
-libs/
-  common/
-    src/
-      lib/
-        schemas/
-          auth.schema.ts
-          companies.schema.ts
-          connections.schema.ts
-          core.schema.ts
-          emails.schema.ts
-          events.schema.ts
-          lists.schema.ts
-          marketing.schema.ts
-          persons.schema.ts
-          settings.schema.ts
-          tags.schema.ts
-          tasks.schema.ts
-          teams.schema.ts
-          volunteer.schema.ts
-          web-forms.schema.ts
-          workflows.schema.ts
-        auth.ts
-        emails.ts
-        jsend.ts
-        kysely.models.ts
-        models.ts
-        schema.ts
-        sla.ts
-        utils.ts
-      index.ts
-    eslint.config.cjs
-    project.json
-    tsconfig.json
-    tsconfig.lib.json
-    vite.config.ts
-  uxcommon/
-    src/
-      components/
-        address-autocomplete/
-          address-autocomplete.ts
-          googlePlacesAddressMapper.ts
-        address-form-group/
-          address-form-group.ts
-        alerts/
-          alert-service.ts
-          alerts.html
-          alerts.ts
-        autocomplete/
-          autocomplete.ts
-        breadcrumbs/
-          breadcrumbs.service.ts
-          breadcrumbs.ts
-        card/
-          card.ts
-        csv-import/
-          csv-import.html
-          csv-import.ts
-          csv.worker.ts
-        detail-header/
-          detail-header.ts
-        detail-item/
-          detail-item.ts
-        detail-layout/
-          detail-layout.ts
-        detail-row/
-          detail-row.ts
-        entity-overview/
-          entity-overview.ts
-        fields-selector/
-          fields-selector.html
-          fields-selector.ts
-        form-actions/
-          form-actions.html
-          form-actions.ts
-        grid-header/
-          grid-header.ts
-        icons/
-          attachment-icon.ts
-          icon.ts
-          icons.index.ts
-        input/
-          input.ts
-        not-found/
-          not-found.ts
-        profile-card/
-          profile-card.ts
-        public-link-panel/
-          public-link-panel.html
-          public-link-panel.ts
-        select/
-          select.ts
-        side-drawer/
-          side-drawer.ts
-        stat-card/
-          stat-card.ts
-        status-badge/
-          status-badge.ts
-        swap/
-          swap.ts
-        system-metadata/
-          system-metadata.ts
-        tabs/
-          tabs.ts
-        tags/
-          tagitem.css
-          tagitem.ts
-        textarea/
-          textarea.ts
-        toggle/
-          toggle.ts
-        user-avatar/
-          user-avatar.ts
-        confirm-dialog-host.html
-        confirm-dialog-host.ts
-        confirm-dialog.service.ts
-      directives/
-        animate-if.directive.ts
-        spin-on-click.directive.ts
-      mentions/
-        mention-controller.ts
-      pipes/
-        file-icon.pipe.ts
-        file-icon.util.ts
-        filesize.pipe.ts
-        mention.pipe.ts
-        sanitize-html.pipe.ts
-        svg-html-pipe.ts
-        timeago.pipe.ts
-      index.ts
-      loading-gate.ts
-      test-setup.ts
-    eslint.config.cjs
-    project.json
-    README.md
-    tsconfig.json
-    tsconfig.lib.json
-    tsconfig.spec.json
-    vite.config.mts
 ```
 
 # Files
@@ -6450,203 +6313,6 @@ export class MapHouseholdsTagsRepo extends BaseRepository<'map_households_tags'>
 }
 ````
 
-## File: apps/backend/src/app/modules/imports/controller.ts
-````typescript
-import type { IAuthKeyPayload, ImportListItem } from '../../../../../../libs/common/src';
-
-import { BadRequestError, NotFoundError } from '../../errors/app-errors';
-import { BaseController } from '../../lib/base.controller';
-import { sql } from 'kysely';
-import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
-import { HouseholdRepo } from '../households/repositories/households.repo';
-import { MapHouseholdsTagsRepo } from '../households/repositories/map-households-tags.repo';
-import { MapPersonsTagRepo } from '../persons/repositories/map-persons-tags.repo';
-import { PersonsRepo } from '../persons/repositories/persons.repo';
-import { CompaniesRepo } from '../companies/repositories/companies.repo';
-import { TasksRepo } from '../tasks/repositories/tasks.repo';
-import type { DataImportWithStats } from './repositories/imports.repo';
-import { ImportsRepo } from './repositories/imports.repo';
-
-export class ImportsController extends BaseController<'data_imports', ImportsRepo> {
-  private readonly personsRepo = new PersonsRepo();
-  private readonly mapPersonsTagRepo = new MapPersonsTagRepo();
-  private readonly mapListsPersonsRepo = new MapListsPersonsRepo();
-  private readonly householdsRepo = new HouseholdRepo();
-  private readonly mapHouseholdsTagsRepo = new MapHouseholdsTagsRepo();
-  private readonly companiesRepo = new CompaniesRepo();
-  private readonly tasksRepo = new TasksRepo();
-
-  constructor() {
-    super(new ImportsRepo());
-  }
-
-  public async list(auth: IAuthKeyPayload): Promise<ImportListItem[]> {
-    const rows = await this.getRepo().getAllWithStats({ tenant_id: auth.tenant_id });
-    return rows.map((row) => this.mapToListItem(row));
-  }
-
-  public async deleteImport(
-    input: {
-      id: string;
-      deleteContacts?: boolean;
-      deletePeople?: boolean;
-      deleteHouseholds?: boolean;
-      deleteCompanies?: boolean;
-      deleteTasks?: boolean;
-    },
-    auth: IAuthKeyPayload,
-  ): Promise<{ deleted: boolean; contactsRemoved: boolean }> {
-    const stats = await this.getRepo().getOneWithStats({ tenant_id: auth.tenant_id, id: input.id });
-    if (!stats) throw new NotFoundError('Import not found');
-
-    if (stats.status === 'pending' || stats.status === 'processing') {
-      throw new BadRequestError('Cannot delete an import that is still processing.');
-    }
-
-    const wantsPeopleDeletion = Boolean(input.deletePeople || input.deleteContacts);
-    const wantsHouseholdDeletion = Boolean(input.deleteHouseholds);
-    const wantsCompanyDeletion = Boolean(input.deleteCompanies);
-    const wantsTaskDeletion = Boolean(input.deleteTasks);
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        // 1. Delete people
-        if (wantsPeopleDeletion) {
-          const personIds = await this.personsRepo.getIdsByFileId(
-            { tenant_id: auth.tenant_id, file_id: stats.id },
-            trx,
-          );
-          if (personIds.length > 0) {
-            await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
-            await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
-            await this.personsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: personIds as any }, trx);
-          }
-        } else {
-          await this.personsRepo.clearFileIdForImport(
-            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
-            trx,
-          );
-        }
-
-        // 2. Delete households
-        if (wantsHouseholdDeletion) {
-          const householdIds = await this.householdsRepo.getIdsByFileId(
-            { tenant_id: auth.tenant_id, file_id: stats.id },
-            trx,
-          );
-          if (householdIds.length > 0) {
-            await this.mapHouseholdsTagsRepo.deleteByHouseholdIds(
-              { tenant_id: auth.tenant_id, household_ids: householdIds },
-              trx,
-            );
-            // Also clean up list associations before household deletion
-            await trx
-              .deleteFrom('map_lists_households')
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('household_id', 'in', householdIds)
-              .execute();
-            await this.householdsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: householdIds as any }, trx);
-          }
-        } else {
-          await this.householdsRepo.clearFileIdForImport(
-            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
-            trx,
-          );
-        }
-
-        // 3. Delete companies
-        if (wantsCompanyDeletion) {
-          const companyIds = await this.companiesRepo.getIdsByFileId(
-            { tenant_id: auth.tenant_id, file_id: stats.id },
-            trx,
-          );
-          if (companyIds.length > 0) {
-            await trx
-              .updateTable('persons')
-              .set({ company_id: null, updated_at: sql`now()`, updatedby_id: auth.user_id })
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('company_id', 'in', companyIds)
-              .execute();
-            await this.companiesRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: companyIds as any }, trx);
-          }
-        } else {
-          await this.companiesRepo.clearFileIdForImport(
-            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
-            trx,
-          );
-        }
-
-        // 4. Delete tasks
-        if (wantsTaskDeletion) {
-          const taskIds = await this.tasksRepo.getIdsByFileId({ tenant_id: auth.tenant_id, file_id: stats.id }, trx);
-          if (taskIds.length > 0) {
-            await trx
-              .deleteFrom('task_subtasks')
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('task_id', 'in', taskIds)
-              .execute();
-            await trx
-              .deleteFrom('task_comments')
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('task_id', 'in', taskIds)
-              .execute();
-            await trx
-              .deleteFrom('task_attachments')
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('task_id', 'in', taskIds)
-              .execute();
-            await this.tasksRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: taskIds as any }, trx);
-          }
-        } else {
-          await this.tasksRepo.clearFileIdForImport(
-            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
-            trx,
-          );
-        }
-
-        await this.getRepo().delete({ tenant_id: auth.tenant_id as any, id: stats.id as any }, trx);
-      });
-
-    return { deleted: true, contactsRemoved: wantsPeopleDeletion };
-  }
-
-  private mapToListItem(row: DataImportWithStats): ImportListItem {
-    const tagMissing = !row.tag_exists || row.tag_assignment_count === 0;
-    const canDeleteContacts = row.contact_count > 0 && !tagMissing;
-
-    return {
-      id: row.id,
-      fileName: row.file_name,
-      source: row.source,
-      tagName: row.tag_name,
-      tagMissing,
-      createdAt: row.created_at,
-      processedAt: row.processed_at,
-      createdBy: row.createdby_id
-        ? {
-            id: row.createdby_id,
-            name: row.created_by_name,
-            email: row.created_by_email,
-          }
-        : null,
-      insertedCount: row.inserted_count,
-      errorCount: row.error_count,
-      skippedCount: row.skipped_count,
-      rowCount: row.row_count,
-      householdsCreated: row.households_created,
-      contactCount: row.contact_count,
-      householdCount: row.household_count,
-      companyCount: row.company_count,
-      taskCount: row.task_count,
-      status: row.status,
-      errorMessage: row.error_message,
-      canDeleteContacts,
-    };
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/imports/trpc.router.ts
 ````typescript
 import { idSchema } from '../../../../../../libs/common/src';
@@ -11708,69 +11374,6 @@ export const logger = pino.pino({
 });
 ````
 
-## File: apps/backend/src/app/routes.ts
-````typescript
-import type { FastifyPluginCallback } from 'fastify';
-
-import emailsApiRoute from './modules/emails/routes/emails-api.route';
-import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
-import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
-import filesRoute from './modules/files/routes/files.route';
-import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
-import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
-import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
-import eventsPublicRoute from './modules/events/routes/events-public.route';
-import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
-import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
-import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
-import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
-
-export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
-  // --- Public REST routes (No Auth required) ---
-
-  // Register public web forms submission REST routes
-  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
-
-  // Register public volunteer events REST routes
-  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
-
-  // Register public RSVP event pages REST routes
-  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
-
-  // Register Stripe billing webhook route
-  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
-
-  // Register Stripe donations webhook route
-  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
-
-  // Register SendGrid newsletters event webhook route
-  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
-
-  // Register Zapier inbound action routes (API key auth handled inside route)
-  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
-
-  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
-  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
-
-  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
-  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
-
-  // Register exports download REST route (auth handled inside route via query token)
-  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
-
-  // Register email attachments REST routes (auth handled inside route via token/query token)
-  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
-
-  // Register files download REST route (auth handled inside route via token/query token)
-  fastify.register(filesRoute, { prefix: '/api/files' });
-
-  // Root health check endpoint
-  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
-
-  done();
-};
-````
-
 ## File: apps/backend/src/context.ts
 ````typescript
 import type { IAuthKeyPayload } from '../../../libs/common/src';
@@ -12123,4324 +11726,6 @@ export default defineConfig({
 }
 ````
 
-## File: libs/common/src/lib/schemas/connections.schema.ts
-````typescript
-import { z } from 'zod';
-import { idSchema, notesSchema } from './core.schema';
-
-export const RELATION_TYPES = [
-  'referred_by',
-  'referred_to',
-  'close_friend',
-  'family_member',
-  'spouse',
-  'colleague',
-  'org_affiliation',
-  'introduced_by',
-  'introduced_to',
-  'custom',
-] as const;
-
-export const RELATION_TYPE_LABELS: Record<(typeof RELATION_TYPES)[number], string> = {
-  referred_by: 'Referred By',
-  referred_to: 'Referred To',
-  close_friend: 'Close Friend',
-  family_member: 'Family Member',
-  spouse: 'Spouse / Partner',
-  colleague: 'Colleague',
-  org_affiliation: 'Org. Affiliation',
-  introduced_by: 'Introduced By',
-  introduced_to: 'Introduced To',
-  custom: 'Custom',
-};
-
-export const relationTypeSchema = z.enum(RELATION_TYPES);
-export type RelationTypeSchema = z.infer<typeof relationTypeSchema>;
-
-export const AddConnectionObj = z.object({
-  to_person_id: idSchema,
-  relation_type: relationTypeSchema,
-  custom_label: z.string().trim().min(1).max(100).nullable().optional(),
-  is_mutual: z.boolean().default(false).optional(),
-  notes: notesSchema,
-});
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-````
-
-## File: libs/common/src/lib/schemas/events.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-const slugSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(
-    /^(?=.*[a-z])[a-z0-9-]+$/,
-    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-  );
-
-export const AddEventObj = z.object({
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema,
-  is_published: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_registration_confirmation: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const EventObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  slug: z.string(),
-  is_published: z.boolean(),
-  send_reminder: z.boolean(),
-  send_registration_confirmation: z.boolean(),
-});
-
-export const UpdateEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema.optional(),
-  is_published: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_registration_confirmation: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const AddTicketTypeObj = z.object({
-  event_id: idSchema,
-  name: nameSchema('Ticket type name', 100),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).default(0).optional(),
-});
-
-export const TicketTypeObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  price_cents: z.number(),
-  capacity: z.number().nullable().optional(),
-  sort_order: z.number(),
-});
-
-export const UpdateTicketTypeObj = z.object({
-  name: nameSchema('Ticket type name', 100).optional(),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).optional(),
-});
-
-const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
-
-export const AddRegistrationObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.default('registered').optional(),
-  notes: notesSchema,
-});
-
-export const RegistrationObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  ticket_type_id: z.string().nullable().optional(),
-  status: registrationStatusEnum,
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateRegistrationObj = z.object({
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.optional(),
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: notesSchema,
-});
-````
-
-## File: libs/common/src/lib/schemas/lists.schema.ts
-````typescript
-import { z } from 'zod';
-import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
-
-export const AddListObj = z.object({
-  name: nameSchema('List name', 100),
-  description: descriptionSchema(1000),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  member_ids: z.array(idSchema).optional(),
-});
-
-export const ListsObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const UpdateListObj = z.object({
-  name: nameSchema('List name', 100).optional(),
-  description: descriptionSchema(1000).optional(),
-  object: z.enum(['people', 'households']).optional(),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const ImportListItemObj = z.object({
-  id: idSchema,
-  fileName: z.string(),
-  source: z.string(),
-  tagName: z.string().nullable(),
-  tagMissing: z.boolean(),
-  createdAt: z.coerce.date(),
-  processedAt: z.coerce.date(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable(),
-  insertedCount: z.number().int().nonnegative(),
-  errorCount: z.number().int().nonnegative(),
-  skippedCount: z.number().int().nonnegative(),
-  rowCount: z.number().int().nonnegative(),
-  householdsCreated: z.number().int().nonnegative(),
-  contactCount: z.number().int().nonnegative(),
-  householdCount: z.number().int().nonnegative(),
-  companyCount: z.number().int().nonnegative(),
-  taskCount: z.number().int().nonnegative(),
-  status: z.string(),
-  errorMessage: z.string().nullable().optional(),
-  canDeleteContacts: z.boolean(),
-});
-````
-
-## File: libs/common/src/lib/schemas/marketing.schema.ts
-````typescript
-import { z } from 'zod';
-
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-});
-
-export const MarketingEmailObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z.array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() })).nullable().optional(),
-  updated_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export const AddMarketingEmailObj = z.object({
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z.array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() })).nullable().optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-````
-
-## File: libs/common/src/lib/schemas/settings.schema.ts
-````typescript
-import { z } from 'zod';
-
-export const SettingsObj = z.object({
-  id: z.string().optional(),
-  tenant_id: z.string().optional(),
-  campaign_id: z.string().optional(),
-  createdby_id: z.string().optional(),
-  updatedby_id: z.string().optional(),
-  key: z.string().optional(),
-  value: z.unknown().optional(),
-});
-
-export const SettingsEntryObj = z.object({
-  key: z.string().min(1),
-  value: z.unknown(),
-});
-
-export const UpsertSettingsInputObj = z.object({
-  entries: z.array(SettingsEntryObj).min(1),
-});
-````
-
-## File: libs/common/src/lib/schemas/tags.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema } from './core.schema';
-
-export const AddTagObj = z.object({
-  name: nameSchema('Tag name', 50),
-  description: descriptionSchema(500),
-  color: z
-    .string()
-    .trim()
-    .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
-    .nullable()
-    .optional(),
-  type: z.enum(['tag', 'issue']).default('tag').optional(),
-});
-
-export const UpdateTagObj = z.object({
-  name: nameSchema('Tag name', 50).optional(),
-  description: descriptionSchema(500).optional(),
-  color: z
-    .string()
-    .trim()
-    .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
-    .nullable()
-    .optional(),
-  type: z.enum(['tag', 'issue']).optional(),
-});
-````
-
-## File: libs/common/src/lib/schemas/tasks.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, notesSchema, idSchema } from './core.schema';
-
-export const AddTaskObj = z.object({
-  name: nameSchema('Task name', 200),
-  details: z.string().trim().max(10000, 'Details too long').optional(),
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).default('todo').optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-export const TasksObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  details: z.string().optional(),
-  due_at: z.coerce.date().optional(),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).nullable().optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
-  completed_at: z.coerce.date().optional(),
-  position: z.number().int().optional(),
-  assigned_to: z.string().nullable().optional(),
-  team_id: z.string().nullable().optional(),
-});
-
-export const UpdateTaskObj = z.object({
-  name: nameSchema('Task name', 200).optional(),
-  details: notesSchema,
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-````
-
-## File: libs/common/src/lib/schemas/teams.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema, idSchema } from './core.schema';
-
-export const AddTeamObj = z.object({
-  name: nameSchema('Name', 100),
-  description: descriptionSchema(1000),
-  team_captain_id: idSchema.or(z.literal('')).nullable().optional(),
-  team_lead_user_id: idSchema.or(z.literal('')).nullable().optional(),
-  volunteer_ids: z.array(idSchema).optional(),
-  list_ids: z.array(idSchema).optional(),
-});
-
-export const UpdateTeamObj = z.object({
-  name: nameSchema('Name', 100).nullable(),
-  description: descriptionSchema(1000),
-  team_captain_id: idSchema.or(z.literal('')).nullable().optional(),
-  team_lead_user_id: idSchema.or(z.literal('')).nullable().optional(),
-  volunteer_ids: z.array(idSchema).optional(),
-  list_ids: z.array(idSchema).optional(),
-});
-````
-
-## File: libs/common/src/lib/schemas/volunteer.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-export const AddVolunteerEventObj = z.object({
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  is_private: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_signup_confirmation: z.boolean().default(true).optional(),
-  send_volunteer_alert: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-  slug: z
-    .string()
-    .trim()
-    .min(1)
-    .max(200)
-    .regex(
-      /^(?=.*[a-z])[a-z0-9-]+$/,
-      'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-    ),
-});
-
-export const VolunteerEventsObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  is_private: z.boolean(),
-  send_reminder: z.boolean(),
-  send_signup_confirmation: z.boolean().default(true),
-  send_volunteer_alert: z.boolean().default(true),
-  slug: z.string(),
-});
-
-export const UpdateVolunteerEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  is_private: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_signup_confirmation: z.boolean().optional(),
-  send_volunteer_alert: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-  slug: z
-    .string()
-    .trim()
-    .min(1)
-    .max(200)
-    .regex(
-      /^(?=.*[a-z])[a-z0-9-]+$/,
-      'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-    )
-    .optional(),
-});
-
-export const AddVolunteerShiftObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).default('signed_up').optional(),
-  hours_worked: z.number().min(0).max(24).nullable().optional(),
-  notes: notesSchema,
-});
-
-export const VolunteerShiftsObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']),
-  hours_worked: z.number().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateVolunteerShiftObj = z.object({
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).optional(),
-  hours_worked: z.number().min(0).max(24).nullable().optional(),
-  notes: notesSchema,
-});
-````
-
-## File: libs/common/src/lib/schemas/workflows.schema.ts
-````typescript
-import { z } from 'zod';
-
-export const WorkflowObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  trigger_type: z
-    .enum([
-      'volunteer_signup',
-      'manual',
-      'tag_added',
-      'web_form_submitted',
-      'volunteer_shift_status',
-      'contact_created',
-      'list_joined',
-      'payment_event',
-      'new_subscriber',
-      'new_unsubscriber',
-    ])
-    .default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft'),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowObj = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  description: z.string().nullable().optional(),
-  trigger_type: z
-    .enum([
-      'volunteer_signup',
-      'manual',
-      'tag_added',
-      'web_form_submitted',
-      'volunteer_shift_status',
-      'contact_created',
-      'list_joined',
-      'payment_event',
-      'new_subscriber',
-      'new_unsubscriber',
-    ])
-    .default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
-});
-
-export const UpdateWorkflowObj = AddWorkflowObj.partial();
-
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-
-export const WorkflowStepObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  step_number: z.number().int().positive(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().min(1, 'Subject is required'),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowStepObj = z.object({
-  step_number: z.number().int().positive(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days').optional(),
-  subject: z.string().min(1, 'Subject is required'),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-});
-
-export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
-
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-
-export const WorkflowEnrollmentObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['active', 'completed', 'cancelled']).default('active'),
-  current_step_number: z.number().int().nonnegative(),
-  next_run_at: z.coerce.date().nullable().optional(),
-  enrolled_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-````
-
-## File: libs/common/src/lib/emails.ts
-````typescript
-// ---------- Public compatibility interface (loose) ----------
-// ---------- Strict types for compile-time guarantees ----------
-interface EmailFolderBase {
-  icon: string;
-  id: string;
-  is_default: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
-
-export interface EmailFolderConfig {
-  code?: string; // optional/loose for compatibility
-  icon: string;
-  id: string;
-  is_default: boolean;
-  is_virtual: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
-
-export interface RealEmailFolder extends EmailFolderBase {
-  code?: never; // forbidden on real folders
-  is_virtual: false;
-}
-
-export interface VirtualEmailFolder extends EmailFolderBase {
-  code: string; // required when virtual
-  is_virtual: true;
-}
-
-// ---------- Derived types ----------
-type Folder = (typeof EMAIL_FOLDERS)[number];
-
-type OnlyReal = Extract<Folder, { is_virtual: false }>;
-
-type OnlyVirtual = Extract<Folder, { is_virtual: true }>;
-
-// All folders (merged, exact keys/ids)
-export type AllFolderKey = keyof typeof SPECIAL_FOLDERS | keyof typeof REGULAR_FOLDERS;
-
-export type AllFoldersMap = typeof SPECIAL_FOLDERS & typeof REGULAR_FOLDERS;
-
-export type EmailStatus = 'open' | 'closed';
-
-export type HasRow = {
-  email_id: string;
-  has: boolean;
-};
-
-export type RegularFolderId = OnlyReal['id']; // '7' | '3' | '4' | '5'
-
-export type RegularFolderKey = Uppercase<RegularFolderName>; // 'DRAFTS' | 'SENT' | 'SPAM' | 'TRASH'
-
-export type RegularFolderName = OnlyReal['name']; // 'Drafts' | 'Sent' | 'Spam' | 'Trash'
-
-export type ServerEmail = {
-  assigned_to?: string | null;
-  attachment_count?: number | string | bigint | null;
-  folder_id: string | number;
-  from_email?: string | null;
-  is_read?: boolean;
-
-  // any of these might be present depending on endpoint:
-  has_attachment?: boolean | null;
-  id: string | number;
-  is_favourite: boolean;
-  preview?: string | null;
-  status?: string;
-  subject?: string | null;
-  to_email?: string | null;
-  updated_at: string | Date;
-  date_sent?: string | Date | null;
-  sender_first_name?: string | null;
-  sender_last_name?: string | null;
-};
-
-export type SpecialFolderId = OnlyVirtual['id'];
-
-export type SpecialFolderKey = OnlyVirtual['code'];
-
-export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
-
-function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type RegularFolder = Extract<F[number], { is_virtual: false }>;
-  type FolderKey = Uppercase<RegularFolder['name'] & string>;
-  type FolderId<K extends FolderKey> = Extract<RegularFolder, { name: Capitalize<Lowercase<K>> }>['id'];
-
-  const entries = folders
-    .filter((f): f is RegularFolder => !f.is_virtual)
-    .map((f) => [f.name.toUpperCase() as FolderKey, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
-}
-
-function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type VirtualFolder = Extract<F[number], { is_virtual: true }>;
-  type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
-  type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
-
-  const entries = folders.filter((f): f is VirtualFolder => f.is_virtual).map((f) => [f.code, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
-}
-
-export const isRegularFolderId = (id: string): id is RegularFolderId =>
-  Object.values(REGULAR_FOLDERS).includes(id as RegularFolderId);
-
-// Optional runtime type guards
-export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
-  Object.values(SPECIAL_FOLDERS).includes(id as SpecialFolderId);
-
-// ---------- Configuration (validated against STRICT type) ----------
-export const EMAIL_FOLDERS = [
-  // Virtual
-  {
-    id: '8',
-    name: 'Unassigned',
-    icon: 'inbox',
-    sort_order: 1,
-    is_default: false,
-    is_virtual: true,
-    code: 'UNASSIGNED',
-  },
-  {
-    id: '6',
-    name: 'Assigned to me',
-    icon: 'user-circle',
-    sort_order: 2,
-    is_default: true,
-    is_virtual: true,
-    code: 'ASSIGNED_TO_ME',
-  },
-  { id: '9', name: 'Favourites', icon: 'star', sort_order: 3, is_default: false, is_virtual: true, code: 'FAVOURITES' },
-  {
-    id: '1',
-    name: 'All Open',
-    icon: 'document-duplicate',
-    sort_order: 4,
-    is_default: false,
-    is_virtual: true,
-    code: 'ALL_OPEN',
-  },
-  {
-    id: '2',
-    name: 'Completed',
-    icon: 'document-check',
-    sort_order: 5,
-    is_default: false,
-    is_virtual: true,
-    code: 'CLOSED',
-  },
-
-  // Real
-  { id: '11', name: 'Inbox', icon: 'inbox', sort_order: 6, is_default: false, is_virtual: false },
-  { id: '7', name: 'Drafts', icon: 'document', sort_order: 7, is_default: false, is_virtual: false },
-  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 8, is_default: false, is_virtual: false },
-  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 9, is_default: false, is_virtual: false },
-  { id: '5', name: 'Trash', icon: 'trash', sort_order: 10, is_default: false, is_virtual: false },
-  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 11, is_default: false, is_virtual: false },
-] as const satisfies StrictEmailFolderConfig[];
-
-// Real-only (exact keys/ids)
-export const REGULAR_FOLDERS = createRegularFolders(EMAIL_FOLDERS);
-
-// ---------- Exposed constants ----------
-
-// Virtual-only (exact keys/ids)
-export const SPECIAL_FOLDERS = createSpecialFolders(EMAIL_FOLDERS);
-export const ALL_FOLDERS: AllFoldersMap = { ...SPECIAL_FOLDERS, ...REGULAR_FOLDERS } as const;
-
-// Useful helpers
-export const ALL_FOLDER_IDS = EMAIL_FOLDERS.map((f) => f.id) as ReadonlyArray<Folder['id']>;
-export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((f) => [f.id, f]))) as Readonly<
-  Record<Folder['id'], Folder>
->;
-````
-
-## File: libs/common/src/lib/jsend.ts
-````typescript
-export interface JSendErrorInterface {
-  code?: string | number;
-  message: string;
-  status: 'error';
-}
-
-export interface JSendFailInterface<E extends object = Record<string, unknown>> {
-  data: E;
-  status: 'fail';
-}
-
-export interface JSendSuccessInterface<T> {
-  data: T;
-  status: 'success';
-}
-
-export class JSendError extends Error {
-  public override name = 'JSendServerError';
-
-  constructor(
-    public readonly messageText: string,
-    public readonly code?: string | number,
-    public readonly statusCode: number = 500,
-  ) {
-    super(messageText || 'Server error');
-  }
-}
-
-export class JSendFail<E extends object = Record<string, unknown>> extends Error {
-  public override name = 'JSendFailError';
-
-  constructor(
-    public readonly data: E,
-    public readonly statusCode: number = 400,
-  ) {
-    super('Request failed');
-  }
-}
-
-export type JSend<T = unknown, E extends object = Record<string, unknown>> =
-  | JSendSuccessInterface<T>
-  | JSendFailInterface<E>
-  | JSendErrorInterface;
-
-export type JSendStatus = 'success' | 'fail' | 'error';
-
-// Helpful status mapping (useful in backend)
-export function httpStatusForJSend(obj: JSend): number {
-  if (jsend.isSuccess(obj)) return 200;
-  if (jsend.isFail(obj)) return 400; // choose per-case if needed
-  return 500;
-}
-
-export const jsend = {
-  success<T>(data: T): JSendSuccessInterface<T> {
-    return { status: 'success', data };
-  },
-  fail<E extends object = Record<string, unknown>>(data: E): JSendFailInterface<E> {
-    return { status: 'fail', data };
-  },
-  error(message: string, code?: string | number): JSendErrorInterface {
-    return {
-      status: 'error',
-      message,
-      ...(code !== undefined ? { code } : {}),
-    };
-  },
-
-  isSuccess<T = unknown>(x: unknown): x is JSendSuccessInterface<T> {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'success' &&
-      'data' in x
-    );
-  },
-  isFail<E extends object = Record<string, unknown>>(x: unknown): x is JSendFailInterface<E> {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'fail' &&
-      'data' in x
-    );
-  },
-  isError(x: unknown): x is JSendErrorInterface {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'error' &&
-      'message' in x
-    );
-  },
-
-  unwrap<T>(res: JSend<T>): T {
-    if (res.status === 'success') return res.data;
-    if (res.status === 'fail') throw new JSendFail(res.data, 400);
-    if (res.status === 'error') throw new JSendError(res.message, res.code, 500);
-    throw new Error('Unknown JSend shape');
-  },
-};
-````
-
-## File: libs/common/src/lib/schema.ts
-````typescript
-export * from './schemas/core.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-````
-
-## File: libs/common/src/lib/sla.ts
-````typescript
-export function calculateWorkingTimeMs(
-  startDate: Date,
-  endDate: Date,
-  workingDays: number[],
-  workingHoursStart: string,
-  workingHoursEnd: string,
-): number {
-  if (startDate.getTime() >= endDate.getTime()) {
-    return 0;
-  }
-
-  // Parse start hour/minute
-  const [startHour = NaN, startMin = NaN] = workingHoursStart.split(':').map(Number);
-  // Parse end hour/minute
-  const [endHour = NaN, endMin = NaN] = workingHoursEnd.split(':').map(Number);
-
-  if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin) || workingDays.length === 0) {
-    // Return standard elapsed time as fallback if settings are malformed
-    return endDate.getTime() - startDate.getTime();
-  }
-
-  const current = new Date(startDate);
-  current.setHours(0, 0, 0, 0);
-
-  const endLimit = new Date(endDate);
-  endLimit.setHours(23, 59, 59, 999);
-
-  let totalMs = 0;
-
-  while (current.getTime() <= endLimit.getTime()) {
-    const dayOfWeek = current.getDay();
-
-    if (workingDays.includes(dayOfWeek)) {
-      const workStart = new Date(current);
-      workStart.setHours(startHour, startMin, 0, 0);
-
-      const workEnd = new Date(current);
-      workEnd.setHours(endHour, endMin, 0, 0);
-
-      const actualStart = Math.max(startDate.getTime(), workStart.getTime());
-      const actualEnd = Math.min(endDate.getTime(), workEnd.getTime());
-
-      const overlap = actualEnd - actualStart;
-      if (overlap > 0) {
-        totalMs += overlap;
-      }
-    }
-
-    // Step to the next day
-    current.setDate(current.getDate() + 1);
-  }
-
-  return totalMs;
-}
-````
-
-## File: libs/common/tsconfig.json
-````json
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "module": "es2022",
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "files": [],
-  "include": [],
-  "references": [
-    {
-      "path": "./tsconfig.lib.json"
-    }
-  ]
-}
-````
-
-## File: libs/common/tsconfig.lib.json
-````json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../dist/out-tsc",
-    "declaration": true,
-    "types": ["node"]
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["jest.config.ts", "src/**/*.spec.ts", "src/**/*.test.ts"]
-}
-````
-
-## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
-````typescript
-import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
-import { Loader } from '@googlemaps/js-api-loader';
-import { AddressType } from '../../../../common/src/lib/kysely.models';
-import { parseAddress } from './googlePlacesAddressMapper';
-
-@Component({
-  selector: 'pc-address-autocomplete',
-  standalone: true,
-  template: `
-    <div class="relative w-full">
-      <input
-        #inputEl
-        type="text"
-        class="input w-full"
-        [placeholder]="placeholder()"
-        [disabled]="disabled()"
-        autocomplete="one-time-code"
-      />
-    </div>
-  `,
-})
-export class AddressAutocomplete implements OnInit {
-  private readonly loader = inject(Loader);
-
-  public readonly disabled = input<boolean>(false);
-  public readonly placeholder = input<string>('Start typing an address…');
-  public readonly regionCodes = input<string[]>(['ca']);
-
-  public readonly addressSelected = output<AddressType>();
-
-  private inputElement: HTMLInputElement | null = null;
-  private isLibraryLoaded = false;
-  private isAutocompleteInitialized = false;
-
-  @ViewChild('inputEl')
-  set inputEl(elRef: ElementRef | undefined) {
-    if (elRef) {
-      this.inputElement = elRef.nativeElement;
-      this.tryInitAutocomplete();
-    }
-  }
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    try {
-      await this.loader.importLibrary('places');
-      this.isLibraryLoaded = true;
-      this.tryInitAutocomplete();
-    } catch (err) {
-      console.error('Failed to load Google Maps Places library', err);
-    }
-  }
-
-  private tryInitAutocomplete() {
-    if (
-      this.isAutocompleteInitialized ||
-      !this.inputElement ||
-      !this.isLibraryLoaded ||
-      typeof google === 'undefined' ||
-      !google.maps ||
-      !google.maps.places
-    ) {
-      return;
-    }
-
-    const options: google.maps.places.AutocompleteOptions = {
-      componentRestrictions: { country: this.regionCodes() },
-      types: ['geocode'],
-    };
-
-    const autocomplete = new google.maps.places.Autocomplete(this.inputElement, options);
-    this.isAutocompleteInitialized = true;
-
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (place) {
-        const address = parseAddress(place);
-        this.addressSelected.emit(address);
-      }
-    });
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/address-autocomplete/googlePlacesAddressMapper.ts
-````typescript
-import type { AddressType } from '../../../../common/src/lib/kysely.models';
-
-type AddressTypeMapInterface = {
-  [key in keyof AddressType]: string[];
-};
-
-export function parseAddress(place: google.maps.places.PlaceResult): AddressType {
-  const address: AddressType = {};
-
-  if (!place.address_components || place.address_components.length === 0) {
-    return address;
-  }
-
-  const address_components: google.maps.GeocoderAddressComponent[] = place.address_components;
-
-  address_components.forEach((component) => {
-    for (const mapKey in googleAddressToAddressTypeMap) {
-      const key = mapKey as keyof typeof googleAddressToAddressTypeMap;
-      if (googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]!) !== -1) {
-        (address[key] as string) = key === 'country' ? component.short_name : component.long_name;
-      }
-    }
-  });
-
-  address.formatted_address = place.formatted_address;
-  address.lat = place.geometry?.location?.lat();
-  address.lng = place.geometry?.location?.lng();
-  address.type = place.types && place.types[0];
-
-  return address;
-}
-
-export function parsePlace(place: google.maps.places.Place): AddressType {
-  const address: AddressType = {};
-
-  const addressComponents = place.addressComponents;
-  if (!addressComponents || addressComponents.length === 0) {
-    return address;
-  }
-
-  addressComponents.forEach((component: any) => {
-    for (const mapKey in googleAddressToAddressTypeMap) {
-      const key = mapKey as keyof typeof googleAddressToAddressTypeMap;
-      if (component.types && googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]) !== -1) {
-        (address[key] as string) = key === 'country' ? component.shortText : component.longText;
-      }
-    }
-  });
-
-  address.formatted_address = place.formattedAddress ?? undefined;
-  address.lat = place.location?.lat() ?? undefined;
-  address.lng = place.location?.lng() ?? undefined;
-  address.type = (place.types && place.types[0]) ?? undefined;
-
-  return address;
-}
-
-const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
-  apt: ['subpremise'],
-  street_num: ['street_number'],
-  zip: ['postal_code'],
-  street1: ['street_address', 'route'],
-  city: [
-    'locality',
-    'sublocality',
-    'sublocality_level_1',
-    'sublocality_level_2',
-    'sublocality_level_3',
-    'sublocality_level_4',
-  ],
-  state: [
-    'administrative_area_level_1',
-    'administrative_area_level_2',
-    'administrative_area_level_3',
-    'administrative_area_level_4',
-    'administrative_area_level_5',
-  ],
-  country: ['country'],
-};
-````
-
-## File: libs/uxcommon/src/components/address-form-group/address-form-group.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { Input as PcInput } from '../input/input';
-
-@Component({
-  selector: 'pc-address-form-group',
-  imports: [PcInput],
-  template: `
-    <div class="flex flex-col gap-4">
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="Unit / Apt" [formField]="form().apt"></pc-input>
-        <pc-input class="flex-1" placeholder="Street Number" [formField]="form().street_num"></pc-input>
-        <pc-input class="flex-2" placeholder="Street Name" [formField]="form().street1"></pc-input>
-      </div>
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="City" [formField]="form().city"></pc-input>
-        <pc-input class="flex-1" placeholder="State / Province" [formField]="form().state"></pc-input>
-        <pc-input class="flex-1" placeholder="Country" [formField]="form().country"></pc-input>
-      </div>
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="Zip / Postal Code" [formField]="form().zip"></pc-input>
-        <pc-input class="flex-1" type="tel" placeholder="Home Phone" [formField]="form().home_phone"></pc-input>
-        <div class="flex-1"></div>
-      </div>
-    </div>
-  `,
-})
-export class AddressFormGroup {
-  public form = input.required<any>();
-}
-````
-
-## File: libs/uxcommon/src/components/alerts/alerts.ts
-````typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-import { ALERTTYPE, AlertService } from './alert-service';
-
-@Component({
-  selector: 'pc-alerts',
-  imports: [Icon, AnimateIfDirective],
-  templateUrl: './alerts.html',
-})
-export class Alerts {
-  protected alertSvc = inject(AlertService);
-
-  public position = input<'top' | 'bottom' | 'relative'>('bottom');
-
-  protected OKBtnClick(id: string): void {
-    this.alertSvc.OKBtnCallback(id);
-    this.alertSvc.dismiss(id);
-  }
-
-  protected readonly alerts = computed(() => {
-    const list = this.alertSvc.alertList();
-    return this.position() === 'top' ? list.slice().reverse() : list;
-  });
-
-
-  protected getEnterAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
-  }
-
-  protected getExitAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
-  }
-
-  protected icon(type: ALERTTYPE) {
-    return type === 'success'
-      ? 'check-circle'
-      : type === 'warning'
-        ? 'exclamation-triangle'
-        : type === 'error'
-          ? 'x-circle'
-          : 'exclamation-circle';
-  }
-
-  protected isPositionBottom() {
-    return this.position() === 'bottom';
-  }
-
-  protected isPositionRelative() {
-    return this.position() === 'relative';
-  }
-
-  protected isPositionTop() {
-    return this.position() === 'top';
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
-````typescript
-import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
-import { debounce } from '../../../../common/src';
-
-@Component({
-  selector: 'pc-autocomplete',
-  template: ` <input
-      #inputEl
-      type="text"
-      class="input w-full"
-      [placeholder]="placeholder()"
-      (keyup)="onKey($event)"
-      (input)="onInput($event)"
-      (focus)="showAutoCompleteList()"
-      (blur)="hideAutoCompleteList()"
-    />
-    @if (matches().length && !hideAutoComplete()) {
-      <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
-        @for (match of matches(); track match) {
-          <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">
-            {{ match.charAt(0).toUpperCase() + match.slice(1) }}
-          </li>
-        }
-      </ul>
-    }`,
-})
-export class AutoComplete {
-  protected readonly matches = signal<string[]>([]);
-
-  protected hideAutoComplete = signal(true);
-
-  public readonly valueChange = output<string>();
-
-  public filterSvc = input<TFILTER | null>(null);
-  public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
-
-  public placeholder = input('');
-
-  private readonly debouncedFilter = debounce(async (key: string) => {
-    const filterSvc = this.filterSvc();
-    if (!filterSvc || !key?.length) {
-      this.matches.set([]);
-      return;
-    }
-    const matches = await filterSvc.filter(key);
-    this.matches.set(matches);
-  }, 250);
-
-  protected onInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    this.debouncedFilter(target.value || '');
-  }
-
-  protected hideAutoCompleteList() {
-    setTimeout(() => this.hideAutoComplete.set(true), 200);
-  }
-
-  protected onKey(event: KeyboardEvent) {
-    const target = event.target as HTMLInputElement;
-    if (event.key === 'Enter' || event.key === ',') {
-      this.reset(target.value);
-    }
-  }
-
-  protected reset(key: string) {
-    this.valueChange.emit(key);
-    this.matches.set([]);
-    if (this.inputRef()?.nativeElement) {
-      this.inputRef().nativeElement.value = '';
-    }
-  }
-
-  protected showAutoCompleteList() {
-    this.hideAutoComplete.set(false);
-  }
-}
-
-type TFILTER = {
-  filter: (arg0: string) => Promise<string[]>;
-};
-````
-
-## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-
-/**
- * A single breadcrumb entry. Crumbs with a `route` render as links;
- * the last crumb (the current page) renders as plain text.
- */
-export interface PcBreadcrumb {
-  label: string;
-  route?: string | readonly unknown[];
-}
-
-@Component({
-  selector: 'pc-breadcrumbs',
-  imports: [RouterLink, Icon],
-  template: `
-    <div class="flex min-w-0 items-center justify-between gap-3">
-      <nav aria-label="Breadcrumb" class="min-w-0 text-xs text-base-content/50">
-        <ol class="flex flex-wrap items-center gap-1.5">
-          @for (crumb of crumbs(); track $index; let last = $last) {
-            <li class="flex min-w-0 items-center gap-1.5">
-              @if (!last && crumb.route) {
-                <a [routerLink]="crumb.route" class="max-w-48 truncate font-medium text-primary hover:underline">
-                  {{ crumb.label }}
-                </a>
-              } @else {
-                <span
-                  class="max-w-48 truncate font-medium text-base-content/60"
-                  [attr.aria-current]="last ? 'page' : null"
-                >
-                  {{ crumb.label }}
-                </span>
-              }
-              @if (!last) {
-                <span class="select-none opacity-60" aria-hidden="true">/</span>
-              }
-            </li>
-          }
-        </ol>
-      </nav>
-      @if (positionLabel()) {
-        <div class="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-xs"
-            [attr.aria-label]="prevLabel()"
-            [disabled]="!hasPrev()"
-            (click)="prev.emit()"
-          >
-            <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          </button>
-          <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{ positionLabel() }}</span>
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-xs"
-            [attr.aria-label]="nextLabel()"
-            [disabled]="!hasNext()"
-            (click)="next.emit()"
-          >
-            <pc-icon name="chevron-right" [size]="4"></pc-icon>
-          </button>
-        </div>
-      }
-    </div>
-  `,
-})
-export class Breadcrumbs {
-  public readonly crumbs = input.required<PcBreadcrumb[]>();
-
-  /** Optional "N of M filtered" walk-the-list pager, rendered inline with the crumb trail. */
-  public readonly positionLabel = input<string | null>(null);
-  public readonly hasPrev = input<boolean>(false);
-  public readonly hasNext = input<boolean>(false);
-  public readonly prevLabel = input<string>('Previous record');
-  public readonly nextLabel = input<string>('Next record');
-
-  public readonly prev = output<void>();
-  public readonly next = output<void>();
-}
-````
-
-## File: libs/uxcommon/src/components/card/card.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-card',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 border border-base-300 shadow-md overflow-hidden w-full">
-      <div class="card-body p-6 space-y-4">
-        @if (title() || icon() || subtitle()) {
-          <div class="flex items-start justify-between gap-4 pb-2">
-            <div class="flex items-start gap-2.5">
-              @if (icon()) {
-                <pc-icon [name]="icon()!" class="text-primary mt-0.5" [size]="5"></pc-icon>
-              }
-              <div>
-                @if (title()) {
-                  <h3 class="font-bold text-lg text-base-content leading-tight">{{ title() }}</h3>
-                }
-                @if (subtitle()) {
-                  <p class="text-xs text-base-content/60 mt-0.5 leading-normal">{{ subtitle() }}</p>
-                }
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <ng-content select="[pc-card-actions]"></ng-content>
-            </div>
-          </div>
-          <div class="border-b border-base-200 -mt-2"></div>
-        }
-
-        <div class="space-y-4">
-          <ng-content></ng-content>
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class Card {
-  public title = input<string>();
-  public subtitle = input<string>();
-  public icon = input<PcIconNameType>();
-}
-````
-
-## File: libs/uxcommon/src/components/csv-import/csv-import.html
-````html
-<dialog class="modal" [open]="open()" (close)="onCloseDialog()">
-  <div class="modal-box max-w-5xl">
-    <h3 class="text-lg font-bold mb-3">{{ title() }}</h3>
-    <div class="grid gap-4">
-      <div class="grid gap-2">
-        <label class="font-semibold">1) Choose CSV file</label>
-        <input type="file" accept=".csv,text/csv" (change)="onFileSelected($event)" class="file-input file-input-bordered" />
-        <p class="text-xs opacity-70">First row should contain headers. UTF-8 CSV supported.</p>
-      </div>
-
-      @if (parsing()) {
-      <div class="grid gap-2">
-        <progress class="progress w-full"></progress>
-        <span class="text-xs opacity-70" aria-live="polite">Reading and parsing the file...</span>
-      </div>
-      }
-
-      @if (csvHeaders().length) {
-      <div class="grid gap-2">
-        <label class="font-semibold">2) Map CSV columns</label>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-          @for (hdr of csvHeaders(); track hdr; let idx = $index) {
-            <div class="grid grid-cols-2 gap-2 items-center">
-              <div class="truncate" [title]="hdr">{{ hdr }}</div>
-              <select class="select select-bordered select-sm" [ngModel]="mapping()[idx]" (ngModelChange)="setMappingAt(idx, $event)">
-                <option value="">Skip</option>
-                @for (f of mappableFields(); track f) {
-                <option [value]="f">{{ f }}</option>
-                }
-              </select>
-            </div>
-          }
-        </div>
-      </div>
-      }
-
-      <!-- Optional extras slot provided by parent (e.g., tags) -->
-      <ng-content select="[pc-import-extras]"></ng-content>
-
-      @if (csvRows().length) {
-      <div class="grid gap-2">
-        <label class="font-semibold">Preview</label>
-        <div class="overflow-auto border rounded relative">
-          @if (parsing()) {
-          <div class="absolute inset-0 bg-base-100/70 grid place-items-center z-10">
-            <progress class="progress w-64"></progress>
-          </div>
-          }
-          <table class="table table-zebra table-xs">
-            <thead>
-              <tr>
-                @for (h of csvHeaders(); track h) {
-                <th>{{ h }}</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (r of previewRows(); track r) {
-              <tr>
-                @for (h of csvHeaders(); track h) {
-                <td>{{ r[h] }}</td>
-                }
-              </tr>
-              }
-            </tbody>
-          </table>
-          <div class="flex items-center justify-end gap-2 p-2">
-            <button class="btn btn-xs" [disabled]="!canPrev()" (click)="prevPage()">Prev</button>
-            <span class="text-xs opacity-70">Page {{ pageIndex() + 1 }} of {{ totalPages() }}</span>
-            <button class="btn btn-xs" [disabled]="!canNext()" (click)="nextPage()">Next</button>
-          </div>
-        </div>
-      </div>
-      }
-
-      <div class="flex justify-end gap-2 mt-2">
-        <button class="btn" (click)="closeDialog()">Cancel</button>
-        <button class="btn btn-primary" [disabled]="!csvRows().length" (click)="onSubmit()">
-          <pc-icon name="cloud-arrow-up" />
-          Import
-        </button>
-      </div>
-    </div>
-  </div>
-</dialog>
-
-<!-- Summary Modal controlled by parent-provided summary input -->
-<dialog id="csvImportSummary" class="modal" [open]="submitted() && !!summary()" (close)="onSummaryClosed()">
-  <div class="modal-box">
-    @if (!!summary() && !summary()!.failed) {
-    <h3 class="text-lg font-bold mb-2">Import Summary</h3>
-    <ul class="menu bg-base-100 rounded-box p-2">
-      @if (!summary()!.queued) {
-      <li class="opacity-90"><span>Inserted: {{ summary()!.inserted }}</span></li>
-      <li class="opacity-90"><span>Errors: {{ summary()!.errors }}</span></li>
-      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
-      }
-      @if (summary()!.tag) {
-      <li class="opacity-90"><span>Applied tag: {{ summary()!.tag }}</span></li>
-      }
-      @if (summary()!.message) {
-      <li class="opacity-90 whitespace-pre-wrap text-xs"><span>{{ summary()!.message }}</span></li>
-      }
-    </ul>
-    } @else if (!!summary()) {
-    <h3 class="text-lg font-bold mb-2">Import Failed</h3>
-    <p class="py-2 font-light">{{ summary()!.message }}</p>
-    <ul class="menu bg-base-100 rounded-box p-2">
-      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
-    </ul>
-    }
-    <div class="modal-action">
-      <form method="dialog">
-        <button class="btn" type="submit">OK</button>
-      </form>
-    </div>
-  </div>
-</dialog>
-````
-
-## File: libs/uxcommon/src/components/csv-import/csv-import.ts
-````typescript
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-export type CsvImportSummary = {
-  inserted: number;
-  errors: number;
-  skipped: number;
-  failed?: boolean;
-  queued?: boolean;
-  message?: string;
-  tag?: string;
-};
-
-@Component({
-  selector: 'pc-csv-importer',
-  imports: [FormsModule, Icon],
-  templateUrl: './csv-import.html',
-})
-export class CsvImportComponent {
-  private readonly alerts = inject(AlertService);
-
-  // Inputs
-  public readonly title = input<string>('Import Data from CSV');
-  public readonly open = input<boolean>(false);
-  public readonly mappableFields = input<string[]>([]);
-  public readonly autoMapHeader = input<(h: string) => string>(() => '');
-  public readonly previewPageSize = input<number>(5);
-  public readonly summary = input<CsvImportSummary | null>(null);
-
-  // Outputs
-  public readonly submit = output<{ rows: Array<Record<string, string>>; skipped: number; fileName?: string | null }>();
-  public readonly close = output<void>();
-  public readonly closeSummary = output<void>();
-
-  // State signals
-  protected readonly parsing = signal(false);
-  protected readonly csvHeaders = signal<string[]>([]);
-  protected readonly csvRows = signal<Array<Record<string, string>>>([]);
-  protected readonly mapping = signal<string[]>([]);
-  protected readonly pageIndex = signal(0);
-  protected readonly submitted = signal(false);
-  protected readonly fileName = signal<string | null>(null);
-
-  private getNonEmptyMappedRows() {
-    const map = this.mapping();
-    const headers = this.csvHeaders();
-    const rows = this.csvRows();
-    const mapped = rows.map((row) => {
-      const result: Record<string, string> = {};
-      headers.forEach((h, idx) => {
-        const field = map[idx];
-        if (!field) return;
-        const raw = (row[h] ?? '').toString();
-        if (raw && !(field in result) && raw.trim().length > 0) result[field] = raw;
-      });
-      return result;
-    });
-    const nonEmpty = mapped.filter((r) => Object.keys(r).length > 0);
-    return { nonEmpty, skipped: mapped.length - nonEmpty.length };
-  }
-
-  protected readonly totalPages = computed(() => {
-    const total = Math.ceil((this.csvRows().length || 0) / this.previewPageSize());
-    return total || 1;
-  });
-  protected readonly canNext = computed(() => (this.pageIndex() + 1) * this.previewPageSize() < this.csvRows().length);
-  protected readonly canPrev = computed(() => this.pageIndex() > 0);
-
-  constructor() {
-    // Auto-map when headers first arrive
-    effect(() => {
-      const headers = this.csvHeaders();
-      if (!headers.length) return;
-      const auto = this.autoMapHeader();
-      const mapped = headers.map((h) => (typeof auto === 'function' ? auto(h) : ''));
-      this.mapping.set(mapped);
-    });
-    // Reset submitted flag whenever dialog is opened anew
-    effect(() => {
-      if (this.open()) {
-        this.submitted.set(false);
-      }
-    });
-  }
-
-  protected previewRows() {
-    const start = this.pageIndex() * this.previewPageSize();
-    const end = start + this.previewPageSize();
-    return this.csvRows().slice(start, end);
-  }
-
-  protected nextPage() {
-    if (this.canNext()) this.pageIndex.update((v) => v + 1);
-  }
-
-  protected prevPage() {
-    if (this.canPrev()) this.pageIndex.update((v) => v - 1);
-  }
-
-  protected setMappingAt(index: number, value: string) {
-    const m = [...this.mapping()];
-    m[index] = value;
-    this.mapping.set(m);
-  }
-
-  protected onFileSelected(ev: Event) {
-    const input = ev.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) return;
-
-    this.parsing.set(true);
-    this.fileName.set(file.name || null);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = (reader.result as string) || '';
-      try {
-        const worker = new Worker(new URL('./csv.worker.ts', import.meta.url), { type: 'module' });
-        const handle = (e: MessageEvent) => {
-          const data: any = e.data || {};
-          if (data.type === 'result') {
-            this.csvHeaders.set(data.headers || []);
-            this.csvRows.set(data.rows || []);
-            this.pageIndex.set(0);
-            this.parsing.set(false);
-            worker.onmessage = null;
-            worker.terminate();
-          } else if (data.type === 'error') {
-            this.alerts.showError(data.message || 'Failed to parse CSV');
-            this.parsing.set(false);
-            worker.onmessage = null;
-            worker.terminate();
-          }
-        };
-        worker.onmessage = handle;
-        worker.postMessage({ type: 'parse', text });
-      } catch {
-        this.alerts.showError('Failed to parse CSV');
-        this.parsing.set(false);
-      }
-    };
-    reader.onerror = () => this.parsing.set(false);
-    reader.readAsText(file);
-  }
-
-  protected onSubmit() {
-    const { nonEmpty, skipped } = this.getNonEmptyMappedRows();
-    if (!nonEmpty.length) {
-      this.alerts.showError('Nothing to import. Please map at least one column.');
-      return;
-    }
-    this.submitted.set(true);
-    this.submit.emit({ rows: nonEmpty, skipped, fileName: this.fileName() });
-  }
-
-  protected requestClose() {
-    this.close.emit();
-  }
-
-  protected onCloseDialog() {
-    // Soft reset local state when dialog closes via native controls
-    this.csvHeaders.set([]);
-    this.csvRows.set([]);
-    this.mapping.set([]);
-    this.pageIndex.set(0);
-    this.parsing.set(false);
-    this.submitted.set(false);
-    this.fileName.set(null);
-    // Propagate close so parent can clear any summary state
-    this.close.emit();
-  }
-
-  protected onSummaryClosed() {
-    this.submitted.set(false);
-    this.closeSummary.emit();
-  }
-
-  protected closeDialog() {
-    // Close the hosting dialog element programmatically
-    const active = document.activeElement as HTMLElement | null;
-    const dlg = active?.closest('dialog') as HTMLDialogElement | null;
-    if (dlg) {
-      dlg.close();
-      return;
-    }
-    // Fallback: just emit close
-    this.close.emit();
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/csv-import/csv.worker.ts
-````typescript
-// CSV/TSV parsing web worker (shared)
-// Receives: { type: 'parse', text: string }
-// Posts: { type: 'result', headers: string[], rows: Array<Record<string,string>> } or { type: 'error', message }
-
-function detectDelimiter(sample: string[]) {
-  const candidates = [',', '\t', ';'];
-  let best: { ch: string; score: number } = { ch: ',', score: -1 };
-  for (const ch of candidates) {
-    let score = 0;
-    for (let i = 0; i < Math.min(sample.length, 5); i++) {
-      const line = sample[i] ?? '';
-      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(line)) continue;
-      score += line.split(ch).length - 1 || 0;
-    }
-    if (score > best.score) best = { ch, score };
-  }
-  return best.ch;
-}
-
-function splitLine(line: string, delimiter: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === delimiter && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current);
-  return result.map((s) => s.trim());
-}
-
-const ctx: any = self as unknown;
-
-ctx.onmessage = (e: MessageEvent) => {
-  try {
-    const { type, text } = e.data || {};
-    if (type !== 'parse' || typeof text !== 'string') return;
-
-    const lines = text.replace(/\r\n?/g, '\n').split('\n');
-    const delimiter = detectDelimiter(lines);
-    const headerLine = lines.find((l) => !!l && !/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(l)) || '';
-    const headers = splitLine(headerLine, delimiter);
-    const rows: Array<Record<string, string>> = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const rawLine = lines[i];
-      if (!rawLine) continue;
-      if (rawLine === headerLine) continue;
-      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(rawLine)) continue;
-      const cols = splitLine(rawLine, delimiter);
-      if (cols.every((c) => !c || c.trim().length === 0)) continue;
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => (row[h] = cols[idx] ?? ''));
-      rows.push(row);
-    }
-
-    ctx.postMessage({ type: 'result', headers, rows });
-  } catch (err) {
-    ctx.postMessage({ type: 'error', message: err instanceof Error && err.message ? err.message : 'Parse failed' });
-  }
-};
-````
-
-## File: libs/uxcommon/src/components/detail-row/detail-row.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-row',
-  imports: [Icon],
-  template: `
-    <div
-      class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors text-sm w-full min-w-0 gap-3"
-    >
-      <div class="flex items-center gap-2 overflow-hidden min-w-0">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" [class]="iconClass() + ' flex-shrink-0'"></pc-icon>
-        }
-        <div class="truncate text-base-content min-w-0">
-          <ng-content></ng-content>
-        </div>
-      </div>
-
-      @if (actionIcon()) {
-        <button
-          class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-          [attr.data-tip]="actionTip()"
-          (click)="onActionClick($event)"
-        >
-          <pc-icon [name]="actionIcon()!" [size]="4"></pc-icon>
-        </button>
-      } @else {
-        <ng-content select="[pc-row-action]"></ng-content>
-      }
-    </div>
-  `,
-})
-export class DetailRow {
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconClass = input<string | null | undefined>('');
-  public actionIcon = input<PcIconNameType | null | undefined>();
-  public actionTip = input<string | null | undefined>('');
-
-  public actionClick = output<MouseEvent>();
-
-  protected onActionClick(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    this.actionClick.emit(event);
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/entity-overview/entity-overview.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { DatePipe } from '@angular/common';
-
-@Component({
-  selector: 'pc-entity-overview',
-  imports: [DatePipe],
-  template: `
-    <div class="card bg-base-200/50 border border-base-300 shadow-md">
-      <div class="card-body p-5 space-y-3">
-        <h4 class="font-bold text-sm text-base-content uppercase tracking-wider">{{ title() }}</h4>
-        <div class="text-xs text-base-content/75 space-y-2">
-          <ng-content select="[pc-overview-prefix]"></ng-content>
-
-          @if (createdAt()) {
-            <div class="flex justify-between">
-              <span>Created:</span>
-              <span class="font-semibold">{{ createdAt() | date: 'medium' }}</span>
-            </div>
-          }
-          @if (updatedAt()) {
-            <div class="flex justify-between">
-              <span>Last Updated:</span>
-              <span class="font-semibold">{{ updatedAt() | date: 'medium' }}</span>
-            </div>
-          }
-          @if (createdBy()) {
-            <div class="flex justify-between">
-              <span>Created By:</span>
-              <span class="font-semibold">{{ createdBy() }}</span>
-            </div>
-          }
-
-          <ng-content select="[pc-overview-suffix]"></ng-content>
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class EntityOverview {
-  public title = input<string>('Overview');
-  public createdAt = input<any>();
-  public updatedAt = input<any>();
-  public createdBy = input<string | null | undefined>();
-}
-````
-
-## File: libs/uxcommon/src/components/fields-selector/fields-selector.html
-````html
-<div class="space-y-0.5">
-  <!-- Email is always required and locked -->
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-not-allowed select-none">
-      <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
-      <span class="text-sm font-bold text-primary">Email Address</span>
-    </label>
-    <span class="badge badge-sm badge-outline text-[10px] font-bold">Required</span>
-  </div>
-
-  @for (field of allFields; track field.key) {
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        [checked]="isEnabled(field.key)"
-        (change)="toggleField(field.key)"
-        class="checkbox checkbox-sm checkbox-primary"
-      />
-      <span class="text-sm font-medium text-base-content/85">{{ field.label }}</span>
-    </label>
-    @if (isEnabled(field.key)) {
-    <button
-      type="button"
-      (click)="toggleRequired(field.key)"
-      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-      [class.btn-primary]="isRequired(field.key)"
-      [class.btn-outline]="!isRequired(field.key)"
-    >
-      {{ isRequired(field.key) ? 'Required' : 'Optional' }}
-    </button>
-    }
-  </div>
-  }
-</div>
-````
-
-## File: libs/uxcommon/src/components/fields-selector/fields-selector.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-
-const ALL_FIELDS: { key: string; label: string }[] = [
-  { key: 'first_name', label: 'First Name' },
-  { key: 'last_name', label: 'Last Name' },
-  { key: 'mobile', label: 'Mobile / Phone' },
-  { key: 'notes', label: 'Notes' },
-  { key: 'street1', label: 'Street Address' },
-  { key: 'city', label: 'City' },
-  { key: 'state', label: 'State / Province' },
-  { key: 'zip', label: 'Zip / Postal Code' },
-  { key: 'country', label: 'Country' },
-];
-
-@Component({
-  selector: 'pc-fields-selector',
-  templateUrl: './fields-selector.html',
-})
-export class FieldsSelector {
-  readonly selectedFields = input.required<string[]>();
-  readonly fieldsChange = output<string[]>();
-
-  protected readonly allFields = ALL_FIELDS;
-
-  protected isEnabled(field: string): boolean {
-    const list = this.selectedFields();
-    return list.includes(field) || list.includes(`${field}:required`);
-  }
-
-  protected isRequired(field: string): boolean {
-    return this.selectedFields().includes(`${field}:required`);
-  }
-
-  protected toggleField(field: string): void {
-    const current = this.selectedFields();
-    const enabled = current.includes(field) || current.includes(`${field}:required`);
-    if (enabled) {
-      this.fieldsChange.emit(current.filter((f) => f !== field && f !== `${field}:required`));
-    } else {
-      this.fieldsChange.emit([...current, field]);
-    }
-  }
-
-  protected toggleRequired(field: string): void {
-    const current = this.selectedFields();
-    if (current.includes(field)) {
-      this.fieldsChange.emit([...current.filter((f) => f !== field), `${field}:required`]);
-    } else if (current.includes(`${field}:required`)) {
-      this.fieldsChange.emit([...current.filter((f) => f !== `${field}:required`), field]);
-    }
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.html
-````html
-<div class="flex gap-2 justify-center">
-  <button type="button" class="btn btn-primary btn-sm gap-2" (click)="handleBtn1Clicked()" [disabled]="isSaveDisabled">
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else {
-    <pc-icon [name]="btn1Icon()" [size]="4" />
-    } {{ btn1Text() }}
-  </button>
-
-  @if (showDelete()) {
-  <button
-    type="button"
-    class="btn btn-error btn-outline btn-sm gap-2"
-    (click)="handleDeleteClicked()"
-    [disabled]="isLoading()"
-  >
-    <pc-icon name="trash" [size]="4" />
-    {{ deleteText() }}
-  </button>
-  } @if (buttonsToShow() === 'three' && !showDelete()) {
-  <button type="button" class="btn btn-primary btn-sm" (click)="handleBtn2Clicked()" [disabled]="isSaveDisabled">
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else { {{ btn2Text() }} }
-  </button>
-  }
-
-  <button type="button" class="btn btn-ghost btn-sm gap-2" (click)="cancel()" [disabled]="isLoading()">
-    <pc-icon name="x-mark" [size]="4" />
-    Cancel
-  </button>
-</div>
-````
-
-## File: libs/uxcommon/src/components/icons/attachment-icon.ts
-````typescript
-// attachment-icon.component.ts
-import { Component, computed, input } from '@angular/core';
-import { ICON_FOR_KEY, iconKeyForFilename } from '@uxcommon/pipes/file-icon.util';
-
-import { Icon } from './icon';
-
-@Component({
-  selector: 'pc-attachment-icon',
-  imports: [Icon],
-  template: ` <pc-icon [name]="icon()" [size]="size()" [class]="className()" [attr.title]="title()"></pc-icon> `,
-})
-export class AttachmentIconComponent {
-  public className = input<string>('');
-
-  // Inputs (signals API)
-  public filename = input.required<string>();
-  public icon = computed(() => {
-    const key = iconKeyForFilename(this.filename());
-    return ICON_FOR_KEY[key] ?? ICON_FOR_KEY.unknown;
-  });
-  public size = input<number>(6);
-  public title = input<string | undefined>(undefined);
-}
-````
-
-## File: libs/uxcommon/src/components/icons/icon.ts
-````typescript
-import { Component, WritableSignal, effect, input, signal } from '@angular/core';
-import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
-
-import { PcIconNameType, loadIconSvg } from './icons.index';
-
-@Component({
-  selector: 'pc-icon',
-  imports: [BypassHtmlSanitizerPipe],
-  template: `
-    <div [class]="class()" (mouseenter)="hovering.set(true)" (mouseleave)="hovering.set(false)">
-      @if (!hover() || !hovering()) {
-        <div [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div>
-      } @else {
-        <div [innerHTML]="hoverSvgHtml() | bypassHtmlSanitizer"></div>
-      }
-    </div>
-  `,
-})
-export class Icon {
-  private _hoverSvgHtml = signal<string>('');
-
-  private _svgHtml = signal<string>('');
-
-  public class = input<string>('');
-  public hover = input<PcIconNameType | null>();
-  public hoverSvgHtml = this._hoverSvgHtml.asReadonly();
-  public hovering = signal(false);
-
-  public name = input.required<PcIconNameType>();
-
-  public size = input<number>(6);
-  public svgHtml = this._svgHtml.asReadonly();
-
-  constructor() {
-    // Re-load whenever name or size changes
-    effect(() => {
-      void this.loadSvg(this.name(), this.size(), this._svgHtml);
-    });
-
-    effect(() => {
-      const hoverName = this.hover();
-      const size = this.size();
-      if (!hoverName) {
-        this._hoverSvgHtml.set('');
-        return;
-      }
-      void this.loadSvg(hoverName, size, this._hoverSvgHtml);
-    });
-  }
-
-  private injectClassOnSvg(svg: string, cls: string): string {
-    // Normalize whitespace on the opening tag
-    const openTagMatch = svg.match(/<svg\b[^>]*>/i);
-    if (!openTagMatch) return svg; // not an SVG? bail
-
-    const openTag = openTagMatch[0];
-
-    // If class already exists, merge; otherwise add new class attribute
-    if (/\bclass=/.test(openTag)) {
-      const merged = openTag.replace(/\bclass=(["'])(.*?)\1/i, (_m, q, existing) => {
-        // Remove existing sizing classes to prevent override conflicts (e.g. w-6, h-6, size-6)
-        const cleaned = existing
-          .split(/\s+/)
-          .filter((c: string) => !/^(w-\d+(\.\d+)?|h-\d+(\.\d+)?|size-\d+(\.\d+)?)$/.test(c))
-          .join(' ');
-        return `class=${q}${cleaned} ${cls}${q}`.trim();
-      });
-      return svg.replace(openTag, merged);
-    } else {
-      const augmented = openTag.replace(/^<svg\b/i, `<svg class="${cls}"`);
-      return svg.replace(openTag, augmented);
-    }
-  }
-
-  private async loadSvg(name: PcIconNameType, size: number, target: WritableSignal<string>) {
-    if (name === 'none') {
-      target.set('');
-    } else {
-      // Fetch raw SVG text from /assets
-      const raw = await loadIconSvg(name);
-      // Inject Tailwind classes into the <svg> element
-      const withClass = this.injectClassOnSvg(raw, `w-${size} h-${size}`);
-      target.set(withClass);
-    }
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/icons/icons.index.ts
-````typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
-
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  if (!_cache.has(name)) {
-    _cache.set(
-      name,
-      fetch(icons[name])
-        .then((r) => {
-          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
-          return r.text();
-        })
-        .catch(async () => {
-          // last-resort: fetch the unknown icon (cached too)
-          if (!_cache.has(UNKNOWN)) {
-            _cache.set(
-              UNKNOWN,
-              fetch(icons[UNKNOWN]).then((r) => r.text()),
-            );
-          }
-          return _cache.get(UNKNOWN)!;
-        }),
-    );
-  }
-  return _cache.get(name)!;
-}
-
-const UNKNOWN: PcIconNameType = 'unknown';
-
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
-
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  loading: 'assets/icons/loading.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
-````
-
-## File: libs/uxcommon/src/components/input/input.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-input',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <label
-        class="input w-full flex items-center gap-2"
-        [class.input-error]="
-          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
-        "
-      >
-        <ng-content select="[pc-prefix]"></ng-content>
-        <input [type]="type()" [placeholder]="placeholder()" [formField]="formField()" class="grow" />
-        <ng-content select="[pc-suffix]"></ng-content>
-      </label>
-
-      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Input {
-  public label = input<string>();
-  public type = input<string>('text');
-  public placeholder = input<string>('');
-  public formField = input.required<any>();
-  public hasError = input<boolean>(false);
-}
-````
-
-## File: libs/uxcommon/src/components/not-found/not-found.ts
-````typescript
-import { Component } from '@angular/core';
-
-@Component({
-  selector: 'pc-not-found',
-  imports: [],
-  template: `<section class="min-h-full">
-    <div class="md:px-12 lg:px-0">
-      <div class="max-auto w-full justify-center text-center lg:p-10">
-        <div class="mx-auto w-full justify-center">
-          <p class="text-5xl tracking-tight lg:text-9xl">404</p>
-          <p class="mx-auto mt-4 max-w-xl text-lg font-light">Please check the URL in the address bar and try again.</p>
-        </div>
-        <div class="mt-10 flex justify-center gap-3">
-          <a href="/" class="link link-hover">Home&nbsp; → </a>
-        </div>
-      </div>
-    </div>
-  </section>`,
-})
-export class NotFound {}
-````
-
-## File: libs/uxcommon/src/components/profile-card/profile-card.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-profile-card',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300 w-full">
-      <!-- Decorative Card Header Gradient -->
-      <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
-
-      <div class="px-6 pb-6 relative flex flex-col items-center">
-        <!-- Avatar / Placeholder -->
-        @if (avatarUrl() || avatarText() || iconName()) {
-          <div class="avatar placeholder -mt-12 mb-3">
-            <div
-              class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg overflow-hidden"
-            >
-              @if (avatarUrl()) {
-                <img [src]="avatarUrl()!" alt="Avatar" class="w-full h-full object-cover" />
-              } @else if (avatarText()) {
-                {{ avatarText() }}
-              } @else if (iconName()) {
-                <pc-icon [name]="iconName()!" [size]="10"></pc-icon>
-              }
-            </div>
-          </div>
-        }
-
-        <ng-content></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class ProfileCard {
-  public avatarUrl = input<string | null | undefined>();
-  public avatarText = input<string | null | undefined>();
-  public iconName = input<PcIconNameType | null | undefined>();
-}
-````
-
-## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.html
-````html
-<pc-card [title]="label()" [subtitle]="subtitle()">
-  <div class="space-y-3">
-    <div class="flex gap-2">
-      <input
-        type="text"
-        [value]="url()"
-        readonly
-        class="input input-bordered input-sm flex-1 font-mono text-xs"
-      />
-      <a
-        [href]="url()"
-        target="_blank"
-        class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
-        title="Open public page"
-      >
-        <pc-icon name="arrow-top-right-on-square"></pc-icon>
-      </a>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline btn-primary px-3"
-        (click)="copyUrl()"
-        title="Copy link"
-      >
-        <pc-icon name="document-duplicate"></pc-icon>
-      </button>
-    </div>
-  </div>
-</pc-card>
-````
-
-## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.ts
-````typescript
-import { Component, inject, input } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
-import { Card as PcCard } from '../card/card';
-import { Icon } from '../icons/icon';
-
-@Component({
-  selector: 'pc-public-link-panel',
-  imports: [Icon, PcCard],
-  templateUrl: './public-link-panel.html',
-})
-export class PublicLinkPanel {
-  readonly url = input.required<string>();
-  readonly label = input<string>('Public Link');
-  readonly subtitle = input<string>('Share this link so people can sign up.');
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyUrl(): void {
-    navigator.clipboard
-      .writeText(this.url())
-      .then(() => {
-        this.alertSvc.showSuccess('Link copied to clipboard!');
-      })
-      .catch((_e) => this.alertSvc.showError('Could not copy link to clipboard'));
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/select/select.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-select',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <select
-        [formField]="formField()"
-        class="select select-bordered w-full"
-        [class.select-error]="formField()().invalid() && (formField()().dirty() || formField()().touched())"
-      >
-        @if (placeholder()) {
-          <option value="">{{ placeholder() }}</option>
-        }
-        <ng-content></ng-content>
-      </select>
-
-      @if (formField()().invalid() && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Select {
-  public label = input<string>();
-  public placeholder = input<string>('');
-  public formField = input.required<any>();
-}
-````
-
-## File: libs/uxcommon/src/components/side-drawer/side-drawer.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-side-drawer',
-  imports: [Icon],
-  template: `
-    @if (isOpen()) {
-      <div class="fixed inset-0 z-30 flex justify-end">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-black/30 transition-opacity duration-300" (click)="onClose()"></div>
-        <!-- Panel -->
-        <div
-          class="relative h-full w-full max-w-[90vw] bg-base-100 shadow-xl border-l border-base-300 flex flex-col z-10 transition-transform duration-300"
-          [class]="widthClass()"
-        >
-          <!-- Header -->
-          <div class="flex items-center justify-between p-4 border-b border-base-300">
-            <div class="font-semibold text-base-content text-lg">
-              {{ title() }}
-            </div>
-            <button class="btn btn-ghost btn-sm btn-circle" (click)="onClose()" aria-label="Close drawer">
-              <pc-icon name="x-mark" [size]="4"></pc-icon>
-            </button>
-          </div>
-          <!-- Body -->
-          <div class="p-4 flex flex-col gap-3 overflow-y-auto flex-grow">
-            <ng-content></ng-content>
-          </div>
-          <!-- Footer -->
-          <ng-content select="[pc-drawer-footer]"></ng-content>
-        </div>
-      </div>
-    }
-  `,
-})
-export class SideDrawer {
-  public isOpen = input.required<boolean>();
-  public title = input<string>('');
-  public size = input<'sm' | 'md' | 'lg'>('sm');
-  public close = output<void>();
-
-  protected onClose() {
-    this.close.emit();
-  }
-
-  protected widthClass() {
-    const s = this.size();
-    if (s === 'lg') return 'sm:w-[700px]';
-    if (s === 'md') return 'sm:w-[540px]';
-    return 'sm:w-[420px]';
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/status-badge/status-badge.ts
-````typescript
-import { Component, computed, input } from '@angular/core';
-
-export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
-
-@Component({
-  selector: 'pc-status-badge',
-  template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
-      <ng-content></ng-content>
-    </span>
-  `,
-})
-export class StatusBadge {
-  public type = input<PcStatusType>('ghost');
-  public size = input<'sm' | 'md' | 'lg'>('sm');
-
-  protected badgeClass = computed(() => {
-    const t = this.type();
-    let cls = '';
-    if (this.size() === 'sm') cls += 'badge-sm ';
-    else if (this.size() === 'lg') cls += 'badge-lg ';
-
-    switch (t) {
-      case 'success':
-        return cls + 'badge-success text-success-content';
-      case 'warning':
-        return cls + 'badge-warning text-warning-content';
-      case 'error':
-        return cls + 'badge-error text-error-content';
-      case 'info':
-        return cls + 'badge-info text-info-content';
-      case 'neutral':
-        return cls + 'badge-neutral text-neutral-content';
-      default:
-        return cls + 'badge-ghost';
-    }
-  });
-}
-````
-
-## File: libs/uxcommon/src/components/swap/swap.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-swap',
-  imports: [ReactiveFormsModule, Icon],
-  template: `<label
-    class="swap ml-auto flex-none cursor-pointer p-2"
-    [class.swap-flip]="animation() === 'flip'"
-    [class.swap-rotate]="animation() === 'rotate'"
-    [class.swap-active]="checked()"
-    (click)="emitClick($event)"
-  >
-    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
-
-    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
-  </label> `,
-})
-export class Swap {
-  public readonly click = output<void>();
-
-  public animation = input<'flip' | 'rotate'>('rotate');
-
-  public checked = input<boolean>(false);
-  public hoverIcon = input<PcIconNameType | null>(null);
-  public size = input(6);
-
-  public swapOffIcon = input.required<PcIconNameType>();
-
-  public swapOnIcon = input.required<PcIconNameType>();
-
-  public emitClick(event: Event) {
-    event.stopPropagation();
-    this.click.emit();
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/system-metadata/system-metadata.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { DatePipe } from '@angular/common';
-
-@Component({
-  selector: 'pc-system-metadata',
-  imports: [DatePipe],
-  template: `
-    <div
-      class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex gap-4 leading-normal"
-      [class.justify-between]="layout() === 'row'"
-      [class.flex-col]="layout() === 'col'"
-      [class.gap-1]="layout() === 'col'"
-    >
-      @if (createdAt()) {
-        <span
-          >Created
-          @if (createdBy() && createdBy() !== '?') {
-            by {{ createdBy() }}
-          }
-          on {{ createdAt() | date: dateFormat() }}</span
-        >
-      }
-      @if (updatedAt()) {
-        <span
-          >Updated {{ updatedAt() | date: dateFormat() }}
-          @if (updatedBy() && updatedBy() !== '?') {
-            by {{ updatedBy() }}
-          }
-        </span>
-      }
-    </div>
-  `,
-})
-export class SystemMetadata {
-  public createdAt = input<any>();
-  public updatedAt = input<any>();
-  public createdBy = input<string | null | undefined>();
-  public updatedBy = input<string | null | undefined>();
-  public layout = input<'row' | 'col'>('row');
-  public dateFormat = input<string>('M/d/yyyy');
-}
-````
-
-## File: libs/uxcommon/src/components/tabs/tabs.ts
-````typescript
-import { Component, computed, input, model } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-export interface PcTabOption {
-  id: string;
-  label: string;
-  icon?: PcIconNameType;
-  badge?: string | number;
-  disabled?: boolean;
-  tooltip?: string;
-}
-
-@Component({
-  selector: 'pc-tabs',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
-      <!-- Tabs Header -->
-      <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
-        @for (tab of tabs(); track tab.id) {
-          <a
-            role="tab"
-            class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-            [class.tab-active]="activeTab() === tab.id"
-            [class.opacity-50]="tab.disabled"
-            [class.cursor-not-allowed]="tab.disabled"
-            [class.tooltip]="tab.disabled && tab.tooltip"
-            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
-            (click)="!tab.disabled && selectTab(tab.id)"
-          >
-            @if (tab.icon) {
-              <pc-icon [name]="tab.icon" [size]="4" class="flex-shrink-0"></pc-icon>
-            }
-            <span>{{ tab.label }}</span>
-            @if (tab.badge !== undefined && tab.badge !== null) {
-              <span class="badge badge-sm badge-neutral">{{ tab.badge }}</span>
-            }
-          </a>
-        }
-      </div>
-
-      <!-- Tab Panels -->
-      <div class="p-6">
-        <ng-content></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class Tabs {
-  public tabs = input.required<PcTabOption[]>();
-  public activeTab = model.required<string>();
-
-  public selectTab(id: string) {
-    this.activeTab.set(id);
-  }
-}
-
-@Component({
-  selector: 'pc-tab-panel',
-  template: `
-    @if (isActive()) {
-      <div class="space-y-4">
-        <ng-content></ng-content>
-      </div>
-    }
-  `,
-})
-export class TabPanel {
-  public id = input.required<string>();
-  public activeTab = input.required<string>();
-
-  protected isActive = computed(() => this.activeTab() === this.id());
-}
-````
-
-## File: libs/uxcommon/src/components/tags/tagitem.css
-````css
-:host {
-  display: inline-block;
-  max-width: 100%;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-  padding-top: 0.25rem;
-  padding-bottom: 0.25rem;
-  min-height: 1.5rem;
-  height: auto;
-  line-height: 1.2;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.tag-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.2;
-}
-
-.tag-remove {
-  align-self: flex-start;
-  margin-top: 0.125rem;
-}
-
-.badge-compact {
-  font-size: 0.7rem !important;
-  font-weight: 500 !important;
-  min-height: 1.25rem !important;
-  height: auto !important;
-  align-items: center !important;
-  padding-top: 0.125rem !important;
-  padding-bottom: 0.125rem !important;
-  padding-left: 0.375rem !important;
-  padding-right: 0.375rem !important;
-}
-
-.badge-compact .tag-label {
-  font-size: 0.7rem !important;
-  line-height: 1.15 !important;
-  padding-right: 0 !important;
-}
-
-.badge-compact .tag-remove {
-  margin-top: 0 !important;
-  align-self: center !important;
-}
-````
-
-## File: libs/uxcommon/src/components/tags/tagitem.ts
-````typescript
-import { Component, Signal, computed, input, output, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-tagitem',
-  imports: [Icon],
-  styleUrl: './tagitem.css',
-  template: `<div
-    class="badge rounded-lg px-0 gap-1 pl-2 bordered"
-    [class.badge-compact]="compact()"
-    [style.background]="background() || null"
-    [style.color]="textColor()"
-    [style.borderColor]="borderColor()"
-  >
-    <span
-      (click)="emitClick()"
-      class="tag-label cursor-pointer font-light pr-1"
-      [class.pr-2]="!canDelete()"
-      [style.color]="textColor()"
-    >
-      {{ displayName() }}</span
-    >
-    <pc-icon
-      name="x-mark"
-      [size]="3"
-      class="tag-remove hover:text-error cursor-pointer pr-1 mr-0"
-      [style.color]="textColor()"
-      [class.hidden]="!canDelete()"
-      (click)="emitClose()"
-    />
-  </div> `,
-})
-export class TagItem {
-  protected readonly background = computed(() => this.normalizeColor(this.color()));
-  protected readonly borderColor = computed(() => this.background() ?? null);
-  protected readonly displayName = computed(() => {
-    const n = this.name();
-    return n ? n.charAt(0).toUpperCase() + n.slice(1) : '';
-  });
-  protected readonly textColor = computed(() => this.computeTextColor(this.background()));
-
-  public readonly click = output<string>();
-  public readonly close = output<string>();
-
-  public canDelete = input<boolean>(true);
-  public color = input<string | null | undefined>(null);
-  public compact = input<boolean>(false);
-  public invisible = input<Signal<boolean>>(signal(false));
-  public name = input.required<string>();
-
-  public emitClick() {
-    this.click.emit(this.name());
-  }
-
-  public emitClose() {
-    this.close.emit(this.name());
-  }
-
-  private computeTextColor(hex: string | null): string | null {
-    if (!hex) return null;
-    const rgb = this.hexToRgb(hex);
-    if (!rgb) return '#f9fafb';
-    const [r = 0, g = 0, b = 0] = rgb.map((v) => v / 255);
-    const [rLin = 0, gLin = 0, bLin = 0] = [r, g, b].map((v) =>
-      v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4),
-    );
-    const luminance = 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
-    return luminance > 0.5 ? '#111827' : '#f9fafb';
-  }
-
-  private hexToRgb(hex: string): [number, number, number] | null {
-    const normalized = hex.replace('#', '');
-    const int = parseInt(normalized, 16);
-    if (Number.isNaN(int)) return null;
-    return [(int >> 16) & 255, (int >> 8) & 255, int & 255];
-  }
-
-  private normalizeColor(value: string | null | undefined): string | null {
-    if (!value) return null;
-    const trimmed = value.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) return null;
-    return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/textarea/textarea.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-textarea',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <textarea
-        [placeholder]="placeholder()"
-        [formField]="formField()"
-        [rows]="rows()"
-        class="textarea textarea-bordered w-full"
-        [class.textarea-error]="
-          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
-        "
-      ></textarea>
-
-      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Textarea {
-  public label = input<string>();
-  public placeholder = input<string>('');
-  public rows = input<number>(3);
-  public formField = input.required<any>();
-  public hasError = input<boolean>(false);
-}
-````
-
-## File: libs/uxcommon/src/components/toggle/toggle.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-toggle',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      <label class="label cursor-pointer justify-between gap-4 py-1">
-        @if (label()) {
-          <span class="label-text text-sm font-medium text-base-content">{{ label() }}</span>
-        }
-        <input
-          type="checkbox"
-          class="toggle toggle-primary shrink-0"
-          [formField]="formField()"
-          [class.toggle-error]="formField()().invalid() && (formField()().dirty() || formField()().touched())"
-        />
-      </label>
-
-      @if (formField()().invalid() && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Toggle {
-  public label = input<string>();
-  public formField = input.required<any>();
-}
-````
-
-## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
-````typescript
-import { Component, computed, input } from '@angular/core';
-import { NgClass } from '@angular/common';
-
-@Component({
-  selector: 'pc-user-avatar',
-  template: `
-    <div class="avatar" [class.placeholder]="!avatarUrl()">
-      @if (avatarUrl()) {
-        <div
-          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-        >
-          <img
-            [src]="avatarUrl()!"
-            [alt]="name() + ' avatar'"
-            class="w-full h-full object-cover"
-            referrerpolicy="no-referrer"
-          />
-        </div>
-      } @else {
-        <div
-          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-          [style.font-size.rem]="fontSizeRem()"
-          [ngClass]="colorClass()"
-        >
-          <span>{{ initials() }}</span>
-        </div>
-      }
-    </div>
-  `,
-  imports: [NgClass],
-  host: { class: 'contents' },
-})
-export class UserAvatarComponent {
-  readonly avatarUrl = input<string | null | undefined>(null);
-
-  readonly name = input.required<string>();
-
-  readonly size = input<number>(8);
-
-  protected readonly sizeRem = computed(() => this.size() * 0.25);
-  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
-
-  protected readonly initials = computed(() => {
-    const n = (this.name() ?? '').trim();
-    if (!n) return '?';
-    const parts = n.split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-    }
-    return n[0]!.toUpperCase();
-  });
-
-  protected readonly colorClass = computed(() => {
-    const PALETTES = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-      'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
-    ];
-    const n = this.name() ?? '';
-    let sum = 0;
-    for (let i = 0; i < n.length; i++) sum += n.charCodeAt(i);
-    return PALETTES[sum % PALETTES.length];
-  });
-}
-````
-
-## File: libs/uxcommon/src/directives/animate-if.directive.ts
-````typescript
-import {
-  Directive,
-  DestroyRef,
-  EmbeddedViewRef,
-  Signal,
-  TemplateRef,
-  ViewContainerRef,
-  effect,
-  inject,
-  input,
-} from '@angular/core';
-
-@Directive({
-  selector: '[pcAnimateIf]',
-})
-export class AnimateIfDirective {
-  private readonly template = inject(TemplateRef<unknown>);
-  private readonly vcr = inject(ViewContainerRef);
-  private readonly destroyRef = inject(DestroyRef);
-
-  public readonly duration = input(300, { alias: 'pcAnimateIfDuration' });
-
-  public readonly pcAnimateIfEnter = input('animate-left');
-
-  public readonly pcAnimateIfExit = input('animate-exit-right');
-
-  public readonly pcAnimateIf = input.required<Signal<boolean>>();
-
-  private condition = false;
-  private timeoutId: NodeJS.Timeout | undefined;
-  private view: EmbeddedViewRef<unknown> | null = null;
-
-  constructor() {
-    effect(() => {
-      const conditionSignal = this.pcAnimateIf();
-      if (conditionSignal) {
-        this.toggle(conditionSignal());
-      }
-    });
-
-    this.destroyRef.onDestroy(() => {
-      clearTimeout(this.timeoutId);
-
-      if (this.view?.rootNodes[0]) {
-        const el = this.view.rootNodes[0] as HTMLElement;
-        el?.classList.remove(this.pcAnimateIfEnter(), this.pcAnimateIfExit());
-      }
-    });
-  }
-
-  private animatedEntry() {
-    this.vcr.clear();
-    this.view = this.vcr.createEmbeddedView(this.template);
-    const enterClass = this.pcAnimateIfEnter();
-    const el = this.view.rootNodes[0] as HTMLElement;
-    requestAnimationFrame(() => el?.classList.add(enterClass));
-  }
-
-  private animatedExit() {
-    if (!this.view?.rootNodes[0]) return;
-
-    const el = this.view.rootNodes[0] as HTMLElement;
-    const enterClass = this.pcAnimateIfEnter();
-    const exitClass = this.pcAnimateIfExit();
-
-    // Remove entry animation in case it's still applied
-    el.classList.remove(enterClass);
-
-    // If exit animation is 'animate-none', clear the view immediately without delay
-    if (exitClass === 'animate-none') {
-      this.vcr.clear();
-      this.view = null;
-      return;
-    }
-
-    // Add exit animation
-    el.classList.add(exitClass);
-
-    this.timeoutId = setTimeout(() => {
-      // Cleanup all animation classes before removal
-      el.classList.remove(enterClass, exitClass);
-      this.vcr.clear();
-      this.view = null;
-    }, this.duration());
-  }
-
-  private toggle(condition: boolean) {
-    if (condition === this.condition) return;
-
-    this.condition = condition;
-
-    if (condition) this.animatedEntry();
-    else if (this.view) this.animatedExit();
-  }
-}
-````
-
-## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
-````typescript
-import { Directive, DestroyRef, ElementRef, HostListener, inject, input } from '@angular/core';
-
-@Directive({
-  selector: 'button[pcSpinOnClick]',
-  exportAs: 'pcSpinOnClick',
-})
-export class SpinOnClickDirective {
-  private readonly el = inject(ElementRef<HTMLButtonElement>);
-  private readonly destroyRef = inject(DestroyRef);
-
-  readonly minMs = input(700);
-
-  private timer: ReturnType<typeof setTimeout> | null = null;
-
-  constructor() {
-    this.destroyRef.onDestroy(() => this.clearTimer());
-  }
-
-  @HostListener('click')
-  protected onButtonClick(): void {
-    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
-    if (!icon) return;
-
-    icon.classList.add('animate-spin', 'inline-block');
-    this.clearTimer();
-
-    this.timer = setTimeout(() => {
-      icon.classList.remove('animate-spin', 'inline-block');
-      this.timer = null;
-    }, this.minMs());
-  }
-
-  private clearTimer(): void {
-    if (this.timer !== null) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-  }
-}
-````
-
-## File: libs/uxcommon/src/mentions/mention-controller.ts
-````typescript
-import { computed, signal } from '@angular/core';
-import type { IAuthUser } from '../../../common/src/lib/auth';
-
-export class MentionController {
-  private getUsers: () => IAuthUser[];
-
-  // reactive state
-  public readonly open = signal(false);
-  public readonly index = signal(0);
-  public readonly query = signal('');
-
-  // ephemeral caret/selection details
-  private start = -1; // position of '@'
-  private caretPos = 0;
-
-  public readonly candidates = computed<IAuthUser[]>(() => {
-    const q = this.query().toLowerCase();
-    if (!this.open() || !q) return [];
-    const users = this.getUsers() || [];
-    const uniq = new Map<string, IAuthUser>();
-    for (const u of users) {
-      if (!u) continue;
-      const name = (u.first_name || '').toLowerCase();
-      const email = (u.email || '').toLowerCase();
-      const local = email.split('@')[0] || '';
-      if ((name && name.includes(q)) || (local && local.includes(q)) || (email && email.includes(q))) {
-        if (!uniq.has(u.id)) uniq.set(u.id, u);
-      }
-    }
-    return Array.from(uniq.values()).slice(0, 8);
-  });
-
-  constructor(getUsers: () => IAuthUser[]) {
-    this.getUsers = getUsers;
-  }
-
-  public updateFromInput(text: string, caretPos: number): void {
-    this.caretPos = caretPos;
-    const res = this.findMentionAt(text, caretPos);
-    if (!res) {
-      this.open.set(false);
-      this.query.set('');
-      this.start = -1;
-    } else {
-      this.start = res.start;
-      this.query.set(res.token);
-      this.open.set(true);
-      this.index.set(0);
-    }
-  }
-
-  public handleKeydown(ev: KeyboardEvent, onSelect: (u: IAuthUser) => void): void {
-    if (!this.open()) return;
-    const list = this.candidates();
-    if (!list.length) return;
-    if (ev.key === 'ArrowDown') {
-      ev.preventDefault();
-      this.index.set((this.index() + 1) % list.length);
-    } else if (ev.key === 'ArrowUp') {
-      ev.preventDefault();
-      this.index.set((this.index() - 1 + list.length) % list.length);
-    } else if (ev.key === 'Enter' || ev.key === 'Tab') {
-      ev.preventDefault();
-      onSelect(list[this.index()]!);
-    } else if (ev.key === 'Escape') {
-      this.open.set(false);
-    }
-  }
-
-  public select(user: IAuthUser, text: string): { text: string; caret: number } {
-    if (this.start < 0) return { text, caret: this.caretPos };
-    const display = user.first_name || user.email.split('@')[0]!;
-    let before = text.slice(0, this.start);
-    // Collapse any trailing whitespace/newlines immediately before '@' into a single space to keep inline
-    before = before.replace(/\s+$/g, ' ');
-    const after = text.slice(this.caretPos);
-    const inserted = `@${display} `;
-    const newText = before + inserted + after;
-    const newCaret = before.length + inserted.length;
-    this.open.set(false);
-    this.index.set(0);
-    return { text: newText, caret: newCaret };
-  }
-
-  public getStartIndex(): number {
-    return this.start;
-  }
-
-  public getCaretIndex(): number {
-    return this.caretPos;
-  }
-
-  private findMentionAt(text: string, pos: number): { start: number; token: string } | null {
-    let i = pos - 1;
-    while (i >= 0) {
-      const ch = text[i]!;
-      if (ch === '@') break;
-      if (!/[-A-Za-z0-9_.]/.test(ch)) return null; // hit a separator before '@'
-      i--;
-    }
-    if (i < 0 || text[i]! !== '@') return null;
-    const start = i;
-    if (start > 0) {
-      const prev = text[start - 1]!;
-      if (/[@A-Za-z0-9_]/.test(prev)) return null;
-    }
-    const token = text.slice(start + 1, pos);
-    if (!token) return null;
-    return { start, token };
-  }
-}
-
-export function userDisplay(u: IAuthUser): string {
-  return u.first_name || u.email.split('@')[0]!;
-}
-````
-
-## File: libs/uxcommon/src/pipes/file-icon.pipe.ts
-````typescript
-// file-icon.pipe.ts
-import { Pipe, PipeTransform } from '@angular/core';
-
-import { ICON_FOR_KEY, iconKeyForFilename } from './file-icon.util';
-
-@Pipe({
-  name: 'fileIcon',
-})
-export class FileIconPipe implements PipeTransform {
-  public transform(filename: string | null | undefined): string {
-    const key = iconKeyForFilename(filename ?? '');
-    return ICON_FOR_KEY[key] ?? ICON_FOR_KEY.unknown;
-  }
-}
-````
-
-## File: libs/uxcommon/src/pipes/file-icon.util.ts
-````typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-// file-icon.util.ts
-export type FileIconKey =
-  | 'pdf'
-  | 'doc'
-  | 'sheet'
-  | 'slides'
-  | 'text'
-  | 'image'
-  | 'audio'
-  | 'video'
-  | 'archive'
-  | 'code'
-  | 'design'
-  | 'font'
-  | 'ebook'
-  | 'email'
-  | 'calendar'
-  | 'contact'
-  | 'db'
-  | 'disk'
-  | 'exe'
-  | 'unknown';
-
-function cleanName(name: string): string {
-  // strip query/hash (e.g., foo.pdf?dl=1#x)
-  return name.split('#')[0]!.split('?')[0]!.trim();
-}
-
-export function iconKeyForFilename(filename: string): FileIconKey {
-  if (!filename) return 'unknown';
-  const name = cleanName(filename.toLowerCase());
-
-  // multi-part extensions first (e.g., .tar.gz)
-  for (const mex of MULTI_EXT) {
-    if (name.endsWith(`.${mex}`)) return 'archive';
-  }
-
-  // single extension
-  const lastDot = name.lastIndexOf('.');
-  if (lastDot === -1 || lastDot === name.length - 1) return 'unknown';
-  const ext = name.slice(lastDot + 1);
-  return EXT_TO_KEY[ext] ?? 'unknown';
-}
-
-const EXT_MAP: Record<FileIconKey, string[]> = {
-  pdf: ['pdf'],
-  doc: ['doc', 'docx', 'rtf', 'odt', 'pages'],
-  sheet: ['xls', 'xlsx', 'csv', 'tsv', 'ods', 'numbers'],
-  slides: ['ppt', 'pptx', 'key', 'odp'],
-  text: ['txt', 'md', 'markdown', 'rst', 'log'],
-  image: ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'tiff', 'tif', 'heic', 'heif'],
-  audio: ['mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'oga'],
-  video: ['mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'wmv'],
-  archive: ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz'],
-  code: [
-    'js',
-    'ts',
-    'jsx',
-    'tsx',
-    'json',
-    'jsonl',
-    'html',
-    'css',
-    'scss',
-    'xml',
-    'yml',
-    'yaml',
-    'sql',
-    'py',
-    'java',
-    'c',
-    'cpp',
-    'h',
-    'cs',
-    'go',
-    'rs',
-    'php',
-    'rb',
-    'kt',
-    'swift',
-    'sh',
-    'ps1',
-  ],
-  design: ['psd', 'ai', 'fig', 'xd', 'sketch'],
-  font: ['ttf', 'otf', 'woff', 'woff2'],
-  ebook: ['epub', 'mobi', 'azw', 'djvu'],
-  email: ['eml', 'msg'],
-  calendar: ['ics'],
-  contact: ['vcf'],
-  db: ['sqlite', 'sqlite3', 'db', 'mdb', 'accdb', 'parquet'],
-  disk: ['iso', 'dmg', 'img'],
-  exe: ['exe', 'msi', 'apk', 'pkg', 'appimage'],
-  unknown: [],
-};
-
-// reverse lookup
-const EXT_TO_KEY: Record<string, FileIconKey> = Object.entries(EXT_MAP).reduce(
-  (acc, [key, exts]) => {
-    for (const e of exts) acc[e] = key as FileIconKey;
-    return acc;
-  },
-  {} as Record<string, FileIconKey>,
-);
-const MULTI_EXT = ['tar.gz', 'tar.bz2', 'tar.xz', 'tgz'] as const;
-
-// Map to your <pc-icon> names (assume these exist in your icon set)
-export const ICON_FOR_KEY: Record<FileIconKey, PcIconNameType> = {
-  pdf: 'file-pdf',
-  doc: 'file-doc',
-  sheet: 'file-sheet',
-  slides: 'file-slides',
-  text: 'file-text',
-  image: 'file-image',
-  audio: 'file-audio',
-  video: 'file-video',
-  archive: 'file-archive',
-  code: 'file-code',
-  design: 'file-design',
-  font: 'file-font',
-  ebook: 'file-ebook',
-  email: 'file-email',
-  calendar: 'file-calendar',
-  contact: 'file-contact',
-  db: 'file-db',
-  disk: 'file-disk',
-  exe: 'file-exe',
-  unknown: 'unknown',
-};
-````
-
-## File: libs/uxcommon/src/pipes/filesize.pipe.ts
-````typescript
-import { Pipe, PipeTransform } from '@angular/core';
-
-@Pipe({
-  name: 'fileSize',
-})
-export class FileSizePipe implements PipeTransform {
-  public transform(bytes: number, decimals: number = 2): string {
-    if (bytes === 0) return '0 Bytes';
-
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  }
-}
-````
-
-## File: libs/uxcommon/src/pipes/mention.pipe.ts
-````typescript
-import { Pipe, PipeTransform } from '@angular/core';
-
-import type { IAuthUser } from '../../../common/src/lib/auth';
-
-@Pipe({ name: 'mentionify', standalone: true })
-export class MentionifyPipe implements PipeTransform {
-  public transform(text: string | null | undefined, users: IAuthUser[] | null | undefined): string {
-    if (!text) return '';
-    const list = users ?? [];
-
-    const byFirst = new Map<string, IAuthUser>();
-    const byEmail = new Map<string, IAuthUser>();
-    const byLocal = new Map<string, IAuthUser>();
-
-    for (const u of list) {
-      if (!u) continue;
-      if (u.first_name) byFirst.set(u.first_name.toLowerCase(), u);
-      if (u.email) {
-        const em = u.email.toLowerCase();
-        byEmail.set(em, u);
-        const local = em.split('@')[0] ?? '';
-        if (local) byLocal.set(local, u);
-      }
-    }
-
-    // Normalize Windows newlines and collapse any whitespace/newlines immediately before a mention into a single space
-    // This prevents mentions from starting on a new line when users select from autocomplete
-    const normalized = text
-      .replace(/\r\n?/g, '\n')
-      // collapse runs like "  \n   @john" -> " @john"
-      .replace(/[^\S\r\n]*\n+[^\S\r\n]*(?=@[A-Za-z0-9._-]+)/g, ' ')
-      // also collapse leading newlines before a mention at the very start
-      .replace(/^\s*\n+\s*(?=@[A-Za-z0-9._-]+)/, '');
-
-    // Replace @mentions while preserving preceding character (so we don't match email domains)
-    const replaced = normalized.replace(/(^|[^\w@])@([A-Za-z0-9._-]+)/g, (_m, pre: string, token: string) => {
-      const key = token.toLowerCase();
-      const u = byFirst.get(key) || byEmail.get(key) || byLocal.get(key);
-      if (!u) return `${pre}@${token}`; // leave as-is if no match
-
-      // Display prefers first_name; fallback to email local part
-      const display = u.first_name || u.email.split('@')[0]!;
-      // Use utility classes for styling; sanitized later by sanitizeHtml pipe
-      // Mark with data-mention for CSS targeting to enforce inline layout
-      return `${pre}<span data-mention="1" class="inline font-bold hover:cursor-pointer">@${this.escapeHtml(display)}</span>`;
-    });
-
-    // Convert newlines to <br>
-    return replaced.replace(/\n/g, '<br>');
-  }
-
-  private escapeHtml(s: string): string {
-    return s
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-}
-````
-
-## File: libs/uxcommon/src/pipes/sanitize-html.pipe.ts
-````typescript
-// sanitize-html.pipe.ts
-import { Pipe, PipeTransform, inject } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-
-import DOMPurify from 'dompurify';
-
-@Pipe({ name: 'sanitizeHtml' })
-export class SanitizeHtmlPipe implements PipeTransform {
-  private readonly sanitizer = inject(DomSanitizer);
-
-  public transform(value: string | null | undefined): SafeHtml {
-    if (!value) return '';
-    const clean = DOMPurify.sanitize(value, {
-      ALLOWED_TAGS: [
-        'a',
-        'p',
-        'br',
-        'strong',
-        'em',
-        'ul',
-        'ol',
-        'li',
-        'img',
-        'table',
-        'thead',
-        'tbody',
-        'tfoot',
-        'tr',
-        'td',
-        'th',
-        'colgroup',
-        'col',
-        'span',
-        'div',
-        'hr',
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'h5',
-        'h6',
-        'blockquote',
-        'pre',
-        'code',
-        'sub',
-        'sup',
-        'b',
-        'i',
-        'u',
-      ],
-      ALLOWED_ATTR: [
-        'href',
-        'target',
-        'rel',
-        'src',
-        'alt',
-        'title',
-        'style',
-        'class',
-        'data-mention',
-        'width',
-        'height',
-        'colspan',
-        'rowspan',
-        'align',
-        'valign',
-        'cellpadding',
-        'cellspacing',
-        'border',
-      ],
-      RETURN_TRUSTED_TYPE: false,
-    });
-    return this.sanitizer.bypassSecurityTrustHtml(clean);
-  }
-}
-````
-
-## File: libs/uxcommon/src/pipes/svg-html-pipe.ts
-````typescript
-import { Pipe, PipeTransform, inject } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-
-@Pipe({ standalone: true, name: 'bypassHtmlSanitizer' })
-export class BypassHtmlSanitizerPipe implements PipeTransform {
-  private sanitizer = inject(DomSanitizer);
-
-  public transform(html: string): SafeHtml {
-    return this.sanitizer.bypassSecurityTrustHtml(html);
-  }
-}
-````
-
-## File: libs/uxcommon/src/pipes/timeago.pipe.ts
-````typescript
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform } from '@angular/core';
-
-export interface TimeAgoOptions {
-  thresholdDays?: number;
-  style?: 'long' | 'short' | 'compact' | string;
-  compact?: boolean;
-  hideSuffix?: boolean;
-  // Index signature ensures any other existing options in your codebase are accepted
-  [key: string]: any;
-}
-
-@Pipe({
-  name: 'timeAgo', // Matched to your template casing
-  pure: false, // Must be false to update the UI over time
-})
-export class TimeAgoPipe implements PipeTransform, OnDestroy {
-  private timerId: ReturnType<typeof setTimeout> | null = null;
-  private lastValue?: string | number | Date | null;
-  private lastOptsJson?: string;
-  private lastResult = '';
-
-  constructor(private cdr: ChangeDetectorRef) {}
-
-  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
-    // Stringify options to avoid pure:false memory reference loops
-    const optsJson = opts ? JSON.stringify(opts) : '';
-
-    // Only recalculate if the date OR the options have actually changed
-    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
-      return this.lastResult;
-    }
-
-    this.lastValue = value;
-    this.lastOptsJson = optsJson;
-    this.clearTimer();
-
-    if (!value) {
-      this.lastResult = '';
-      return this.lastResult;
-    }
-
-    const date = new Date(value);
-    if (isNaN(date.getTime())) {
-      this.lastResult = String(value);
-      return this.lastResult;
-    }
-
-    const diffMs = new Date().getTime() - date.getTime();
-
-    // Calculate and cache the result
-    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
-    this.setupTimer(diffMs);
-
-    return this.lastResult;
-  }
-
-  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    // If a threshold is set and exceeded, fallback to a standard date string
-    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
-      return date.toLocaleDateString(undefined, {
-        month: opts.style === 'short' ? 'short' : 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    }
-
-    const suffix = opts?.hideSuffix ? '' : ' ago';
-
-    // Handle compact/short styles
-    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
-      if (seconds < 60) return 'now';
-      if (minutes < 60) return `${minutes}m`;
-      if (hours < 24) return `${hours}h`;
-      return `${days}d`;
-    }
-
-    // Default long style
-    if (seconds < 60) return 'just now';
-    if (minutes === 1) return `a minute${suffix}`;
-    if (minutes < 60) return `${minutes} minutes${suffix}`;
-    if (hours === 1) return `an hour${suffix}`;
-    if (hours < 24) return `${hours} hours${suffix}`;
-    if (days === 1) return 'yesterday';
-    if (days < 30) return `${days} days${suffix}`;
-
-    const months = Math.floor(days / 30);
-    if (months === 1) return `a month${suffix}`;
-    if (months < 12) return `${months} months${suffix}`;
-
-    const years = Math.floor(days / 365);
-    if (years === 1) return `a year${suffix}`;
-    return `${years} years${suffix}`;
-  }
-
-  private setupTimer(diffMs: number): void {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-
-    let timeoutMs = 60000;
-
-    // Scale update frequency based on age to save CPU
-    if (seconds < 60) {
-      timeoutMs = 10000; // 10 seconds
-    } else if (minutes < 60) {
-      timeoutMs = 60000; // 1 minute
-    } else if (minutes < 1440) {
-      timeoutMs = 3600000; // 1 hour
-    } else {
-      timeoutMs = 86400000; // 1 day
-    }
-
-    // Native setTimeout triggers Angular's zoneless scheduler internally
-    // when markForCheck is called inside it.
-    this.timerId = setTimeout(() => {
-      this.cdr.markForCheck();
-    }, timeoutMs);
-  }
-
-  private clearTimer(): void {
-    if (this.timerId) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
-    }
-  }
-
-  public ngOnDestroy(): void {
-    this.clearTimer();
-  }
-}
-````
-
-## File: libs/uxcommon/src/index.ts
-````typescript
-export * from './loading-gate';
-
-// Components
-export * from './components/alerts/alert-service';
-export * from './components/alerts/alerts';
-export * from './components/icons/icon';
-export * from './components/icons/icons.index';
-export * from './components/confirm-dialog-host';
-export * from './components/confirm-dialog.service';
-export * from './components/user-avatar/user-avatar';
-export * from './components/tags/tagitem';
-export * from './components/input/input';
-export * from './components/textarea/textarea';
-export * from './components/select/select';
-export * from './components/toggle/toggle';
-export * from './components/detail-header/detail-header';
-export * from './components/detail-layout/detail-layout';
-export * from './components/entity-overview/entity-overview';
-export * from './components/address-form-group/address-form-group';
-export * from './components/card/card';
-export * from './components/stat-card/stat-card';
-export * from './components/side-drawer/side-drawer';
-export * from './components/tabs/tabs';
-export * from './components/status-badge/status-badge';
-export * from './components/profile-card/profile-card';
-export * from './components/detail-row/detail-row';
-export * from './components/detail-item/detail-item';
-export * from './components/system-metadata/system-metadata';
-export * from './components/fields-selector/fields-selector';
-export * from './components/public-link-panel/public-link-panel';
-
-// Directives
-export * from './directives/animate-if.directive';
-export * from './directives/spin-on-click.directive';
-
-// Pipes
-export * from './pipes/file-icon.pipe';
-export * from './pipes/filesize.pipe';
-export * from './pipes/sanitize-html.pipe';
-export * from './pipes/svg-html-pipe';
-export * from './pipes/timeago.pipe';
-````
-
-## File: libs/uxcommon/src/loading-gate.ts
-````typescript
-// _loading-gate.ts
-import { signal } from '@angular/core';
-
-export type loadingGate = {
-  visible: ReturnType<typeof signal<boolean>>;
-
-  begin(): () => void;
-};
-
-export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
-  const delay = options?.delay ?? 300; // ms before showing
-  const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
-
-  const visible = signal(false);
-  let pendingCount = 0;
-  let showTimer: ReturnType<typeof setTimeout> | null = null;
-  let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let shownAt = 0;
-
-  const clearShowTimer = () => {
-    if (showTimer) {
-      clearTimeout(showTimer);
-      showTimer = null;
-    }
-  };
-  const clearHideTimer = () => {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
-
-  function scheduleShow() {
-    clearShowTimer();
-    showTimer = setTimeout(() => {
-      showTimer = null;
-      if (pendingCount > 0 && !visible()) {
-        visible.set(true);
-        shownAt = performance.now();
-      }
-    }, delay);
-  }
-
-  function scheduleHide() {
-    clearHideTimer();
-    if (!visible()) return; // never shown → nothing to hide
-
-    const remaining = Math.max(0, minDuration - (performance.now() - shownAt));
-    hideTimer = setTimeout(() => {
-      if (pendingCount === 0) visible.set(false);
-    }, remaining);
-  }
-
-  function begin() {
-    pendingCount++;
-    if (pendingCount === 1) {
-      // First operation: start the delayed show
-      scheduleShow();
-    }
-    // Return disposer
-    let done = false;
-    return () => {
-      if (done) return;
-      done = true;
-      pendingCount--;
-      if (pendingCount <= 0) {
-        pendingCount = 0;
-        // If we never showed, cancel the show timer so _loading never appears
-        clearShowTimer();
-        scheduleHide(); // hides now or after minDuration
-      }
-    };
-  }
-
-  return { begin, visible };
-}
-````
-
-## File: libs/uxcommon/src/test-setup.ts
-````typescript
-import '@angular/compiler';
-import '@analogjs/vitest-angular/setup-zone';
-
-import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
-import { getTestBed } from '@angular/core/testing';
-import { vi } from 'vitest';
-
-getTestBed().initTestEnvironment(BrowserTestingModule, platformBrowserTesting());
-
-(globalThis as any).jest = vi;
-(globalThis as any).fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  text: () => Promise.resolve('<svg></svg>'),
-});
-````
-
-## File: libs/uxcommon/eslint.config.cjs
-````javascript
-const { FlatCompat } = require('@eslint/eslintrc');
-const path = require('path');
-
-const compat = new FlatCompat({ baseDirectory: __dirname });
-
-module.exports = [
-  ...compat
-    .config({
-      extends: ['plugin:@nx/angular', 'plugin:@angular-eslint/template/process-inline-templates'],
-      parserOptions: {
-        project: [
-          path.resolve(__dirname, 'tsconfig.lib.json'),
-          path.resolve(__dirname, 'tsconfig.spec.json'),
-          path.resolve(__dirname, '../../tsconfig.base.json'),
-        ],
-        sourceType: 'module',
-      },
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.ts'],
-      rules: {
-        '@angular-eslint/directive-selector': ['error', { type: 'attribute', prefix: 'pc', style: 'camelCase' }],
-        '@angular-eslint/component-selector': ['error', { type: 'element', prefix: 'pc', style: 'kebab-case' }],
-      },
-    })),
-
-  ...compat
-    .config({
-      extends: ['plugin:@nx/angular-template', 'plugin:@angular-eslint/template/recommended'],
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.html'],
-      rules: {},
-    })),
-];
-````
-
-## File: libs/uxcommon/project.json
-````json
-{
-  "name": "uxcommon",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "libs/uxcommon/src",
-  "prefix": "lib",
-  "projectType": "library",
-  "tags": [],
-  "targets": {
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/libs/uxcommon"],
-      "options": {
-        "cwd": "libs/uxcommon",
-        "command": "vitest run"
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint"
-    }
-  }
-}
-````
-
-## File: libs/uxcommon/README.md
-````markdown
-# uxcommon
-
-This library was generated with [Nx](https://nx.dev).
-
-## Running unit tests
-
-Run `nx test uxcommon` to execute the unit tests.
-````
-
-## File: libs/uxcommon/tsconfig.json
-````json
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "module": "preserve"
-  },
-  "angularCompilerOptions": {
-    "enableI18nLegacyMessageIdFormat": false,
-    "strictInjectionParameters": true,
-    "strictInputAccessModifiers": true,
-    "typeCheckHostBindings": true,
-    "strictTemplates": true
-  },
-  "files": [],
-  "include": [],
-  "references": [
-    {
-      "path": "./tsconfig.lib.json"
-    },
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
-}
-````
-
-## File: libs/uxcommon/tsconfig.lib.json
-````json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "declaration": true,
-    "declarationMap": true,
-    "inlineSources": true,
-    "types": []
-  },
-  "exclude": [
-    "src/**/*.spec.ts",
-    "src/test-setup.ts",
-    "jest.config.ts",
-    "src/**/*.test.ts",
-    "vite.config.ts",
-    "vite.config.mts",
-    "vitest.config.ts",
-    "vitest.config.mts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.tsx",
-    "src/**/*.test.js",
-    "src/**/*.spec.js",
-    "src/**/*.test.jsx",
-    "src/**/*.spec.jsx"
-  ],
-  "include": ["src/**/*.ts"]
-}
-````
-
-## File: libs/uxcommon/tsconfig.spec.json
-````json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "types": ["vitest/globals", "vitest/importMeta", "vite/client", "node", "vitest"]
-  },
-  "include": [
-    "vite.config.ts",
-    "vite.config.mts",
-    "vitest.config.ts",
-    "vitest.config.mts",
-    "src/**/*.test.ts",
-    "src/**/*.spec.ts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.tsx",
-    "src/**/*.test.js",
-    "src/**/*.spec.js",
-    "src/**/*.test.jsx",
-    "src/**/*.spec.jsx",
-    "src/**/*.d.ts"
-  ],
-  "files": ["src/test-setup.ts"]
-}
-````
-
 ## File: apps/backend/scripts/setup-test-db.sh
 ````bash
 #!/usr/bin/env bash
@@ -16539,6 +11824,12 @@ export async function up(db: Kysely<any>): Promise<void> {
   for (const { table, fallback, source } of TABLES) {
     await sql`ALTER TABLE ${sql.table(table)} ADD COLUMN IF NOT EXISTS slug text`.execute(db);
 
+    // persons/households/companies run with FORCE ROW LEVEL SECURITY (S-1 tenant
+    // backstop), which also applies to the table owner. A migration connection
+    // sets no tenant GUC, so the UPDATE backfills below would be rejected
+    // (42501) on a from-scratch bootstrap. Lift RLS for just this backfill.
+    await sql`ALTER TABLE ${sql.table(table)} NO FORCE ROW LEVEL SECURITY`.execute(db);
+
     // Backfill: slugify the source, guard all-digit results, dedupe per tenant
     // with -2, -3… suffixes (deterministic by id).
     await sql`
@@ -16580,6 +11871,10 @@ export async function up(db: Kysely<any>): Promise<void> {
       WHERE t.id = d.id AND d.rn > 1
     `.execute(db);
 
+    // Restore the tenant backstop before the unique index (DDL, unaffected by
+    // RLS, but leaving the table permanently unprotected would be a real gap).
+    await sql`ALTER TABLE ${sql.table(table)} FORCE ROW LEVEL SECURITY`.execute(db);
+
     // Same shape as events_tenant_slug_unique. Partial (slug IS NOT NULL) so a
     // not-yet-backfilled bulk row can exist mid-import without tripping it.
     await sql`
@@ -16595,6 +11890,52 @@ export async function down(db: Kysely<any>): Promise<void> {
     await sql`DROP INDEX IF EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}`.execute(db);
     await sql`ALTER TABLE ${sql.table(table)} DROP COLUMN IF EXISTS slug`.execute(db);
   }
+}
+````
+
+## File: apps/backend/src/app/_migrations/2026-07-08-import-wizard-stats.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * CSV import wizard (spec §17) needs a few extra facts per import that the
+ * legacy `data_imports` table didn't track:
+ *
+ *  - merged_count: rows folded into an existing person ("Merge into existing"
+ *    duplicate decision) rather than inserted as a new row.
+ *  - tags_applied: the wizard lets a staffer apply several comma-separated
+ *    tags in one run (data_imports.tag_name only ever held the single
+ *    auto-generated "Imported-YYYYMMDD-HHmm" tag).
+ *  - source_file_key / source_file_size: the History page keeps the original
+ *    uploaded file downloadable for 90 days (§17 footer copy) — previously
+ *    only the parsed-rows JSON payload was stored, and it was deleted right
+ *    after processing.
+ *  - skip_reasons: per-row reasons for skipped rows, so History can offer a
+ *    "download skipped rows" CSV instead of just a count.
+ *
+ * All four are additive/nullable-with-defaults so existing rows stay valid.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS merged_count integer DEFAULT 0 NOT NULL`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS tags_applied jsonb DEFAULT '[]'::jsonb NOT NULL`.execute(
+    db,
+  );
+  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS source_file_key text`.execute(db);
+  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS source_file_size bigint`.execute(db);
+  await sql`ALTER TABLE public.data_imports ADD COLUMN IF NOT EXISTS skip_reasons jsonb DEFAULT '[]'::jsonb NOT NULL`.execute(
+    db,
+  );
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS skip_reasons`.execute(db);
+  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS source_file_size`.execute(db);
+  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS source_file_key`.execute(db);
+  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS tags_applied`.execute(db);
+  await sql`ALTER TABLE public.data_imports DROP COLUMN IF EXISTS merged_count`.execute(db);
 }
 ````
 
@@ -17063,126 +12404,6 @@ function getEntityFilterValues(entityFilter: string): string[] {
     return ['tag', 'tags'];
   }
   return [ent];
-}
-````
-
-## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
-````typescript
-import type { Kysely } from 'kysely';
-import { env } from '../../../../env';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../../logger';
-import { CompaniesController } from '../../../modules/companies/controller';
-import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo';
-import { PersonsService } from '../../../modules/persons/services/persons.service';
-import { TasksController } from '../../../modules/tasks/controller';
-import { StorageService } from '../../storage.service';
-import { notificationEnabled } from '../../profile-preferences';
-import { TransactionalEmailService } from '../../mail/transactional-mail.service';
-import type { LegacyImportJobPayload } from '../job-payloads';
-
-const storageService = new StorageService();
-const importsRepo = new ImportsRepo();
-const mailService = new TransactionalEmailService();
-
-export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysely<Models>): Promise<void> {
-  // 1. Mark import status as 'processing' in data_imports
-  await importsRepo.update({
-    tenant_id: payload.tenant_id,
-    id: payload.import_id,
-    row: {
-      status: 'processing',
-      updated_at: new Date(),
-    },
-  });
-
-  // 2. Download mapping payload from storage
-  const buffer = await storageService.download(payload.storage_key);
-  const rows = JSON.parse(buffer.toString('utf8'));
-
-  // 3. Process the import rows in chunks
-  if (payload.source === 'companies') {
-    const companiesController = new CompaniesController();
-    await companiesController.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      Number(payload.skipped || 0),
-      rows,
-    );
-  } else if (payload.source === 'tasks') {
-    const tasksController = new TasksController();
-    await tasksController.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      Number(payload.skipped || 0),
-      rows,
-    );
-  } else {
-    const personsService = new PersonsService();
-    await personsService.processImportRows(
-      payload.import_id,
-      payload.tenant_id,
-      payload.user_id,
-      payload.campaign_id ?? '',
-      payload.tags ?? [],
-      Number(payload.skipped || 0),
-      rows,
-    );
-  }
-
-  // 4. Update import status to 'completed'
-  await importsRepo.update({
-    tenant_id: payload.tenant_id,
-    id: payload.import_id,
-    row: {
-      status: 'completed',
-      processed_at: new Date(),
-      updated_at: new Date(),
-    },
-  });
-
-  try {
-    await storageService.delete(payload.storage_key);
-  } catch (storageErr) {
-    logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
-  }
-
-  try {
-    const user = await db
-      .selectFrom('authusers')
-      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-      .where('authusers.id', '=', payload.user_id)
-      .executeTakeFirst();
-
-    if (user && user.email) {
-      if (notificationEnabled(user.profile_preferences, 'import_summary')) {
-        const importRecord = await db
-          .selectFrom('data_imports')
-          .select(['inserted_count', 'error_count', 'skipped_count'])
-          .where('id', '=', payload.import_id)
-          .where('tenant_id', '=', payload.tenant_id)
-          .executeTakeFirst();
-
-        if (importRecord) {
-          const inserted = importRecord.inserted_count || 0;
-          const errors = importRecord.error_count || 0;
-          const skipped = importRecord.skipped_count || 0;
-
-          await mailService.sendMail({
-            to: user.email,
-            subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
-            text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
-            html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
-          });
-        }
-      }
-    }
-  } catch (mailErr) {
-    logger.error({ err: mailErr }, 'Failed to send import completion summary email');
-  }
 }
 ````
 
@@ -18415,193 +13636,6 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
     }
   }
 }
-````
-
-## File: apps/backend/src/app/lib/jobs/job-payloads.ts
-````typescript
-import { z } from 'zod';
-import type { ZapierEventType } from '../../modules/zapier/zapier.service';
-
-/**
- * IDs are strings in the database, but historical job payloads may carry them
- * as numbers (JSON round-trip of bigint columns). Normalize to string.
- */
-const idSchema = z.union([z.string(), z.number()]).transform(String);
-
-/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
-const ZAPIER_EVENT_TYPES = [
-  'person_created',
-  'person_updated',
-  'person_deleted',
-  'person_tag_added',
-  'person_tag_removed',
-] as const satisfies readonly ZapierEventType[];
-
-const exportSortSchema = z.object({
-  colId: z.string().nullish(),
-  sort: z.string().nullish(),
-});
-
-const exportOptionsSchema = z.object({
-  userId: idSchema.nullish(),
-  entity: z.string().nullish(),
-  activity: z.string().nullish(),
-  searchStr: z.string().nullish(),
-  sortModel: z.array(exportSortSchema).nullish(),
-});
-
-export const jobPayloadSchema = z.discriminatedUnion('type', [
-  // ── Lists / companies / maintenance ─────────────────────────────────────
-  z.object({
-    type: z.literal('refresh_list'),
-    tenant_id: idSchema,
-    list_id: idSchema,
-    user_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('enrich_company_google'),
-    company_id: idSchema,
-    tenant_id: idSchema,
-  }),
-  z.object({
-    type: z.literal('refresh_companies_google'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({ type: z.literal('cleanup_activities') }),
-  z.object({ type: z.literal('prune_retention') }),
-  z.object({ type: z.literal('recompute_all_duplicates') }),
-  z.object({
-    type: z.literal('recompute_address_fingerprints'),
-    tenant_id: idSchema.nullish(),
-  }),
-  z.object({
-    type: z.literal('geocode_household'),
-    household_id: idSchema,
-    tenant_id: idSchema,
-  }),
-
-  // ── External account sync ───────────────────────────────────────────────
-  z.object({ type: z.literal('schedule_sync_jobs') }),
-  z.object({
-    type: z.literal('google_sync'),
-    tenantId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-  z.object({
-    type: z.literal('ms_sync'),
-    tenantId: idSchema,
-    requestedBy: z.string().default('system'),
-  }),
-
-  // ── Notifications & transactional email ─────────────────────────────────
-  z.object({
-    type: z.literal('send-form-notifications'),
-    eventId: idSchema,
-    tenantId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    mobile: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-shift-reminder'),
-    shiftId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-webform-notifications'),
-    formId: idSchema,
-    email: z.string(),
-    firstName: z.string().nullish(),
-    lastName: z.string().nullish(),
-    notes: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-event-registration-confirmation'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-event-reminder'),
-    registrationId: idSchema,
-  }),
-  z.object({
-    type: z.literal('send-transactional-email'),
-    to: z.string(),
-    subject: z.string().nullish(),
-    text: z.string().nullish(),
-    html: z.string().nullish(),
-  }),
-  z.object({
-    type: z.literal('send-subscription-confirmation'),
-    email: z.string(),
-    firstName: z.string().nullish(),
-    confirmUrl: z.string(),
-  }),
-  z.object({ type: z.literal('check_due_tasks') }),
-
-  // ── Newsletters ──────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('send-newsletter'),
-    tenantId: idSchema,
-    newsletterId: idSchema,
-    userId: idSchema,
-    offset: z.number().nullish(),
-    deliveredCount: z.number().nullish(),
-  }),
-  z.object({ type: z.literal('prune_newsletter_events') }),
-
-  // ── Workflows & deletions ────────────────────────────────────────────────
-  z.object({ type: z.literal('process_drip_workflows') }),
-  z.object({ type: z.literal('perform_scheduled_deletions') }),
-
-  // ── Billing & integrations ───────────────────────────────────────────────
-  z.object({
-    type: z.literal('zapier_trigger'),
-    tenant_id: idSchema,
-    event_type: z.enum(ZAPIER_EVENT_TYPES),
-    data: z.record(z.string(), z.unknown()).default({}),
-  }),
-  z.object({
-    type: z.literal('check_usage_limits'),
-    tenant_id: idSchema,
-  }),
-  z.object({ type: z.literal('check_all_usage_limits') }),
-
-  // ── Exports ──────────────────────────────────────────────────────────────
-  z.object({
-    type: z.literal('export_csv'),
-    export_id: idSchema,
-    tenant_id: idSchema,
-    table: z.string().nullish(),
-    entity: z.string().nullish(),
-    options: exportOptionsSchema.default({}),
-    columns: z.array(z.string()).nullish(),
-    user_id: idSchema.nullish(),
-    file_name: z.string().nullish(),
-  }),
-]);
-
-export type JobPayload = z.infer<typeof jobPayloadSchema>;
-export type JobType = JobPayload['type'];
-export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
-
-/**
- * CSV imports are queued without a `type` discriminator (legacy shape) and are
- * matched by the presence of `import_id` + `storage_key` instead.
- */
-export const legacyImportJobSchema = z.object({
-  import_id: idSchema,
-  storage_key: z.string(),
-  tenant_id: idSchema,
-  user_id: idSchema,
-  source: z.string().nullish(),
-  skipped: z.union([z.string(), z.number()]).nullish(),
-  campaign_id: idSchema.nullish(),
-  tags: z.array(z.string()).nullish(),
-  file_name: z.string().nullish(),
-});
-
-export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
 ````
 
 ## File: apps/backend/src/app/lib/mail/transactional-mail.service.ts
@@ -22078,204 +17112,281 @@ export const update = {
 };
 ````
 
-## File: apps/backend/src/app/modules/imports/repositories/imports.repo.ts
+## File: apps/backend/src/app/modules/imports/routes/imports-download.route.ts
 ````typescript
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
+import type { FastifyPluginCallback } from 'fastify';
+import { StorageService } from '../../../lib/storage.service';
+import { ImportsRepo } from '../repositories/imports.repo';
+import { authenticateRest } from '../../../lib/rest-auth';
+import { attachmentDisposition } from '../../../lib/download-headers';
+import { rowsToCsv } from '../../../lib/csv';
 
-import { BaseRepository } from '../../../lib/base.repo';
-import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+const storageService = new StorageService();
+const importsRepo = new ImportsRepo();
 
-export type DataImportWithStats = {
-  id: string;
-  tenant_id: string;
-  file_name: string;
-  source: string;
-  /** Live tags.name when the tag still exists, else the import-time snapshot (D-10). */
-  tag_name: string | null;
-  tag_id: string | null;
-  row_count: number;
-  inserted_count: number;
-  error_count: number;
-  skipped_count: number;
-  households_created: number;
-  processed_at: Date;
-  created_at: Date;
-  updated_at: Date;
-  createdby_id: string;
-  updatedby_id: string;
-  created_by_email: string | null;
-  created_by_name: string | null;
-  contact_count: number;
-  household_count: number;
-  company_count: number;
-  task_count: number;
-  tag_assignment_count: number;
-  tag_exists: boolean;
-  status: string;
-  error_message: string | null;
+/**
+ * History page (spec §17) downloads that don't fit tRPC's JSON transport:
+ * the retained original upload, and a generated CSV of skipped rows with
+ * their reasons. Same bearer-token-only pattern as exports-download.route.ts
+ * — session tokens never travel in the query string.
+ */
+const importsDownloadRoute: FastifyPluginCallback = (fastify, _, done) => {
+  fastify.get('/download/:id/source', async (req: any, reply) => {
+    const authResult = await authenticateRest(req);
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
+    }
+
+    const { id } = req.params as { id: string };
+    const importRecord = await importsRepo.getOneWithStats({ tenant_id: authResult.auth.tenant_id, id });
+
+    if (!importRecord) {
+      return reply.status(404).send({ error: 'Import not found' });
+    }
+    if (!importRecord.source_file_key) {
+      return reply.status(404).send({ error: 'The original file is no longer available for this import.' });
+    }
+
+    try {
+      const buffer = await storageService.download(importRecord.source_file_key);
+      reply.type('text/csv; charset=utf-8');
+      reply.header('Content-Disposition', attachmentDisposition(importRecord.file_name));
+      return reply.send(buffer);
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: 'Failed to stream the original import file' });
+    }
+  });
+
+  fastify.get('/download/:id/skipped', async (req: any, reply) => {
+    const authResult = await authenticateRest(req);
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
+    }
+
+    const { id } = req.params as { id: string };
+    const importRecord = await importsRepo.getOneWithStats({ tenant_id: authResult.auth.tenant_id, id });
+
+    if (!importRecord) {
+      return reply.status(404).send({ error: 'Import not found' });
+    }
+    if (!importRecord.skip_reasons.length) {
+      return reply.status(404).send({ error: 'No skipped rows recorded for this import.' });
+    }
+
+    const csv = rowsToCsv(importRecord.skip_reasons, ['row', 'email', 'reason']);
+    reply.type('text/csv; charset=utf-8');
+    reply.header(
+      'Content-Disposition',
+      attachmentDisposition(`${importRecord.file_name.replace(/\.csv$/i, '')}-skipped-rows.csv`),
+    );
+    return reply.send(csv);
+  });
+
+  done();
 };
 
-export class ImportsRepo extends BaseRepository<'data_imports'> {
+export default importsDownloadRoute;
+````
+
+## File: apps/backend/src/app/modules/imports/controller.ts
+````typescript
+import type { IAuthKeyPayload, ImportListItem } from '../../../../../../libs/common/src';
+
+import { BadRequestError, NotFoundError } from '../../errors/app-errors';
+import { BaseController } from '../../lib/base.controller';
+import { sql } from 'kysely';
+import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
+import { HouseholdRepo } from '../households/repositories/households.repo';
+import { MapHouseholdsTagsRepo } from '../households/repositories/map-households-tags.repo';
+import { MapPersonsTagRepo } from '../persons/repositories/map-persons-tags.repo';
+import { PersonsRepo } from '../persons/repositories/persons.repo';
+import { CompaniesRepo } from '../companies/repositories/companies.repo';
+import { TasksRepo } from '../tasks/repositories/tasks.repo';
+import type { DataImportWithStats } from './repositories/imports.repo';
+import { ImportsRepo } from './repositories/imports.repo';
+
+export class ImportsController extends BaseController<'data_imports', ImportsRepo> {
+  private readonly personsRepo = new PersonsRepo();
+  private readonly mapPersonsTagRepo = new MapPersonsTagRepo();
+  private readonly mapListsPersonsRepo = new MapListsPersonsRepo();
+  private readonly householdsRepo = new HouseholdRepo();
+  private readonly mapHouseholdsTagsRepo = new MapHouseholdsTagsRepo();
+  private readonly companiesRepo = new CompaniesRepo();
+  private readonly tasksRepo = new TasksRepo();
+
   constructor() {
-    super('data_imports');
+    super(new ImportsRepo());
   }
 
-  public async getAllWithStats(input: { tenant_id: string }, trx?: Transaction<Models>) {
-    return this.buildStatsQuery(input, trx)
-      .execute()
-      .then((rows) => rows.map((row) => this.mapRow(row)));
+  public async list(auth: IAuthKeyPayload): Promise<ImportListItem[]> {
+    const rows = await this.getRepo().getAllWithStats({ tenant_id: auth.tenant_id });
+    return rows.map((row) => this.mapToListItem(row));
   }
 
-  public async getOneWithStats(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
-    const rows = await this.buildStatsQuery(input, trx).where('data_imports.id', '=', input.id).limit(1).execute();
-    const row = rows.at(0);
-    return row ? this.mapRow(row) : null;
+  public async deleteImport(
+    input: {
+      id: string;
+      deleteContacts?: boolean;
+      deletePeople?: boolean;
+      deleteHouseholds?: boolean;
+      deleteCompanies?: boolean;
+      deleteTasks?: boolean;
+    },
+    auth: IAuthKeyPayload,
+  ): Promise<{ deleted: boolean; contactsRemoved: boolean }> {
+    const stats = await this.getRepo().getOneWithStats({ tenant_id: auth.tenant_id, id: input.id });
+    if (!stats) throw new NotFoundError('Import not found');
+
+    if (stats.status === 'pending' || stats.status === 'processing') {
+      throw new BadRequestError('Cannot delete an import that is still processing.');
+    }
+
+    const wantsPeopleDeletion = Boolean(input.deletePeople || input.deleteContacts);
+    const wantsHouseholdDeletion = Boolean(input.deleteHouseholds);
+    const wantsCompanyDeletion = Boolean(input.deleteCompanies);
+    const wantsTaskDeletion = Boolean(input.deleteTasks);
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // 1. Delete people
+        if (wantsPeopleDeletion) {
+          const personIds = await this.personsRepo.getIdsByFileId(
+            { tenant_id: auth.tenant_id, file_id: stats.id },
+            trx,
+          );
+          if (personIds.length > 0) {
+            await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
+            await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id: auth.tenant_id, person_ids: personIds }, trx);
+            await this.personsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: personIds as any }, trx);
+          }
+        } else {
+          await this.personsRepo.clearFileIdForImport(
+            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
+            trx,
+          );
+        }
+
+        // 2. Delete households
+        if (wantsHouseholdDeletion) {
+          const householdIds = await this.householdsRepo.getIdsByFileId(
+            { tenant_id: auth.tenant_id, file_id: stats.id },
+            trx,
+          );
+          if (householdIds.length > 0) {
+            await this.mapHouseholdsTagsRepo.deleteByHouseholdIds(
+              { tenant_id: auth.tenant_id, household_ids: householdIds },
+              trx,
+            );
+            // Also clean up list associations before household deletion
+            await trx
+              .deleteFrom('map_lists_households')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('household_id', 'in', householdIds)
+              .execute();
+            await this.householdsRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: householdIds as any }, trx);
+          }
+        } else {
+          await this.householdsRepo.clearFileIdForImport(
+            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
+            trx,
+          );
+        }
+
+        // 3. Delete companies
+        if (wantsCompanyDeletion) {
+          const companyIds = await this.companiesRepo.getIdsByFileId(
+            { tenant_id: auth.tenant_id, file_id: stats.id },
+            trx,
+          );
+          if (companyIds.length > 0) {
+            await trx
+              .updateTable('persons')
+              .set({ company_id: null, updated_at: sql`now()`, updatedby_id: auth.user_id })
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('company_id', 'in', companyIds)
+              .execute();
+            await this.companiesRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: companyIds as any }, trx);
+          }
+        } else {
+          await this.companiesRepo.clearFileIdForImport(
+            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
+            trx,
+          );
+        }
+
+        // 4. Delete tasks
+        if (wantsTaskDeletion) {
+          const taskIds = await this.tasksRepo.getIdsByFileId({ tenant_id: auth.tenant_id, file_id: stats.id }, trx);
+          if (taskIds.length > 0) {
+            await trx
+              .deleteFrom('task_subtasks')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('task_id', 'in', taskIds)
+              .execute();
+            await trx
+              .deleteFrom('task_comments')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('task_id', 'in', taskIds)
+              .execute();
+            await trx
+              .deleteFrom('task_attachments')
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('task_id', 'in', taskIds)
+              .execute();
+            await this.tasksRepo.deleteMany({ tenant_id: auth.tenant_id as any, ids: taskIds as any }, trx);
+          }
+        } else {
+          await this.tasksRepo.clearFileIdForImport(
+            { tenant_id: auth.tenant_id, import_id: stats.id, user_id: auth.user_id },
+            trx,
+          );
+        }
+
+        await this.getRepo().delete({ tenant_id: auth.tenant_id as any, id: stats.id as any }, trx);
+      });
+
+    return { deleted: true, contactsRemoved: wantsPeopleDeletion };
   }
 
-  private buildStatsQuery(input: { tenant_id: string }, trx?: Transaction<Models>) {
-    const contactCountExpr = sql<number>`(
-      SELECT COUNT(1)
-      FROM persons
-      WHERE persons.tenant_id = ${input.tenant_id}
-        AND persons.file_id = data_imports.id
-    )`;
-
-    const householdCountExpr = sql<number>`(
-      SELECT COUNT(1)
-      FROM households
-      WHERE households.tenant_id = ${input.tenant_id}
-        AND households.file_id = data_imports.id
-    )`;
-
-    const companyCountExpr = sql<number>`(
-      SELECT COUNT(1)
-      FROM companies
-      WHERE companies.tenant_id = ${input.tenant_id}
-        AND companies.file_id = data_imports.id
-    )`;
-
-    const taskCountExpr = sql<number>`(
-      SELECT COUNT(1)
-      FROM tasks
-      WHERE tasks.tenant_id = ${input.tenant_id}
-        AND tasks.file_id = data_imports.id
-    )`;
-
-    const tagAssignmentExpr = sql<number>`(
-      SELECT COUNT(1)
-      FROM map_peoples_tags mpt
-      WHERE mpt.tenant_id = ${input.tenant_id}
-        AND mpt.tag_id = data_imports.tag_id
-    )`;
-
-    const tagExistsExpr = sql<number>`(
-      SELECT CASE
-        WHEN EXISTS(
-          SELECT 1
-          FROM tags
-          WHERE tags.tenant_id = ${input.tenant_id}
-            AND tags.id = data_imports.tag_id
-        ) THEN 1 ELSE 0 END
-    )`;
-
-    const nameExpr = sql<string | null>`NULLIF(TRIM(CONCAT_WS(' ', creator.first_name, creator.last_name)), '')`;
-
-    // tags.name via tag_id is the source of truth while the tag exists; the
-    // stored tag_name is the import-time snapshot kept for deleted tags (D-10).
-    const tagNameExpr = sql<string | null>`COALESCE(
-      (SELECT tags.name
-       FROM tags
-       WHERE tags.tenant_id = ${input.tenant_id}
-         AND tags.id = data_imports.tag_id),
-      data_imports.tag_name
-    )`;
-
-    const query = this.getSelect(trx)
-      .where('data_imports.tenant_id', '=', input.tenant_id)
-      .leftJoin('authusers as creator', 'creator.id', 'data_imports.createdby_id')
-      .select([
-        'data_imports.id',
-        'data_imports.tenant_id',
-        'data_imports.file_name',
-        'data_imports.source',
-        tagNameExpr.as('tag_name'),
-        'data_imports.tag_id',
-        'data_imports.row_count',
-        'data_imports.inserted_count',
-        'data_imports.error_count',
-        'data_imports.skipped_count',
-        'data_imports.households_created',
-        'data_imports.processed_at',
-        'data_imports.created_at',
-        'data_imports.updated_at',
-        'data_imports.createdby_id',
-        'data_imports.updatedby_id',
-        'data_imports.status',
-        'data_imports.error_message',
-        sql<string | null>`creator.email`.as('creator_email'),
-        nameExpr.as('creator_name'),
-        contactCountExpr.as('contact_count'),
-        householdCountExpr.as('household_count'),
-        companyCountExpr.as('company_count'),
-        taskCountExpr.as('task_count'),
-        tagAssignmentExpr.as('tag_assignment_count'),
-        tagExistsExpr.as('tag_exists'),
-      ])
-      .orderBy('data_imports.processed_at', 'desc');
-
-    return query;
-  }
-
-  private mapRow(row: Record<string, unknown>): DataImportWithStats {
-    const cast = (value: unknown) => (value == null ? null : String(value));
-    const toNumber = (value: unknown) => {
-      if (value == null) return 0;
-      if (typeof value === 'number') return value;
-      if (typeof value === 'bigint') return Number(value);
-      const parsed = Number(value);
-      return Number.isNaN(parsed) ? 0 : parsed;
-    };
-
-    const toBool = (value: unknown) => toNumber(value) > 0;
+  private mapToListItem(row: DataImportWithStats): ImportListItem {
+    const tagMissing = !row.tag_exists || row.tag_assignment_count === 0;
+    const canDeleteContacts = row.contact_count > 0 && !tagMissing;
 
     return {
-      id: cast(row['id']) ?? '',
-      tenant_id: cast(row['tenant_id']) ?? '',
-      file_name: cast(row['file_name']) ?? '',
-      source: cast(row['source']) ?? 'persons',
-      tag_name: cast(row['tag_name']),
-      tag_id: cast(row['tag_id']),
-      row_count: toNumber(row['row_count']),
-      inserted_count: toNumber(row['inserted_count']),
-      error_count: toNumber(row['error_count']),
-      skipped_count: toNumber(row['skipped_count']),
-      households_created: toNumber(row['households_created']),
-      processed_at: this.coerceDate(row['processed_at']),
-      created_at: this.coerceDate(row['created_at']),
-      updated_at: this.coerceDate(row['updated_at']),
-      createdby_id: cast(row['createdby_id']) ?? '',
-      updatedby_id: cast(row['updatedby_id']) ?? '',
-      created_by_email: cast(row['creator_email']),
-      created_by_name: cast(row['creator_name']),
-      contact_count: toNumber(row['contact_count']),
-      household_count: toNumber(row['household_count']),
-      company_count: toNumber(row['company_count']),
-      task_count: toNumber(row['task_count']),
-      tag_assignment_count: toNumber(row['tag_assignment_count']),
-      tag_exists: toBool(row['tag_exists']),
-      status: cast(row['status']) ?? 'completed',
-      error_message: cast(row['error_message']),
+      id: row.id,
+      fileName: row.file_name,
+      source: row.source,
+      tagName: row.tag_name,
+      tagMissing,
+      createdAt: row.created_at,
+      processedAt: row.processed_at,
+      createdBy: row.createdby_id
+        ? {
+            id: row.createdby_id,
+            name: row.created_by_name,
+            email: row.created_by_email,
+          }
+        : null,
+      insertedCount: row.inserted_count,
+      errorCount: row.error_count,
+      skippedCount: row.skipped_count,
+      mergedCount: row.merged_count,
+      tagsApplied: row.tags_applied,
+      rowCount: row.row_count,
+      householdsCreated: row.households_created,
+      contactCount: row.contact_count,
+      householdCount: row.household_count,
+      companyCount: row.company_count,
+      taskCount: row.task_count,
+      status: row.status,
+      errorMessage: row.error_message,
+      canDeleteContacts,
+      sourceFileSize: row.source_file_size,
+      canDownloadSource: !!row.source_file_key,
+      canDownloadSkipped: row.skip_reasons.length > 0,
     };
-  }
-
-  private coerceDate(value: unknown): Date {
-    if (value instanceof Date) return value;
-    if (typeof value === 'string' || typeof value === 'number') {
-      const ts = new Date(value);
-      if (!Number.isNaN(ts.valueOf())) return ts;
-    }
-    return new Date(0);
   }
 }
 ````
@@ -24841,6 +19952,73 @@ if (isMain) {
 }
 ````
 
+## File: apps/backend/src/app/routes.ts
+````typescript
+import type { FastifyPluginCallback } from 'fastify';
+
+import emailsApiRoute from './modules/emails/routes/emails-api.route';
+import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
+import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
+import filesRoute from './modules/files/routes/files.route';
+import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
+import importsDownloadRoute from './modules/imports/routes/imports-download.route';
+import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
+import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
+import eventsPublicRoute from './modules/events/routes/events-public.route';
+import billingWebhookRoute from './modules/billing/routes/billing-webhook.route';
+import newslettersWebhookRoute from './modules/newsletters/routes/newsletters-webhook.route';
+import donationsWebhookRoute from './modules/donations/routes/donations-webhook.route';
+import zapierInboundRoute from './modules/zapier/zapier-inbound.route';
+
+export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
+  // --- Public REST routes (No Auth required) ---
+
+  // Register public web forms submission REST routes
+  fastify.register(webFormsPublicRoute, { prefix: '/api/forms' });
+
+  // Register public volunteer events REST routes
+  fastify.register(volunteerEventsPublicRoute, { prefix: '/api/events' });
+
+  // Register public RSVP event pages REST routes
+  fastify.register(eventsPublicRoute, { prefix: '/api/event-pages' });
+
+  // Register Stripe billing webhook route
+  fastify.register(billingWebhookRoute, { prefix: '/api/billing' });
+
+  // Register Stripe donations webhook route
+  fastify.register(donationsWebhookRoute, { prefix: '/api/donations' });
+
+  // Register SendGrid newsletters event webhook route
+  fastify.register(newslettersWebhookRoute, { prefix: '/api/newsletters' });
+
+  // Register Zapier inbound action routes (API key auth handled inside route)
+  fastify.register(zapierInboundRoute, { prefix: '/api/zapier' });
+
+  // Microsoft OAuth2 callback (must be a REST route — browser is redirected here by Microsoft)
+  fastify.register(msSyncCallbackRoute, { prefix: '/auth/ms' });
+
+  // Google OAuth2 callback (must be a REST route — browser is redirected here by Google)
+  fastify.register(googleSyncCallbackRoute, { prefix: '/auth/google' });
+
+  // Register exports download REST route (auth handled inside route via query token)
+  fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
+
+  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
+  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
+
+  // Register email attachments REST routes (auth handled inside route via token/query token)
+  fastify.register(emailsApiRoute, { prefix: '/api/emails' });
+
+  // Register files download REST route (auth handled inside route via token/query token)
+  fastify.register(filesRoute, { prefix: '/api/files' });
+
+  // Root health check endpoint
+  fastify.get('/', (_req, res) => res.send({ message: 'API healthy.' }));
+
+  done();
+};
+````
+
 ## File: apps/backend/src/test-setup/global-setup.ts
 ````typescript
 import { promises as fs } from 'node:fs';
@@ -25065,9659 +20243,6 @@ module.exports = [
 ];
 ````
 
-## File: apps/libs/STRUCTURE.md
-````markdown
-This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
-
-# File Summary
-
-## Purpose
-
-This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
-It is designed to be easily consumable by AI systems for analysis, code review,
-or other automated processes.
-
-## File Format
-
-The content is organized as follows:
-
-1. This summary section
-2. Repository information
-3. Directory structure
-4. Repository files (if enabled)
-5. Multiple file entries, each consisting of:
-   a. A header with the file path (## File: path/to/file)
-   b. The full contents of the file in a code block
-
-## Usage Guidelines
-
-- This file should be treated as read-only. Any changes should be made to the
-  original repository files, not this packed version.
-- When processing this file, use the file path to distinguish
-  between different files in the repository.
-- Be aware that this file may contain sensitive information. Handle it with
-  the same level of security as you would the original repository.
-
-## Notes
-
-- Some files may have been excluded based on .gitignore rules and Repomix's configuration
-- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
-- Only files matching these patterns are included: libs/**/\*, apps/**/_, scriptis/\*\*/_, libs/common/src/**/\*, libs/uxcommon/src/**/\*
-- Files matching these patterns are excluded: **/\*.test.ts, **/_.spec.ts, **/dist/**, **/build/**, **/node_modules/**, **/.git/**, **/package-lock.json, **/yarn.lock, \*\*/_.picture, **/\*.png, **/_.jpg, \*\*/_.jpeg, **/\*.svg, **/_.ico, apps/**, **/STRUCTURE.md, \*\*/_.spec.ts
-- Files matching patterns in .gitignore are excluded
-- Files matching default ignore patterns are excluded
-- Files are sorted by Git change count (files with more changes are at the bottom)
-
-# Directory Structure
-
-```
-libs/
-  common/
-    src/
-      lib/
-        schemas/
-          auth.schema.ts
-          companies.schema.ts
-          connections.schema.ts
-          core.schema.ts
-          emails.schema.ts
-          events.schema.ts
-          lists.schema.ts
-          marketing.schema.ts
-          persons.schema.ts
-          settings.schema.ts
-          tags.schema.ts
-          tasks.schema.ts
-          teams.schema.ts
-          volunteer.schema.ts
-          web-forms.schema.ts
-          workflows.schema.ts
-        auth.ts
-        emails.ts
-        jsend.ts
-        kysely.models.ts
-        models.ts
-        schema.ts
-        sla.ts
-        utils.ts
-      index.ts
-    eslint.config.cjs
-    project.json
-    tsconfig.json
-    tsconfig.lib.json
-    vite.config.ts
-  uxcommon/
-    src/
-      components/
-        address-autocomplete/
-          address-autocomplete.ts
-          googlePlacesAddressMapper.ts
-        address-form-group/
-          address-form-group.ts
-        alerts/
-          alert-service.ts
-          alerts.html
-          alerts.ts
-        autocomplete/
-          autocomplete.ts
-        breadcrumbs/
-          breadcrumbs.service.ts
-          breadcrumbs.ts
-        card/
-          card.ts
-        csv-import/
-          csv-import.html
-          csv-import.ts
-          csv.worker.ts
-        detail-header/
-          detail-header.ts
-        detail-item/
-          detail-item.ts
-        detail-layout/
-          detail-layout.ts
-        detail-row/
-          detail-row.ts
-        entity-overview/
-          entity-overview.ts
-        fields-selector/
-          fields-selector.html
-          fields-selector.ts
-        form-actions/
-          form-actions.html
-          form-actions.ts
-        grid-header/
-          grid-header.ts
-        icons/
-          attachment-icon.ts
-          icon.ts
-          icons.index.ts
-        input/
-          input.ts
-        not-found/
-          not-found.ts
-        profile-card/
-          profile-card.ts
-        public-link-panel/
-          public-link-panel.html
-          public-link-panel.ts
-        select/
-          select.ts
-        side-drawer/
-          side-drawer.ts
-        stat-card/
-          stat-card.ts
-        status-badge/
-          status-badge.ts
-        swap/
-          swap.ts
-        system-metadata/
-          system-metadata.ts
-        tabs/
-          tabs.ts
-        tags/
-          tagitem.css
-          tagitem.ts
-        textarea/
-          textarea.ts
-        toggle/
-          toggle.ts
-        user-avatar/
-          user-avatar.ts
-        confirm-dialog-host.html
-        confirm-dialog-host.ts
-        confirm-dialog.service.ts
-      directives/
-        animate-if.directive.ts
-        spin-on-click.directive.ts
-      mentions/
-        mention-controller.ts
-      pipes/
-        file-icon.pipe.ts
-        file-icon.util.ts
-        filesize.pipe.ts
-        mention.pipe.ts
-        sanitize-html.pipe.ts
-        svg-html-pipe.ts
-        timeago.pipe.ts
-      index.ts
-      loading-gate.ts
-      test-setup.ts
-    eslint.config.cjs
-    project.json
-    README.md
-    tsconfig.json
-    tsconfig.lib.json
-    tsconfig.spec.json
-    vite.config.mts
-```
-
-# Files
-
-## File: libs/common/src/lib/schemas/connections.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { idSchema, notesSchema } from './core.schema';
-
-export const RELATION_TYPES = [
-  'referred_by',
-  'referred_to',
-  'close_friend',
-  'family_member',
-  'spouse',
-  'colleague',
-  'org_affiliation',
-  'introduced_by',
-  'introduced_to',
-  'custom',
-] as const;
-
-export const RELATION_TYPE_LABELS: Record<(typeof RELATION_TYPES)[number], string> = {
-  referred_by: 'Referred By',
-  referred_to: 'Referred To',
-  close_friend: 'Close Friend',
-  family_member: 'Family Member',
-  spouse: 'Spouse / Partner',
-  colleague: 'Colleague',
-  org_affiliation: 'Org. Affiliation',
-  introduced_by: 'Introduced By',
-  introduced_to: 'Introduced To',
-  custom: 'Custom',
-};
-
-export const relationTypeSchema = z.enum(RELATION_TYPES);
-export type RelationTypeSchema = z.infer<typeof relationTypeSchema>;
-
-export const AddConnectionObj = z.object({
-  to_person_id: idSchema,
-  relation_type: relationTypeSchema,
-  custom_label: z.string().trim().min(1).max(100).nullable().optional(),
-  is_mutual: z.boolean().default(false).optional(),
-  notes: notesSchema,
-});
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-```
-
-## File: libs/common/src/lib/schemas/emails.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { isRegularFolderId, isSpecialFolderId } from '../emails';
-
-/**
- * The six storable folder ids (Sent/Spam/Trash/Drafts/Outbox/Inbox). The only
- * valid write targets for emails.folder_id — enforced here at the tRPC
- * boundary and by the chk_emails_folder_id CHECK constraint in the DB (there
- * is no email_folders table; folders are code-defined in EMAIL_FOLDERS).
- */
-export const regularFolderIdSchema = z.string().refine(isRegularFolderId, 'Unknown folder');
-
-/** Any folder id, including the virtual query-filter folders — valid for reads. */
-export const folderIdSchema = z.string().refine((v) => isRegularFolderId(v) || isSpecialFolderId(v), 'Unknown folder');
-
-export const EmailCommentObj = z.object({
-  id: z.string(),
-  email_id: z.string(),
-  author_id: z.string(),
-  comment: z.string(),
-  created_at: z.date(),
-});
-
-export const EmailDraftObj = z.object({
-  id: z.string(),
-  to_list: z.array(z.string()),
-  cc_list: z.array(z.string()),
-  bcc_list: z.array(z.string()),
-  subject: z.string().optional(),
-  body_html: z.string().optional(),
-  body_delta: z.unknown().optional(),
-  updated_at: z.date(),
-});
-
-export const EmailFolderObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  icon: z.string(),
-  sort_order: z.number(),
-  is_default: z.boolean(),
-  is_virtual: z.boolean(),
-});
-
-export const EmailObj = z.object({
-  id: z.string(),
-  folder_id: z.string(),
-  from_email: z.string().optional(),
-  from_name: z.string().optional(),
-  to_email: z.string().optional(),
-  subject: z.string().optional(),
-  preview: z.string().optional(),
-  assigned_to: z.string().optional(),
-  updated_at: z.date(),
-  date_sent: z.date().nullable().optional(),
-  is_favourite: z.boolean(),
-  attachment_count: z.number(),
-  has_attachment: z.boolean(),
-  status: z.enum(['open', 'closed']).nullable().default('open'),
-  is_read: z.boolean().optional(),
-  sender_first_name: z.string().nullish(),
-  sender_last_name: z.string().nullish(),
-});
-```
-
-## File: libs/common/src/lib/schemas/events.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-const slugSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(
-    /^(?=.*[a-z])[a-z0-9-]+$/,
-    'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-  );
-
-export const AddEventObj = z.object({
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema,
-  is_published: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_registration_confirmation: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const EventObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  slug: z.string(),
-  is_published: z.boolean(),
-  send_reminder: z.boolean(),
-  send_registration_confirmation: z.boolean(),
-});
-
-export const UpdateEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  slug: slugSchema.optional(),
-  is_published: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_registration_confirmation: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-});
-
-export const AddTicketTypeObj = z.object({
-  event_id: idSchema,
-  name: nameSchema('Ticket type name', 100),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').default(0),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).default(0).optional(),
-});
-
-export const TicketTypeObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  price_cents: z.number(),
-  capacity: z.number().nullable().optional(),
-  sort_order: z.number(),
-});
-
-export const UpdateTicketTypeObj = z.object({
-  name: nameSchema('Ticket type name', 100).optional(),
-  description: descriptionSchema(500),
-  price_cents: z.number().int().min(0, 'Price cannot be negative').optional(),
-  capacity: z.number().int().positive().nullable().optional(),
-  sort_order: z.number().int().min(0).optional(),
-});
-
-const registrationStatusEnum = z.enum(['registered', 'attended', 'no_show', 'cancelled']);
-
-export const AddRegistrationObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.default('registered').optional(),
-  notes: notesSchema,
-});
-
-export const RegistrationObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  ticket_type_id: z.string().nullable().optional(),
-  status: registrationStatusEnum,
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateRegistrationObj = z.object({
-  ticket_type_id: idSchema.nullable().optional(),
-  status: registrationStatusEnum.optional(),
-  checked_in_at: z.coerce.date().nullable().optional(),
-  notes: notesSchema,
-});
-```
-
-## File: libs/common/src/lib/schemas/lists.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { getAllOptions, nameSchema, descriptionSchema, idSchema } from './core.schema';
-
-export const AddListObj = z.object({
-  name: nameSchema('List name', 100),
-  description: descriptionSchema(1000),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  member_ids: z.array(idSchema).optional(),
-});
-
-export const ListsObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  object: z.enum(['people', 'households']),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const UpdateListObj = z.object({
-  name: nameSchema('List name', 100).optional(),
-  description: descriptionSchema(1000).optional(),
-  object: z.enum(['people', 'households']).optional(),
-  is_dynamic: z.boolean().optional(),
-  definition: z
-    .lazy(() => getAllOptions)
-    .nullable()
-    .optional(),
-  last_refreshed_at: z.coerce.date().nullable().optional(),
-  status: z.enum(['idle', 'refreshing', 'failed']).optional(),
-});
-
-export const ImportListItemObj = z.object({
-  id: idSchema,
-  fileName: z.string(),
-  source: z.string(),
-  tagName: z.string().nullable(),
-  tagMissing: z.boolean(),
-  createdAt: z.coerce.date(),
-  processedAt: z.coerce.date(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable(),
-  insertedCount: z.number().int().nonnegative(),
-  errorCount: z.number().int().nonnegative(),
-  skippedCount: z.number().int().nonnegative(),
-  rowCount: z.number().int().nonnegative(),
-  householdsCreated: z.number().int().nonnegative(),
-  contactCount: z.number().int().nonnegative(),
-  householdCount: z.number().int().nonnegative(),
-  companyCount: z.number().int().nonnegative(),
-  taskCount: z.number().int().nonnegative(),
-  status: z.string(),
-  errorMessage: z.string().nullable().optional(),
-  canDeleteContacts: z.boolean(),
-});
-```
-
-## File: libs/common/src/lib/schemas/marketing.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const marketingEmailTopLinkObj = z.object({
-  url: z.string(),
-  clicks: z.number().int().nonnegative(),
-});
-
-export const MarketingEmailObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('sent'),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative(),
-  delivered_count: z.number().int().nonnegative(),
-  bounce_count: z.number().int().nonnegative(),
-  open_rate: z.number(),
-  click_rate: z.number(),
-  unique_opens: z.number().int().nonnegative(),
-  unique_clicks: z.number().int().nonnegative(),
-  unsubscribe_count: z.number().int().nonnegative(),
-  spam_complaint_count: z.number().int().nonnegative(),
-  reply_count: z.number().int().nonnegative(),
-  send_date: z.coerce.date().nullable(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z
-    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
-    .nullable()
-    .optional(),
-  updated_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-});
-
-export const AddMarketingEmailObj = z.object({
-  name: z.string(),
-  status: z.enum(['draft', 'scheduled', 'paused', 'sent', 'archived']).default('draft').optional(),
-  subject: z.string().nullable().optional(),
-  preview_text: z.string().nullable().optional(),
-  audience_description: z.string().nullable().optional(),
-  target_lists: z.string().nullable().optional(),
-  segments: z.string().nullable().optional(),
-  total_recipients: z.number().int().nonnegative().default(0).optional(),
-  delivered_count: z.number().int().nonnegative().default(0).optional(),
-  bounce_count: z.number().int().nonnegative().default(0).optional(),
-  open_rate: z.number().min(0).max(100).default(0).optional(),
-  click_rate: z.number().min(0).max(100).default(0).optional(),
-  unique_opens: z.number().int().nonnegative().default(0).optional(),
-  unique_clicks: z.number().int().nonnegative().default(0).optional(),
-  unsubscribe_count: z.number().int().nonnegative().default(0).optional(),
-  spam_complaint_count: z.number().int().nonnegative().default(0).optional(),
-  reply_count: z.number().int().nonnegative().default(0).optional(),
-  send_date: z.coerce.date().nullable().optional(),
-  last_engagement_at: z.coerce.date().nullable().optional(),
-  summary: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  top_links: z.array(marketingEmailTopLinkObj).nullable().optional(),
-  attachments: z
-    .array(z.object({ name: z.string(), url: z.string().url().optional(), size: z.number().optional() }))
-    .nullable()
-    .optional(),
-});
-
-export const UpdateMarketingEmailObj = AddMarketingEmailObj.partial();
-```
-
-## File: libs/common/src/lib/schemas/settings.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const SettingsObj = z.object({
-  id: z.string().optional(),
-  tenant_id: z.string().optional(),
-  campaign_id: z.string().optional(),
-  createdby_id: z.string().optional(),
-  updatedby_id: z.string().optional(),
-  key: z.string().optional(),
-  value: z.unknown().optional(),
-});
-
-export const SettingsEntryObj = z.object({
-  key: z.string().min(1),
-  value: z.unknown(),
-});
-
-export const UpsertSettingsInputObj = z.object({
-  entries: z.array(SettingsEntryObj).min(1),
-});
-```
-
-## File: libs/common/src/lib/schemas/tags.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema } from './core.schema';
-
-export const AddTagObj = z.object({
-  name: nameSchema('Tag name', 50),
-  description: descriptionSchema(500),
-  color: z
-    .string()
-    .trim()
-    .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
-    .nullable()
-    .optional(),
-  type: z.enum(['tag', 'issue']).default('tag').optional(),
-});
-
-export const UpdateTagObj = z.object({
-  name: nameSchema('Tag name', 50).optional(),
-  description: descriptionSchema(500).optional(),
-  color: z
-    .string()
-    .trim()
-    .regex(/^#([0-9a-fA-F]{6})$/, 'Colour must be a hex value like #ff0000')
-    .nullable()
-    .optional(),
-  type: z.enum(['tag', 'issue']).optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/tasks.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, notesSchema, idSchema } from './core.schema';
-
-export const AddTaskObj = z.object({
-  name: nameSchema('Task name', 200),
-  details: z.string().trim().max(10000, 'Details too long').optional(),
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).default('todo').optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-
-export const TasksObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  details: z.string().optional(),
-  due_at: z.coerce.date().optional(),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).nullable().optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
-  completed_at: z.coerce.date().optional(),
-  position: z.number().int().optional(),
-  assigned_to: z.string().nullable().optional(),
-  team_id: z.string().nullable().optional(),
-});
-
-export const UpdateTaskObj = z.object({
-  name: nameSchema('Task name', 200).optional(),
-  details: notesSchema,
-  due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
-  completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  position: z.number().int().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  team_id: idSchema.or(z.literal('')).nullable().optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/teams.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema, idSchema } from './core.schema';
-
-export const AddTeamObj = z.object({
-  name: nameSchema('Name', 100),
-  description: descriptionSchema(1000),
-  team_captain_id: idSchema.or(z.literal('')).nullable().optional(),
-  team_lead_user_id: idSchema.or(z.literal('')).nullable().optional(),
-  volunteer_ids: z.array(idSchema).optional(),
-  list_ids: z.array(idSchema).optional(),
-});
-
-export const UpdateTeamObj = z.object({
-  name: nameSchema('Name', 100).nullable(),
-  description: descriptionSchema(1000),
-  team_captain_id: idSchema.or(z.literal('')).nullable().optional(),
-  team_lead_user_id: idSchema.or(z.literal('')).nullable().optional(),
-  volunteer_ids: z.array(idSchema).optional(),
-  list_ids: z.array(idSchema).optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/volunteer.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, idSchema, descriptionSchema, notesSchema } from './core.schema';
-
-export const AddVolunteerEventObj = z.object({
-  name: nameSchema('Event name', 200),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'Start date & time is required' }),
-  ),
-  end_time: z.preprocess(
-    (val) => (val === '' || val === null ? undefined : val),
-    z.coerce.date({ error: 'End date & time is required' }),
-  ),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  is_private: z.boolean().default(false).optional(),
-  send_reminder: z.boolean().default(true).optional(),
-  send_signup_confirmation: z.boolean().default(true).optional(),
-  send_volunteer_alert: z.boolean().default(true).optional(),
-  fields: z.array(z.string()).optional(),
-  slug: z
-    .string()
-    .trim()
-    .min(1)
-    .max(200)
-    .regex(
-      /^(?=.*[a-z])[a-z0-9-]+$/,
-      'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-    ),
-});
-
-export const VolunteerEventsObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  location_address: z.string().nullable().optional(),
-  start_time: z.coerce.date(),
-  end_time: z.coerce.date(),
-  capacity: z.number().nullable().optional(),
-  contact_email: z.string().nullable().optional(),
-  contact_phone: z.string().nullable().optional(),
-  is_private: z.boolean(),
-  send_reminder: z.boolean(),
-  send_signup_confirmation: z.boolean().default(true),
-  send_volunteer_alert: z.boolean().default(true),
-  slug: z.string(),
-});
-
-export const UpdateVolunteerEventObj = z.object({
-  name: nameSchema('Event name', 200).optional(),
-  description: descriptionSchema(2000),
-  location_address: z.string().trim().max(500, 'Location address is too long').nullable().optional(),
-  start_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'Start date & time is required' }),
-    )
-    .optional(),
-  end_time: z
-    .preprocess(
-      (val) => (val === '' || val === null ? undefined : val),
-      z.coerce.date({ error: 'End date & time is required' }),
-    )
-    .optional(),
-  capacity: z.number().int().positive().nullable().optional().or(z.literal('')),
-  contact_email: z.string().trim().max(255).nullable().optional(),
-  contact_phone: z.string().trim().max(50).nullable().optional(),
-  is_private: z.boolean().optional(),
-  send_reminder: z.boolean().optional(),
-  send_signup_confirmation: z.boolean().optional(),
-  send_volunteer_alert: z.boolean().optional(),
-  fields: z.array(z.string()).optional(),
-  slug: z
-    .string()
-    .trim()
-    .min(1)
-    .max(200)
-    .regex(
-      /^(?=.*[a-z])[a-z0-9-]+$/,
-      'Slug must contain at least one letter and can only contain lowercase letters, numbers, and hyphens',
-    )
-    .optional(),
-});
-
-export const AddVolunteerShiftObj = z.object({
-  event_id: idSchema,
-  person_id: idSchema,
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).default('signed_up').optional(),
-  hours_worked: z.number().min(0).max(24).nullable().optional(),
-  notes: notesSchema,
-});
-
-export const VolunteerShiftsObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  event_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']),
-  hours_worked: z.number().nullable().optional(),
-  notes: z.string().nullable().optional(),
-});
-
-export const UpdateVolunteerShiftObj = z.object({
-  status: z.enum(['signed_up', 'attended', 'no_show', 'cancelled']).optional(),
-  hours_worked: z.number().min(0).max(24).nullable().optional(),
-  notes: notesSchema,
-});
-```
-
-## File: libs/common/src/lib/schemas/workflows.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const WorkflowObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable().optional(),
-  trigger_type: z
-    .enum([
-      'volunteer_signup',
-      'manual',
-      'tag_added',
-      'web_form_submitted',
-      'volunteer_shift_status',
-      'contact_created',
-      'list_joined',
-      'payment_event',
-      'new_subscriber',
-      'new_unsubscriber',
-    ])
-    .default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft'),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowObj = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  description: z.string().nullable().optional(),
-  trigger_type: z
-    .enum([
-      'volunteer_signup',
-      'manual',
-      'tag_added',
-      'web_form_submitted',
-      'volunteer_shift_status',
-      'contact_created',
-      'list_joined',
-      'payment_event',
-      'new_subscriber',
-      'new_unsubscriber',
-    ])
-    .default('manual'),
-  trigger_event_id: z.string().nullable().optional(),
-  status: z.enum(['draft', 'active', 'paused']).default('draft').optional(),
-});
-
-export const UpdateWorkflowObj = AddWorkflowObj.partial();
-
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-
-export const WorkflowStepObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  step_number: z.number().int().positive(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days'),
-  subject: z.string().min(1, 'Subject is required'),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-
-export const AddWorkflowStepObj = z.object({
-  step_number: z.number().int().positive(),
-  delay_days: z.number().int().nonnegative(),
-  delay_unit: z.enum(['days', 'hours']).default('days').optional(),
-  subject: z.string().min(1, 'Subject is required'),
-  preview_text: z.string().nullable().optional(),
-  html_content: z.string().nullable().optional(),
-  plain_text_content: z.string().nullable().optional(),
-});
-
-export const UpdateWorkflowStepObj = AddWorkflowStepObj.partial();
-
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-
-export const WorkflowEnrollmentObj = z.object({
-  id: z.string(),
-  tenant_id: z.string(),
-  workflow_id: z.string(),
-  person_id: z.string(),
-  status: z.enum(['active', 'completed', 'cancelled']).default('active'),
-  current_step_number: z.number().int().nonnegative(),
-  next_run_at: z.coerce.date().nullable().optional(),
-  enrolled_at: z.coerce.date(),
-  created_at: z.coerce.date(),
-  updated_at: z.coerce.date(),
-});
-```
-
-## File: libs/common/src/lib/emails.ts
-
-```typescript
-// ---------- Public compatibility interface (loose) ----------
-// ---------- Strict types for compile-time guarantees ----------
-interface EmailFolderBase {
-  icon: string;
-  id: string;
-  is_default: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
-
-export interface EmailFolderConfig {
-  code?: string; // optional/loose for compatibility
-  icon: string;
-  id: string;
-  is_default: boolean;
-  is_virtual: boolean;
-  name: string;
-  sort_order: number;
-  is_hidden?: boolean;
-}
-
-export interface RealEmailFolder extends EmailFolderBase {
-  code?: never; // forbidden on real folders
-  is_virtual: false;
-}
-
-export interface VirtualEmailFolder extends EmailFolderBase {
-  code: string; // required when virtual
-  is_virtual: true;
-}
-
-// ---------- Derived types ----------
-type Folder = (typeof EMAIL_FOLDERS)[number];
-
-type OnlyReal = Extract<Folder, { is_virtual: false }>;
-
-type OnlyVirtual = Extract<Folder, { is_virtual: true }>;
-
-// All folders (merged, exact keys/ids)
-export type AllFolderKey = keyof typeof SPECIAL_FOLDERS | keyof typeof REGULAR_FOLDERS;
-
-export type AllFoldersMap = typeof SPECIAL_FOLDERS & typeof REGULAR_FOLDERS;
-
-export type EmailStatus = 'open' | 'closed';
-
-export type HasRow = {
-  email_id: string;
-  has: boolean;
-};
-
-export type RegularFolderId = OnlyReal['id']; // '7' | '3' | '4' | '5'
-
-export type RegularFolderKey = Uppercase<RegularFolderName>; // 'DRAFTS' | 'SENT' | 'SPAM' | 'TRASH'
-
-export type RegularFolderName = OnlyReal['name']; // 'Drafts' | 'Sent' | 'Spam' | 'Trash'
-
-export type ServerEmail = {
-  assigned_to?: string | null;
-  attachment_count?: number | string | bigint | null;
-  folder_id: string | number;
-  from_email?: string | null;
-  is_read?: boolean;
-
-  // any of these might be present depending on endpoint:
-  has_attachment?: boolean | null;
-  id: string | number;
-  is_favourite: boolean;
-  preview?: string | null;
-  status?: string;
-  subject?: string | null;
-  to_email?: string | null;
-  updated_at: string | Date;
-  date_sent?: string | Date | null;
-  sender_first_name?: string | null;
-  sender_last_name?: string | null;
-};
-
-export type SpecialFolderId = OnlyVirtual['id'];
-
-export type SpecialFolderKey = OnlyVirtual['code'];
-
-export type StrictEmailFolderConfig = VirtualEmailFolder | RealEmailFolder;
-
-function createRegularFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type RegularFolder = Extract<F[number], { is_virtual: false }>;
-  type FolderKey = Uppercase<RegularFolder['name'] & string>;
-  type FolderId<K extends FolderKey> = Extract<RegularFolder, { name: Capitalize<Lowercase<K>> }>['id'];
-
-  const entries = folders
-    .filter((f): f is RegularFolder => !f.is_virtual)
-    .map((f) => [f.name.toUpperCase() as FolderKey, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [K in FolderKey]: FolderId<K> };
-}
-
-function createSpecialFolders<const F extends readonly StrictEmailFolderConfig[]>(folders: F) {
-  type VirtualFolder = Extract<F[number], { is_virtual: true }>;
-  type FolderCode = VirtualFolder extends { code: infer C extends string } ? C : never;
-  type FolderId<Code extends string> = Extract<VirtualFolder, { code: Code }>['id'];
-
-  const entries = folders.filter((f): f is VirtualFolder => f.is_virtual).map((f) => [f.code, f.id] as const);
-
-  return Object.freeze(Object.fromEntries(entries)) as { readonly [P in FolderCode]: FolderId<P> };
-}
-
-export const isRegularFolderId = (id: string): id is RegularFolderId =>
-  Object.values(REGULAR_FOLDERS).includes(id as RegularFolderId);
-
-// Optional runtime type guards
-export const isSpecialFolderId = (id: string): id is SpecialFolderId =>
-  Object.values(SPECIAL_FOLDERS).includes(id as SpecialFolderId);
-
-// ---------- Configuration (validated against STRICT type) ----------
-export const EMAIL_FOLDERS = [
-  // Virtual
-  {
-    id: '8',
-    name: 'Unassigned',
-    icon: 'inbox',
-    sort_order: 1,
-    is_default: false,
-    is_virtual: true,
-    code: 'UNASSIGNED',
-  },
-  {
-    id: '6',
-    name: 'Assigned to me',
-    icon: 'user-circle',
-    sort_order: 2,
-    is_default: true,
-    is_virtual: true,
-    code: 'ASSIGNED_TO_ME',
-  },
-  { id: '9', name: 'Favourites', icon: 'star', sort_order: 3, is_default: false, is_virtual: true, code: 'FAVOURITES' },
-  {
-    id: '1',
-    name: 'All Open',
-    icon: 'document-duplicate',
-    sort_order: 4,
-    is_default: false,
-    is_virtual: true,
-    code: 'ALL_OPEN',
-  },
-  {
-    id: '2',
-    name: 'Completed',
-    icon: 'document-check',
-    sort_order: 5,
-    is_default: false,
-    is_virtual: true,
-    code: 'CLOSED',
-  },
-
-  // Real
-  { id: '11', name: 'Inbox', icon: 'inbox', sort_order: 6, is_default: false, is_virtual: false },
-  { id: '7', name: 'Drafts', icon: 'document', sort_order: 7, is_default: false, is_virtual: false },
-  { id: '10', name: 'Outbox', icon: 'clock', sort_order: 8, is_default: false, is_virtual: false },
-  { id: '3', name: 'Sent', icon: 'paper-airplane', sort_order: 9, is_default: false, is_virtual: false },
-  { id: '5', name: 'Trash', icon: 'trash', sort_order: 10, is_default: false, is_virtual: false },
-  { id: '4', name: 'Spam', icon: 'exclamation-triangle', sort_order: 11, is_default: false, is_virtual: false },
-] as const satisfies StrictEmailFolderConfig[];
-
-// Real-only (exact keys/ids)
-export const REGULAR_FOLDERS = createRegularFolders(EMAIL_FOLDERS);
-
-// ---------- Exposed constants ----------
-
-// Virtual-only (exact keys/ids)
-export const SPECIAL_FOLDERS = createSpecialFolders(EMAIL_FOLDERS);
-export const ALL_FOLDERS: AllFoldersMap = { ...SPECIAL_FOLDERS, ...REGULAR_FOLDERS } as const;
-
-// Useful helpers
-export const ALL_FOLDER_IDS = EMAIL_FOLDERS.map((f) => f.id) as ReadonlyArray<Folder['id']>;
-export const FOLDER_BY_ID = Object.freeze(Object.fromEntries(EMAIL_FOLDERS.map((f) => [f.id, f]))) as Readonly<
-  Record<Folder['id'], Folder>
->;
-```
-
-## File: libs/common/src/lib/jsend.ts
-
-```typescript
-export interface JSendErrorInterface {
-  code?: string | number;
-  message: string;
-  status: 'error';
-}
-
-export interface JSendFailInterface<E extends object = Record<string, unknown>> {
-  data: E;
-  status: 'fail';
-}
-
-export interface JSendSuccessInterface<T> {
-  data: T;
-  status: 'success';
-}
-
-export class JSendError extends Error {
-  public override name = 'JSendServerError';
-
-  constructor(
-    public readonly messageText: string,
-    public readonly code?: string | number,
-    public readonly statusCode: number = 500,
-  ) {
-    super(messageText || 'Server error');
-  }
-}
-
-export class JSendFail<E extends object = Record<string, unknown>> extends Error {
-  public override name = 'JSendFailError';
-
-  constructor(
-    public readonly data: E,
-    public readonly statusCode: number = 400,
-  ) {
-    super('Request failed');
-  }
-}
-
-export type JSend<T = unknown, E extends object = Record<string, unknown>> =
-  | JSendSuccessInterface<T>
-  | JSendFailInterface<E>
-  | JSendErrorInterface;
-
-export type JSendStatus = 'success' | 'fail' | 'error';
-
-// Helpful status mapping (useful in backend)
-export function httpStatusForJSend(obj: JSend): number {
-  if (jsend.isSuccess(obj)) return 200;
-  if (jsend.isFail(obj)) return 400; // choose per-case if needed
-  return 500;
-}
-
-export const jsend = {
-  success<T>(data: T): JSendSuccessInterface<T> {
-    return { status: 'success', data };
-  },
-  fail<E extends object = Record<string, unknown>>(data: E): JSendFailInterface<E> {
-    return { status: 'fail', data };
-  },
-  error(message: string, code?: string | number): JSendErrorInterface {
-    return {
-      status: 'error',
-      message,
-      ...(code !== undefined ? { code } : {}),
-    };
-  },
-
-  isSuccess<T = unknown>(x: unknown): x is JSendSuccessInterface<T> {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'success' &&
-      'data' in x
-    );
-  },
-  isFail<E extends object = Record<string, unknown>>(x: unknown): x is JSendFailInterface<E> {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'fail' &&
-      'data' in x
-    );
-  },
-  isError(x: unknown): x is JSendErrorInterface {
-    return (
-      typeof x === 'object' &&
-      x !== null &&
-      'status' in x &&
-      (x as Record<string, unknown>)['status'] === 'error' &&
-      'message' in x
-    );
-  },
-
-  unwrap<T>(res: JSend<T>): T {
-    if (res.status === 'success') return res.data;
-    if (res.status === 'fail') throw new JSendFail(res.data, 400);
-    if (res.status === 'error') throw new JSendError(res.message, res.code, 500);
-    throw new Error('Unknown JSend shape');
-  },
-};
-```
-
-## File: libs/common/src/lib/schema.ts
-
-```typescript
-export * from './schemas/core.schema';
-export * from './schemas/auth.schema';
-export * from './schemas/tags.schema';
-export * from './schemas/lists.schema';
-export * from './schemas/teams.schema';
-export * from './schemas/emails.schema';
-export * from './schemas/marketing.schema';
-export * from './schemas/persons.schema';
-export * from './schemas/settings.schema';
-export * from './schemas/tasks.schema';
-export * from './schemas/volunteer.schema';
-export * from './schemas/web-forms.schema';
-export * from './schemas/workflows.schema';
-export * from './schemas/companies.schema';
-export * from './schemas/events.schema';
-export * from './schemas/connections.schema';
-```
-
-## File: libs/common/src/lib/sla.ts
-
-```typescript
-export function calculateWorkingTimeMs(
-  startDate: Date,
-  endDate: Date,
-  workingDays: number[],
-  workingHoursStart: string,
-  workingHoursEnd: string,
-): number {
-  if (startDate.getTime() >= endDate.getTime()) {
-    return 0;
-  }
-
-  // Parse start hour/minute
-  const [startHour = NaN, startMin = NaN] = workingHoursStart.split(':').map(Number);
-  // Parse end hour/minute
-  const [endHour = NaN, endMin = NaN] = workingHoursEnd.split(':').map(Number);
-
-  if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin) || workingDays.length === 0) {
-    // Return standard elapsed time as fallback if settings are malformed
-    return endDate.getTime() - startDate.getTime();
-  }
-
-  const current = new Date(startDate);
-  current.setHours(0, 0, 0, 0);
-
-  const endLimit = new Date(endDate);
-  endLimit.setHours(23, 59, 59, 999);
-
-  let totalMs = 0;
-
-  while (current.getTime() <= endLimit.getTime()) {
-    const dayOfWeek = current.getDay();
-
-    if (workingDays.includes(dayOfWeek)) {
-      const workStart = new Date(current);
-      workStart.setHours(startHour, startMin, 0, 0);
-
-      const workEnd = new Date(current);
-      workEnd.setHours(endHour, endMin, 0, 0);
-
-      const actualStart = Math.max(startDate.getTime(), workStart.getTime());
-      const actualEnd = Math.min(endDate.getTime(), workEnd.getTime());
-
-      const overlap = actualEnd - actualStart;
-      if (overlap > 0) {
-        totalMs += overlap;
-      }
-    }
-
-    // Step to the next day
-    current.setDate(current.getDate() + 1);
-  }
-
-  return totalMs;
-}
-```
-
-## File: libs/common/tsconfig.json
-
-```json
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "module": "es2022",
-    "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true
-  },
-  "files": [],
-  "include": [],
-  "references": [
-    {
-      "path": "./tsconfig.lib.json"
-    }
-  ]
-}
-```
-
-## File: libs/common/tsconfig.lib.json
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../dist/out-tsc",
-    "declaration": true,
-    "types": ["node"]
-  },
-  "include": ["src/**/*.ts"],
-  "exclude": ["jest.config.ts", "src/**/*.spec.ts", "src/**/*.test.ts"]
-}
-```
-
-## File: libs/uxcommon/src/components/address-autocomplete/address-autocomplete.ts
-
-```typescript
-import { Component, ElementRef, OnInit, ViewChild, inject, input, output } from '@angular/core';
-import { Loader } from '@googlemaps/js-api-loader';
-import { AddressType } from '../../../../common/src/lib/kysely.models';
-import { parseAddress } from './googlePlacesAddressMapper';
-
-@Component({
-  selector: 'pc-address-autocomplete',
-  standalone: true,
-  template: `
-    <div class="relative w-full">
-      <input
-        #inputEl
-        type="text"
-        class="input w-full"
-        [placeholder]="placeholder()"
-        [disabled]="disabled()"
-        autocomplete="one-time-code"
-      />
-    </div>
-  `,
-})
-export class AddressAutocomplete implements OnInit {
-  private readonly loader = inject(Loader);
-
-  public readonly disabled = input<boolean>(false);
-  public readonly placeholder = input<string>('Start typing an address…');
-  public readonly regionCodes = input<string[]>(['ca']);
-
-  public readonly addressSelected = output<AddressType>();
-
-  private inputElement: HTMLInputElement | null = null;
-  private isLibraryLoaded = false;
-  private isAutocompleteInitialized = false;
-
-  @ViewChild('inputEl')
-  set inputEl(elRef: ElementRef | undefined) {
-    if (elRef) {
-      this.inputElement = elRef.nativeElement;
-      this.tryInitAutocomplete();
-    }
-  }
-
-  public ngOnInit() {
-    void this.initialize();
-  }
-
-  private async initialize() {
-    try {
-      await this.loader.importLibrary('places');
-      this.isLibraryLoaded = true;
-      this.tryInitAutocomplete();
-    } catch (err) {
-      console.error('Failed to load Google Maps Places library', err);
-    }
-  }
-
-  private tryInitAutocomplete() {
-    if (
-      this.isAutocompleteInitialized ||
-      !this.inputElement ||
-      !this.isLibraryLoaded ||
-      typeof google === 'undefined' ||
-      !google.maps ||
-      !google.maps.places
-    ) {
-      return;
-    }
-
-    const options: google.maps.places.AutocompleteOptions = {
-      componentRestrictions: { country: this.regionCodes() },
-      types: ['geocode'],
-    };
-
-    const autocomplete = new google.maps.places.Autocomplete(this.inputElement, options);
-    this.isAutocompleteInitialized = true;
-
-    autocomplete.addListener('place_changed', () => {
-      const place = autocomplete.getPlace();
-      if (place) {
-        const address = parseAddress(place);
-        this.addressSelected.emit(address);
-      }
-    });
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/address-autocomplete/googlePlacesAddressMapper.ts
-
-```typescript
-import type { AddressType } from '../../../../common/src/lib/kysely.models';
-
-type AddressTypeMapInterface = {
-  [key in keyof AddressType]: string[];
-};
-
-export function parseAddress(place: google.maps.places.PlaceResult): AddressType {
-  const address: AddressType = {};
-
-  if (!place.address_components || place.address_components.length === 0) {
-    return address;
-  }
-
-  const address_components: google.maps.GeocoderAddressComponent[] = place.address_components;
-
-  address_components.forEach((component) => {
-    for (const mapKey in googleAddressToAddressTypeMap) {
-      const key = mapKey as keyof typeof googleAddressToAddressTypeMap;
-      if (googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]!) !== -1) {
-        (address[key] as string) = key === 'country' ? component.short_name : component.long_name;
-      }
-    }
-  });
-
-  address.formatted_address = place.formatted_address;
-  address.lat = place.geometry?.location?.lat();
-  address.lng = place.geometry?.location?.lng();
-  address.type = place.types && place.types[0];
-
-  return address;
-}
-
-export function parsePlace(place: google.maps.places.Place): AddressType {
-  const address: AddressType = {};
-
-  const addressComponents = place.addressComponents;
-  if (!addressComponents || addressComponents.length === 0) {
-    return address;
-  }
-
-  addressComponents.forEach((component: any) => {
-    for (const mapKey in googleAddressToAddressTypeMap) {
-      const key = mapKey as keyof typeof googleAddressToAddressTypeMap;
-      if (component.types && googleAddressToAddressTypeMap[key]?.indexOf(component.types[0]) !== -1) {
-        (address[key] as string) = key === 'country' ? component.shortText : component.longText;
-      }
-    }
-  });
-
-  address.formatted_address = place.formattedAddress ?? undefined;
-  address.lat = place.location?.lat() ?? undefined;
-  address.lng = place.location?.lng() ?? undefined;
-  address.type = (place.types && place.types[0]) ?? undefined;
-
-  return address;
-}
-
-const googleAddressToAddressTypeMap: Partial<AddressTypeMapInterface> = {
-  apt: ['subpremise'],
-  street_num: ['street_number'],
-  zip: ['postal_code'],
-  street1: ['street_address', 'route'],
-  city: [
-    'locality',
-    'sublocality',
-    'sublocality_level_1',
-    'sublocality_level_2',
-    'sublocality_level_3',
-    'sublocality_level_4',
-  ],
-  state: [
-    'administrative_area_level_1',
-    'administrative_area_level_2',
-    'administrative_area_level_3',
-    'administrative_area_level_4',
-    'administrative_area_level_5',
-  ],
-  country: ['country'],
-};
-```
-
-## File: libs/uxcommon/src/components/address-form-group/address-form-group.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Input as PcInput } from '../input/input';
-
-@Component({
-  selector: 'pc-address-form-group',
-  imports: [PcInput],
-  template: `
-    <div class="flex flex-col gap-4">
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="Unit / Apt" [formField]="form().apt"></pc-input>
-        <pc-input class="flex-1" placeholder="Street Number" [formField]="form().street_num"></pc-input>
-        <pc-input class="flex-2" placeholder="Street Name" [formField]="form().street1"></pc-input>
-      </div>
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="City" [formField]="form().city"></pc-input>
-        <pc-input class="flex-1" placeholder="State / Province" [formField]="form().state"></pc-input>
-        <pc-input class="flex-1" placeholder="Country" [formField]="form().country"></pc-input>
-      </div>
-      <div class="flex flex-col md:flex-row gap-3">
-        <pc-input class="flex-1" placeholder="Zip / Postal Code" [formField]="form().zip"></pc-input>
-        <pc-input class="flex-1" type="tel" placeholder="Home Phone" [formField]="form().home_phone"></pc-input>
-        <div class="flex-1"></div>
-      </div>
-    </div>
-  `,
-})
-export class AddressFormGroup {
-  public form = input.required<any>();
-}
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.ts
-
-```typescript
-import { Component, computed, inject, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
-
-import { ALERTTYPE, AlertService } from './alert-service';
-
-@Component({
-  selector: 'pc-alerts',
-  imports: [Icon, AnimateIfDirective],
-  templateUrl: './alerts.html',
-})
-export class Alerts {
-  protected alertSvc = inject(AlertService);
-
-  public position = input<'top' | 'bottom' | 'relative'>('bottom');
-
-  protected OKBtnClick(id: string): void {
-    this.alertSvc.OKBtnCallback(id);
-    this.alertSvc.dismiss(id);
-  }
-
-  protected readonly alerts = computed(() => {
-    const list = this.alertSvc.alertList();
-    return this.position() === 'top' ? list.slice().reverse() : list;
-  });
-
-  protected getEnterAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-down' : 'animate-up';
-  }
-
-  protected getExitAnim(): string {
-    return this.isPositionTop() || this.isPositionRelative() ? 'animate-exit-up' : 'animate-exit-down';
-  }
-
-  protected icon(type: ALERTTYPE) {
-    return type === 'success'
-      ? 'check-circle'
-      : type === 'warning'
-        ? 'exclamation-triangle'
-        : type === 'error'
-          ? 'x-circle'
-          : 'exclamation-circle';
-  }
-
-  protected isPositionBottom() {
-    return this.position() === 'bottom';
-  }
-
-  protected isPositionRelative() {
-    return this.position() === 'relative';
-  }
-
-  protected isPositionTop() {
-    return this.position() === 'top';
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/autocomplete/autocomplete.ts
-
-```typescript
-import { Component, ElementRef, input, output, signal, viewChild } from '@angular/core';
-import { debounce } from '../../../../common/src';
-
-@Component({
-  selector: 'pc-autocomplete',
-  template: ` <input
-      #inputEl
-      type="text"
-      class="input w-full"
-      [placeholder]="placeholder()"
-      (keyup)="onKey($event)"
-      (input)="onInput($event)"
-      (focus)="showAutoCompleteList()"
-      (blur)="hideAutoCompleteList()"
-    />
-    @if (matches().length && !hideAutoComplete()) {
-      <ul class="w-full rounded-none bordered card shadow-lg text-gray-500 font-light">
-        @for (match of matches(); track match) {
-          <li class="tet-xs cursor-pointer hover:bg-gray-200 pl-4" (click)="reset(match)">
-            {{ match.charAt(0).toUpperCase() + match.slice(1) }}
-          </li>
-        }
-      </ul>
-    }`,
-})
-export class AutoComplete {
-  protected readonly matches = signal<string[]>([]);
-
-  protected hideAutoComplete = signal(true);
-
-  public readonly valueChange = output<string>();
-
-  public filterSvc = input<TFILTER | null>(null);
-  public readonly inputRef = viewChild.required<ElementRef<HTMLInputElement>>('inputEl');
-
-  public placeholder = input('');
-
-  private readonly debouncedFilter = debounce(async (key: string) => {
-    const filterSvc = this.filterSvc();
-    if (!filterSvc || !key?.length) {
-      this.matches.set([]);
-      return;
-    }
-    const matches = await filterSvc.filter(key);
-    this.matches.set(matches);
-  }, 250);
-
-  protected onInput(event: Event) {
-    const target = event.target as HTMLInputElement;
-    this.debouncedFilter(target.value || '');
-  }
-
-  protected hideAutoCompleteList() {
-    setTimeout(() => this.hideAutoComplete.set(true), 200);
-  }
-
-  protected onKey(event: KeyboardEvent) {
-    const target = event.target as HTMLInputElement;
-    if (event.key === 'Enter' || event.key === ',') {
-      this.reset(target.value);
-    }
-  }
-
-  protected reset(key: string) {
-    this.valueChange.emit(key);
-    this.matches.set([]);
-    if (this.inputRef()?.nativeElement) {
-      this.inputRef().nativeElement.value = '';
-    }
-  }
-
-  protected showAutoCompleteList() {
-    this.hideAutoComplete.set(false);
-  }
-}
-
-type TFILTER = {
-  filter: (arg0: string) => Promise<string[]>;
-};
-```
-
-## File: libs/uxcommon/src/components/card/card.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-card',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 border border-base-300 shadow-md overflow-hidden w-full">
-      <div class="card-body p-6 space-y-4">
-        @if (title() || icon() || subtitle()) {
-          <div class="flex items-start justify-between gap-4 pb-2">
-            <div class="flex items-start gap-2.5">
-              @if (icon()) {
-                <pc-icon [name]="icon()!" class="text-primary mt-0.5" [size]="5"></pc-icon>
-              }
-              <div>
-                @if (title()) {
-                  <h3 class="font-bold text-lg text-base-content leading-tight">{{ title() }}</h3>
-                }
-                @if (subtitle()) {
-                  <p class="text-xs text-base-content/60 mt-0.5 leading-normal">{{ subtitle() }}</p>
-                }
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <ng-content select="[pc-card-actions]"></ng-content>
-            </div>
-          </div>
-          <div class="border-b border-base-200 -mt-2"></div>
-        }
-
-        <div class="space-y-4">
-          <ng-content></ng-content>
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class Card {
-  public title = input<string>();
-  public subtitle = input<string>();
-  public icon = input<PcIconNameType>();
-}
-```
-
-## File: libs/uxcommon/src/components/csv-import/csv-import.html
-
-```html
-<dialog class="modal" [open]="open()" (close)="onCloseDialog()">
-  <div class="modal-box max-w-5xl">
-    <h3 class="text-lg font-bold mb-3">{{ title() }}</h3>
-    <div class="grid gap-4">
-      <div class="grid gap-2">
-        <label class="font-semibold">1) Choose CSV file</label>
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          (change)="onFileSelected($event)"
-          class="file-input file-input-bordered"
-        />
-        <p class="text-xs opacity-70">First row should contain headers. UTF-8 CSV supported.</p>
-      </div>
-
-      @if (parsing()) {
-      <div class="grid gap-2">
-        <progress class="progress w-full"></progress>
-        <span class="text-xs opacity-70" aria-live="polite">Reading and parsing the file...</span>
-      </div>
-      } @if (csvHeaders().length) {
-      <div class="grid gap-2">
-        <label class="font-semibold">2) Map CSV columns</label>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-          @for (hdr of csvHeaders(); track hdr; let idx = $index) {
-          <div class="grid grid-cols-2 gap-2 items-center">
-            <div class="truncate" [title]="hdr">{{ hdr }}</div>
-            <select
-              class="select select-bordered select-sm"
-              [ngModel]="mapping()[idx]"
-              (ngModelChange)="setMappingAt(idx, $event)"
-            >
-              <option value="">Skip</option>
-              @for (f of mappableFields(); track f) {
-              <option [value]="f">{{ f }}</option>
-              }
-            </select>
-          </div>
-          }
-        </div>
-      </div>
-      }
-
-      <!-- Optional extras slot provided by parent (e.g., tags) -->
-      <ng-content select="[pc-import-extras]"></ng-content>
-
-      @if (csvRows().length) {
-      <div class="grid gap-2">
-        <label class="font-semibold">Preview</label>
-        <div class="overflow-auto border rounded relative">
-          @if (parsing()) {
-          <div class="absolute inset-0 bg-base-100/70 grid place-items-center z-10">
-            <progress class="progress w-64"></progress>
-          </div>
-          }
-          <table class="table table-zebra table-xs">
-            <thead>
-              <tr>
-                @for (h of csvHeaders(); track h) {
-                <th>{{ h }}</th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (r of previewRows(); track r) {
-              <tr>
-                @for (h of csvHeaders(); track h) {
-                <td>{{ r[h] }}</td>
-                }
-              </tr>
-              }
-            </tbody>
-          </table>
-          <div class="flex items-center justify-end gap-2 p-2">
-            <button class="btn btn-xs" [disabled]="!canPrev()" (click)="prevPage()">Prev</button>
-            <span class="text-xs opacity-70">Page {{ pageIndex() + 1 }} of {{ totalPages() }}</span>
-            <button class="btn btn-xs" [disabled]="!canNext()" (click)="nextPage()">Next</button>
-          </div>
-        </div>
-      </div>
-      }
-
-      <div class="flex justify-end gap-2 mt-2">
-        <button class="btn" (click)="closeDialog()">Cancel</button>
-        <button class="btn btn-primary" [disabled]="!csvRows().length" (click)="onSubmit()">
-          <pc-icon name="cloud-arrow-up" />
-          Import
-        </button>
-      </div>
-    </div>
-  </div>
-</dialog>
-
-<!-- Summary Modal controlled by parent-provided summary input -->
-<dialog id="csvImportSummary" class="modal" [open]="submitted() && !!summary()" (close)="onSummaryClosed()">
-  <div class="modal-box">
-    @if (!!summary() && !summary()!.failed) {
-    <h3 class="text-lg font-bold mb-2">Import Summary</h3>
-    <ul class="menu bg-base-100 rounded-box p-2">
-      @if (!summary()!.queued) {
-      <li class="opacity-90"><span>Inserted: {{ summary()!.inserted }}</span></li>
-      <li class="opacity-90"><span>Errors: {{ summary()!.errors }}</span></li>
-      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
-      } @if (summary()!.tag) {
-      <li class="opacity-90"><span>Applied tag: {{ summary()!.tag }}</span></li>
-      } @if (summary()!.message) {
-      <li class="opacity-90 whitespace-pre-wrap text-xs"><span>{{ summary()!.message }}</span></li>
-      }
-    </ul>
-    } @else if (!!summary()) {
-    <h3 class="text-lg font-bold mb-2">Import Failed</h3>
-    <p class="py-2 font-light">{{ summary()!.message }}</p>
-    <ul class="menu bg-base-100 rounded-box p-2">
-      <li class="opacity-90"><span>Skipped: {{ summary()!.skipped }}</span></li>
-    </ul>
-    }
-    <div class="modal-action">
-      <form method="dialog">
-        <button class="btn" type="submit">OK</button>
-      </form>
-    </div>
-  </div>
-</dialog>
-```
-
-## File: libs/uxcommon/src/components/csv-import/csv-import.ts
-
-```typescript
-import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { AlertService } from '@uxcommon/components/alerts/alert-service';
-
-export type CsvImportSummary = {
-  inserted: number;
-  errors: number;
-  skipped: number;
-  failed?: boolean;
-  queued?: boolean;
-  message?: string;
-  tag?: string;
-};
-
-@Component({
-  selector: 'pc-csv-importer',
-  imports: [FormsModule, Icon],
-  templateUrl: './csv-import.html',
-})
-export class CsvImportComponent {
-  private readonly alerts = inject(AlertService);
-
-  // Inputs
-  public readonly title = input<string>('Import Data from CSV');
-  public readonly open = input<boolean>(false);
-  public readonly mappableFields = input<string[]>([]);
-  public readonly autoMapHeader = input<(h: string) => string>(() => '');
-  public readonly previewPageSize = input<number>(5);
-  public readonly summary = input<CsvImportSummary | null>(null);
-
-  // Outputs
-  public readonly submit = output<{ rows: Array<Record<string, string>>; skipped: number; fileName?: string | null }>();
-  public readonly close = output<void>();
-  public readonly closeSummary = output<void>();
-
-  // State signals
-  protected readonly parsing = signal(false);
-  protected readonly csvHeaders = signal<string[]>([]);
-  protected readonly csvRows = signal<Array<Record<string, string>>>([]);
-  protected readonly mapping = signal<string[]>([]);
-  protected readonly pageIndex = signal(0);
-  protected readonly submitted = signal(false);
-  protected readonly fileName = signal<string | null>(null);
-
-  private getNonEmptyMappedRows() {
-    const map = this.mapping();
-    const headers = this.csvHeaders();
-    const rows = this.csvRows();
-    const mapped = rows.map((row) => {
-      const result: Record<string, string> = {};
-      headers.forEach((h, idx) => {
-        const field = map[idx];
-        if (!field) return;
-        const raw = (row[h] ?? '').toString();
-        if (raw && !(field in result) && raw.trim().length > 0) result[field] = raw;
-      });
-      return result;
-    });
-    const nonEmpty = mapped.filter((r) => Object.keys(r).length > 0);
-    return { nonEmpty, skipped: mapped.length - nonEmpty.length };
-  }
-
-  protected readonly totalPages = computed(() => {
-    const total = Math.ceil((this.csvRows().length || 0) / this.previewPageSize());
-    return total || 1;
-  });
-  protected readonly canNext = computed(() => (this.pageIndex() + 1) * this.previewPageSize() < this.csvRows().length);
-  protected readonly canPrev = computed(() => this.pageIndex() > 0);
-
-  constructor() {
-    // Auto-map when headers first arrive
-    effect(() => {
-      const headers = this.csvHeaders();
-      if (!headers.length) return;
-      const auto = this.autoMapHeader();
-      const mapped = headers.map((h) => (typeof auto === 'function' ? auto(h) : ''));
-      this.mapping.set(mapped);
-    });
-    // Reset submitted flag whenever dialog is opened anew
-    effect(() => {
-      if (this.open()) {
-        this.submitted.set(false);
-      }
-    });
-  }
-
-  protected previewRows() {
-    const start = this.pageIndex() * this.previewPageSize();
-    const end = start + this.previewPageSize();
-    return this.csvRows().slice(start, end);
-  }
-
-  protected nextPage() {
-    if (this.canNext()) this.pageIndex.update((v) => v + 1);
-  }
-
-  protected prevPage() {
-    if (this.canPrev()) this.pageIndex.update((v) => v - 1);
-  }
-
-  protected setMappingAt(index: number, value: string) {
-    const m = [...this.mapping()];
-    m[index] = value;
-    this.mapping.set(m);
-  }
-
-  protected onFileSelected(ev: Event) {
-    const input = ev.target as HTMLInputElement;
-    const file = input?.files?.[0];
-    if (!file) return;
-
-    this.parsing.set(true);
-    this.fileName.set(file.name || null);
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = (reader.result as string) || '';
-      try {
-        const worker = new Worker(new URL('./csv.worker.ts', import.meta.url), { type: 'module' });
-        const handle = (e: MessageEvent) => {
-          const data: any = e.data || {};
-          if (data.type === 'result') {
-            this.csvHeaders.set(data.headers || []);
-            this.csvRows.set(data.rows || []);
-            this.pageIndex.set(0);
-            this.parsing.set(false);
-            worker.onmessage = null;
-            worker.terminate();
-          } else if (data.type === 'error') {
-            this.alerts.showError(data.message || 'Failed to parse CSV');
-            this.parsing.set(false);
-            worker.onmessage = null;
-            worker.terminate();
-          }
-        };
-        worker.onmessage = handle;
-        worker.postMessage({ type: 'parse', text });
-      } catch {
-        this.alerts.showError('Failed to parse CSV');
-        this.parsing.set(false);
-      }
-    };
-    reader.onerror = () => this.parsing.set(false);
-    reader.readAsText(file);
-  }
-
-  protected onSubmit() {
-    const { nonEmpty, skipped } = this.getNonEmptyMappedRows();
-    if (!nonEmpty.length) {
-      this.alerts.showError('Nothing to import. Please map at least one column.');
-      return;
-    }
-    this.submitted.set(true);
-    this.submit.emit({ rows: nonEmpty, skipped, fileName: this.fileName() });
-  }
-
-  protected requestClose() {
-    this.close.emit();
-  }
-
-  protected onCloseDialog() {
-    // Soft reset local state when dialog closes via native controls
-    this.csvHeaders.set([]);
-    this.csvRows.set([]);
-    this.mapping.set([]);
-    this.pageIndex.set(0);
-    this.parsing.set(false);
-    this.submitted.set(false);
-    this.fileName.set(null);
-    // Propagate close so parent can clear any summary state
-    this.close.emit();
-  }
-
-  protected onSummaryClosed() {
-    this.submitted.set(false);
-    this.closeSummary.emit();
-  }
-
-  protected closeDialog() {
-    // Close the hosting dialog element programmatically
-    const active = document.activeElement as HTMLElement | null;
-    const dlg = active?.closest('dialog') as HTMLDialogElement | null;
-    if (dlg) {
-      dlg.close();
-      return;
-    }
-    // Fallback: just emit close
-    this.close.emit();
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/detail-row/detail-row.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-row',
-  imports: [Icon],
-  template: `
-    <div
-      class="flex items-center justify-between p-2 rounded-lg bg-base-200/50 hover:bg-base-200 transition-colors text-sm w-full min-w-0 gap-3"
-    >
-      <div class="flex items-center gap-2 overflow-hidden min-w-0">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" [class]="iconClass() + ' flex-shrink-0'"></pc-icon>
-        }
-        <div class="truncate text-base-content min-w-0">
-          <ng-content></ng-content>
-        </div>
-      </div>
-
-      @if (actionIcon()) {
-        <button
-          class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-          [attr.data-tip]="actionTip()"
-          (click)="onActionClick($event)"
-        >
-          <pc-icon [name]="actionIcon()!" [size]="4"></pc-icon>
-        </button>
-      } @else {
-        <ng-content select="[pc-row-action]"></ng-content>
-      }
-    </div>
-  `,
-})
-export class DetailRow {
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconClass = input<string | null | undefined>('');
-  public actionIcon = input<PcIconNameType | null | undefined>();
-  public actionTip = input<string | null | undefined>('');
-
-  public actionClick = output<MouseEvent>();
-
-  protected onActionClick(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    this.actionClick.emit(event);
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/entity-overview/entity-overview.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { DatePipe } from '@angular/common';
-
-@Component({
-  selector: 'pc-entity-overview',
-  imports: [DatePipe],
-  template: `
-    <div class="card bg-base-200/50 border border-base-300 shadow-md">
-      <div class="card-body p-5 space-y-3">
-        <h4 class="font-bold text-sm text-base-content uppercase tracking-wider">{{ title() }}</h4>
-        <div class="text-xs text-base-content/75 space-y-2">
-          <ng-content select="[pc-overview-prefix]"></ng-content>
-
-          @if (createdAt()) {
-            <div class="flex justify-between">
-              <span>Created:</span>
-              <span class="font-semibold">{{ createdAt() | date: 'medium' }}</span>
-            </div>
-          }
-          @if (updatedAt()) {
-            <div class="flex justify-between">
-              <span>Last Updated:</span>
-              <span class="font-semibold">{{ updatedAt() | date: 'medium' }}</span>
-            </div>
-          }
-          @if (createdBy()) {
-            <div class="flex justify-between">
-              <span>Created By:</span>
-              <span class="font-semibold">{{ createdBy() }}</span>
-            </div>
-          }
-
-          <ng-content select="[pc-overview-suffix]"></ng-content>
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class EntityOverview {
-  public title = input<string>('Overview');
-  public createdAt = input<any>();
-  public updatedAt = input<any>();
-  public createdBy = input<string | null | undefined>();
-}
-```
-
-## File: libs/uxcommon/src/components/fields-selector/fields-selector.html
-
-```html
-<div class="space-y-0.5">
-  <!-- Email is always required and locked -->
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-not-allowed select-none">
-      <input type="checkbox" checked disabled class="checkbox checkbox-sm checkbox-primary" />
-      <span class="text-sm font-bold text-primary">Email Address</span>
-    </label>
-    <span class="badge badge-sm badge-outline text-[10px] font-bold">Required</span>
-  </div>
-
-  @for (field of allFields; track field.key) {
-  <div class="flex items-center justify-between py-1 px-2 hover:bg-base-200/50 rounded-lg transition-colors">
-    <label class="flex items-center gap-2.5 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        [checked]="isEnabled(field.key)"
-        (change)="toggleField(field.key)"
-        class="checkbox checkbox-sm checkbox-primary"
-      />
-      <span class="text-sm font-medium text-base-content/85">{{ field.label }}</span>
-    </label>
-    @if (isEnabled(field.key)) {
-    <button
-      type="button"
-      (click)="toggleRequired(field.key)"
-      class="btn btn-xs rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all"
-      [class.btn-primary]="isRequired(field.key)"
-      [class.btn-outline]="!isRequired(field.key)"
-    >
-      {{ isRequired(field.key) ? 'Required' : 'Optional' }}
-    </button>
-    }
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/fields-selector/fields-selector.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-
-const ALL_FIELDS: { key: string; label: string }[] = [
-  { key: 'first_name', label: 'First Name' },
-  { key: 'last_name', label: 'Last Name' },
-  { key: 'mobile', label: 'Mobile / Phone' },
-  { key: 'notes', label: 'Notes' },
-  { key: 'street1', label: 'Street Address' },
-  { key: 'city', label: 'City' },
-  { key: 'state', label: 'State / Province' },
-  { key: 'zip', label: 'Zip / Postal Code' },
-  { key: 'country', label: 'Country' },
-];
-
-@Component({
-  selector: 'pc-fields-selector',
-  templateUrl: './fields-selector.html',
-})
-export class FieldsSelector {
-  readonly selectedFields = input.required<string[]>();
-  readonly fieldsChange = output<string[]>();
-
-  protected readonly allFields = ALL_FIELDS;
-
-  protected isEnabled(field: string): boolean {
-    const list = this.selectedFields();
-    return list.includes(field) || list.includes(`${field}:required`);
-  }
-
-  protected isRequired(field: string): boolean {
-    return this.selectedFields().includes(`${field}:required`);
-  }
-
-  protected toggleField(field: string): void {
-    const current = this.selectedFields();
-    const enabled = current.includes(field) || current.includes(`${field}:required`);
-    if (enabled) {
-      this.fieldsChange.emit(current.filter((f) => f !== field && f !== `${field}:required`));
-    } else {
-      this.fieldsChange.emit([...current, field]);
-    }
-  }
-
-  protected toggleRequired(field: string): void {
-    const current = this.selectedFields();
-    if (current.includes(field)) {
-      this.fieldsChange.emit([...current.filter((f) => f !== field), `${field}:required`]);
-    } else if (current.includes(`${field}:required`)) {
-      this.fieldsChange.emit([...current.filter((f) => f !== `${field}:required`), field]);
-    }
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.html
-
-```html
-<div class="flex gap-2 justify-center">
-  <button type="button" class="btn btn-primary btn-sm gap-2" (click)="handleBtn1Clicked()" [disabled]="isSaveDisabled">
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else {
-    <pc-icon [name]="btn1Icon()" [size]="4" />
-    } {{ btn1Text() }}
-  </button>
-
-  @if (showDelete()) {
-  <button
-    type="button"
-    class="btn btn-error btn-outline btn-sm gap-2"
-    (click)="handleDeleteClicked()"
-    [disabled]="isLoading()"
-  >
-    <pc-icon name="trash" [size]="4" />
-    {{ deleteText() }}
-  </button>
-  } @if (buttonsToShow() === 'three' && !showDelete()) {
-  <button type="button" class="btn btn-primary btn-sm" (click)="handleBtn2Clicked()" [disabled]="isSaveDisabled">
-    @if (isLoading()) {
-    <span class="loading loading-spinner loading-xs text-primary-content"></span>
-    } @else { {{ btn2Text() }} }
-  </button>
-  }
-
-  <button type="button" class="btn btn-ghost btn-sm gap-2" (click)="cancel()" [disabled]="isLoading()">
-    <pc-icon name="x-mark" [size]="4" />
-    Cancel
-  </button>
-</div>
-```
-
-## File: libs/uxcommon/src/components/icons/attachment-icon.ts
-
-```typescript
-// attachment-icon.component.ts
-import { Component, computed, input } from '@angular/core';
-import { ICON_FOR_KEY, iconKeyForFilename } from '@uxcommon/pipes/file-icon.util';
-
-import { Icon } from './icon';
-
-@Component({
-  selector: 'pc-attachment-icon',
-  imports: [Icon],
-  template: ` <pc-icon [name]="icon()" [size]="size()" [class]="className()" [attr.title]="title()"></pc-icon> `,
-})
-export class AttachmentIconComponent {
-  public className = input<string>('');
-
-  // Inputs (signals API)
-  public filename = input.required<string>();
-  public icon = computed(() => {
-    const key = iconKeyForFilename(this.filename());
-    return ICON_FOR_KEY[key] ?? ICON_FOR_KEY.unknown;
-  });
-  public size = input<number>(6);
-  public title = input<string | undefined>(undefined);
-}
-```
-
-## File: libs/uxcommon/src/components/icons/icon.ts
-
-```typescript
-import { Component, WritableSignal, effect, input, signal } from '@angular/core';
-import { BypassHtmlSanitizerPipe } from '@uxcommon/pipes/svg-html-pipe';
-
-import { PcIconNameType, loadIconSvg } from './icons.index';
-
-@Component({
-  selector: 'pc-icon',
-  imports: [BypassHtmlSanitizerPipe],
-  template: `
-    <div [class]="class()" (mouseenter)="hovering.set(true)" (mouseleave)="hovering.set(false)">
-      @if (!hover() || !hovering()) {
-        <div [innerHTML]="svgHtml() | bypassHtmlSanitizer"></div>
-      } @else {
-        <div [innerHTML]="hoverSvgHtml() | bypassHtmlSanitizer"></div>
-      }
-    </div>
-  `,
-})
-export class Icon {
-  private _hoverSvgHtml = signal<string>('');
-
-  private _svgHtml = signal<string>('');
-
-  public class = input<string>('');
-  public hover = input<PcIconNameType | null>();
-  public hoverSvgHtml = this._hoverSvgHtml.asReadonly();
-  public hovering = signal(false);
-
-  public name = input.required<PcIconNameType>();
-
-  public size = input<number>(6);
-  public svgHtml = this._svgHtml.asReadonly();
-
-  constructor() {
-    // Re-load whenever name or size changes
-    effect(() => {
-      void this.loadSvg(this.name(), this.size(), this._svgHtml);
-    });
-
-    effect(() => {
-      const hoverName = this.hover();
-      const size = this.size();
-      if (!hoverName) {
-        this._hoverSvgHtml.set('');
-        return;
-      }
-      void this.loadSvg(hoverName, size, this._hoverSvgHtml);
-    });
-  }
-
-  private injectClassOnSvg(svg: string, cls: string): string {
-    // Normalize whitespace on the opening tag
-    const openTagMatch = svg.match(/<svg\b[^>]*>/i);
-    if (!openTagMatch) return svg; // not an SVG? bail
-
-    const openTag = openTagMatch[0];
-
-    // If class already exists, merge; otherwise add new class attribute
-    if (/\bclass=/.test(openTag)) {
-      const merged = openTag.replace(/\bclass=(["'])(.*?)\1/i, (_m, q, existing) => {
-        // Remove existing sizing classes to prevent override conflicts (e.g. w-6, h-6, size-6)
-        const cleaned = existing
-          .split(/\s+/)
-          .filter((c: string) => !/^(w-\d+(\.\d+)?|h-\d+(\.\d+)?|size-\d+(\.\d+)?)$/.test(c))
-          .join(' ');
-        return `class=${q}${cleaned} ${cls}${q}`.trim();
-      });
-      return svg.replace(openTag, merged);
-    } else {
-      const augmented = openTag.replace(/^<svg\b/i, `<svg class="${cls}"`);
-      return svg.replace(openTag, augmented);
-    }
-  }
-
-  private async loadSvg(name: PcIconNameType, size: number, target: WritableSignal<string>) {
-    if (name === 'none') {
-      target.set('');
-    } else {
-      // Fetch raw SVG text from /assets
-      const raw = await loadIconSvg(name);
-      // Inject Tailwind classes into the <svg> element
-      const withClass = this.injectClassOnSvg(raw, `w-${size} h-${size}`);
-      target.set(withClass);
-    }
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/icons/icons.index.ts
-
-```typescript
-/****************************************************** */
-/*
-/* Look at https://heroicons.com for icons. Most of these
-/* are from the Heroicons set, some are custom.
-/*
-/****************************************************** */
-export type PcIconNameType = keyof typeof icons;
-
-export async function loadIconSvg(name: PcIconNameType): Promise<string> {
-  if (!_cache.has(name)) {
-    _cache.set(
-      name,
-      fetch(icons[name])
-        .then((r) => {
-          if (!r.ok) throw new Error(`Failed to fetch ${name}`);
-          return r.text();
-        })
-        .catch(async () => {
-          // last-resort: fetch the unknown icon (cached too)
-          if (!_cache.has(UNKNOWN)) {
-            _cache.set(
-              UNKNOWN,
-              fetch(icons[UNKNOWN]).then((r) => r.text()),
-            );
-          }
-          return _cache.get(UNKNOWN)!;
-        }),
-    );
-  }
-  return _cache.get(name)!;
-}
-
-const UNKNOWN: PcIconNameType = 'unknown';
-
-/** Optional: load SVG text when you need to inline it (works with Tailwind/DaisyUI) */
-const _cache = new Map<PcIconNameType, Promise<string>>();
-
-export const icons = {
-  none: 'none',
-  'add-company': 'assets/icons/add-company.svg',
-  'add-form': 'assets/icons/add-form.svg',
-  'add-group': 'assets/icons/add-group.svg',
-  'add-home': 'assets/icons/add-home.svg',
-  'add-issue': 'assets/icons/add-issue.svg',
-  'add-label': 'assets/icons/add-label.svg',
-  'add-list': 'assets/icons/add-list.svg',
-  'add-newsletter': 'assets/icons/add-newsletter.svg',
-  'add-notes': 'assets/icons/add-notes.svg',
-  'add-schedule': 'assets/icons/add-schedule.svg',
-  'add-task': 'assets/icons/add-task.svg',
-  'add-ticket': 'assets/icons/add-ticket.svg',
-  'add-users': 'assets/icons/add-users.svg',
-  'add-volunteer': 'assets/icons/add-volunteer.svg',
-  'add-fundraising': 'assets/icons/add-fundraising.svg',
-  'adjustments-horizontal': 'assets/icons/adjustments-horizontal.svg',
-  'archive-box': 'assets/icons/archive-box.svg',
-  'archive-box-arrow-down': 'assets/icons/archive-box-arrow-down.svg',
-  'arrow-down-tray': 'assets/icons/arrow-down-tray.svg',
-  'arrow-left': 'assets/icons/arrow-left.svg',
-  'arrow-left-start-on-rectangle': 'assets/icons/arrow-left-start-on-rectangle.svg',
-  'arrow-menu-open': 'assets/icons/arrow-menu-open.svg',
-  'arrow-menu-close': 'assets/icons/arrow-menu-close.svg',
-  'arrow-path': 'assets/icons/arrow-path.svg',
-  'arrow-right-end-on-rectangle': 'assets/icons/arrow-right-end-on-rectangle.svg',
-  'arrow-right-start-on-rectangle': 'assets/icons/arrow-right-start-on-rectangle.svg',
-  'arrow-top-right-on-square': 'assets/icons/arrow-top-right-on-square.svg',
-  'arrow-up-tray': 'assets/icons/arrow-up-tray.svg',
-  'arrow-uturn-left': 'assets/icons/arrow-uturn-left.svg',
-  'arrow-uturn-right': 'assets/icons/arrow-uturn-right.svg',
-  'arrows-pointing-in': 'assets/icons/arrows-pointing-in.svg',
-  'arrows-pointing-out': 'assets/icons/arrows-pointing-out.svg',
-  'at-symbol': 'assets/icons/at-symbol.svg',
-  'attach-fat': 'assets/icons/attach-fat.svg',
-  'attach-file-off': 'assets/icons/attach-file-off.svg',
-  banknotes: 'assets/icons/banknotes.svg',
-  'bars-3': 'assets/icons/bars-3.svg',
-  'bars-4': 'assets/icons/bars-4.svg',
-  bell: 'assets/icons/bell.svg',
-  bookmark: 'assets/icons/bookmark.svg',
-  'bookmark-plus': 'assets/icons/bookmark-plus.svg',
-  'bookmark-filled': 'assets/icons/bookmark-filled.svg',
-  'bookmark-slash': 'assets/icons/bookmark-slash.svg',
-  briefcase: 'assets/icons/briefcase.svg',
-  calendar: 'assets/icons/calendar.svg',
-  'chart-pie': 'assets/icons/chart-pie.svg',
-  'check-circle': 'assets/icons/check-circle.svg',
-  'chat-bubble-bottom-center-text': 'assets/icons/chat-bubble-bottom-center-text.svg',
-  'chevron-double-left': 'assets/icons/chevron-double-left.svg',
-  'chevron-double-right': 'assets/icons/chevron-double-right.svg',
-  'chevron-down': 'assets/icons/chevron-down.svg',
-  'chevron-left': 'assets/icons/chevron-left.svg',
-  'chevron-right': 'assets/icons/chevron-right.svg',
-  'chevron-up': 'assets/icons/chevron-up.svg',
-  'clipboard-document-list': 'assets/icons/clipboard-document-list.svg',
-  clock: 'assets/icons/clock.svg',
-  'cloud-arrow-up': 'assets/icons/cloud-arrow-up.svg',
-  cog: 'assets/icons/cog.svg',
-  'cog-6-tooth': 'assets/icons/cog-6-tooth.svg',
-  'collapse-content': 'assets/icons/collapse-content.svg',
-  'credit-card': 'assets/icons/credit-card.svg',
-  'currency-dollar': 'assets/icons/currency-dollar.svg',
-  document: 'assets/icons/document.svg',
-  'document-check': 'assets/icons/document-check.svg',
-  'document-currency-dollar': 'assets/icons/document-currency-dollar.svg',
-  'document-duplicate': 'assets/icons/document-duplicate.svg',
-  'document-text': 'assets/icons/document-text.svg',
-  'ellipsis-vertical': 'assets/icons/ellipsis-vertical.svg',
-  envelope: 'assets/icons/envelope.svg',
-  'exclamation-circle': 'assets/icons/exclamation-circle.svg',
-  'exclamation-triangle': 'assets/icons/exclamation-triangle.svg',
-  'expand-content': 'assets/icons/expand-content.svg',
-  eye: 'assets/icons/eye.svg',
-  'eye-slash': 'assets/icons/eye-slash.svg',
-  facebook: 'assets/icons/facebook.svg',
-  file: 'assets/icons/file.svg',
-  'file-archive': 'assets/icons/file-archive.svg',
-  'file-audio': 'assets/icons/file-audio.svg',
-  'file-calendar': 'assets/icons/file-calendar.svg',
-  'file-code': 'assets/icons/file-code.svg',
-  'file-contact': 'assets/icons/file-contact.svg',
-  'file-db': 'assets/icons/file-db.svg',
-  'file-design': 'assets/icons/file-design.svg',
-  'file-disk': 'assets/icons/file-disk.svg',
-  'file-doc': 'assets/icons/file-doc.svg',
-  'file-ebook': 'assets/icons/file-ebook.svg',
-  'file-email': 'assets/icons/file-email.svg',
-  'file-exe': 'assets/icons/file-exe.svg',
-  'file-font': 'assets/icons/file-font.svg',
-  'file-image': 'assets/icons/file-image.svg',
-  'file-pdf': 'assets/icons/file-pdf.svg',
-  'file-sheet': 'assets/icons/file-sheet.svg',
-  'file-slides': 'assets/icons/file-slides.svg',
-  'file-text': 'assets/icons/file-text.svg',
-  'file-video': 'assets/icons/file-video.svg',
-  filter: 'assets/icons/funnel.svg',
-  forward: 'assets/icons/forward.svg',
-  funnel: 'assets/icons/funnel.svg',
-  'globe-americas': 'assets/icons/globe-americas.svg',
-  hashtag: 'assets/icons/hashtag.svg',
-  home: 'assets/icons/home.svg',
-  'house-modern': 'assets/icons/house-modern.svg',
-  identification: 'assets/icons/identification.svg',
-  inbox: 'assets/icons/inbox.svg',
-  'inbox-stack': 'assets/icons/inbox-stack.svg',
-  'information-circle': 'assets/icons/information-circle.svg',
-  instagram: 'assets/icons/instagram.svg',
-  label: 'assets/icons/label.svg',
-  linkedin: 'assets/icons/linkedin.svg',
-  'lock-closed': 'assets/icons/lock-closed.svg',
-  loading: 'assets/icons/loading.svg',
-  'magnifying-glass': 'assets/icons/magnifying-glass.svg',
-  map: 'assets/icons/map.svg',
-  'map-pin': 'assets/icons/map-pin.svg',
-  megaphone: 'assets/icons/megaphone.svg',
-  'menu-open': 'assets/icons/menu-open.svg',
-  merge: 'assets/icons/merge.svg',
-  moon: 'assets/icons/moon.svg',
-  notification: 'assets/icons/notification.svg',
-  'paper-airplane': 'assets/icons/paper-airplane.svg',
-  'paper-clip': 'assets/icons/paper-clip.svg',
-  'pencil-square': 'assets/icons/pencil-square.svg',
-  plus: 'assets/icons/plus.svg',
-  'presentation-chart-line': 'assets/icons/presentation-chart-line.svg',
-  print: 'assets/icons/print.svg',
-  'queue-list': 'assets/icons/queue-list.svg',
-  'rectangle-stack': 'assets/icons/rectangle-stack.svg',
-  'redo-fat': 'assets/icons/redo-fat.svg',
-  reply: 'assets/icons/reply.svg',
-  'reply-all': 'assets/icons/reply-all.svg',
-  'restore-from-trash': 'assets/icons/restore-from-trash.svg',
-  save: 'assets/icons/save.svg',
-  'shield-exclamation': 'assets/icons/shield-exclamation.svg',
-  'square-3-stack-3d': 'assets/icons/square-3-stack-3d.svg',
-  star: 'assets/icons/star.svg',
-  'star-filled': 'assets/icons/star-filled.svg',
-  sun: 'assets/icons/sun.svg',
-  'table-cells': 'assets/icons/table-cells.svg',
-  phone: 'assets/icons/phone.svg',
-  tag: 'assets/icons/tag.svg',
-  task: 'assets/icons/task.svg',
-  ticket: 'assets/icons/ticket.svg',
-  trash: 'assets/icons/trash.svg',
-  'trash-forever': 'assets/icons/trash-forever.svg',
-  'undo-fat': 'assets/icons/undo-fat.svg',
-  unknown: 'assets/icons/unknown.svg',
-  'user-circle': 'assets/icons/user-circle.svg',
-  'user-group': 'assets/icons/user-group.svg',
-  'user-plus': 'assets/icons/user-plus.svg',
-  users: 'assets/icons/users.svg',
-  'view-column': 'assets/icons/view-column.svg',
-  'view-kanban': 'assets/icons/view-kanban.svg',
-  volunteer: 'assets/icons/volunteer.svg',
-  'wrench-screwdriver': 'assets/icons/wrench-screwdriver.svg',
-  'x-circle': 'assets/icons/x-circle.svg',
-  x: 'assets/icons/x.svg',
-  'x-mark': 'assets/icons/x-mark.svg',
-} as const;
-```
-
-## File: libs/uxcommon/src/components/input/input.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-input',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <label
-        class="input w-full flex items-center gap-2"
-        [class.input-error]="
-          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
-        "
-      >
-        <ng-content select="[pc-prefix]"></ng-content>
-        <input [type]="type()" [placeholder]="placeholder()" [formField]="formField()" class="grow" />
-        <ng-content select="[pc-suffix]"></ng-content>
-      </label>
-
-      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Input {
-  public label = input<string>();
-  public type = input<string>('text');
-  public placeholder = input<string>('');
-  public formField = input.required<any>();
-  public hasError = input<boolean>(false);
-}
-```
-
-## File: libs/uxcommon/src/components/not-found/not-found.ts
-
-```typescript
-import { Component } from '@angular/core';
-
-@Component({
-  selector: 'pc-not-found',
-  imports: [],
-  template: `<section class="min-h-full">
-    <div class="md:px-12 lg:px-0">
-      <div class="max-auto w-full justify-center text-center lg:p-10">
-        <div class="mx-auto w-full justify-center">
-          <p class="text-5xl tracking-tight lg:text-9xl">404</p>
-          <p class="mx-auto mt-4 max-w-xl text-lg font-light">Please check the URL in the address bar and try again.</p>
-        </div>
-        <div class="mt-10 flex justify-center gap-3">
-          <a href="/" class="link link-hover">Home&nbsp; → </a>
-        </div>
-      </div>
-    </div>
-  </section>`,
-})
-export class NotFound {}
-```
-
-## File: libs/uxcommon/src/components/profile-card/profile-card.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-profile-card',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 shadow-xl overflow-hidden border border-base-300 w-full">
-      <!-- Decorative Card Header Gradient -->
-      <div class="h-24 bg-gradient-to-r from-primary/20 via-primary/30 to-secondary/20"></div>
-
-      <div class="px-6 pb-6 relative flex flex-col items-center">
-        <!-- Avatar / Placeholder -->
-        @if (avatarUrl() || avatarText() || iconName()) {
-          <div class="avatar placeholder -mt-12 mb-3">
-            <div
-              class="bg-gradient-to-tr from-primary to-secondary text-primary-content rounded-full w-24 h-24 ring ring-base-100 ring-offset-4 text-3xl font-bold flex items-center justify-center shadow-lg overflow-hidden"
-            >
-              @if (avatarUrl()) {
-                <img [src]="avatarUrl()!" alt="Avatar" class="w-full h-full object-cover" />
-              } @else if (avatarText()) {
-                {{ avatarText() }}
-              } @else if (iconName()) {
-                <pc-icon [name]="iconName()!" [size]="10"></pc-icon>
-              }
-            </div>
-          </div>
-        }
-
-        <ng-content></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class ProfileCard {
-  public avatarUrl = input<string | null | undefined>();
-  public avatarText = input<string | null | undefined>();
-  public iconName = input<PcIconNameType | null | undefined>();
-}
-```
-
-## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.html
-
-```html
-<pc-card [title]="label()" [subtitle]="subtitle()">
-  <div class="space-y-3">
-    <div class="flex gap-2">
-      <input type="text" [value]="url()" readonly class="input input-bordered input-sm flex-1 font-mono text-xs" />
-      <a
-        [href]="url()"
-        target="_blank"
-        class="btn btn-sm btn-outline btn-secondary px-3 flex items-center justify-center"
-        title="Open public page"
-      >
-        <pc-icon name="arrow-top-right-on-square"></pc-icon>
-      </a>
-      <button type="button" class="btn btn-sm btn-outline btn-primary px-3" (click)="copyUrl()" title="Copy link">
-        <pc-icon name="document-duplicate"></pc-icon>
-      </button>
-    </div>
-  </div>
-</pc-card>
-```
-
-## File: libs/uxcommon/src/components/public-link-panel/public-link-panel.ts
-
-```typescript
-import { Component, inject, input } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
-import { Card as PcCard } from '../card/card';
-import { Icon } from '../icons/icon';
-
-@Component({
-  selector: 'pc-public-link-panel',
-  imports: [Icon, PcCard],
-  templateUrl: './public-link-panel.html',
-})
-export class PublicLinkPanel {
-  readonly url = input.required<string>();
-  readonly label = input<string>('Public Link');
-  readonly subtitle = input<string>('Share this link so people can sign up.');
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyUrl(): void {
-    navigator.clipboard
-      .writeText(this.url())
-      .then(() => {
-        this.alertSvc.showSuccess('Link copied to clipboard!');
-      })
-      .catch((_e) => this.alertSvc.showError('Could not copy link to clipboard'));
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/select/select.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-select',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <select
-        [formField]="formField()"
-        class="select select-bordered w-full"
-        [class.select-error]="formField()().invalid() && (formField()().dirty() || formField()().touched())"
-      >
-        @if (placeholder()) {
-          <option value="">{{ placeholder() }}</option>
-        }
-        <ng-content></ng-content>
-      </select>
-
-      @if (formField()().invalid() && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Select {
-  public label = input<string>();
-  public placeholder = input<string>('');
-  public formField = input.required<any>();
-}
-```
-
-## File: libs/uxcommon/src/components/side-drawer/side-drawer.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-side-drawer',
-  imports: [Icon],
-  template: `
-    @if (isOpen()) {
-      <div class="fixed inset-0 z-30 flex justify-end">
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-black/30 transition-opacity duration-300" (click)="onClose()"></div>
-        <!-- Panel -->
-        <div
-          class="relative h-full w-full max-w-[90vw] bg-base-100 shadow-xl border-l border-base-300 flex flex-col z-10 transition-transform duration-300"
-          [class]="widthClass()"
-        >
-          <!-- Header -->
-          <div class="flex items-center justify-between p-4 border-b border-base-300">
-            <div class="font-semibold text-base-content text-lg">
-              {{ title() }}
-            </div>
-            <button class="btn btn-ghost btn-sm btn-circle" (click)="onClose()" aria-label="Close drawer">
-              <pc-icon name="x-mark" [size]="4"></pc-icon>
-            </button>
-          </div>
-          <!-- Body -->
-          <div class="p-4 flex flex-col gap-3 overflow-y-auto flex-grow">
-            <ng-content></ng-content>
-          </div>
-          <!-- Footer -->
-          <ng-content select="[pc-drawer-footer]"></ng-content>
-        </div>
-      </div>
-    }
-  `,
-})
-export class SideDrawer {
-  public isOpen = input.required<boolean>();
-  public title = input<string>('');
-  public size = input<'sm' | 'md' | 'lg'>('sm');
-  public close = output<void>();
-
-  protected onClose() {
-    this.close.emit();
-  }
-
-  protected widthClass() {
-    const s = this.size();
-    if (s === 'lg') return 'sm:w-[700px]';
-    if (s === 'md') return 'sm:w-[540px]';
-    return 'sm:w-[420px]';
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/status-badge/status-badge.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-
-export type PcStatusType = 'success' | 'warning' | 'error' | 'info' | 'neutral' | 'ghost';
-
-@Component({
-  selector: 'pc-status-badge',
-  template: `
-    <span class="badge font-semibold uppercase" [class]="badgeClass()">
-      <ng-content></ng-content>
-    </span>
-  `,
-})
-export class StatusBadge {
-  public type = input<PcStatusType>('ghost');
-  public size = input<'sm' | 'md' | 'lg'>('sm');
-
-  protected badgeClass = computed(() => {
-    const t = this.type();
-    let cls = '';
-    if (this.size() === 'sm') cls += 'badge-sm ';
-    else if (this.size() === 'lg') cls += 'badge-lg ';
-
-    switch (t) {
-      case 'success':
-        return cls + 'badge-success text-success-content';
-      case 'warning':
-        return cls + 'badge-warning text-warning-content';
-      case 'error':
-        return cls + 'badge-error text-error-content';
-      case 'info':
-        return cls + 'badge-info text-info-content';
-      case 'neutral':
-        return cls + 'badge-neutral text-neutral-content';
-      default:
-        return cls + 'badge-ghost';
-    }
-  });
-}
-```
-
-## File: libs/uxcommon/src/components/swap/swap.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { ReactiveFormsModule } from '@angular/forms';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-swap',
-  imports: [ReactiveFormsModule, Icon],
-  template: `<label
-    class="swap ml-auto flex-none cursor-pointer p-2"
-    [class.swap-flip]="animation() === 'flip'"
-    [class.swap-rotate]="animation() === 'rotate'"
-    [class.swap-active]="checked()"
-    (click)="emitClick($event)"
-  >
-    <pc-icon [name]="swapOnIcon()!" class="swap-on" [size]="size()" />
-
-    <pc-icon [name]="swapOffIcon()!" [hover]="hoverIcon()" class="swap-off" [size]="size()" />
-  </label> `,
-})
-export class Swap {
-  public readonly click = output<void>();
-
-  public animation = input<'flip' | 'rotate'>('rotate');
-
-  public checked = input<boolean>(false);
-  public hoverIcon = input<PcIconNameType | null>(null);
-  public size = input(6);
-
-  public swapOffIcon = input.required<PcIconNameType>();
-
-  public swapOnIcon = input.required<PcIconNameType>();
-
-  public emitClick(event: Event) {
-    event.stopPropagation();
-    this.click.emit();
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/system-metadata/system-metadata.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { DatePipe } from '@angular/common';
-
-@Component({
-  selector: 'pc-system-metadata',
-  imports: [DatePipe],
-  template: `
-    <div
-      class="w-full mt-6 pt-4 border-t border-base-200 text-[10px] text-base-content/40 flex gap-4 leading-normal"
-      [class.justify-between]="layout() === 'row'"
-      [class.flex-col]="layout() === 'col'"
-      [class.gap-1]="layout() === 'col'"
-    >
-      @if (createdAt()) {
-        <span
-          >Created
-          @if (createdBy() && createdBy() !== '?') {
-            by {{ createdBy() }}
-          }
-          on {{ createdAt() | date: dateFormat() }}</span
-        >
-      }
-      @if (updatedAt()) {
-        <span
-          >Updated {{ updatedAt() | date: dateFormat() }}
-          @if (updatedBy() && updatedBy() !== '?') {
-            by {{ updatedBy() }}
-          }
-        </span>
-      }
-    </div>
-  `,
-})
-export class SystemMetadata {
-  public createdAt = input<any>();
-  public updatedAt = input<any>();
-  public createdBy = input<string | null | undefined>();
-  public updatedBy = input<string | null | undefined>();
-  public layout = input<'row' | 'col'>('row');
-  public dateFormat = input<string>('M/d/yyyy');
-}
-```
-
-## File: libs/uxcommon/src/components/tabs/tabs.ts
-
-```typescript
-import { Component, computed, input, model } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-export interface PcTabOption {
-  id: string;
-  label: string;
-  icon?: PcIconNameType;
-  badge?: string | number;
-  disabled?: boolean;
-  tooltip?: string;
-}
-
-@Component({
-  selector: 'pc-tabs',
-  imports: [Icon],
-  template: `
-    <div class="card bg-base-100 shadow-xl border border-base-300 flex-grow">
-      <!-- Tabs Header -->
-      <div role="tablist" class="tabs tabs-lifted w-full pt-4 px-4">
-        @for (tab of tabs(); track tab.id) {
-          <a
-            role="tab"
-            class="tab focus:outline-none cursor-pointer inline-flex items-center justify-center gap-1.5"
-            [class.tab-active]="activeTab() === tab.id"
-            [class.opacity-50]="tab.disabled"
-            [class.cursor-not-allowed]="tab.disabled"
-            [class.tooltip]="tab.disabled && tab.tooltip"
-            [attr.data-tip]="tab.disabled && tab.tooltip ? tab.tooltip : null"
-            (click)="!tab.disabled && selectTab(tab.id)"
-          >
-            @if (tab.icon) {
-              <pc-icon [name]="tab.icon" [size]="4" class="flex-shrink-0"></pc-icon>
-            }
-            <span>{{ tab.label }}</span>
-            @if (tab.badge !== undefined && tab.badge !== null) {
-              <span class="badge badge-sm badge-neutral">{{ tab.badge }}</span>
-            }
-          </a>
-        }
-      </div>
-
-      <!-- Tab Panels -->
-      <div class="p-6">
-        <ng-content></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class Tabs {
-  public tabs = input.required<PcTabOption[]>();
-  public activeTab = model.required<string>();
-
-  public selectTab(id: string) {
-    this.activeTab.set(id);
-  }
-}
-
-@Component({
-  selector: 'pc-tab-panel',
-  template: `
-    @if (isActive()) {
-      <div class="space-y-4">
-        <ng-content></ng-content>
-      </div>
-    }
-  `,
-})
-export class TabPanel {
-  public id = input.required<string>();
-  public activeTab = input.required<string>();
-
-  protected isActive = computed(() => this.activeTab() === this.id());
-}
-```
-
-## File: libs/uxcommon/src/components/tags/tagitem.css
-
-```css
-:host {
-  display: inline-block;
-  max-width: 100%;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-  padding-top: 0.25rem;
-  padding-bottom: 0.25rem;
-  min-height: 1.5rem;
-  height: auto;
-  line-height: 1.2;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-.tag-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.2;
-}
-
-.tag-remove {
-  align-self: flex-start;
-  margin-top: 0.125rem;
-}
-
-.badge-compact {
-  font-size: 0.7rem !important;
-  font-weight: 500 !important;
-  min-height: 1.25rem !important;
-  height: auto !important;
-  align-items: center !important;
-  padding-top: 0.125rem !important;
-  padding-bottom: 0.125rem !important;
-  padding-left: 0.375rem !important;
-  padding-right: 0.375rem !important;
-}
-
-.badge-compact .tag-label {
-  font-size: 0.7rem !important;
-  line-height: 1.15 !important;
-  padding-right: 0 !important;
-}
-
-.badge-compact .tag-remove {
-  margin-top: 0 !important;
-  align-self: center !important;
-}
-```
-
-## File: libs/uxcommon/src/components/tags/tagitem.ts
-
-```typescript
-import { Component, Signal, computed, input, output, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-tagitem',
-  imports: [Icon],
-  styleUrl: './tagitem.css',
-  template: `<div
-    class="badge rounded-lg px-0 gap-1 pl-2 bordered"
-    [class.badge-compact]="compact()"
-    [style.background]="background() || null"
-    [style.color]="textColor()"
-    [style.borderColor]="borderColor()"
-  >
-    <span
-      (click)="emitClick()"
-      class="tag-label cursor-pointer font-light pr-1"
-      [class.pr-2]="!canDelete()"
-      [style.color]="textColor()"
-    >
-      {{ displayName() }}</span
-    >
-    <pc-icon
-      name="x-mark"
-      [size]="3"
-      class="tag-remove hover:text-error cursor-pointer pr-1 mr-0"
-      [style.color]="textColor()"
-      [class.hidden]="!canDelete()"
-      (click)="emitClose()"
-    />
-  </div> `,
-})
-export class TagItem {
-  protected readonly background = computed(() => this.normalizeColor(this.color()));
-  protected readonly borderColor = computed(() => this.background() ?? null);
-  protected readonly displayName = computed(() => {
-    const n = this.name();
-    return n ? n.charAt(0).toUpperCase() + n.slice(1) : '';
-  });
-  protected readonly textColor = computed(() => this.computeTextColor(this.background()));
-
-  public readonly click = output<string>();
-  public readonly close = output<string>();
-
-  public canDelete = input<boolean>(true);
-  public color = input<string | null | undefined>(null);
-  public compact = input<boolean>(false);
-  public invisible = input<Signal<boolean>>(signal(false));
-  public name = input.required<string>();
-
-  public emitClick() {
-    this.click.emit(this.name());
-  }
-
-  public emitClose() {
-    this.close.emit(this.name());
-  }
-
-  private computeTextColor(hex: string | null): string | null {
-    if (!hex) return null;
-    const rgb = this.hexToRgb(hex);
-    if (!rgb) return '#f9fafb';
-    const [r = 0, g = 0, b = 0] = rgb.map((v) => v / 255);
-    const [rLin = 0, gLin = 0, bLin = 0] = [r, g, b].map((v) =>
-      v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4),
-    );
-    const luminance = 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
-    return luminance > 0.5 ? '#111827' : '#f9fafb';
-  }
-
-  private hexToRgb(hex: string): [number, number, number] | null {
-    const normalized = hex.replace('#', '');
-    const int = parseInt(normalized, 16);
-    if (Number.isNaN(int)) return null;
-    return [(int >> 16) & 255, (int >> 8) & 255, int & 255];
-  }
-
-  private normalizeColor(value: string | null | undefined): string | null {
-    if (!value) return null;
-    const trimmed = value.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) return null;
-    return trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/textarea/textarea.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-textarea',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      @if (label()) {
-        <label class="label py-0 pl-1">
-          <span class="label-text text-xs font-semibold text-base-content/70">{{ label() }}</span>
-        </label>
-      }
-
-      <textarea
-        [placeholder]="placeholder()"
-        [formField]="formField()"
-        [rows]="rows()"
-        class="textarea textarea-bordered w-full"
-        [class.textarea-error]="
-          hasError() || (formField()().invalid() && (formField()().dirty() || formField()().touched()))
-        "
-      ></textarea>
-
-      @if ((hasError() || formField()().invalid()) && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Textarea {
-  public label = input<string>();
-  public placeholder = input<string>('');
-  public rows = input<number>(3);
-  public formField = input.required<any>();
-  public hasError = input<boolean>(false);
-}
-```
-
-## File: libs/uxcommon/src/components/toggle/toggle.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { FormField } from '@angular/forms/signals';
-
-@Component({
-  selector: 'pc-toggle',
-  imports: [FormField],
-  template: `
-    <div class="flex flex-col gap-1 w-full">
-      <label class="label cursor-pointer justify-between gap-4 py-1">
-        @if (label()) {
-          <span class="label-text text-sm font-medium text-base-content">{{ label() }}</span>
-        }
-        <input
-          type="checkbox"
-          class="toggle toggle-primary shrink-0"
-          [formField]="formField()"
-          [class.toggle-error]="formField()().invalid() && (formField()().dirty() || formField()().touched())"
-        />
-      </label>
-
-      @if (formField()().invalid() && (formField()().dirty() || formField()().touched())) {
-        @for (err of formField()().errors(); track err) {
-          <p class="text-[11px] text-error pl-1">{{ err.message }}</p>
-        }
-      }
-    </div>
-  `,
-})
-export class Toggle {
-  public label = input<string>();
-  public formField = input.required<any>();
-}
-```
-
-## File: libs/uxcommon/src/components/user-avatar/user-avatar.ts
-
-```typescript
-import { Component, computed, input } from '@angular/core';
-import { NgClass } from '@angular/common';
-
-@Component({
-  selector: 'pc-user-avatar',
-  template: `
-    <div class="avatar" [class.placeholder]="!avatarUrl()">
-      @if (avatarUrl()) {
-        <div
-          class="rounded-full overflow-hidden ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-        >
-          <img
-            [src]="avatarUrl()!"
-            [alt]="name() + ' avatar'"
-            class="w-full h-full object-cover"
-            referrerpolicy="no-referrer"
-          />
-        </div>
-      } @else {
-        <div
-          class="rounded-full grid place-items-center font-bold ring ring-base-100 ring-offset-1"
-          [style.width.rem]="sizeRem()"
-          [style.height.rem]="sizeRem()"
-          [style.font-size.rem]="fontSizeRem()"
-          [ngClass]="colorClass()"
-        >
-          <span>{{ initials() }}</span>
-        </div>
-      }
-    </div>
-  `,
-  imports: [NgClass],
-  host: { class: 'contents' },
-})
-export class UserAvatarComponent {
-  readonly avatarUrl = input<string | null | undefined>(null);
-
-  readonly name = input.required<string>();
-
-  readonly size = input<number>(8);
-
-  protected readonly sizeRem = computed(() => this.size() * 0.25);
-  protected readonly fontSizeRem = computed(() => Math.max(0.5, this.size() * 0.25 * 0.4));
-
-  protected readonly initials = computed(() => {
-    const n = (this.name() ?? '').trim();
-    if (!n) return '?';
-    const parts = n.split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
-    }
-    return n[0]!.toUpperCase();
-  });
-
-  protected readonly colorClass = computed(() => {
-    const PALETTES = [
-      'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
-      'bg-teal-500/20 text-teal-700 dark:text-teal-300',
-      'bg-purple-500/20 text-purple-700 dark:text-purple-300',
-      'bg-rose-500/20 text-rose-700 dark:text-rose-300',
-      'bg-amber-500/20 text-amber-700 dark:text-amber-300',
-      'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
-      'bg-blue-500/20 text-blue-700 dark:text-blue-300',
-      'bg-orange-500/20 text-orange-700 dark:text-orange-300',
-      'bg-pink-500/20 text-pink-700 dark:text-pink-300',
-      'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
-    ];
-    const n = this.name() ?? '';
-    let sum = 0;
-    for (let i = 0; i < n.length; i++) sum += n.charCodeAt(i);
-    return PALETTES[sum % PALETTES.length];
-  });
-}
-```
-
-## File: libs/uxcommon/src/directives/animate-if.directive.ts
-
-```typescript
-import {
-  Directive,
-  DestroyRef,
-  EmbeddedViewRef,
-  Signal,
-  TemplateRef,
-  ViewContainerRef,
-  effect,
-  inject,
-  input,
-} from '@angular/core';
-
-@Directive({
-  selector: '[pcAnimateIf]',
-})
-export class AnimateIfDirective {
-  private readonly template = inject(TemplateRef<unknown>);
-  private readonly vcr = inject(ViewContainerRef);
-  private readonly destroyRef = inject(DestroyRef);
-
-  public readonly duration = input(300, { alias: 'pcAnimateIfDuration' });
-
-  public readonly pcAnimateIfEnter = input('animate-left');
-
-  public readonly pcAnimateIfExit = input('animate-exit-right');
-
-  public readonly pcAnimateIf = input.required<Signal<boolean>>();
-
-  private condition = false;
-  private timeoutId: NodeJS.Timeout | undefined;
-  private view: EmbeddedViewRef<unknown> | null = null;
-
-  constructor() {
-    effect(() => {
-      const conditionSignal = this.pcAnimateIf();
-      if (conditionSignal) {
-        this.toggle(conditionSignal());
-      }
-    });
-
-    this.destroyRef.onDestroy(() => {
-      clearTimeout(this.timeoutId);
-
-      if (this.view?.rootNodes[0]) {
-        const el = this.view.rootNodes[0] as HTMLElement;
-        el?.classList.remove(this.pcAnimateIfEnter(), this.pcAnimateIfExit());
-      }
-    });
-  }
-
-  private animatedEntry() {
-    this.vcr.clear();
-    this.view = this.vcr.createEmbeddedView(this.template);
-    const enterClass = this.pcAnimateIfEnter();
-    const el = this.view.rootNodes[0] as HTMLElement;
-    requestAnimationFrame(() => el?.classList.add(enterClass));
-  }
-
-  private animatedExit() {
-    if (!this.view?.rootNodes[0]) return;
-
-    const el = this.view.rootNodes[0] as HTMLElement;
-    const enterClass = this.pcAnimateIfEnter();
-    const exitClass = this.pcAnimateIfExit();
-
-    // Remove entry animation in case it's still applied
-    el.classList.remove(enterClass);
-
-    // If exit animation is 'animate-none', clear the view immediately without delay
-    if (exitClass === 'animate-none') {
-      this.vcr.clear();
-      this.view = null;
-      return;
-    }
-
-    // Add exit animation
-    el.classList.add(exitClass);
-
-    this.timeoutId = setTimeout(() => {
-      // Cleanup all animation classes before removal
-      el.classList.remove(enterClass, exitClass);
-      this.vcr.clear();
-      this.view = null;
-    }, this.duration());
-  }
-
-  private toggle(condition: boolean) {
-    if (condition === this.condition) return;
-
-    this.condition = condition;
-
-    if (condition) this.animatedEntry();
-    else if (this.view) this.animatedExit();
-  }
-}
-```
-
-## File: libs/uxcommon/src/directives/spin-on-click.directive.ts
-
-```typescript
-import { Directive, DestroyRef, ElementRef, HostListener, inject, input } from '@angular/core';
-
-@Directive({
-  selector: 'button[pcSpinOnClick]',
-  exportAs: 'pcSpinOnClick',
-})
-export class SpinOnClickDirective {
-  private readonly el = inject(ElementRef<HTMLButtonElement>);
-  private readonly destroyRef = inject(DestroyRef);
-
-  readonly minMs = input(700);
-
-  private timer: ReturnType<typeof setTimeout> | null = null;
-
-  constructor() {
-    this.destroyRef.onDestroy(() => this.clearTimer());
-  }
-
-  @HostListener('click')
-  protected onButtonClick(): void {
-    const icon = this.el.nativeElement.querySelector('pc-icon') as HTMLElement | null;
-    if (!icon) return;
-
-    icon.classList.add('animate-spin', 'inline-block');
-    this.clearTimer();
-
-    this.timer = setTimeout(() => {
-      icon.classList.remove('animate-spin', 'inline-block');
-      this.timer = null;
-    }, this.minMs());
-  }
-
-  private clearTimer(): void {
-    if (this.timer !== null) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-  }
-}
-```
-
-## File: libs/uxcommon/src/mentions/mention-controller.ts
-
-```typescript
-import { computed, signal } from '@angular/core';
-import type { IAuthUser } from '../../../common/src/lib/auth';
-
-export class MentionController {
-  private getUsers: () => IAuthUser[];
-
-  // reactive state
-  public readonly open = signal(false);
-  public readonly index = signal(0);
-  public readonly query = signal('');
-
-  // ephemeral caret/selection details
-  private start = -1; // position of '@'
-  private caretPos = 0;
-
-  public readonly candidates = computed<IAuthUser[]>(() => {
-    const q = this.query().toLowerCase();
-    if (!this.open() || !q) return [];
-    const users = this.getUsers() || [];
-    const uniq = new Map<string, IAuthUser>();
-    for (const u of users) {
-      if (!u) continue;
-      const name = (u.first_name || '').toLowerCase();
-      const email = (u.email || '').toLowerCase();
-      const local = email.split('@')[0] || '';
-      if ((name && name.includes(q)) || (local && local.includes(q)) || (email && email.includes(q))) {
-        if (!uniq.has(u.id)) uniq.set(u.id, u);
-      }
-    }
-    return Array.from(uniq.values()).slice(0, 8);
-  });
-
-  constructor(getUsers: () => IAuthUser[]) {
-    this.getUsers = getUsers;
-  }
-
-  public updateFromInput(text: string, caretPos: number): void {
-    this.caretPos = caretPos;
-    const res = this.findMentionAt(text, caretPos);
-    if (!res) {
-      this.open.set(false);
-      this.query.set('');
-      this.start = -1;
-    } else {
-      this.start = res.start;
-      this.query.set(res.token);
-      this.open.set(true);
-      this.index.set(0);
-    }
-  }
-
-  public handleKeydown(ev: KeyboardEvent, onSelect: (u: IAuthUser) => void): void {
-    if (!this.open()) return;
-    const list = this.candidates();
-    if (!list.length) return;
-    if (ev.key === 'ArrowDown') {
-      ev.preventDefault();
-      this.index.set((this.index() + 1) % list.length);
-    } else if (ev.key === 'ArrowUp') {
-      ev.preventDefault();
-      this.index.set((this.index() - 1 + list.length) % list.length);
-    } else if (ev.key === 'Enter' || ev.key === 'Tab') {
-      ev.preventDefault();
-      onSelect(list[this.index()]!);
-    } else if (ev.key === 'Escape') {
-      this.open.set(false);
-    }
-  }
-
-  public select(user: IAuthUser, text: string): { text: string; caret: number } {
-    if (this.start < 0) return { text, caret: this.caretPos };
-    const display = user.first_name || user.email.split('@')[0]!;
-    let before = text.slice(0, this.start);
-    // Collapse any trailing whitespace/newlines immediately before '@' into a single space to keep inline
-    before = before.replace(/\s+$/g, ' ');
-    const after = text.slice(this.caretPos);
-    const inserted = `@${display} `;
-    const newText = before + inserted + after;
-    const newCaret = before.length + inserted.length;
-    this.open.set(false);
-    this.index.set(0);
-    return { text: newText, caret: newCaret };
-  }
-
-  public getStartIndex(): number {
-    return this.start;
-  }
-
-  public getCaretIndex(): number {
-    return this.caretPos;
-  }
-
-  private findMentionAt(text: string, pos: number): { start: number; token: string } | null {
-    let i = pos - 1;
-    while (i >= 0) {
-      const ch = text[i]!;
-      if (ch === '@') break;
-      if (!/[-A-Za-z0-9_.]/.test(ch)) return null; // hit a separator before '@'
-      i--;
-    }
-    if (i < 0 || text[i]! !== '@') return null;
-    const start = i;
-    if (start > 0) {
-      const prev = text[start - 1]!;
-      if (/[@A-Za-z0-9_]/.test(prev)) return null;
-    }
-    const token = text.slice(start + 1, pos);
-    if (!token) return null;
-    return { start, token };
-  }
-}
-
-export function userDisplay(u: IAuthUser): string {
-  return u.first_name || u.email.split('@')[0]!;
-}
-```
-
-## File: libs/uxcommon/src/pipes/file-icon.pipe.ts
-
-```typescript
-// file-icon.pipe.ts
-import { Pipe, PipeTransform } from '@angular/core';
-
-import { ICON_FOR_KEY, iconKeyForFilename } from './file-icon.util';
-
-@Pipe({
-  name: 'fileIcon',
-})
-export class FileIconPipe implements PipeTransform {
-  public transform(filename: string | null | undefined): string {
-    const key = iconKeyForFilename(filename ?? '');
-    return ICON_FOR_KEY[key] ?? ICON_FOR_KEY.unknown;
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/file-icon.util.ts
-
-```typescript
-import type { PcIconNameType } from '@icons/icons.index';
-
-// file-icon.util.ts
-export type FileIconKey =
-  | 'pdf'
-  | 'doc'
-  | 'sheet'
-  | 'slides'
-  | 'text'
-  | 'image'
-  | 'audio'
-  | 'video'
-  | 'archive'
-  | 'code'
-  | 'design'
-  | 'font'
-  | 'ebook'
-  | 'email'
-  | 'calendar'
-  | 'contact'
-  | 'db'
-  | 'disk'
-  | 'exe'
-  | 'unknown';
-
-function cleanName(name: string): string {
-  // strip query/hash (e.g., foo.pdf?dl=1#x)
-  return name.split('#')[0]!.split('?')[0]!.trim();
-}
-
-export function iconKeyForFilename(filename: string): FileIconKey {
-  if (!filename) return 'unknown';
-  const name = cleanName(filename.toLowerCase());
-
-  // multi-part extensions first (e.g., .tar.gz)
-  for (const mex of MULTI_EXT) {
-    if (name.endsWith(`.${mex}`)) return 'archive';
-  }
-
-  // single extension
-  const lastDot = name.lastIndexOf('.');
-  if (lastDot === -1 || lastDot === name.length - 1) return 'unknown';
-  const ext = name.slice(lastDot + 1);
-  return EXT_TO_KEY[ext] ?? 'unknown';
-}
-
-const EXT_MAP: Record<FileIconKey, string[]> = {
-  pdf: ['pdf'],
-  doc: ['doc', 'docx', 'rtf', 'odt', 'pages'],
-  sheet: ['xls', 'xlsx', 'csv', 'tsv', 'ods', 'numbers'],
-  slides: ['ppt', 'pptx', 'key', 'odp'],
-  text: ['txt', 'md', 'markdown', 'rst', 'log'],
-  image: ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'bmp', 'tiff', 'tif', 'heic', 'heif'],
-  audio: ['mp3', 'm4a', 'aac', 'wav', 'flac', 'ogg', 'oga'],
-  video: ['mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi', 'wmv'],
-  archive: ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz'],
-  code: [
-    'js',
-    'ts',
-    'jsx',
-    'tsx',
-    'json',
-    'jsonl',
-    'html',
-    'css',
-    'scss',
-    'xml',
-    'yml',
-    'yaml',
-    'sql',
-    'py',
-    'java',
-    'c',
-    'cpp',
-    'h',
-    'cs',
-    'go',
-    'rs',
-    'php',
-    'rb',
-    'kt',
-    'swift',
-    'sh',
-    'ps1',
-  ],
-  design: ['psd', 'ai', 'fig', 'xd', 'sketch'],
-  font: ['ttf', 'otf', 'woff', 'woff2'],
-  ebook: ['epub', 'mobi', 'azw', 'djvu'],
-  email: ['eml', 'msg'],
-  calendar: ['ics'],
-  contact: ['vcf'],
-  db: ['sqlite', 'sqlite3', 'db', 'mdb', 'accdb', 'parquet'],
-  disk: ['iso', 'dmg', 'img'],
-  exe: ['exe', 'msi', 'apk', 'pkg', 'appimage'],
-  unknown: [],
-};
-
-// reverse lookup
-const EXT_TO_KEY: Record<string, FileIconKey> = Object.entries(EXT_MAP).reduce(
-  (acc, [key, exts]) => {
-    for (const e of exts) acc[e] = key as FileIconKey;
-    return acc;
-  },
-  {} as Record<string, FileIconKey>,
-);
-const MULTI_EXT = ['tar.gz', 'tar.bz2', 'tar.xz', 'tgz'] as const;
-
-// Map to your <pc-icon> names (assume these exist in your icon set)
-export const ICON_FOR_KEY: Record<FileIconKey, PcIconNameType> = {
-  pdf: 'file-pdf',
-  doc: 'file-doc',
-  sheet: 'file-sheet',
-  slides: 'file-slides',
-  text: 'file-text',
-  image: 'file-image',
-  audio: 'file-audio',
-  video: 'file-video',
-  archive: 'file-archive',
-  code: 'file-code',
-  design: 'file-design',
-  font: 'file-font',
-  ebook: 'file-ebook',
-  email: 'file-email',
-  calendar: 'file-calendar',
-  contact: 'file-contact',
-  db: 'file-db',
-  disk: 'file-disk',
-  exe: 'file-exe',
-  unknown: 'unknown',
-};
-```
-
-## File: libs/uxcommon/src/pipes/filesize.pipe.ts
-
-```typescript
-import { Pipe, PipeTransform } from '@angular/core';
-
-@Pipe({
-  name: 'fileSize',
-})
-export class FileSizePipe implements PipeTransform {
-  public transform(bytes: number, decimals: number = 2): string {
-    if (bytes === 0) return '0 Bytes';
-
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/mention.pipe.ts
-
-```typescript
-import { Pipe, PipeTransform } from '@angular/core';
-
-import type { IAuthUser } from '../../../common/src/lib/auth';
-
-@Pipe({ name: 'mentionify', standalone: true })
-export class MentionifyPipe implements PipeTransform {
-  public transform(text: string | null | undefined, users: IAuthUser[] | null | undefined): string {
-    if (!text) return '';
-    const list = users ?? [];
-
-    const byFirst = new Map<string, IAuthUser>();
-    const byEmail = new Map<string, IAuthUser>();
-    const byLocal = new Map<string, IAuthUser>();
-
-    for (const u of list) {
-      if (!u) continue;
-      if (u.first_name) byFirst.set(u.first_name.toLowerCase(), u);
-      if (u.email) {
-        const em = u.email.toLowerCase();
-        byEmail.set(em, u);
-        const local = em.split('@')[0] ?? '';
-        if (local) byLocal.set(local, u);
-      }
-    }
-
-    // Normalize Windows newlines and collapse any whitespace/newlines immediately before a mention into a single space
-    // This prevents mentions from starting on a new line when users select from autocomplete
-    const normalized = text
-      .replace(/\r\n?/g, '\n')
-      // collapse runs like "  \n   @john" -> " @john"
-      .replace(/[^\S\r\n]*\n+[^\S\r\n]*(?=@[A-Za-z0-9._-]+)/g, ' ')
-      // also collapse leading newlines before a mention at the very start
-      .replace(/^\s*\n+\s*(?=@[A-Za-z0-9._-]+)/, '');
-
-    // Replace @mentions while preserving preceding character (so we don't match email domains)
-    const replaced = normalized.replace(/(^|[^\w@])@([A-Za-z0-9._-]+)/g, (_m, pre: string, token: string) => {
-      const key = token.toLowerCase();
-      const u = byFirst.get(key) || byEmail.get(key) || byLocal.get(key);
-      if (!u) return `${pre}@${token}`; // leave as-is if no match
-
-      // Display prefers first_name; fallback to email local part
-      const display = u.first_name || u.email.split('@')[0]!;
-      // Use utility classes for styling; sanitized later by sanitizeHtml pipe
-      // Mark with data-mention for CSS targeting to enforce inline layout
-      return `${pre}<span data-mention="1" class="inline font-bold hover:cursor-pointer">@${this.escapeHtml(display)}</span>`;
-    });
-
-    // Convert newlines to <br>
-    return replaced.replace(/\n/g, '<br>');
-  }
-
-  private escapeHtml(s: string): string {
-    return s
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/sanitize-html.pipe.ts
-
-```typescript
-// sanitize-html.pipe.ts
-import { Pipe, PipeTransform, inject } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-
-import DOMPurify from 'dompurify';
-
-@Pipe({ name: 'sanitizeHtml' })
-export class SanitizeHtmlPipe implements PipeTransform {
-  private readonly sanitizer = inject(DomSanitizer);
-
-  public transform(value: string | null | undefined): SafeHtml {
-    if (!value) return '';
-    const clean = DOMPurify.sanitize(value, {
-      ALLOWED_TAGS: [
-        'a',
-        'p',
-        'br',
-        'strong',
-        'em',
-        'ul',
-        'ol',
-        'li',
-        'img',
-        'table',
-        'thead',
-        'tbody',
-        'tfoot',
-        'tr',
-        'td',
-        'th',
-        'colgroup',
-        'col',
-        'span',
-        'div',
-        'hr',
-        'h1',
-        'h2',
-        'h3',
-        'h4',
-        'h5',
-        'h6',
-        'blockquote',
-        'pre',
-        'code',
-        'sub',
-        'sup',
-        'b',
-        'i',
-        'u',
-      ],
-      ALLOWED_ATTR: [
-        'href',
-        'target',
-        'rel',
-        'src',
-        'alt',
-        'title',
-        'style',
-        'class',
-        'data-mention',
-        'width',
-        'height',
-        'colspan',
-        'rowspan',
-        'align',
-        'valign',
-        'cellpadding',
-        'cellspacing',
-        'border',
-      ],
-      RETURN_TRUSTED_TYPE: false,
-    });
-    return this.sanitizer.bypassSecurityTrustHtml(clean);
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/svg-html-pipe.ts
-
-```typescript
-import { Pipe, PipeTransform, inject } from '@angular/core';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-
-@Pipe({ standalone: true, name: 'bypassHtmlSanitizer' })
-export class BypassHtmlSanitizerPipe implements PipeTransform {
-  private sanitizer = inject(DomSanitizer);
-
-  public transform(html: string): SafeHtml {
-    return this.sanitizer.bypassSecurityTrustHtml(html);
-  }
-}
-```
-
-## File: libs/uxcommon/src/pipes/timeago.pipe.ts
-
-```typescript
-import { ChangeDetectorRef, OnDestroy, Pipe, PipeTransform } from '@angular/core';
-
-export interface TimeAgoOptions {
-  thresholdDays?: number;
-  style?: 'long' | 'short' | 'compact' | string;
-  compact?: boolean;
-  hideSuffix?: boolean;
-  // Index signature ensures any other existing options in your codebase are accepted
-  [key: string]: any;
-}
-
-@Pipe({
-  name: 'timeAgo', // Matched to your template casing
-  pure: false, // Must be false to update the UI over time
-})
-export class TimeAgoPipe implements PipeTransform, OnDestroy {
-  private timerId: ReturnType<typeof setTimeout> | null = null;
-  private lastValue?: string | number | Date | null;
-  private lastOptsJson?: string;
-  private lastResult = '';
-
-  constructor(private cdr: ChangeDetectorRef) {}
-
-  public transform(value: string | number | Date | null | undefined, opts?: TimeAgoOptions): string {
-    // Stringify options to avoid pure:false memory reference loops
-    const optsJson = opts ? JSON.stringify(opts) : '';
-
-    // Only recalculate if the date OR the options have actually changed
-    if (this.lastValue === value && this.lastOptsJson === optsJson && this.timerId) {
-      return this.lastResult;
-    }
-
-    this.lastValue = value;
-    this.lastOptsJson = optsJson;
-    this.clearTimer();
-
-    if (!value) {
-      this.lastResult = '';
-      return this.lastResult;
-    }
-
-    const date = new Date(value);
-    if (isNaN(date.getTime())) {
-      this.lastResult = String(value);
-      return this.lastResult;
-    }
-
-    const diffMs = new Date().getTime() - date.getTime();
-
-    // Calculate and cache the result
-    this.lastResult = this.formatTimeAgo(date, diffMs, opts);
-    this.setupTimer(diffMs);
-
-    return this.lastResult;
-  }
-
-  private formatTimeAgo(date: Date, diffMs: number, opts?: TimeAgoOptions): string {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    // If a threshold is set and exceeded, fallback to a standard date string
-    if (opts?.thresholdDays !== undefined && days >= opts.thresholdDays) {
-      return date.toLocaleDateString(undefined, {
-        month: opts.style === 'short' ? 'short' : 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    }
-
-    const suffix = opts?.hideSuffix ? '' : ' ago';
-
-    // Handle compact/short styles
-    if (opts?.compact || opts?.style === 'compact' || opts?.style === 'short') {
-      if (seconds < 60) return 'now';
-      if (minutes < 60) return `${minutes}m`;
-      if (hours < 24) return `${hours}h`;
-      return `${days}d`;
-    }
-
-    // Default long style
-    if (seconds < 60) return 'just now';
-    if (minutes === 1) return `a minute${suffix}`;
-    if (minutes < 60) return `${minutes} minutes${suffix}`;
-    if (hours === 1) return `an hour${suffix}`;
-    if (hours < 24) return `${hours} hours${suffix}`;
-    if (days === 1) return 'yesterday';
-    if (days < 30) return `${days} days${suffix}`;
-
-    const months = Math.floor(days / 30);
-    if (months === 1) return `a month${suffix}`;
-    if (months < 12) return `${months} months${suffix}`;
-
-    const years = Math.floor(days / 365);
-    if (years === 1) return `a year${suffix}`;
-    return `${years} years${suffix}`;
-  }
-
-  private setupTimer(diffMs: number): void {
-    const seconds = Math.floor(Math.abs(diffMs) / 1000);
-    const minutes = Math.floor(seconds / 60);
-
-    let timeoutMs = 60000;
-
-    // Scale update frequency based on age to save CPU
-    if (seconds < 60) {
-      timeoutMs = 10000; // 10 seconds
-    } else if (minutes < 60) {
-      timeoutMs = 60000; // 1 minute
-    } else if (minutes < 1440) {
-      timeoutMs = 3600000; // 1 hour
-    } else {
-      timeoutMs = 86400000; // 1 day
-    }
-
-    // Native setTimeout triggers Angular's zoneless scheduler internally
-    // when markForCheck is called inside it.
-    this.timerId = setTimeout(() => {
-      this.cdr.markForCheck();
-    }, timeoutMs);
-  }
-
-  private clearTimer(): void {
-    if (this.timerId) {
-      clearTimeout(this.timerId);
-      this.timerId = null;
-    }
-  }
-
-  public ngOnDestroy(): void {
-    this.clearTimer();
-  }
-}
-```
-
-## File: libs/uxcommon/src/index.ts
-
-```typescript
-export * from './loading-gate';
-
-// Components
-export * from './components/alerts/alert-service';
-export * from './components/alerts/alerts';
-export * from './components/icons/icon';
-export * from './components/icons/icons.index';
-export * from './components/confirm-dialog-host';
-export * from './components/confirm-dialog.service';
-export * from './components/user-avatar/user-avatar';
-export * from './components/tags/tagitem';
-export * from './components/input/input';
-export * from './components/textarea/textarea';
-export * from './components/select/select';
-export * from './components/toggle/toggle';
-export * from './components/detail-header/detail-header';
-export * from './components/detail-layout/detail-layout';
-export * from './components/entity-overview/entity-overview';
-export * from './components/address-form-group/address-form-group';
-export * from './components/card/card';
-export * from './components/stat-card/stat-card';
-export * from './components/side-drawer/side-drawer';
-export * from './components/tabs/tabs';
-export * from './components/status-badge/status-badge';
-export * from './components/profile-card/profile-card';
-export * from './components/detail-row/detail-row';
-export * from './components/detail-item/detail-item';
-export * from './components/system-metadata/system-metadata';
-export * from './components/fields-selector/fields-selector';
-export * from './components/public-link-panel/public-link-panel';
-
-// Directives
-export * from './directives/animate-if.directive';
-export * from './directives/spin-on-click.directive';
-
-// Pipes
-export * from './pipes/file-icon.pipe';
-export * from './pipes/filesize.pipe';
-export * from './pipes/sanitize-html.pipe';
-export * from './pipes/svg-html-pipe';
-export * from './pipes/timeago.pipe';
-```
-
-## File: libs/uxcommon/src/test-setup.ts
-
-```typescript
-import '@angular/compiler';
-import '@analogjs/vitest-angular/setup-zone';
-
-import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
-import { getTestBed } from '@angular/core/testing';
-import { vi } from 'vitest';
-
-getTestBed().initTestEnvironment(BrowserTestingModule, platformBrowserTesting());
-
-(globalThis as any).jest = vi;
-(globalThis as any).fetch = vi.fn().mockResolvedValue({
-  ok: true,
-  text: () => Promise.resolve('<svg></svg>'),
-});
-```
-
-## File: libs/uxcommon/eslint.config.cjs
-
-```javascript
-const { FlatCompat } = require('@eslint/eslintrc');
-const path = require('path');
-
-const compat = new FlatCompat({ baseDirectory: __dirname });
-
-module.exports = [
-  ...compat
-    .config({
-      extends: ['plugin:@nx/angular', 'plugin:@angular-eslint/template/process-inline-templates'],
-      parserOptions: {
-        project: [
-          path.resolve(__dirname, 'tsconfig.lib.json'),
-          path.resolve(__dirname, 'tsconfig.spec.json'),
-          path.resolve(__dirname, '../../tsconfig.base.json'),
-        ],
-        sourceType: 'module',
-      },
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.ts'],
-      rules: {
-        '@angular-eslint/directive-selector': ['error', { type: 'attribute', prefix: 'pc', style: 'camelCase' }],
-        '@angular-eslint/component-selector': ['error', { type: 'element', prefix: 'pc', style: 'kebab-case' }],
-      },
-    })),
-
-  ...compat
-    .config({
-      extends: ['plugin:@nx/angular-template', 'plugin:@angular-eslint/template/recommended'],
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.html'],
-      rules: {},
-    })),
-];
-```
-
-## File: libs/uxcommon/project.json
-
-```json
-{
-  "name": "uxcommon",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "libs/uxcommon/src",
-  "prefix": "lib",
-  "projectType": "library",
-  "tags": [],
-  "targets": {
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/libs/uxcommon"],
-      "options": {
-        "cwd": "libs/uxcommon",
-        "command": "vitest run"
-      }
-    },
-    "lint": {
-      "executor": "@nx/eslint:lint"
-    }
-  }
-}
-```
-
-## File: libs/uxcommon/README.md
-
-```markdown
-# uxcommon
-
-This library was generated with [Nx](https://nx.dev).
-
-## Running unit tests
-
-Run `nx test uxcommon` to execute the unit tests.
-```
-
-## File: libs/uxcommon/tsconfig.json
-
-```json
-{
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "noImplicitOverride": true,
-    "noPropertyAccessFromIndexSignature": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "module": "preserve"
-  },
-  "angularCompilerOptions": {
-    "enableI18nLegacyMessageIdFormat": false,
-    "strictInjectionParameters": true,
-    "strictInputAccessModifiers": true,
-    "typeCheckHostBindings": true,
-    "strictTemplates": true
-  },
-  "files": [],
-  "include": [],
-  "references": [
-    {
-      "path": "./tsconfig.lib.json"
-    },
-    {
-      "path": "./tsconfig.spec.json"
-    }
-  ]
-}
-```
-
-## File: libs/uxcommon/tsconfig.lib.json
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "declaration": true,
-    "declarationMap": true,
-    "inlineSources": true,
-    "types": []
-  },
-  "exclude": [
-    "src/**/*.spec.ts",
-    "src/test-setup.ts",
-    "jest.config.ts",
-    "src/**/*.test.ts",
-    "vite.config.ts",
-    "vite.config.mts",
-    "vitest.config.ts",
-    "vitest.config.mts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.tsx",
-    "src/**/*.test.js",
-    "src/**/*.spec.js",
-    "src/**/*.test.jsx",
-    "src/**/*.spec.jsx"
-  ],
-  "include": ["src/**/*.ts"]
-}
-```
-
-## File: libs/uxcommon/tsconfig.spec.json
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "types": ["vitest/globals", "vitest/importMeta", "vite/client", "node", "vitest"]
-  },
-  "include": [
-    "vite.config.ts",
-    "vite.config.mts",
-    "vitest.config.ts",
-    "vitest.config.mts",
-    "src/**/*.test.ts",
-    "src/**/*.spec.ts",
-    "src/**/*.test.tsx",
-    "src/**/*.spec.tsx",
-    "src/**/*.test.js",
-    "src/**/*.spec.js",
-    "src/**/*.test.jsx",
-    "src/**/*.spec.jsx",
-    "src/**/*.d.ts"
-  ],
-  "files": ["src/test-setup.ts"]
-}
-```
-
-## File: libs/common/src/lib/schemas/auth.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { emailSchema, nameSchema } from './core.schema';
-
-export const InviteAuthUserObj = z.object({
-  email: emailSchema,
-  first_name: nameSchema('First name'),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-});
-
-export const NotificationPreferencesObj = z.object({
-  mention_in_comment: z.boolean().default(true),
-  mention_in_comment_in_app: z.boolean().default(true),
-  task_assigned: z.boolean().default(true),
-  task_assigned_in_app: z.boolean().default(true),
-  task_due: z.boolean().default(true),
-  task_due_in_app: z.boolean().default(true),
-  person_assigned: z.boolean().default(true),
-  person_assigned_in_app: z.boolean().default(true),
-  export_ready: z.boolean().default(true),
-  export_ready_in_app: z.boolean().default(true),
-  import_summary: z.boolean().default(true),
-  import_summary_in_app: z.boolean().default(true),
-});
-
-/**
- * Shape of the profiles.preferences jsonb column (formerly the untyped
- * profiles.json grab-bag). Only `notifications` is written today; unknown
- * keys from older rows are preserved rather than rejected.
- */
-export const ProfilePreferencesObj = z
-  .object({
-    notifications: NotificationPreferencesObj.partial().optional(),
-  })
-  .catchall(z.unknown());
-
-export const UpdateAuthUserObj = z.object({
-  email: emailSchema.optional(),
-  first_name: nameSchema('First name').optional(),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-  verified: z.boolean().optional(),
-  two_factor_enabled: z.boolean().optional(),
-  notification_preferences: NotificationPreferencesObj.optional(),
-});
-
-export const Verify2FAObj = z.object({
-  email: emailSchema,
-  code: z.string().length(6),
-  rememberMe: z.boolean().optional(),
-});
-```
-
-## File: libs/common/src/lib/schemas/companies.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-/**
- * Shape of the companies.enrichment jsonb column (formerly the untyped
- * companies.json grab-bag) — the Google Places enrichment payload.
- * `place_details` is the raw Places API result and deliberately unmodeled.
- */
-export const CompanyEnrichmentObj = z
-  .object({
-    google_enriched: z.boolean().optional(),
-    place_details: z.unknown().optional(),
-  })
-  .catchall(z.unknown());
-
-export const CompanyInputObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(200, 'Name too long'),
-  description: z.string().trim().max(1000).optional().nullable(),
-  website: z.string().trim().max(255).optional().nullable().or(z.literal('')),
-  email: z.string().trim().max(255).optional().nullable().or(z.literal('')),
-  phone: z.string().trim().max(50).optional().nullable(),
-  industry: z.string().trim().max(100).optional().nullable(),
-  notes: z.string().trim().max(10000).optional().nullable(),
-});
-```
-
-## File: libs/common/src/lib/schemas/core.schema.ts
-
-```typescript
-import { z } from 'zod';
-
-export const sortModelItem = z.object({
-  colId: z.string(),
-  sort: z.enum(['asc', 'desc']),
-});
-
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
-}
-
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
-}
-
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
-
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
-
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
-
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
-  ),
-});
-
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const queueExportInput = z.object({
-  entity: z.enum([
-    'persons',
-    'households',
-    'companies',
-    'tags',
-    'issues',
-    'tasks',
-    'lists',
-    'newsletters',
-    'teams',
-    'users',
-    'volunteer',
-    'forms',
-    'workflows',
-  ]),
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-export const dataExportRecord = z.object({
-  id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
-});
-
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
-});
-
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
-```
-
-## File: libs/common/src/lib/schemas/web-forms.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema } from './core.schema';
-
-export const AddWebFormObj = z.object({
-  name: nameSchema('Web Form name', 100),
-  description: descriptionSchema(500),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  target_tags: z.array(z.string()).nullable().optional(),
-  target_lists: z.array(z.string()).nullable().optional(),
-  fields: z.array(z.string()).nullable().optional(),
-  // Legacy donation/standard add path. 'active' is accepted for back-compat and mapped to
-  // 'published' by the controller; the lifecycle statuses pass through unchanged.
-  status: z.enum(['active', 'draft', 'published', 'archived']).default('active').optional(),
-  send_confirmation: z.boolean().default(true).optional(),
-  send_alert: z.boolean().default(true).optional(),
-  form_type: z.enum(['standard', 'donation', 'recurring_donation']).default('standard').optional(),
-});
-
-export const UpdateWebFormObj = z.object({
-  name: nameSchema('Web Form name', 100).optional(),
-  description: descriptionSchema(500).optional(),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  target_tags: z.array(z.string()).nullable().optional(),
-  target_lists: z.array(z.string()).nullable().optional(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'draft', 'published', 'archived']).optional(),
-  send_confirmation: z.boolean().optional(),
-  send_alert: z.boolean().optional(),
-});
-
-export const WebFormsObj = z.object({
-  id: z.string().uuid(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  redirect_url: z.string().nullable(),
-  target_tags: z.array(z.string()).nullable(),
-  target_lists: z.array(z.string()).nullable(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['draft', 'published', 'archived']),
-  send_confirmation: z.boolean().default(true),
-  send_alert: z.boolean().default(true),
-  form_type: z.string(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.union([z.date(), z.string()]),
-  updated_at: z.union([z.date(), z.string()]),
-});
-
-// ---------------------------------------------------------------------------
-// North Star "living funnel" lifecycle (new Forms experience).
-//
-// The five template types are creation presets + a display chip. Donation forms
-// (form_type IN donation/recurring_donation) keep the legacy string[] `fields`
-// shape and the old add/update path — they are NOT part of this model.
-// ---------------------------------------------------------------------------
-
-export const FORM_TYPES = ['signup', 'pledge', 'rsvp', 'request', 'survey'] as const;
-export type FormType = (typeof FORM_TYPES)[number];
-export const FormTypeEnum = z.enum(FORM_TYPES);
-
-export const FORM_STATUSES = ['draft', 'published', 'archived'] as const;
-export type FormStatus = (typeof FORM_STATUSES)[number];
-
-/** A single configurable field on a form. Stored as JSON in `web_forms.fields`. */
-export const FormFieldObj = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  type: z.enum(['text', 'area', 'select', 'checks']),
-  options: z.array(z.string()).optional(),
-  placeholder: z.string().optional(),
-  help: z.string().optional(),
-  on: z.boolean(),
-  required: z.boolean(),
-});
-export type FormField = z.infer<typeof FormFieldObj>;
-
-/** Email is the identity key: always present, always on, always required, never editable. */
-export const FORM_EMAIL_FIELD: FormField = {
-  key: 'email',
-  label: 'Email',
-  type: 'text',
-  placeholder: 'you@example.org',
-  on: true,
-  required: true,
-};
-
-const NAME_FIELD: FormField = {
-  key: 'full_name',
-  label: 'Full name',
-  type: 'text',
-  placeholder: 'Jordan Blake',
-  on: true,
-  required: true,
-};
-
-/**
- * Standard optional fields every form can turn on without schema work. `normForm` appends any of
- * these that a form's own field list doesn't already define, all `on: false`.
- */
-export const FORM_STANDARD_CATALOG: FormField[] = [
-  { key: 'mobile', label: 'Mobile phone', type: 'text', placeholder: '(555) 000-0000', on: false, required: false },
-  { key: 'street1', label: 'Street address', type: 'text', on: false, required: false },
-  { key: 'city', label: 'City', type: 'text', on: false, required: false },
-  { key: 'zip', label: 'ZIP code', type: 'text', on: false, required: false },
-];
-
-/** Creation templates — all start from name + email, then add type-specific fields. */
-export const FORM_TEMPLATES: Record<FormType, { submitLabel: string; description: string; fields: FormField[] }> = {
-  signup: {
-    submitLabel: 'Sign me up',
-    description: 'Join the team — tell us how you can help and we’ll be in touch.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      {
-        key: 'mobile',
-        label: 'Mobile phone',
-        type: 'text',
-        placeholder: '(555) 000-0000',
-        help: 'Only used for shift reminders',
-        on: true,
-        required: false,
-      },
-      {
-        key: 'availability',
-        label: 'When can you help?',
-        type: 'checks',
-        options: ['Weekday evenings', 'Weekend canvasses', 'Phone banking', 'Event day'],
-        on: true,
-        required: false,
-      },
-      {
-        key: 'notes',
-        label: 'Anything we should know?',
-        type: 'area',
-        placeholder: 'Languages, accessibility, interests…',
-        on: true,
-        required: false,
-      },
-    ],
-  },
-  pledge: {
-    submitLabel: 'Make my pledge',
-    description: 'Pledge your support — every contribution helps.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'amount', label: 'Pledge amount', type: 'text', placeholder: 'E.g. 50', on: true, required: true },
-    ],
-  },
-  rsvp: {
-    submitLabel: 'Reserve my spot',
-    description: 'Let us know you’re coming.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'seats', label: 'How many seats?', type: 'text', placeholder: 'E.g. 2', on: true, required: true },
-    ],
-  },
-  request: {
-    submitLabel: 'Send request',
-    description: 'Tell us what you need and where.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'street1', label: 'Street address', type: 'text', on: true, required: true },
-      { key: 'city', label: 'City', type: 'text', on: true, required: false },
-      { key: 'zip', label: 'ZIP code', type: 'text', on: true, required: false },
-      { key: 'notes', label: 'Notes', type: 'area', placeholder: 'How can we help?', on: true, required: false },
-    ],
-  },
-  survey: {
-    submitLabel: 'Submit',
-    description: 'Your answers help shape our priorities.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      {
-        key: 'issues',
-        label: 'Which issues matter most?',
-        type: 'checks',
-        options: ['Housing', 'Transit', 'Safety', 'Parks', 'Schools'],
-        on: true,
-        required: false,
-      },
-      {
-        key: 'open',
-        label: 'Anything else?',
-        type: 'area',
-        placeholder: 'Share your thoughts…',
-        on: true,
-        required: false,
-      },
-    ],
-  },
-};
-
-/**
- * Coerces a form's stored `fields` JSON into a well-formed FormField[]: keeps only object-shaped
- * fields (silently drops legacy string[] entries from donation forms), guarantees the name + email
- * identity fields exist, enforces the email invariant (always on + required), and appends any
- * standard-catalog fields the form hasn't defined. This is the single source of truth both the API
- * and the editor use so the preview always matches what will be saved.
- */
-export function normForm(rawFields: unknown): FormField[] {
-  const source = Array.isArray(rawFields) ? rawFields : [];
-  const fields: FormField[] = [];
-  for (const raw of source) {
-    const parsed = FormFieldObj.safeParse(raw);
-    if (parsed.success) fields.push(parsed.data);
-  }
-
-  if (!fields.some((f) => f.key === NAME_FIELD.key)) {
-    fields.unshift({ ...NAME_FIELD });
-  }
-
-  const emailIndex = fields.findIndex((f) => f.key === FORM_EMAIL_FIELD.key);
-  if (emailIndex === -1) {
-    // Slot email right after the name field.
-    fields.splice(1, 0, { ...FORM_EMAIL_FIELD });
-  } else {
-    const current = fields[emailIndex];
-    if (current) {
-      fields[emailIndex] = { ...current, on: true, required: true };
-    }
-  }
-
-  for (const catalog of FORM_STANDARD_CATALOG) {
-    if (!fields.some((f) => f.key === catalog.key)) {
-      fields.push({ ...catalog });
-    }
-  }
-
-  return fields;
-}
-
-/** Build the initial field list for a newly created form of the given template type. */
-export function fieldsForTemplate(type: FormType): FormField[] {
-  return normForm(FORM_TEMPLATES[type].fields.map((f) => ({ ...f })));
-}
-
-export const CreateFormObj = z.object({
-  name: nameSchema('Form name', 100),
-  type: FormTypeEnum,
-});
-
-/** Live-edit patch for the new Forms editor. Every field is optional (debounced partial saves). */
-export const UpdateFormObj = z.object({
-  name: nameSchema('Form name', 100).optional(),
-  description: descriptionSchema(2000).optional(),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  submit_label: z.string().trim().max(60).optional(),
-  thanks_title: z.string().trim().max(120).optional(),
-  thanks_body: z.string().trim().max(2000).optional(),
-  confirm_email_on: z.boolean().optional(),
-  confirm_subject: z.string().trim().max(200).optional(),
-  confirm_body: z.string().trim().max(5000).optional(),
-  notify_team_on: z.boolean().optional(),
-  fields: z.array(FormFieldObj).optional(),
-  target_tags: z.array(z.string()).optional(),
-  target_lists: z.array(z.string()).optional(),
-});
-
-/** One row in the Responses tab. */
-export const FormSubmissionObj = z.object({
-  id: z.string(),
-  person_id: z.string(),
-  person_name: z.string().nullable(),
-  answers: z.record(z.string(), z.unknown()),
-  created_at: z.union([z.date(), z.string()]),
-});
-```
-
-## File: libs/common/src/lib/utils.ts
-
-```typescript
-export function debounce<F extends (...args: any[]) => void>(fn: F, delay = 300) {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<F>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), delay);
-  };
-}
-
-export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Subdomain labels that must never be assigned to a tenant — they collide with app/infra hosts.
- * A tenant's slug becomes `<slug>.<baseDomain>`, so the public form page can resolve the tenant
- * from the Host header; these labels are reserved so a tenant can't shadow `app`, `api`, etc.
- */
-export const RESERVED_SUBDOMAINS = new Set<string>([
-  'app',
-  'www',
-  'api',
-  'admin',
-  'mail',
-  'email',
-  'ftp',
-  'smtp',
-  'imap',
-  'pop',
-  'ns',
-  'ns1',
-  'ns2',
-  'dns',
-  'mx',
-  'static',
-  'assets',
-  'cdn',
-  'media',
-  'files',
-  'download',
-  'downloads',
-  'status',
-  'help',
-  'support',
-  'docs',
-  'blog',
-  'dev',
-  'staging',
-  'stage',
-  'test',
-  'demo',
-  'sandbox',
-  'portal',
-  'dashboard',
-  'account',
-  'accounts',
-  'billing',
-  'pay',
-  'payments',
-  'auth',
-  'login',
-  'logout',
-  'signup',
-  'signin',
-  'register',
-  'public',
-  'forms',
-  'f',
-  'localhost',
-  'root',
-  'system',
-]);
-
-/**
- * Turn a name into a DNS-safe subdomain label: lowercase, ASCII alphanumerics + single hyphens,
- * no leading/trailing hyphen, capped at 40 chars. Returns '' when nothing usable remains — callers
- * must fall back (e.g. `t-<id>`) and check {@link RESERVED_SUBDOMAINS}.
- */
-export function slugifyHandle(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40)
-    .replace(/-+$/g, '');
-}
-
-/**
- * Escape a string for safe interpolation into HTML markup (element text or
- * double/single-quoted attribute values).
- */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-```
-
-## File: libs/common/eslint.config.cjs
-
-```javascript
-/* ---------------------------------------------------------------
- *  libs/common/eslint.config.cjs
- *  Universal shared library rules (used by frontend + backend)
- * -------------------------------------------------------------- */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-/** @type {import('eslint').Linter.FlatConfig[]} */
-module.exports = [
-  /* Compose the root config so `nx lint common` enforces the same
-   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
-   * as the pre-commit `eslint` invocation. Confirmed zero new violations. */
-  ...require('../../eslint.config.cjs'),
-
-  /* JavaScript/TypeScript base rules */
-  ...compat
-    .config({
-      extends: [
-        'plugin:@nx/javascript',
-        'plugin:@typescript-eslint/recommended',
-        'plugin:@typescript-eslint/stylistic',
-      ],
-      parserOptions: {
-        project: [
-          require('path').resolve(__dirname, 'tsconfig.lib.json'),
-          require('path').resolve(__dirname, '../../tsconfig.base.json'),
-        ],
-        sourceType: 'module',
-      },
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.{ts,tsx,js,jsx}'],
-      rules: {
-        /* Shared TypeScript rules */
-        '@typescript-eslint/consistent-type-imports': 'warn',
-        '@typescript-eslint/no-explicit-any': 'warn',
-        '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-        '@typescript-eslint/no-inferrable-types': 'off',
-        '@typescript-eslint/explicit-function-return-type': 'off',
-
-        /* General JS/TS best practices */
-        'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
-        'prefer-const': 'error',
-        'no-var': 'error',
-        'no-empty': ['warn', { allowEmptyCatch: true }],
-      },
-    })),
-];
-```
-
-## File: libs/uxcommon/src/components/alerts/alert-service.ts
-
-```typescript
-import { Injectable, signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-
-export class AlertMessage {
-  public readonly visible = signal(true);
-  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
-  public readonly count = signal(1);
-
-  public OKBtn: string;
-  public OKBtnCallback?: () => void;
-  public duration = 3000;
-  public id: string;
-  public text: string;
-  public timeoutId: NodeJS.Timeout | undefined;
-  public title?: string;
-  public type?: ALERTTYPE;
-
-  constructor(init?: Partial<AlertMessage>) {
-    Object.assign(this, init);
-    this.id = init?.id ?? crypto.randomUUID();
-    this.OKBtn = init?.OKBtn ?? 'OK';
-    this.duration = init?.duration || 3000;
-    this.text = init?.text ?? 'Alert';
-  }
-}
-
-/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
-const MAX_TOAST_STACK = 3;
-
-@Injectable({
-  providedIn: 'root',
-})
-export class AlertService {
-  private readonly alertsSignal = signal<AlertMessage[]>([]);
-
-  public readonly alertList = this.alertsSignal.asReadonly();
-  public readonly alerts$ = toObservable(this.alertsSignal);
-
-  public OKBtnCallback(id: string): void {
-    const alert = this.findById(id);
-    alert?.OKBtnCallback?.();
-  }
-
-  public dismiss(id: string): void {
-    const alert = this.findById(id);
-
-    if (!alert) return;
-
-    // Clear any pending removal timeout
-    clearTimeout(alert.timeoutId);
-    alert.timeoutId = undefined;
-
-    alert.visible.set(false);
-
-    // Have to let the animation do its thing first
-    setTimeout(() => {
-      const next = this.alertsSignal().filter((msg) => msg.id !== id);
-      this.alertsSignal.set(next);
-    }, 300);
-  }
-
-  public getAlerts(): AlertMessage[] {
-    return this.alertsSignal();
-  }
-
-  public show(alert: Partial<AlertMessage>): void {
-    // Coalesce an identical (same text + type) toast into a ×N count with a
-    // refreshed timer instead of stacking duplicates (§2).
-    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
-
-    if (existing) {
-      existing.count.update((c) => c + 1);
-      clearTimeout(existing.timeoutId);
-      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
-      return;
-    }
-
-    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
-    this.alertsSignal.update((list) => {
-      const next = [messageWithMeta, ...list];
-      const dropped = next.slice(MAX_TOAST_STACK);
-      dropped.forEach((m) => clearTimeout(m.timeoutId));
-      return next.slice(0, MAX_TOAST_STACK);
-    });
-
-    const duration = messageWithMeta.duration || 3000;
-    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
-  }
-
-  public showError(text: string): void {
-    this.show(new AlertMessage({ text, type: 'error' }));
-  }
-
-  public showInfo(text: string): void {
-    this.show(new AlertMessage({ text, type: 'info' }));
-  }
-
-  public showSuccess(text: string): void {
-    this.show(new AlertMessage({ text, type: 'success' }));
-  }
-
-  public showWarn(text: string): void {
-    this.show(new AlertMessage({ text, type: 'warning' }));
-  }
-
-  private findById(id: string) {
-    return this.alertsSignal().find((m) => m.id === id);
-  }
-}
-
-export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
-```
-
-## File: libs/uxcommon/src/components/alerts/alerts.html
-
-```html
-<div
-  class="z-50 top-0 absolute w-full left-0"
-  [class.absolute]="!isPositionRelative()"
-  [class.top-0]="isPositionTop()"
-  [class.bottom-0]="isPositionBottom()"
->
-  @for (alert of alerts(); track alert.id) {
-
-  <div
-    class="alert rounded-none"
-    role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
-    [class.only-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.last-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.first-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.alert-info]="alert.type === 'info'"
-    [class.alert-warning]="alert.type === 'warning'"
-    [class.alert-success]="alert.type === 'success'"
-    [class.alert-error]="alert.type === 'error'"
-    [class.error]="alert.type === 'error'"
-    [class.animate-bounce]="isPositionBottom()"
-  >
-    <pc-icon [name]="icon(alert.type!)" class="mr-2 self-start"></pc-icon>
-    <div>
-      <h4 class="text-base font-normal" [class.hidden]="!alert.title">{{ alert.title }}</h4>
-      <div class="font-light" [class.text-sm]="!!alert.title" [innerHTML]="alert.text"></div>
-    </div>
-    @if (alert.count() > 1) {
-    <span class="badge badge-sm border-none bg-base-100/25 font-semibold tabular-nums">×{{ alert.count() }}</span>
-    }
-    <button
-      class="btn btn-sm"
-      [class.hidden]="!alert.OKBtn"
-      [class.btn-info]="alert.type === 'info'"
-      [class.btn-warning]="alert.type === 'warning'"
-      [class.btn-success]="alert.type === 'success'"
-      [class.btn-error]="alert.type === 'error'"
-      (click)="OKBtnClick(alert.id)"
-    >
-      {{ alert.OKBtn }}
-    </button>
-  </div>
-  }
-</div>
-```
-
-## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.service.ts
-
-```typescript
-import { Injectable, signal } from '@angular/core';
-
-import { PcBreadcrumb } from './breadcrumbs';
-
-/**
- * The full breadcrumb strip published by the current page: the crumb trail plus
- * the optional "N of M filtered" record pager. Pages set this; the navbar renders it.
- * The pager's prev/next are callbacks (not outputs) so they can route back to the
- * page that owns the record-navigation handle from wherever the strip is rendered.
- */
-export interface BreadcrumbTrail {
-  crumbs: PcBreadcrumb[];
-  positionLabel: string | null;
-  hasPrev: boolean;
-  hasNext: boolean;
-  prevLabel: string;
-  nextLabel: string;
-  onPrev: () => void;
-  onNext: () => void;
-}
-
-/**
- * Hoists the breadcrumb trail out of the page body and into the navbar.
- *
- * A page (via `pc-detail-header`, or directly) `set()`s its trail on init and
- * `clear()`s it on destroy; the navbar reads `trail()` and renders it. The router
- * destroys the old routed component before creating the new one, so a page's
- * clear-on-destroy always runs before the next page's set-on-init — list/grid pages
- * that never set a trail are left with a cleared (null) strip.
- */
-@Injectable({ providedIn: 'root' })
-export class BreadcrumbsService {
-  private readonly _trail = signal<BreadcrumbTrail | null>(null);
-  public readonly trail = this._trail.asReadonly();
-
-  public set(trail: BreadcrumbTrail): void {
-    this._trail.set(trail);
-  }
-
-  public clear(): void {
-    this._trail.set(null);
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/csv-import/csv.worker.ts
-
-```typescript
-// CSV/TSV parsing web worker (shared)
-// Receives: { type: 'parse', text: string }
-// Posts: { type: 'result', headers: string[], rows: Array<Record<string,string>> } or { type: 'error', message }
-
-function detectDelimiter(sample: string[]) {
-  const candidates = [',', '\t', ';'];
-  let best: { ch: string; score: number } = { ch: ',', score: -1 };
-  for (const ch of candidates) {
-    let score = 0;
-    for (let i = 0; i < Math.min(sample.length, 5); i++) {
-      const line = sample[i] ?? '';
-      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(line)) continue;
-      score += line.split(ch).length - 1 || 0;
-    }
-    if (score > best.score) best = { ch, score };
-  }
-  return best.ch;
-}
-
-function splitLine(line: string, delimiter: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === delimiter && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current);
-  return result.map((s) => s.trim());
-}
-
-const ctx: any = self as unknown;
-
-ctx.onmessage = (e: MessageEvent) => {
-  try {
-    const { type, text } = e.data || {};
-    if (type !== 'parse' || typeof text !== 'string') return;
-
-    const lines = text.replace(/\r\n?/g, '\n').split('\n');
-    const delimiter = detectDelimiter(lines);
-    const headerLine = lines.find((l) => !!l && !/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(l)) || '';
-    const headers = splitLine(headerLine, delimiter);
-    const rows: Array<Record<string, string>> = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const rawLine = lines[i];
-      if (!rawLine) continue;
-      if (rawLine === headerLine) continue;
-      if (/^\s*Page\s+\d+\s+of\s+\d+\s*$/i.test(rawLine)) continue;
-      const cols = splitLine(rawLine, delimiter);
-      if (cols.every((c) => !c || c.trim().length === 0)) continue;
-      const row: Record<string, string> = {};
-      headers.forEach((h, idx) => (row[h] = cols[idx] ?? ''));
-      rows.push(row);
-    }
-
-    ctx.postMessage({ type: 'result', headers, rows });
-  } catch (err) {
-    ctx.postMessage({ type: 'error', message: err instanceof Error && err.message ? err.message : 'Parse failed' });
-  }
-};
-```
-
-## File: libs/uxcommon/src/components/detail-item/detail-item.ts
-
-```typescript
-import { Component, inject, input, output } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-item',
-  imports: [Icon],
-  template: `
-    <div class="flex flex-col gap-1 mb-4">
-      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">
-        {{ label() }}
-      </span>
-      <div class="flex items-center gap-2">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
-        }
-        @if (value() && link()) {
-          <button
-            type="button"
-            class="text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
-            (click)="linkClicked.emit()"
-          >
-            {{ value() }}
-          </button>
-        } @else {
-          <span class="text-sm font-medium text-base-content break-words">
-            @if (value()) {
-              {{ value() }}
-            } @else {
-              <span class="italic text-base-content/30">Not provided</span>
-            }
-          </span>
-        }
-        @if (value() && copyable()) {
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-            [attr.data-tip]="'Copy ' + label()"
-            (click)="copyToClipboard($event)"
-          >
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-          </button>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailItem {
-  public label = input.required<string>();
-  public value = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public copyable = input<boolean>(false);
-  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
-  public link = input<boolean>(false);
-  public readonly linkClicked = output<void>();
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyToClipboard(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    const val = this.value();
-    if (!val) return;
-
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${this.label()}`);
-      });
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.html
-
-```html
-<dialog #dlg class="modal">
-  @if (state()) {
-  <div class="modal-box">
-    <div class="flex items-center gap-2">
-      <pc-icon [name]="icon()" class="text-xl" />
-      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
-    </div>
-
-    @if (state()!.message) {
-    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
-    } @if (state()!.type === 'prompt') {
-    <input
-      [placeholder]="state()!.inputPlaceholder || ''"
-      class="input input-bordered w-full mb-4"
-      [value]="promptValue()"
-      (input)="promptValue.set($any($event.target).value)"
-    />
-    } @if (state()!.type === 'choose') {
-    <div class="flex flex-col gap-2 w-full mt-4">
-      @for (choice of state()!.choices; track choice.label) {
-      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
-        {{ choice.label }}
-      </button>
-      } @if (showCancel()) {
-      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-    </div>
-    } @else {
-    <div class="flex justify-end gap-2">
-      @if (showCancel()) {
-      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
-    </div>
-    }
-  </div>
-
-  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
-    <button>close</button>
-  </form>
-  }
-</dialog>
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog.service.ts
-
-```typescript
-import { signal, computed, Service } from '@angular/core';
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface DialogChoice<T = any> {
-  label: string;
-  value: T;
-  variant?: DialogVariant;
-}
-
-export interface ChooseOptions<T = any> {
-  allowBackdropClose?: boolean;
-  cancelText?: string;
-  choices: DialogChoice<T>[];
-  icon?: PcIconNameType;
-  message?: string;
-  title: string;
-  variant?: DialogVariant;
-}
-
-export interface BaseDialogOptions {
-  allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm
-  cancelText?: string; // default per type
-  confirmText?: string; // default per type
-  /** Style cancel as the primary/safe-default button and confirm as a plain variant-colored one (e.g. "Keep editing" vs. "Discard changes"). */
-  emphasizeCancel?: boolean;
-  icon?: PcIconNameType; // optional icon name for <pc-icon>
-  message?: string;
-  title: string;
-  variant?: DialogVariant;
-}
-
-export interface DialogState {
-  allowBackdropClose: boolean;
-  cancelText: string;
-  confirmText: string;
-  defaultValue?: string;
-  emphasizeCancel?: boolean;
-  icon?: PcIconNameType;
-
-  // prompt
-  inputPlaceholder?: string;
-  message?: string;
-  title: string;
-  type: DialogType;
-  variant: DialogVariant;
-
-  // choose
-  choices?: DialogChoice[];
-}
-
-export interface PromptOptions extends BaseDialogOptions {
-  defaultValue?: string;
-  inputPlaceholder?: string;
-}
-
-@Service()
-export class ConfirmDialogService {
-  private _resolve: ((value?: any) => void) | null = null;
-
-  public readonly stateSignal = signal<DialogState | null>(null);
-
-  public readonly isOpenSignal = computed(() => this.stateSignal() !== null);
-
-  public alert(opts: BaseDialogOptions): Promise<void> {
-    this.open({
-      type: 'alert',
-      title: opts.title,
-      message: opts.message,
-      variant: opts.variant ?? 'info',
-      icon: opts.icon ?? this.defaultIconFor(opts.variant ?? 'info'),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: 'OK',
-      cancelText: '',
-    });
-    return new Promise<void>((resolve) => (this._resolve = resolve));
-  }
-
-  public cancel(): void {
-    // Normalize cancel values per dialog type
-    const st = this.stateSignal();
-    if (st?.type === 'confirm') this._resolve?.(false);
-    else if (st?.type === 'alert') this._resolve?.();
-    else if (st?.type === 'prompt') this._resolve?.(null);
-    else if (st?.type === 'choose') this._resolve?.(null);
-    this.close();
-  }
-
-  public confirm(opts: BaseDialogOptions): Promise<boolean> {
-    const v = opts.variant ?? 'neutral';
-    const allowBackdropClose = opts.allowBackdropClose ?? v !== 'danger';
-    const confirmText = opts.confirmText ?? (v === 'danger' ? 'Delete' : 'OK');
-    const cancelText = opts.cancelText ?? 'Cancel';
-
-    this.open({
-      type: 'confirm',
-      title: opts.title,
-      message: opts.message,
-      variant: v,
-      icon: opts.icon ?? this.defaultIconFor(v),
-      allowBackdropClose,
-      confirmText,
-      cancelText,
-      emphasizeCancel: opts.emphasizeCancel,
-    });
-
-    return new Promise<boolean>((resolve) => (this._resolve = resolve));
-  }
-
-  public choose<T>(opts: ChooseOptions<T>): Promise<T | null> {
-    const v = opts.variant ?? 'neutral';
-    this.open({
-      type: 'choose',
-      title: opts.title,
-      message: opts.message,
-      variant: v,
-      icon: opts.icon ?? this.defaultIconFor(v),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: '',
-      cancelText: opts.cancelText ?? 'Cancel',
-      choices: opts.choices,
-    });
-
-    return new Promise<T | null>((resolve) => (this._resolve = resolve));
-  }
-
-  public defaultIconFor(variant: DialogVariant): PcIconNameType {
-    switch (variant) {
-      case 'danger':
-        return 'exclamation-triangle';
-      case 'warning':
-        return 'exclamation-circle';
-      case 'info':
-        return 'information-circle';
-      case 'success':
-        return 'check-circle';
-      default:
-        return 'x-mark';
-    }
-  }
-
-  public ok(payload?: unknown): void {
-    this._resolve?.(payload ?? true);
-    this.close();
-  }
-
-  public prompt(opts: PromptOptions): Promise<string | null> {
-    this.open({
-      type: 'prompt',
-      title: opts.title,
-      message: opts.message,
-      variant: opts.variant ?? 'neutral',
-      icon: opts.icon ?? ('pencil-square' as PcIconNameType),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: opts.confirmText ?? 'OK',
-      cancelText: opts.cancelText ?? 'Cancel',
-      inputPlaceholder: opts.inputPlaceholder,
-      defaultValue: opts.defaultValue,
-    });
-    return new Promise<string | null>((resolve) => (this._resolve = resolve));
-  }
-
-  private close(): void {
-    this.stateSignal.set(null);
-    this._resolve = null;
-  }
-
-  private open(st: DialogState): void {
-    this.stateSignal.set(st);
-  }
-}
-
-export type DialogType = 'confirm' | 'alert' | 'prompt' | 'choose';
-
-export type DialogVariant = 'danger' | 'warning' | 'info' | 'success' | 'neutral';
-```
-
-## File: libs/uxcommon/src/loading-gate.ts
-
-```typescript
-// _loading-gate.ts
-import { signal } from '@angular/core';
-
-export type loadingGate = {
-  visible: ReturnType<typeof signal<boolean>>;
-
-  begin(): () => void;
-};
-
-export function createLoadingGate(options?: { delay?: number; minDuration?: number }): loadingGate {
-  const delay = options?.delay ?? 300; // ms before showing
-  const minDuration = options?.minDuration ?? 300; // ms the _loading stays once visible
-
-  const visible = signal(false);
-  let pendingCount = 0;
-  let showTimer: ReturnType<typeof setTimeout> | null = null;
-  let hideTimer: ReturnType<typeof setTimeout> | null = null;
-  let shownAt = 0;
-
-  const clearShowTimer = () => {
-    if (showTimer) {
-      clearTimeout(showTimer);
-      showTimer = null;
-    }
-  };
-  const clearHideTimer = () => {
-    if (hideTimer) {
-      clearTimeout(hideTimer);
-      hideTimer = null;
-    }
-  };
-
-  function scheduleShow() {
-    clearShowTimer();
-    showTimer = setTimeout(() => {
-      showTimer = null;
-      if (pendingCount > 0 && !visible()) {
-        visible.set(true);
-        shownAt = performance.now();
-      }
-    }, delay);
-  }
-
-  function scheduleHide() {
-    clearHideTimer();
-    if (!visible()) return; // never shown → nothing to hide
-
-    const remaining = Math.max(0, minDuration - (performance.now() - shownAt));
-    hideTimer = setTimeout(() => {
-      if (pendingCount === 0) visible.set(false);
-    }, remaining);
-  }
-
-  function begin() {
-    pendingCount++;
-    if (pendingCount === 1) {
-      // First operation: start the delayed show
-      scheduleShow();
-    }
-    // Return disposer
-    let done = false;
-    return () => {
-      if (done) return;
-      done = true;
-      pendingCount--;
-      if (pendingCount <= 0) {
-        pendingCount = 0;
-        // If we never showed, cancel the show timer so _loading never appears
-        clearShowTimer();
-        scheduleHide(); // hides now or after minDuration
-      }
-    };
-  }
-
-  return { begin, visible };
-}
-```
-
-## File: libs/uxcommon/vite.config.mts
-
-```typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-import angular from '@analogjs/vite-plugin-angular';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/libs/uxcommon',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [angular()],
-  test: {
-    name: 'uxcommon',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'jsdom',
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    setupFiles: ['src/test-setup.ts'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/libs/uxcommon',
-      provider: 'v8' as const,
-      // Coverage ratchet: set just under the measured baseline (2026-07-04:
-      // 81.22% stmts / 63.21% branch / 67.05% funcs / 82.27% lines). These may
-      // only ever be raised, never lowered — if your change drops coverage
-      // below them, add tests rather than editing the thresholds.
-      thresholds: {
-        statements: 80,
-        branches: 62,
-        functions: 66,
-        lines: 81,
-      },
-    },
-  },
-}));
-```
-
-## File: libs/common/src/lib/schemas/persons.schema.ts
-
-```typescript
-import { z } from 'zod';
-import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
-
-export const PersonsObj = z.object({
-  id: z.string(),
-  household_id: z.string(),
-  email: z.string(),
-  email2: z.string(),
-  first_name: z.string(),
-  middle_names: z.string(),
-  last_name: z.string(),
-  home_phone: z.string(),
-  mobile: z.string(),
-  notes: z.string(),
-  linkedin: z.string().nullable().optional(),
-  twitter: z.string().nullable().optional(),
-  facebook: z.string().nullable().optional(),
-  instagram: z.string().nullable().optional(),
-  assigned_to: z.string().nullable().optional(),
-  preferred_contact: z.string().nullable().optional(),
-});
-
-export const UpdateHouseholdsObj = addressSchema.extend({
-  home_phone: phoneSchema('Home phone'),
-  notes: notesSchema,
-});
-
-export const UpdatePersonsObj = z.object({
-  campaign_id: idSchema.optional(),
-  household_id: idSchema.optional(),
-  company_id: idSchema.or(z.literal('')).nullable().optional(),
-  email: nullableEmailSchema,
-  email2: nullableEmailSchema,
-  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
-  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
-  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
-  home_phone: phoneSchema('Home phone'),
-  mobile: phoneSchema('Mobile phone'),
-  notes: notesSchema,
-  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
-  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
-  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
-  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
-});
-```
-
-## File: libs/common/src/lib/auth.ts
-
-```typescript
-import { z } from 'zod';
-
-export interface IAuthKeyPayload {
-  name?: string;
-
-  session_id: string;
-
-  tenant_id: string;
-
-  user_id: string;
-
-  role?: string | null;
-
-  source?: string;
-}
-
-export interface IAuthUser {
-  email: string;
-
-  first_name: string;
-
-  last_name?: string;
-
-  id: string;
-
-  role?: string | null;
-
-  avatar_url?: string | null;
-
-  email_verified: boolean;
-
-  passkey_setup_dismissed_at?: Date | null;
-
-  tenant_deletion_scheduled_at?: Date | null;
-
-  tenant_paused_at?: Date | null;
-
-  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
-  tenant_slug?: string | null;
-}
-
-export interface IUserStatsSnapshot {
-  emails_assigned: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  contacts_added: {
-    total: number;
-    last_created_at: Date | null;
-  };
-  files_imported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-  files_exported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-}
-
-export interface IAuthUserRecord extends IAuthUser {
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: Date | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  previous_email?: string | null;
-  previous_role?: string | null;
-  avatar_url?: string | null;
-  notification_preferences?: {
-    mention_in_comment: boolean;
-    mention_in_comment_in_app: boolean;
-    task_assigned: boolean;
-    task_assigned_in_app: boolean;
-    task_due: boolean;
-    task_due_in_app: boolean;
-    person_assigned: boolean;
-    person_assigned_in_app: boolean;
-    export_ready: boolean;
-    export_ready_in_app: boolean;
-    import_summary: boolean;
-    import_summary_in_app: boolean;
-  };
-}
-
-export interface IAuthUserDetail extends IAuthUserRecord {
-  stats: IUserStatsSnapshot;
-}
-
-export interface IToken {
-  auth_token: string | null;
-  refresh_token: string | null;
-}
-
-/**
- * The one generic message shown for any failed sign-in attempt, regardless of
- * whether the email or the password was wrong — never reveal which, so that
- * sign-in cannot be used to probe which emails have accounts. Shared by the
- * backend error formatter and the frontend so the copy never drifts.
- */
-export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
-
-export type signInInputType = z.infer<typeof signInInputObj>;
-
-export type signUpInputType = z.infer<typeof signUpInputObj>;
-
-export const signInInputObj = z.object({
-  email: z.email(),
-  password: z.string().min(8).max(72),
-  rememberMe: z.boolean().optional(),
-});
-
-export const signUpInputObj = z.object({
-  organization: z.string(),
-  email: z.string().max(100),
-  password: z.string().min(8).max(72),
-  first_name: z.string().max(100),
-});
-```
-
-## File: libs/common/src/lib/models.ts
-
-```typescript
-import type { z } from 'zod';
-
-import type {
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  EmailCommentObj,
-  EmailFolderObj,
-  EmailObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  EmailDraftObj,
-  PersonsObj,
-  SettingsEntryObj,
-  SettingsObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  ListsObj,
-  UpdateMarketingEmailObj,
-  UpdateListObj,
-  UpdateTaskObj,
-  UpdateTeamObj,
-  TasksObj,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  dataExportRecord,
-  sortModelItem,
-  InviteAuthUserObj,
-  ProfilePreferencesObj,
-  UpdateAuthUserObj,
-  Verify2FAObj,
-  ImportListItemObj,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-} from './schema';
-
-export interface INow {
-  now: string;
-}
-
-export type AddTagType = z.infer<typeof AddTagObj>;
-
-export type EmailCommentType = z.infer<typeof EmailCommentObj>;
-
-export type EmailFolderType = z.infer<typeof EmailFolderObj>;
-
-export type EmailType = z.infer<typeof EmailObj>;
-
-export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
-
-export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
-
-export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
-
-export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
-
-export type EmailDraftType = z.infer<typeof EmailDraftObj>;
-
-export type ImportListItem = z.infer<typeof ImportListItemObj>;
-
-export type PERSONINHOUSEHOLDTYPE = {
-  first_name: string;
-  full_name: string;
-  id: string;
-  last_name: string;
-  middle_names: string;
-};
-
-export type PersonsType = z.infer<typeof PersonsObj>;
-
-export type SettingsType = z.infer<typeof SettingsObj>;
-
-export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
-
-export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
-
-export type SortModelType = z.infer<typeof sortModelItem>;
-
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-
-export type AddListType = z.infer<typeof AddListObj>;
-
-export type AddTeamType = z.infer<typeof AddTeamObj>;
-
-export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
-
-export type Verify2FAType = z.infer<typeof Verify2FAObj>;
-
-export type ListsType = z.infer<typeof ListsObj>;
-
-export type UpdateListType = z.infer<typeof UpdateListObj>;
-
-export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
-
-export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
-
-export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
-
-export type AddTaskType = z.infer<typeof AddTaskObj>;
-export type TasksType = z.infer<typeof TasksObj>;
-export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
-export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
-export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
-export type QueueExportInputType = z.infer<typeof queueExportInput>;
-export type DataExportRecordType = z.infer<typeof dataExportRecord>;
-
-export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
-export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
-export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
-
-export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
-export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
-export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
-
-export type AddWebFormType = z.infer<typeof AddWebFormObj>;
-export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
-export type WebFormsType = z.infer<typeof WebFormsObj>;
-export type CreateFormType = z.infer<typeof CreateFormObj>;
-export type UpdateFormType = z.infer<typeof UpdateFormObj>;
-export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
-
-export type WorkflowsType = z.infer<typeof WorkflowObj>;
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
-
-export type AddEventType = z.infer<typeof AddEventObj>;
-export type EventType = z.infer<typeof EventObj>;
-export type UpdateEventType = z.infer<typeof UpdateEventObj>;
-
-export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
-export type TicketTypeType = z.infer<typeof TicketTypeObj>;
-export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
-
-export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
-export type RegistrationType = z.infer<typeof RegistrationObj>;
-export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-
-export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
-```
-
-## File: libs/common/project.json
-
-```json
-{
-  "name": "common",
-  "$schema": "../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "libs/common/src",
-  "projectType": "library",
-  "targets": {
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["libs/common/**/*.ts"]
-      }
-    },
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/libs/common"],
-      "options": {
-        "cwd": "libs/common",
-        "command": "vitest run"
-      }
-    }
-  },
-  "tags": []
-}
-```
-
-## File: libs/common/vite.config.ts
-
-```typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/libs/common',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [],
-  test: {
-    name: 'common',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'node',
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/libs/common',
-      provider: 'v8' as const,
-      // Coverage ratchet: measured baseline 2026-07-04 was 100% stmts /
-      // 94% branch on this small lib; held slightly below so one new helper
-      // file doesn't instantly break the build, but keep raising it as the
-      // lib grows. Never lower these — add tests instead.
-      thresholds: {
-        statements: 95,
-        branches: 90,
-        functions: 95,
-        lines: 95,
-      },
-    },
-  },
-}));
-```
-
-## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { Icon } from '@icons/icon';
-
-/**
- * A single breadcrumb entry. Crumbs with a `route` render as links;
- * the last crumb (the current page) renders as plain text.
- */
-export interface PcBreadcrumb {
-  label: string;
-  route?: string | readonly unknown[];
-}
-
-@Component({
-  selector: 'pc-breadcrumbs',
-  imports: [RouterLink, Icon],
-  template: `
-    <div class="flex min-w-0 items-center justify-between gap-3">
-      <nav aria-label="Breadcrumb" class="min-w-0 text-xs text-base-content/50">
-        <ol class="flex flex-wrap items-center gap-1.5">
-          @for (crumb of crumbs(); track $index; let last = $last) {
-            <li class="flex min-w-0 items-center gap-1.5">
-              @if (!last && crumb.route) {
-                <a [routerLink]="crumb.route" class="max-w-48 truncate font-medium text-primary hover:underline">
-                  {{ crumb.label }}
-                </a>
-              } @else {
-                <span
-                  class="max-w-48 truncate font-medium text-base-content/60"
-                  [attr.aria-current]="last ? 'page' : null"
-                >
-                  {{ crumb.label }}
-                </span>
-              }
-              @if (!last) {
-                <span class="select-none opacity-60" aria-hidden="true">/</span>
-              }
-            </li>
-          }
-        </ol>
-      </nav>
-      @if (positionLabel()) {
-        <div class="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-xs"
-            [attr.aria-label]="prevLabel()"
-            [disabled]="!hasPrev()"
-            (click)="prev.emit()"
-          >
-            <pc-icon name="chevron-left" [size]="4"></pc-icon>
-          </button>
-          <span class="whitespace-nowrap px-1 text-xs tabular-nums text-base-content/50">{{ positionLabel() }}</span>
-          <button
-            type="button"
-            class="btn btn-circle btn-ghost btn-xs"
-            [attr.aria-label]="nextLabel()"
-            [disabled]="!hasNext()"
-            (click)="next.emit()"
-          >
-            <pc-icon name="chevron-right" [size]="4"></pc-icon>
-          </button>
-        </div>
-      }
-    </div>
-  `,
-})
-export class Breadcrumbs {
-  public readonly crumbs = input.required<PcBreadcrumb[]>();
-
-  /** Optional "N of M filtered" walk-the-list pager, rendered inline with the crumb trail. */
-  public readonly positionLabel = input<string | null>(null);
-  public readonly hasPrev = input<boolean>(false);
-  public readonly hasNext = input<boolean>(false);
-  public readonly prevLabel = input<string>('Previous record');
-  public readonly nextLabel = input<string>('Next record');
-
-  public readonly prev = output<void>();
-  public readonly next = output<void>();
-}
-```
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.ts
-
-```typescript
-import { ChangeDetectorRef, Component, DestroyRef, OnInit, inject, input, output } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { merge } from 'rxjs';
-
-@Component({
-  selector: 'pc-form-actions',
-  imports: [ReactiveFormsModule, Icon],
-  templateUrl: './form-actions.html',
-})
-export class FormActions implements OnInit {
-  private readonly rootFormGroup = inject(FormGroupDirective, { optional: true });
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly cdr = inject(ChangeDetectorRef);
-  private readonly destroyRef = inject(DestroyRef);
-
-  private stay = false;
-
-  protected form?: FormGroup;
-
-  public signalForm = input<any>();
-
-  public disabled = input<boolean>(false);
-
-  /**
-   * §4 "Save never disables": when true, the primary button stays enabled
-   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
-   * consuming form is expected to guide on click (markAsTouched + focus the
-   * first invalid field) rather than block via a dead button.
-   */
-  public saveAlwaysEnabled = input<boolean>(false);
-
-  public showDelete = input<boolean>(false);
-
-  public deleteText = input<string>('Delete');
-
-  public readonly deleteClicked = output<void>();
-
-  public readonly btn1Clicked = output<() => void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-
-  public btn1Text = input<string>('Save');
-
-  public btn2Text = input<string>('Save & add more');
-
-  public buttonsToShow = input<'two' | 'three'>('three');
-
-  public isLoading = input.required<boolean>();
-
-  protected get isSaveDisabled(): boolean {
-    if (this.isLoading()) return true;
-    if (this.disabled()) return true;
-    // Save never disables on validity/dirtiness — the form guides on click.
-    if (this.saveAlwaysEnabled()) return false;
-    const sigF = this.signalForm();
-    if (sigF) {
-      return sigF().invalid() || !sigF().dirty();
-    }
-    if (this.form) {
-      return this.form.invalid || !this.form.dirty;
-    }
-    return false;
-  }
-
-  public cancel() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  public handleDeleteClicked() {
-    this.deleteClicked.emit();
-  }
-
-  public handleBtn1Clicked() {
-    this.stay = false;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public handleBtn2Clicked() {
-    this.stay = true;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public ngOnInit() {
-    this.form = this.rootFormGroup?.control;
-    if (this.form) {
-      merge(this.form.valueChanges, this.form.statusChanges)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => {
-          this.cdr.markForCheck();
-        });
-    }
-  }
-
-  public stayOrCancel = () => {
-    if (this.stay) {
-      const sigF = this.signalForm();
-      if (sigF) {
-        sigF().reset();
-      } else if (this.form) {
-        this.form.reset();
-      }
-    } else {
-      this.cancel();
-    }
-  };
-}
-```
-
-## File: libs/uxcommon/src/components/grid-header/grid-header.ts
-
-```typescript
-import { Component, computed, input, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-grid-header',
-  imports: [Icon],
-  template: `
-    <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
-      <div class="min-w-0">
-        <!-- Breadcrumb-styled title: matches the crumb trail on view/edit pages -->
-        <nav aria-label="Breadcrumb" class="flex items-center gap-1.5 text-xs text-base-content/50">
-          <h1 class="max-w-48 truncate font-medium text-base-content/60">{{ title() }}</h1>
-          @if (description()) {
-            <button
-              type="button"
-              class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-primary"
-              aria-label="About this page"
-              [attr.aria-expanded]="descriptionOpen()"
-              (click)="toggleDescription()"
-            >
-              <pc-icon name="information-circle" [size]="4"></pc-icon>
-            </button>
-          }
-        </nav>
-        @if (countText(); as text) {
-          <p class="mt-0.5 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ text }}</p>
-        }
-        @if (descriptionOpen() && description()) {
-          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-base-content/60">{{ description() }}</p>
-        }
-      </div>
-      <div class="flex items-center gap-2">
-        <ng-content></ng-content>
-      </div>
-    </header>
-  `,
-})
-export class GridHeaderComponent {
-  public readonly title = input.required<string>();
-  public readonly description = input<string>('');
-  public readonly eyebrow = input<string>('');
-
-  /** Initial expanded state of the description; the ⓘ button toggles it afterwards. */
-  public readonly open = input<boolean>(false);
-
-  /** Total row count for the current query; null while unknown (before the first load). */
-  public readonly totalCount = input<number | null>(null);
-
-  /** Whether any user-applied filter is narrowing the results. */
-  public readonly filtered = input<boolean>(false);
-
-  private readonly descToggled = signal<boolean | null>(null);
-  protected readonly descriptionOpen = computed(() => this.descToggled() ?? this.open());
-
-  private readonly countFormatter = new Intl.NumberFormat();
-
-  protected readonly countText = computed<string | null>(() => {
-    const count = this.totalCount();
-    if (count === null) return null;
-    if (this.filtered()) {
-      return count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
-    }
-    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
-  });
-
-  protected toggleDescription(): void {
-    this.descToggled.set(!this.descriptionOpen());
-  }
-}
-```
-
-## File: libs/uxcommon/src/components/stat-card/stat-card.ts
-
-```typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-stat-card',
-  imports: [Icon],
-  template: `
-    <div
-      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
-    >
-      <div class="stat p-0 leading-normal">
-        @if (title()) {
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            {{ title() }}
-          </div>
-        }
-        @if (loading()) {
-          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
-          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
-        } @else {
-          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
-            {{ value() }}
-          </div>
-        }
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-          @if (description()) {
-            <span>{{ description() }}</span>
-          }
-          <ng-content select="[pc-stat-desc]"></ng-content>
-        </div>
-      </div>
-
-      <div class="flex-shrink-0 flex items-center justify-center gap-2">
-        @if (icon()) {
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
-            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
-          </div>
-        }
-        <ng-content select="[pc-stat-extra]"></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class StatCard {
-  public title = input<string>();
-  public value = input<string | number>();
-  /** When true, the value renders as a skeleton block instead of a number/spinner. */
-  public loading = input<boolean>(false);
-  public description = input<string>();
-  public icon = input<PcIconNameType>();
-  public valueColorClass = input<string>('text-base-content');
-  public iconBgClass = input<string>('bg-base-200/50');
-  public iconColorClass = input<string>('text-base-content/70');
-}
-```
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.ts
-
-```typescript
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
-
-@Component({
-  selector: 'pc-dialog-host',
-  imports: [Icon],
-  templateUrl: './confirm-dialog-host.html',
-})
-export class ConfirmDialogHost {
-  private readonly svc = inject(ConfirmDialogService);
-
-  public readonly promptValue = signal(''); // signal instead of ngModel
-
-  private readonly stateSignal = this.svc.stateSignal;
-  private readonly openSignal = this.svc.isOpenSignal;
-  public state = this.stateSignal;
-  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
-  // default to emphasizing the cancel/keep button unless a caller opts out, and
-  // only when a cancel button is actually shown.
-  public readonly effectiveEmphasizeCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    const explicit = st.emphasizeCancel;
-    const wants = explicit ?? st.variant === 'danger';
-    return wants && this.showCancel();
-  });
-  public confirmBtnClass = computed(() => {
-    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
-    if (this.effectiveEmphasizeCancel()) {
-      switch (v) {
-        case 'danger':
-          return 'btn-ghost text-error';
-        case 'warning':
-          return 'btn-ghost text-warning';
-        case 'info':
-          return 'btn-ghost text-info';
-        case 'success':
-          return 'btn-ghost text-success';
-        default:
-          return 'btn-ghost';
-      }
-    }
-    switch (v) {
-      case 'danger':
-        return 'btn-error';
-      case 'warning':
-        return 'btn-warning';
-      case 'info':
-        return 'btn-info';
-      case 'success':
-        return 'btn-success';
-      default:
-        return '';
-    }
-  });
-
-  public cancelBtnClass = computed(() => (this.state()?.emphasizeCancel ? 'btn-primary' : ''));
-
-  public choiceBtnClass(v?: DialogVariant): string {
-    if (!v) return '';
-    switch (v) {
-      case 'danger':
-        return 'btn-error';
-      case 'warning':
-        return 'btn-warning';
-      case 'info':
-        return 'btn-info';
-      case 'success':
-        return 'btn-success';
-      default:
-        return '';
-    }
-  }
-
-  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
-  public showCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    if (st.type === 'choose') {
-      return !!st.cancelText;
-    }
-    return !!st.cancelText && st.type !== 'alert';
-  });
-
-  constructor() {
-    effect(() => {
-      const open = this.openSignal();
-      const dlg = this.dlgRef()?.nativeElement;
-      if (!dlg) return;
-
-      if (open) {
-        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
-        if (!dlg.open) {
-          try {
-            dlg.showModal();
-          } catch {}
-        }
-      } else if (dlg.open) {
-        try {
-          dlg.close();
-        } catch {}
-      }
-    });
-  }
-
-  public onBackdrop(): void {
-    const st = this.state();
-    if (st?.allowBackdropClose) this.svc.cancel();
-  }
-
-  public onCancel(): void {
-    this.svc.cancel();
-  }
-
-  public onConfirm(): void {
-    const st = this.state();
-    if (!st) return;
-    if (st.type === 'prompt') this.svc.ok(this.promptValue());
-    else if (st.type === 'alert') this.svc.ok();
-    else this.svc.ok(true);
-  }
-
-  public onChoice(value: unknown): void {
-    this.svc.ok(value);
-  }
-}
-```
-
-## File: libs/common/src/index.ts
-
-```typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
-
-export { GENERIC_SIGNIN_ERROR, signInInputObj, signUpInputObj } from './lib/auth';
-
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-} from './lib/models';
-
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-} from './lib/schema';
-
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-
-export { debounce, escapeHtml, sleep, slugifyHandle, RESERVED_SUBDOMAINS } from './lib/utils';
-export { calculateWorkingTimeMs } from './lib/sla';
-
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
-
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
-
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
-
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-```
-
-## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
-
-```typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { DetailHeader } from '../detail-header/detail-header';
-
-@Component({
-  selector: 'pc-detail-layout',
-  imports: [Icon, DetailHeader],
-  host: {
-    '(document:keydown)': 'handleKeydown($event)',
-  },
-  template: `
-    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="flex w-full max-w-7xl flex-col gap-6">
-        <!-- Header -->
-        <pc-detail-header
-          [title]="title()"
-          [subtitle]="subtitle()"
-          [crumbs]="crumbs()"
-          [eyebrow]="eyebrow()"
-          [statusChip]="statusChip()"
-          [icon]="icon()"
-          [iconSize]="iconSize()"
-          [isLoading]="isLoading()"
-          [disabled]="disabled()"
-          [showActions]="showActions()"
-          [showDelete]="showDelete()"
-          [deleteText]="deleteText()"
-          [btn1Text]="btn1Text()"
-          [btn1Icon]="btn1Icon()"
-          [positionLabel]="positionLabel()"
-          [hasPrev]="hasPrev()"
-          [hasNext]="hasNext()"
-          [prevLabel]="prevLabel()"
-          [nextLabel]="nextLabel()"
-          (save)="save.emit($event)"
-          (delete)="delete.emit()"
-          (prevRecord)="prevRecord.emit()"
-          (nextRecord)="nextRecord.emit()"
-        >
-          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
-          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
-          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
-        </pc-detail-header>
-
-        <!-- Body/Content Area -->
-        @if (isLoading()) {
-          <div class="flex justify-center items-center py-20">
-            <progress class="progress w-56"></progress>
-          </div>
-        } @else if (error()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ error() }}</span>
-          </div>
-        } @else if (!hasRecord()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ notFoundText() }}</span>
-          </div>
-        } @else {
-          <!-- Main Content Slot -->
-          <ng-content></ng-content>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailLayout {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title (§3). */
-  public statusChip = input<string | null>(null);
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(6);
-  public isLoading = input.required<boolean>();
-  public error = input<string | null | undefined>();
-  public hasRecord = input<boolean>(true);
-  public notFoundText = input<string>('Record not found or failed to load.');
-
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  public deleteText = input<string>('Delete');
-  public btn1Text = input<string>('Edit');
-  public btn1Icon = input<PcIconNameType>('pencil-square');
-  public disabled = input<boolean>(false);
-
-  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  protected handleKeydown(event: KeyboardEvent): void {
-    if (!this.positionLabel()) return;
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isEditableTarget(event.target)) return;
-
-    const key = event.key.toLowerCase();
-    if (key === 'j' && this.hasNext()) {
-      event.preventDefault();
-      this.nextRecord.emit();
-    } else if (key === 'k' && this.hasPrev()) {
-      event.preventDefault();
-      this.prevRecord.emit();
-    }
-  }
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT' ||
-    target.isContentEditable
-  );
-}
-```
-
-## File: libs/common/src/lib/kysely.models.ts
-
-```typescript
-// tsco:ignore
-/* eslint-disable @typescript-eslint/no-explicit-any */
-//
-// ====================================================================
-// When adding a new table, you have to  :-
-// 1. Add a model and add it to the interface Models
-
-// ====================================================================
-import type {
-  ColumnType,
-  Insertable,
-  OperandValueExpressionOrList,
-  SelectExpression,
-  Selectable,
-  Updateable,
-} from 'kysely';
-import type { EmailStatus } from './emails';
-import type { z } from 'zod';
-import type { addressSchema } from './schema';
-
-export type Keys<T> = keyof T;
-type Json = ColumnType<JsonValue, string, string>;
-type JsonArray = JsonValue[];
-type JsonObject = { [K in string]?: JsonValue };
-type JsonPrimitive = boolean | number | string | null;
-type JsonValue = JsonArray | JsonObject | JsonPrimitive;
-type Timestamp = ColumnType<Date, Date | string, Date | string>;
-type Generated<T> =
-  T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
-
-export interface Models {
-  authusers: AuthUsers;
-  campaigns: Campaigns;
-  households: Households;
-  map_campaigns_users: MapCampaignsUsers;
-  map_households_tags: MapHouseholdsTags;
-  map_peoples_tags: MapPeoplesTags;
-  map_roles_users: MapRolesUsers;
-  lists: Lists;
-  map_lists_persons: MapListsPersons;
-  map_lists_households: MapListsHouseholds;
-  teams: Teams;
-  map_teams_persons: MapTeamsPersons;
-  map_teams_lists: MapTeamsLists;
-  map_newsletters_lists: MapNewslettersLists;
-  map_web_forms_lists: MapWebFormsLists;
-  tasks: Tasks;
-  persons: Persons;
-  profiles: Profiles;
-  roles: Roles;
-  sessions: Sessions;
-  tags: Tags;
-  tenants: Tenants;
-  settings: Settings;
-  donations: Donations;
-  donation_periods: DonationPeriods;
-  donation_pledges: DonationPledges;
-  emails: Emails;
-  newsletters: Newsletters;
-  newsletter_events: NewsletterEvents;
-  person_newsletter_engagements: PersonNewsletterEngagements;
-  email_comments: EmailComments;
-  email_bodies: EmailBodies;
-  email_headers: EmailHeaders;
-  email_recipients: EmailRecipients;
-  email_attachments: EmailAttachments;
-  email_drafts: EmailDrafts;
-  email_trash: EmailTrash;
-  email_read_states: EmailReadStates;
-  task_comments: TaskComments;
-  task_subtasks: TaskSubtasks;
-  task_attachments: TaskAttachments;
-  user_activity: UserActivity;
-  ms_oauth_tokens: MsOauthTokens;
-  google_oauth_tokens: GoogleOauthTokens;
-  data_imports: DataImports;
-  companies: Companies;
-  files: Files;
-  notifications: Notifications;
-  volunteer_events: VolunteerEvents;
-  volunteer_shifts: VolunteerShifts;
-  events: Events;
-  event_ticket_types: EventTicketTypes;
-  event_registrations: EventRegistrations;
-  web_forms: WebForms;
-  form_submissions: FormSubmissions;
-  background_jobs: BackgroundJobs;
-  webhook_events: WebhookEvents;
-  data_exports: DataExports;
-  potential_duplicates: PotentialDuplicates;
-  workflows: Workflows;
-  workflow_steps: WorkflowSteps;
-  workflow_enrollments: WorkflowEnrollments;
-  person_connections: PersonConnections;
-  passkeys: Passkeys;
-  zapier_subscriptions: ZapierSubscriptions;
-}
-
-export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
-
-export type GetOperandType<
-  T extends Keys<TablesOperationMap>,
-  Op extends Keys<TablesOperationMap[T]>,
-  Key extends Keys<TablesOperationMap[T][Op]>,
-> = unknown extends TablesOperationMap[T][Op][Key]
-  ? never
-  : TablesOperationMap[T][Op][Key] extends never
-    ? never
-    : TablesOperationMap[T][Op][Key];
-
-export type OperationDataType<
-  T extends Keys<Models>,
-  Op extends 'select' | 'update' | 'insert',
-> = TablesOperationMap[T][Op];
-
-export type TypeId<T extends keyof Models> = string & { _table?: T };
-export type TypeTenantId<T extends keyof Models> = string & { _table?: T };
-
-type ExtractTableAlias<DB, TE> = TE extends `${string} as ${infer TA}`
-  ? TA extends keyof DB
-    ? TA
-    : never
-  : TE extends keyof DB
-    ? TE
-    : never;
-
-export type TypeColumn<T extends keyof Models, U> = OperandValueExpressionOrList<
-  Models,
-  ExtractTableAlias<Models, T>,
-  U
->;
-export type TypeTableColumns<T extends keyof Models> = T extends keyof Models
-  ? SelectExpression<Models, ExtractTableAlias<Models, T>>
-  : never;
-
-export type TablesOperationMap = {
-  [K in Keys<Models>]: {
-    select: Selectable<Models[K]>;
-    insert: Insertable<Models[K]> & { tenant_id: string };
-    update: Updateable<Models[K]>;
-  };
-};
-
-export type TypeColumnValue<TTable extends keyof Models, TColumn extends keyof Models[TTable]> = UnwrapSelect<
-  Models[TTable][TColumn]
->;
-
-/*
-type TableType = {
-  [K in Keys<Models>]: K;
-};
-*/
-
-// ====================================================================
-// The following are the type definitions for the database schema
-// Since I use a base controller to handle the CRUD operations, I don't
-// know the exact type of the table until runtime. So I use the following
-// type definitions to help me out.
-// ====================================================================
-interface RecordType {
-  id: Generated<string>;
-  tenant_id: string;
-  createdby_id: string;
-  updatedby_id: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-interface JunctionRecordType {
-  tenant_id: string;
-  createdby_id: string;
-  updatedby_id: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-export type AddressType = z.infer<typeof addressSchema>;
-
-interface AuthUsers extends RecordType {
-  email: string;
-  first_name: string;
-  last_name: string;
-  password: string;
-  password_reset_code: string | null;
-  // TODO: move to Sessions
-  password_reset_code_created_at: Timestamp | null;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  two_factor_code: string | null;
-  two_factor_expires_at: Timestamp | null;
-  two_factor_attempts: Generated<number>;
-  deletion_scheduled_at: Timestamp | null;
-  previous_email: string | null;
-  previous_role: string | null;
-  passkey_setup_dismissed_at: Timestamp | null;
-}
-
-interface Campaigns extends Omit<RecordType, 'createdby_id'> {
-  admin_id: string;
-  createdby_id: string;
-  description: string | null;
-  startdate: string | null;
-  enddate: string | null;
-  name: string;
-  notes: string | null;
-}
-
-export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
-  campaign_id: string;
-  createdby_id: string;
-  file_id: string | null;
-  home_phone: string | null;
-  notes: string | null;
-  address_fp_street: string | null;
-  address_fp_full: string | null;
-  is_placeholder?: boolean;
-  district: string | null;
-  precinct: string | null;
-  ward: string | null;
-  geocoding_status: string | null;
-}
-
-interface MapCampaignsUsers extends Omit<JunctionRecordType, 'createdby_id' | 'updatedby_id'> {
-  campaign_id: string;
-  user_id: string;
-}
-
-interface MapHouseholdsTags extends JunctionRecordType {
-  household_id: string;
-  tag_id: string;
-}
-
-export interface MapPeoplesTags extends JunctionRecordType {
-  person_id: string;
-  tag_id: string;
-  deletable: Generated<boolean>;
-}
-
-interface MapRolesUsers extends JunctionRecordType {
-  role_id: string;
-  user_id: string;
-}
-
-interface Teams extends RecordType {
-  name: string;
-  description: string | null;
-  team_captain_id: string | null;
-  team_lead_user_id: string | null;
-}
-
-interface MapTeamsPersons extends JunctionRecordType {
-  team_id: string;
-  person_id: string;
-}
-
-interface MapTeamsLists extends JunctionRecordType {
-  team_id: string;
-  list_id: string;
-}
-
-export interface MapListsPersons extends JunctionRecordType {
-  list_id: string;
-  person_id: string;
-}
-
-interface MapListsHouseholds extends JunctionRecordType {
-  list_id: string;
-  household_id: string;
-}
-
-/**
- * Normalized newsletter list targeting (replaces the JSONB
- * newsletters.target_lists document as the source of truth). `mode` carries
- * the {include, exclude} split; list_id/newsletter_id cascade on delete.
- */
-export interface MapNewslettersLists extends JunctionRecordType {
-  newsletter_id: string;
-  list_id: string;
-  mode: Generated<'include' | 'exclude'>;
-}
-
-/**
- * Normalized web-form list targeting (replaces the JSONB
- * web_forms.target_lists document as the source of truth).
- */
-export interface MapWebFormsLists extends JunctionRecordType {
-  web_form_id: string;
-  list_id: string;
-}
-
-export interface Persons extends Omit<RecordType, 'createdby_id'> {
-  campaign_id: string;
-  household_id: string | null;
-  createdby_id: string;
-  first_name: string | null;
-  middle_names: string | null;
-  last_name: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  home_phone: string | null;
-  file_id: string | null;
-  company_id: string | null;
-  notes: string | null;
-  linkedin: string | null;
-  twitter: string | null;
-  facebook: string | null;
-  instagram: string | null;
-  assigned_to: string | null;
-  opt_in_status: string | null;
-  opt_in_confirmed_at: Timestamp | null;
-  preferred_contact: string | null;
-}
-
-interface Profiles extends RecordType, AddressType {
-  auth_id: string;
-  avatar_file_id: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  home_phone: string | null;
-  /** Typed contract: ProfilePreferencesObj ({ notifications: {...} }). */
-  preferences: Json | null;
-}
-
-interface Settings extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
-  key: string;
-  value: JsonValue;
-  createdby_id: string | null;
-  updatedby_id: string | null;
-}
-
-export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
-  person_id: string | null;
-  amount: number;
-  status: Generated<string>;
-  stripe_session_id: string | null;
-  pledge_id: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  street: string | null;
-  apt: string | null;
-  city: string | null;
-  state: string | null;
-  zip: string | null;
-  country: string | null;
-}
-
-export interface DonationPeriods extends RecordType {
-  name: string;
-  start_date: ColumnType<Date, Date | string, Date | string>;
-  end_date: ColumnType<Date, Date | string, Date | string> | null;
-  limit_amount: number;
-  is_active: Generated<boolean>;
-}
-
-export interface DonationPledges extends RecordType {
-  person_id: string | null;
-  stripe_subscription_id: string | null;
-  stripe_customer_id: string | null;
-  monthly_amount: number;
-  status: Generated<string>;
-  started_at: Generated<Timestamp>;
-  cancelled_at: Timestamp | null;
-  next_billing_date: ColumnType<Date, Date | string, Date | string> | null;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  state: string | null;
-  country: string | null;
-}
-
-interface Roles extends RecordType {
-  name: string;
-  description: string | null;
-  permissions: Json | null;
-}
-
-interface Sessions extends Omit<RecordType, 'createdby_id' | 'updatedby_id' | 'updated_at'> {
-  session_id: Generated<string>;
-  user_id: string;
-  ip_address: string;
-  last_accessed: Generated<Timestamp>;
-  other_properties: Json | null;
-  refresh_token: Generated<string>;
-  status: string;
-  user_agent: string;
-  expires_at: Timestamp | null;
-  last_used_at: Timestamp | null;
-}
-
-export interface Lists extends RecordType {
-  name: string;
-  description: string | null;
-  object: 'people' | 'households';
-  is_dynamic: boolean;
-  definition: Json | null;
-  last_refreshed_at: Timestamp | null;
-  status: Generated<'idle' | 'refreshing' | 'failed'>;
-}
-
-export interface Tags extends RecordType {
-  name: string;
-  description: string | null;
-  color: string | null;
-  deletable: boolean;
-  type: Generated<'tag' | 'issue'>;
-}
-
-export interface Tasks extends RecordType {
-  name: string;
-  details?: string;
-  due_at: Timestamp | null;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived' | null;
-  priority: 'low' | 'medium' | 'high' | 'urgent' | null;
-  completed_at: Timestamp | null;
-  position: number | null;
-  assigned_to: string | null;
-  team_id: string | null;
-  file_id: string | null;
-}
-
-interface Tenants extends RecordType, AddressType {
-  name: string;
-  slug: string | null;
-  admin_id: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  notes: string | null;
-  placeholder_household_id: string | null;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-  subscription_plan: string | null;
-  subscription_status: string | null;
-  subscription_ends_at: Timestamp | null;
-  deletion_scheduled_at: Timestamp | null;
-  suspended_at: Timestamp | null;
-  paused_at: Timestamp | null;
-}
-
-interface Emails extends RecordType {
-  folder_id: string;
-  from_email: string | null;
-  /** Display-only cache of the To list; email_recipients is the source of truth (D-10). */
-  to_email: string | null;
-  subject: string | null;
-  preview: string | null;
-  assigned_to: string | null;
-  is_favourite: boolean;
-  deleted_at: Timestamp | null;
-  status: EmailStatus | null;
-}
-
-interface Newsletters extends RecordType {
-  name: string;
-  status: string;
-  subject: string | null;
-  preview_text: string | null;
-  audience_description: string | null;
-  target_lists: Json | null;
-  segments: Json | null;
-  total_recipients: Generated<number>;
-  delivered_count: Generated<number>;
-  bounce_count: Generated<number>;
-  open_rate: Generated<number>;
-  click_rate: Generated<number>;
-  unique_opens: Generated<number>;
-  unique_clicks: Generated<number>;
-  unsubscribe_count: Generated<number>;
-  spam_complaint_count: Generated<number>;
-  reply_count: Generated<number>;
-  send_date: Timestamp | null;
-  last_engagement_at: Timestamp | null;
-  summary: string | null;
-  html_content: string | null;
-  plain_text_content: string | null;
-  top_links: Json | null;
-  attachments: Json | null;
-}
-
-export interface NewsletterEvents {
-  id: Generated<string>;
-  tenant_id: string;
-  newsletter_id: string;
-  email: string;
-  event_type: string;
-  sg_event_id: string;
-  sg_message_id: string | null;
-  url: string | null;
-  ip: string | null;
-  user_agent: string | null;
-  timestamp: Timestamp;
-  created_at: Generated<Timestamp>;
-}
-
-export interface PersonNewsletterEngagements {
-  tenant_id: string;
-  newsletter_id: string;
-  email: string;
-  open_count: number;
-  click_count: number;
-  has_unsubscribed: boolean;
-  hard_bounced: boolean;
-  soft_bounced: boolean;
-  first_opened_at: Timestamp | null;
-  last_opened_at: Timestamp | null;
-  first_clicked_at: Timestamp | null;
-  last_clicked_at: Timestamp | null;
-  bounced_at: Timestamp | null;
-  unsubscribed_at: Timestamp | null;
-}
-
-interface WebForms extends RecordType {
-  name: string;
-  description: string | null;
-  redirect_url: string | null;
-  target_tags: Json | null;
-  target_lists: Json | null;
-  status: 'draft' | 'published' | 'archived';
-  fields: Json | null;
-  send_confirmation: boolean;
-  send_alert: boolean;
-  form_type: string;
-  type: string | null;
-  slug: string;
-  submit_label: string | null;
-  thanks_title: string | null;
-  thanks_body: string | null;
-  confirm_subject: string | null;
-  confirm_body: string | null;
-  notify_team_on: Generated<boolean>;
-  archived_at: Timestamp | null;
-}
-
-interface FormSubmissions {
-  id: Generated<string>;
-  tenant_id: string;
-  form_id: string;
-  person_id: string;
-  answers: Json;
-  created_at: Generated<Timestamp>;
-}
-
-interface EmailComments extends RecordType {
-  email_id: string;
-  author_id: string;
-  comment: string;
-}
-
-interface EmailBodies extends RecordType {
-  email_id: string;
-  body_html: string;
-}
-
-interface EmailHeaders extends RecordType {
-  email_id: string;
-  headers_json: Json | null;
-  raw_headers: string | null;
-  date_sent: Timestamp | null;
-}
-
-interface EmailRecipients extends RecordType {
-  email_id: string;
-  kind: 'to' | 'cc' | 'bcc';
-  name: string | null;
-  email: string;
-  pos: number;
-}
-
-interface EmailAttachments extends RecordType {
-  email_id: string;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  cid: string | null;
-  is_inline: boolean;
-  pos: number;
-  file_id: string | null;
-}
-
-interface EmailDrafts extends RecordType {
-  user_id: string;
-  thread_id: string | null;
-  to_list: JsonValue | null;
-  cc_list: JsonValue | null;
-  bcc_list: JsonValue | null;
-  subject: string | null;
-  body_html: string | null;
-  body_delta: JsonValue | null;
-  meta: JsonValue | null;
-  is_locked: boolean;
-}
-
-interface EmailTrash extends RecordType {
-  email_id: string;
-  from_folder_id: string;
-  trashed_at: Timestamp;
-}
-
-export interface EmailReadStates {
-  tenant_id: string;
-  user_id: string;
-  email_id: string;
-  is_read: boolean;
-  created_at: Generated<Timestamp>;
-}
-
-interface UserActivity extends RecordType {
-  user_id: string;
-  activity: string;
-  entity: string;
-  entity_id: string | null;
-  quantity: number;
-  metadata: Json | null;
-}
-
-interface DataImports extends RecordType {
-  file_name: string;
-  source: string;
-  /**
-   * Tag name requested at import time; label of record once the tag is deleted
-   * (tag deletion nulls tag_id). While the tag exists, tags.name via tag_id is
-   * the source of truth (D-10).
-   */
-  tag_name: string | null;
-  tag_id: string | null;
-  row_count: number;
-  inserted_count: number;
-  error_count: number;
-  skipped_count: number;
-  households_created: number;
-  metadata: Json | null;
-  processed_at: Timestamp;
-  status: Generated<string>;
-  error_message: string | null;
-}
-
-export interface DataExports {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string;
-  entity: string;
-  file_name: string;
-  status: Generated<'pending' | 'processing' | 'completed' | 'failed'>;
-  row_count: number | null;
-  storage_key: string | null;
-  columns: ColumnType<string[] | null, string | null, string | null>;
-  error: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface BackgroundJobs {
-  id: Generated<string>;
-  tenant_id: string | null;
-  queue: Generated<string>;
-  status: Generated<string>;
-  payload: Json;
-  attempts: Generated<number>;
-  max_attempts: Generated<number>;
-  error: string | null;
-  run_at: Generated<Timestamp>;
-  locked_at: Timestamp | null;
-  locked_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface WebhookEvents {
-  id: Generated<string>;
-  tenant_id: string | null;
-  stripe_event_id: string;
-  type: string;
-  payload: Json;
-  status: Generated<string>;
-  attempts: Generated<number>;
-  max_attempts: Generated<number>;
-  error: string | null;
-  run_at: Generated<Timestamp>;
-  locked_at: Timestamp | null;
-  locked_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  processed_at: Timestamp | null;
-}
-
-export interface PotentialDuplicates {
-  id: Generated<string>;
-  tenant_id: string;
-  group_key: string;
-  person_id: string | null;
-  household_id?: string | null;
-  company_id?: string | null;
-  reason: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-interface MsOauthTokens {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string | null;
-  access_token: string;
-  refresh_token: string;
-  expires_at: Timestamp;
-  ms_email: string | null;
-  delta_link: string | null;
-  synced_at: Timestamp | null;
-  last_sync_error: string | null;
-  last_sync_error_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface GoogleOauthTokens {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string | null;
-  access_token: string;
-  refresh_token: string;
-  expires_at: Timestamp;
-  google_email: string | null;
-  delta_link: string | null;
-  synced_at: Timestamp | null;
-  last_sync_error: string | null;
-  last_sync_error_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface TaskComments extends RecordType {
-  task_id: string;
-  author_id: string;
-  comment: string;
-}
-
-export interface TaskSubtasks extends RecordType {
-  task_id: string;
-  name: string;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | null;
-  position: number | null;
-}
-
-export interface TaskAttachments extends RecordType {
-  task_id: string;
-  filename: string;
-  content_type: string | null;
-  size_bytes: number | null;
-  url: string | null;
-}
-
-export interface Companies extends RecordType {
-  name: string;
-  description: string | null;
-  website: string | null;
-  email: string | null;
-  phone: string | null;
-  industry: string | null;
-  notes: string | null;
-  /** Typed contract: CompanyEnrichmentObj (Google Places enrichment payload). */
-  enrichment: Json | null;
-  file_id: string | null;
-}
-
-export interface Files {
-  id: Generated<string>;
-  tenant_id: string;
-  filename: string;
-  mime_type: string | null;
-  size_bytes: number | null;
-  storage_key: string;
-  sha256_hex: string | null;
-  uploaded_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface Notifications {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface VolunteerEvents extends RecordType {
-  name: string;
-  description: string | null;
-  location_address: string | null;
-  start_time: Timestamp;
-  end_time: Timestamp;
-  capacity: number | null;
-  contact_email: string | null;
-  contact_phone: string | null;
-  is_private: boolean;
-  send_reminder: boolean;
-  slug: string;
-  send_signup_confirmation: boolean;
-  send_volunteer_alert: boolean;
-  fields: Generated<string[]>;
-}
-
-export interface VolunteerShifts extends RecordType {
-  event_id: string;
-  person_id: string;
-  status: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
-  hours_worked: number | null;
-  notes: string | null;
-}
-
-export interface Events extends RecordType {
-  name: string;
-  description: string | null;
-  location_address: string | null;
-  start_time: Timestamp;
-  end_time: Timestamp;
-  capacity: number | null;
-  contact_email: string | null;
-  contact_phone: string | null;
-  slug: string;
-  is_published: Generated<boolean>;
-  send_reminder: Generated<boolean>;
-  send_registration_confirmation: Generated<boolean>;
-  fields: Generated<string[]>;
-}
-
-export interface EventTicketTypes extends RecordType {
-  event_id: string;
-  name: string;
-  description: string | null;
-  price_cents: Generated<number>;
-  capacity: number | null;
-  sort_order: Generated<number>;
-}
-
-export interface EventRegistrations extends RecordType {
-  event_id: string;
-  person_id: string;
-  ticket_type_id: string | null;
-  status: Generated<'registered' | 'attended' | 'no_show' | 'cancelled'>;
-  checked_in_at: Timestamp | null;
-  notes: string | null;
-}
-
-export interface Workflows extends RecordType {
-  name: string;
-  description: string | null;
-  trigger_type: string;
-  status: string;
-  trigger_event_id: string | null;
-}
-
-export interface WorkflowSteps {
-  id: Generated<string>;
-  tenant_id: string;
-  workflow_id: string;
-  step_number: number;
-  delay_days: number;
-  delay_unit: 'days' | 'hours';
-  subject: string;
-  preview_text: string | null;
-  html_content: string | null;
-  plain_text_content: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface WorkflowEnrollments {
-  id: Generated<string>;
-  tenant_id: string;
-  workflow_id: string;
-  person_id: string;
-  status: string;
-  current_step_number: number;
-  next_run_at: Timestamp | null;
-  enrolled_at: Generated<Timestamp>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export type RelationType =
-  | 'referred_by'
-  | 'referred_to'
-  | 'close_friend'
-  | 'family_member'
-  | 'spouse'
-  | 'colleague'
-  | 'org_affiliation'
-  | 'introduced_by'
-  | 'introduced_to'
-  | 'custom';
-
-export interface PersonConnections extends RecordType {
-  from_person_id: string;
-  to_person_id: string;
-  relation_type: RelationType;
-  custom_label: string | null;
-  is_mutual: Generated<boolean>;
-  notes: string | null;
-}
-
-interface Passkeys {
-  id: Generated<string>;
-  user_id: string;
-  tenant_id: string;
-  credential_id: string;
-  public_key: string;
-  counter: Generated<number>;
-  device_type: string;
-  backed_up: Generated<boolean>;
-  transports: string[] | null;
-  aaguid: string | null;
-  friendly_name: string | null;
-  created_at: Generated<Timestamp>;
-}
-
-interface ZapierSubscriptions {
-  id: Generated<string>;
-  tenant_id: string;
-  event_type: string;
-  webhook_url: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;
-
-type SelectShape<T> = { [K in keyof T]: UnwrapSelect<T[K]> };
-
-export type HouseholdCol = keyof Models['households'];
-export type PersonsdCol = keyof Models['persons'];
-
-export type HouseholdWithExtras = SelectShape<Models['households']> & {
-  persons_count: number;
-  tags: string[] | null;
-};
-```
-
-## File: libs/uxcommon/src/components/detail-header/detail-header.ts
-
-```typescript
-import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
-import { FormActions } from '../form-actions/form-actions';
-
-@Component({
-  selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
-  template: `
-    <div class="flex flex-col gap-2 border-b border-base-200 pb-4">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex min-w-0 items-center gap-3">
-          @if (icon()) {
-            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
-          }
-          <div class="min-w-0">
-            @if (eyebrow()) {
-              <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">{{ eyebrow() }}</p>
-            }
-            <div class="flex min-w-0 items-center gap-2">
-              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
-              @if (statusChip()) {
-                <span
-                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
-                  >{{ statusChip() }}</span
-                >
-              }
-            </div>
-            @if (dirtyFieldCount() > 0) {
-              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
-                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
-                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
-              </p>
-            } @else if (subtitle()) {
-              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
-            }
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <ng-content select="[pc-actions-prefix]"></ng-content>
-          @if (showActions()) {
-            <pc-form-actions
-              class="w-full"
-              [isLoading]="isLoading()"
-              [signalForm]="form()"
-              [disabled]="disabled()"
-              [saveAlwaysEnabled]="saveAlwaysEnabled()"
-              [buttonsToShow]="formActionsButtons()"
-              [btn1Text]="btn1Text()"
-              [btn1Icon]="btn1Icon()"
-              [showDelete]="false"
-              (btn1Clicked)="save.emit($event)"
-            ></pc-form-actions>
-          }
-          <ng-content select="[pc-actions-suffix]"></ng-content>
-          @if (showDelete()) {
-            <div class="dropdown dropdown-end">
-              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
-                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
-              </button>
-              <ul
-                tabindex="0"
-                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-              >
-                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
-                <ng-content select="[pc-overflow-extra]"></ng-content>
-                <li>
-                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                    {{ deleteText() }}
-                  </button>
-                </li>
-              </ul>
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class DetailHeader {
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  public readonly delete = output<void>();
-  public readonly save = output<any>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-  public btn1Text = input<string>('Save');
-  public buttonsToShow = input<'two' | 'three'>('three');
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public deleteText = input<string>('Delete');
-  public disabled = input<boolean>(false);
-  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
-  public saveAlwaysEnabled = input<boolean>(false);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
-  public statusChip = input<string | null>(null);
-  public form = input<any>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(5);
-  public isLoading = input.required<boolean>();
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  public subtitle = input<string | null | undefined>();
-  public title = input.required<string>();
-
-  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
-  public dirtyFieldCount = input<number>(0);
-
-  // Delete moved to the overflow menu. Suppressing the third button whenever
-  // Delete is offered preserves the layout form-actions previously produced
-  // when it rendered the Delete button inline.
-  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
-    this.showDelete() ? 'two' : this.buttonsToShow(),
-  );
-
-  constructor() {
-    // The breadcrumb trail + record pager render in the navbar, not the page body.
-    // Publish this page's trail whenever its inputs change; clear it on destroy so
-    // the strip empties when navigating to a page (e.g. a grid) that owns no trail.
-    effect(() => {
-      this.breadcrumbs.set({
-        crumbs: this.crumbs(),
-        positionLabel: this.positionLabel(),
-        hasPrev: this.hasPrev(),
-        hasNext: this.hasNext(),
-        prevLabel: this.prevLabel(),
-        nextLabel: this.nextLabel(),
-        onPrev: () => this.prevRecord.emit(),
-        onNext: () => this.nextRecord.emit(),
-      });
-    });
-
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
-  }
-}
-```
-````
-
-## File: libs/common/src/lib/schemas/auth.schema.ts
-````typescript
-import { z } from 'zod';
-import { emailSchema, nameSchema } from './core.schema';
-
-export const InviteAuthUserObj = z.object({
-  email: emailSchema,
-  first_name: nameSchema('First name'),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-});
-
-export const NotificationPreferencesObj = z.object({
-  mention_in_comment: z.boolean().default(true),
-  mention_in_comment_in_app: z.boolean().default(true),
-  task_assigned: z.boolean().default(true),
-  task_assigned_in_app: z.boolean().default(true),
-  task_due: z.boolean().default(true),
-  task_due_in_app: z.boolean().default(true),
-  person_assigned: z.boolean().default(true),
-  person_assigned_in_app: z.boolean().default(true),
-  export_ready: z.boolean().default(true),
-  export_ready_in_app: z.boolean().default(true),
-  import_summary: z.boolean().default(true),
-  import_summary_in_app: z.boolean().default(true),
-});
-
-/**
- * Shape of the profiles.preferences jsonb column (formerly the untyped
- * profiles.json grab-bag). Only `notifications` is written today; unknown
- * keys from older rows are preserved rather than rejected.
- */
-export const ProfilePreferencesObj = z
-  .object({
-    notifications: NotificationPreferencesObj.partial().optional(),
-  })
-  .catchall(z.unknown());
-
-export const UpdateAuthUserObj = z.object({
-  email: emailSchema.optional(),
-  first_name: nameSchema('First name').optional(),
-  last_name: nameSchema('Last name').nullable().optional(),
-  role: z.string().max(100).nullable().optional(),
-  verified: z.boolean().optional(),
-  two_factor_enabled: z.boolean().optional(),
-  notification_preferences: NotificationPreferencesObj.optional(),
-});
-
-export const Verify2FAObj = z.object({
-  email: emailSchema,
-  code: z.string().length(6),
-  rememberMe: z.boolean().optional(),
-});
-````
-
-## File: libs/common/src/lib/schemas/companies.schema.ts
-````typescript
-import { z } from 'zod';
-
-/**
- * Shape of the companies.enrichment jsonb column (formerly the untyped
- * companies.json grab-bag) — the Google Places enrichment payload.
- * `place_details` is the raw Places API result and deliberately unmodeled.
- */
-export const CompanyEnrichmentObj = z
-  .object({
-    google_enriched: z.boolean().optional(),
-    place_details: z.unknown().optional(),
-  })
-  .catchall(z.unknown());
-
-export const CompanyInputObj = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(200, 'Name too long'),
-  description: z.string().trim().max(1000).optional().nullable(),
-  website: z.string().trim().max(255).optional().nullable().or(z.literal('')),
-  email: z.string().trim().max(255).optional().nullable().or(z.literal('')),
-  phone: z.string().trim().max(50).optional().nullable(),
-  industry: z.string().trim().max(100).optional().nullable(),
-  notes: z.string().trim().max(10000).optional().nullable(),
-});
-````
-
-## File: libs/common/src/lib/schemas/core.schema.ts
-````typescript
-import { z } from 'zod';
-
-export const sortModelItem = z.object({
-  colId: z.string(),
-  sort: z.enum(['asc', 'desc']),
-});
-
-export interface QueryBuilderRuleNode {
-  kind: 'rule';
-  id: string;
-  field: string;
-  op: string;
-  value?: any;
-}
-
-export interface QueryBuilderGroupNode {
-  kind: 'group';
-  id: string;
-  conjunction: 'AND' | 'OR';
-  rules: QueryBuilderNode[];
-}
-
-export type QueryBuilderNode = QueryBuilderRuleNode | QueryBuilderGroupNode;
-
-export function cloneQueryBuilderNode(node: QueryBuilderNode): QueryBuilderNode {
-  if (node.kind === 'rule') {
-    return { ...node };
-  } else {
-    return {
-      ...node,
-      rules: node.rules.map(cloneQueryBuilderNode),
-    };
-  }
-}
-
-export const queryBuilderNodeSchema: z.ZodType<QueryBuilderNode> = z.lazy(() =>
-  z.discriminatedUnion('kind', [
-    z.object({
-      kind: z.literal('rule'),
-      id: z.string(),
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown().optional(),
-    }),
-    z.object({
-      kind: z.literal('group'),
-      id: z.string(),
-      conjunction: z.enum(['AND', 'OR']),
-      rules: z.array(queryBuilderNodeSchema),
-    }),
-  ]),
-);
-
-export const oldAdvancedFilterModelSchema = z.object({
-  conjunction: z.enum(['AND', 'OR']),
-  rules: z.array(
-    z.object({
-      field: z.string(),
-      op: z.string(),
-      value: z.unknown(),
-    }),
-  ),
-});
-
-export const getAllOptions = z
-  .object({
-    searchStr: z.string().optional(),
-    startRow: z.number().optional(),
-    endRow: z.number().optional(),
-    sortModel: z.array(sortModelItem).optional(),
-    filterModel: z.record(z.string(), z.unknown()).optional(),
-    includeArchived: z.boolean().optional(),
-    columns: z.array(z.string()).optional(),
-    limit: z.number().optional(),
-    offset: z.number().optional(),
-    orderBy: z.array(z.string()).optional(),
-    groupBy: z.array(z.string()).optional(),
-    tags: z.array(z.string()).optional(),
-    issues: z.array(z.string()).optional(),
-    type: z.enum(['tag', 'issue']).optional(),
-    userId: z.string().optional(),
-    entity: z.string().optional(),
-    activity: z.string().optional(),
-    advancedFilterModel: queryBuilderNodeSchema.or(oldAdvancedFilterModelSchema).optional(),
-    listId: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvInput = z
-  .object({
-    options: getAllOptions,
-    columns: z.array(z.string()).optional(),
-    fileName: z.string().optional(),
-  })
-  .optional();
-
-export const exportCsvResponse = z.union([
-  z.object({
-    status: z.literal('processing'),
-  }),
-  z.object({
-    csv: z.string(),
-    fileName: z.string(),
-    columns: z.array(z.string()),
-    rowCount: z.number(),
-    status: z.literal('completed').optional(),
-  }),
-]);
-
-export const queueExportInput = z.object({
-  entity: z.enum([
-    'persons',
-    'households',
-    'companies',
-    'tags',
-    'issues',
-    'tasks',
-    'lists',
-    'newsletters',
-    'teams',
-    'users',
-    'volunteer',
-    'forms',
-    'workflows',
-  ]),
-  options: getAllOptions,
-  columns: z.array(z.string()).optional(),
-  fileName: z.string().optional(),
-});
-
-export const dataExportRecord = z.object({
-  id: z.string(),
-  entity: z.string(),
-  file_name: z.string(),
-  status: z.enum(['pending', 'processing', 'completed', 'failed']),
-  row_count: z.number().nullable(),
-  error: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
-  createdBy: z
-    .object({
-      id: z.string(),
-      name: z.string().nullable(),
-      email: z.string().nullable(),
-    })
-    .nullable()
-    .optional(),
-});
-
-export const dbIdSchema = z.string().regex(/^\d+$/, 'Invalid ID format');
-export const uuidSchema = z.string().uuid('Invalid UUID format');
-export const idSchema = dbIdSchema;
-
-export const addressSchema = z.object({
-  lat: z.number().nullable().optional(),
-  lng: z.number().nullable().optional(),
-  formatted_address: z.string().trim().max(500, 'Address is too long').nullable().optional(),
-  type: z.string().trim().max(50, 'Type is too long').nullable().optional(),
-  apt: z.string().trim().max(30, 'Apt is too long').nullable().optional(),
-  street_num: z.string().trim().max(30, 'Street number is too long').nullable().optional(),
-  street1: z.string().trim().max(150, 'Street 1 is too long').nullable().optional(),
-  street2: z.string().trim().max(150, 'Street 2 is too long').nullable().optional(),
-  city: z.string().trim().max(100, 'City is too long').nullable().optional(),
-  state: z.string().trim().max(100, 'State is too long').nullable().optional(),
-  zip: z.string().trim().max(20, 'Zip is too long').nullable().optional(),
-  country: z.string().trim().max(100, 'Country is too long').nullable().optional(),
-});
-
-export const nameSchema = (fieldName: string, maxLen = 100) =>
-  z.string().trim().min(1, `${fieldName} is required`).max(maxLen, `${fieldName} is too long`);
-
-export const descriptionSchema = (maxLen = 1000) =>
-  z.string().trim().max(maxLen, 'Description is too long').nullable().optional();
-
-export const emailSchema = z.string().trim().max(320, 'Email is too long').email('Invalid email address');
-
-export const nullableEmailSchema = emailSchema.or(z.literal('')).nullable().optional();
-export const phoneSchema = (fieldName: string) =>
-  z.string().trim().max(30, `${fieldName} is too long`).nullable().optional();
-
-export const notesSchema = z.string().trim().max(10000, 'Notes are too long').nullable().optional();
-````
-
-## File: libs/common/src/lib/schemas/emails.schema.ts
-````typescript
-import { z } from 'zod';
-import { isRegularFolderId, isSpecialFolderId } from '../emails';
-
-/**
- * The six storable folder ids (Sent/Spam/Trash/Drafts/Outbox/Inbox). The only
- * valid write targets for emails.folder_id — enforced here at the tRPC
- * boundary and by the chk_emails_folder_id CHECK constraint in the DB (there
- * is no email_folders table; folders are code-defined in EMAIL_FOLDERS).
- */
-export const regularFolderIdSchema = z.string().refine(isRegularFolderId, 'Unknown folder');
-
-/** Any folder id, including the virtual query-filter folders — valid for reads. */
-export const folderIdSchema = z.string().refine((v) => isRegularFolderId(v) || isSpecialFolderId(v), 'Unknown folder');
-
-export const EmailCommentObj = z.object({
-  id: z.string(),
-  email_id: z.string(),
-  author_id: z.string(),
-  comment: z.string(),
-  created_at: z.date(),
-});
-
-export const EmailDraftObj = z.object({
-  id: z.string(),
-  to_list: z.array(z.string()),
-  cc_list: z.array(z.string()),
-  bcc_list: z.array(z.string()),
-  subject: z.string().optional(),
-  body_html: z.string().optional(),
-  body_delta: z.unknown().optional(),
-  updated_at: z.date(),
-});
-
-export const EmailFolderObj = z.object({
-  id: z.string(),
-  name: z.string(),
-  icon: z.string(),
-  sort_order: z.number(),
-  is_default: z.boolean(),
-  is_virtual: z.boolean(),
-});
-
-export const EmailObj = z.object({
-  id: z.string(),
-  folder_id: z.string(),
-  from_email: z.string().optional(),
-  from_name: z.string().optional(),
-  to_email: z.string().optional(),
-  subject: z.string().optional(),
-  preview: z.string().optional(),
-  assigned_to: z.string().optional(),
-  updated_at: z.date(),
-  date_sent: z.date().nullable().optional(),
-  is_favourite: z.boolean(),
-  attachment_count: z.number(),
-  has_attachment: z.boolean(),
-  status: z.enum(['open', 'closed']).nullable().default('open'),
-  is_read: z.boolean().optional(),
-  sender_first_name: z.string().nullish(),
-  sender_last_name: z.string().nullish(),
-});
-````
-
-## File: libs/common/src/lib/schemas/web-forms.schema.ts
-````typescript
-import { z } from 'zod';
-import { nameSchema, descriptionSchema } from './core.schema';
-
-export const AddWebFormObj = z.object({
-  name: nameSchema('Web Form name', 100),
-  description: descriptionSchema(500),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  target_tags: z.array(z.string()).nullable().optional(),
-  target_lists: z.array(z.string()).nullable().optional(),
-  fields: z.array(z.string()).nullable().optional(),
-  // Legacy donation/standard add path. 'active' is accepted for back-compat and mapped to
-  // 'published' by the controller; the lifecycle statuses pass through unchanged.
-  status: z.enum(['active', 'draft', 'published', 'archived']).default('active').optional(),
-  send_confirmation: z.boolean().default(true).optional(),
-  send_alert: z.boolean().default(true).optional(),
-  form_type: z.enum(['standard', 'donation', 'recurring_donation']).default('standard').optional(),
-});
-
-export const UpdateWebFormObj = z.object({
-  name: nameSchema('Web Form name', 100).optional(),
-  description: descriptionSchema(500).optional(),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  target_tags: z.array(z.string()).nullable().optional(),
-  target_lists: z.array(z.string()).nullable().optional(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['active', 'draft', 'published', 'archived']).optional(),
-  send_confirmation: z.boolean().optional(),
-  send_alert: z.boolean().optional(),
-});
-
-export const WebFormsObj = z.object({
-  id: z.string().uuid(),
-  tenant_id: z.string(),
-  name: z.string(),
-  description: z.string().nullable(),
-  redirect_url: z.string().nullable(),
-  target_tags: z.array(z.string()).nullable(),
-  target_lists: z.array(z.string()).nullable(),
-  fields: z.array(z.string()).nullable().optional(),
-  status: z.enum(['draft', 'published', 'archived']),
-  send_confirmation: z.boolean().default(true),
-  send_alert: z.boolean().default(true),
-  form_type: z.string(),
-  createdby_id: z.string(),
-  updatedby_id: z.string(),
-  created_at: z.union([z.date(), z.string()]),
-  updated_at: z.union([z.date(), z.string()]),
-});
-
-// ---------------------------------------------------------------------------
-// North Star "living funnel" lifecycle (new Forms experience).
-//
-// The five template types are creation presets + a display chip. Donation forms
-// (form_type IN donation/recurring_donation) keep the legacy string[] `fields`
-// shape and the old add/update path — they are NOT part of this model.
-// ---------------------------------------------------------------------------
-
-export const FORM_TYPES = ['signup', 'pledge', 'rsvp', 'request', 'survey'] as const;
-export type FormType = (typeof FORM_TYPES)[number];
-export const FormTypeEnum = z.enum(FORM_TYPES);
-
-export const FORM_STATUSES = ['draft', 'published', 'archived'] as const;
-export type FormStatus = (typeof FORM_STATUSES)[number];
-
-/** A single configurable field on a form. Stored as JSON in `web_forms.fields`. */
-export const FormFieldObj = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1),
-  type: z.enum(['text', 'area', 'select', 'checks']),
-  options: z.array(z.string()).optional(),
-  placeholder: z.string().optional(),
-  help: z.string().optional(),
-  on: z.boolean(),
-  required: z.boolean(),
-});
-export type FormField = z.infer<typeof FormFieldObj>;
-
-/** Email is the identity key: always present, always on, always required, never editable. */
-export const FORM_EMAIL_FIELD: FormField = {
-  key: 'email',
-  label: 'Email',
-  type: 'text',
-  placeholder: 'you@example.org',
-  on: true,
-  required: true,
-};
-
-const NAME_FIELD: FormField = {
-  key: 'full_name',
-  label: 'Full name',
-  type: 'text',
-  placeholder: 'Jordan Blake',
-  on: true,
-  required: true,
-};
-
-/**
- * Standard optional fields every form can turn on without schema work. `normForm` appends any of
- * these that a form's own field list doesn't already define, all `on: false`.
- */
-export const FORM_STANDARD_CATALOG: FormField[] = [
-  { key: 'mobile', label: 'Mobile phone', type: 'text', placeholder: '(555) 000-0000', on: false, required: false },
-  { key: 'street1', label: 'Street address', type: 'text', on: false, required: false },
-  { key: 'city', label: 'City', type: 'text', on: false, required: false },
-  { key: 'zip', label: 'ZIP code', type: 'text', on: false, required: false },
-];
-
-/** Creation templates — all start from name + email, then add type-specific fields. */
-export const FORM_TEMPLATES: Record<FormType, { submitLabel: string; description: string; fields: FormField[] }> = {
-  signup: {
-    submitLabel: 'Sign me up',
-    description: 'Join the team — tell us how you can help and we’ll be in touch.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      {
-        key: 'mobile',
-        label: 'Mobile phone',
-        type: 'text',
-        placeholder: '(555) 000-0000',
-        help: 'Only used for shift reminders',
-        on: true,
-        required: false,
-      },
-      {
-        key: 'availability',
-        label: 'When can you help?',
-        type: 'checks',
-        options: ['Weekday evenings', 'Weekend canvasses', 'Phone banking', 'Event day'],
-        on: true,
-        required: false,
-      },
-      {
-        key: 'notes',
-        label: 'Anything we should know?',
-        type: 'area',
-        placeholder: 'Languages, accessibility, interests…',
-        on: true,
-        required: false,
-      },
-    ],
-  },
-  pledge: {
-    submitLabel: 'Make my pledge',
-    description: 'Pledge your support — every contribution helps.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'amount', label: 'Pledge amount', type: 'text', placeholder: 'E.g. 50', on: true, required: true },
-    ],
-  },
-  rsvp: {
-    submitLabel: 'Reserve my spot',
-    description: 'Let us know you’re coming.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'seats', label: 'How many seats?', type: 'text', placeholder: 'E.g. 2', on: true, required: true },
-    ],
-  },
-  request: {
-    submitLabel: 'Send request',
-    description: 'Tell us what you need and where.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      { key: 'street1', label: 'Street address', type: 'text', on: true, required: true },
-      { key: 'city', label: 'City', type: 'text', on: true, required: false },
-      { key: 'zip', label: 'ZIP code', type: 'text', on: true, required: false },
-      { key: 'notes', label: 'Notes', type: 'area', placeholder: 'How can we help?', on: true, required: false },
-    ],
-  },
-  survey: {
-    submitLabel: 'Submit',
-    description: 'Your answers help shape our priorities.',
-    fields: [
-      NAME_FIELD,
-      FORM_EMAIL_FIELD,
-      {
-        key: 'issues',
-        label: 'Which issues matter most?',
-        type: 'checks',
-        options: ['Housing', 'Transit', 'Safety', 'Parks', 'Schools'],
-        on: true,
-        required: false,
-      },
-      {
-        key: 'open',
-        label: 'Anything else?',
-        type: 'area',
-        placeholder: 'Share your thoughts…',
-        on: true,
-        required: false,
-      },
-    ],
-  },
-};
-
-/**
- * Coerces a form's stored `fields` JSON into a well-formed FormField[]: keeps only object-shaped
- * fields (silently drops legacy string[] entries from donation forms), guarantees the name + email
- * identity fields exist, enforces the email invariant (always on + required), and appends any
- * standard-catalog fields the form hasn't defined. This is the single source of truth both the API
- * and the editor use so the preview always matches what will be saved.
- */
-export function normForm(rawFields: unknown): FormField[] {
-  const source = Array.isArray(rawFields) ? rawFields : [];
-  const fields: FormField[] = [];
-  for (const raw of source) {
-    const parsed = FormFieldObj.safeParse(raw);
-    if (parsed.success) fields.push(parsed.data);
-  }
-
-  if (!fields.some((f) => f.key === NAME_FIELD.key)) {
-    fields.unshift({ ...NAME_FIELD });
-  }
-
-  const emailIndex = fields.findIndex((f) => f.key === FORM_EMAIL_FIELD.key);
-  if (emailIndex === -1) {
-    // Slot email right after the name field.
-    fields.splice(1, 0, { ...FORM_EMAIL_FIELD });
-  } else {
-    const current = fields[emailIndex];
-    if (current) {
-      fields[emailIndex] = { ...current, on: true, required: true };
-    }
-  }
-
-  for (const catalog of FORM_STANDARD_CATALOG) {
-    if (!fields.some((f) => f.key === catalog.key)) {
-      fields.push({ ...catalog });
-    }
-  }
-
-  return fields;
-}
-
-/** Build the initial field list for a newly created form of the given template type. */
-export function fieldsForTemplate(type: FormType): FormField[] {
-  return normForm(FORM_TEMPLATES[type].fields.map((f) => ({ ...f })));
-}
-
-export const CreateFormObj = z.object({
-  name: nameSchema('Form name', 100),
-  type: FormTypeEnum,
-});
-
-/** Live-edit patch for the new Forms editor. Every field is optional (debounced partial saves). */
-export const UpdateFormObj = z.object({
-  name: nameSchema('Form name', 100).optional(),
-  description: descriptionSchema(2000).optional(),
-  redirect_url: z.string().trim().url('Redirect URL must be a valid URL').or(z.literal('')).nullable().optional(),
-  submit_label: z.string().trim().max(60).optional(),
-  thanks_title: z.string().trim().max(120).optional(),
-  thanks_body: z.string().trim().max(2000).optional(),
-  confirm_email_on: z.boolean().optional(),
-  confirm_subject: z.string().trim().max(200).optional(),
-  confirm_body: z.string().trim().max(5000).optional(),
-  notify_team_on: z.boolean().optional(),
-  fields: z.array(FormFieldObj).optional(),
-  target_tags: z.array(z.string()).optional(),
-  target_lists: z.array(z.string()).optional(),
-});
-
-/** One row in the Responses tab. */
-export const FormSubmissionObj = z.object({
-  id: z.string(),
-  person_id: z.string(),
-  person_name: z.string().nullable(),
-  answers: z.record(z.string(), z.unknown()),
-  created_at: z.union([z.date(), z.string()]),
-});
-````
-
-## File: libs/common/eslint.config.cjs
-````javascript
-/* ---------------------------------------------------------------
- *  libs/common/eslint.config.cjs
- *  Universal shared library rules (used by frontend + backend)
- * -------------------------------------------------------------- */
-
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-});
-
-/** @type {import('eslint').Linter.FlatConfig[]} */
-module.exports = [
-  /* Compose the root config so `nx lint common` enforces the same
-   * workspace-wide rules (no-floating-promises, no-misused-promises, etc.)
-   * as the pre-commit `eslint` invocation. Confirmed zero new violations. */
-  ...require('../../eslint.config.cjs'),
-
-  /* JavaScript/TypeScript base rules */
-  ...compat
-    .config({
-      extends: [
-        'plugin:@nx/javascript',
-        'plugin:@typescript-eslint/recommended',
-        'plugin:@typescript-eslint/stylistic',
-      ],
-      parserOptions: {
-        project: [
-          require('path').resolve(__dirname, 'tsconfig.lib.json'),
-          require('path').resolve(__dirname, '../../tsconfig.base.json'),
-        ],
-        sourceType: 'module',
-      },
-    })
-    .map((cfg) => ({
-      ...cfg,
-      files: ['**/*.{ts,tsx,js,jsx}'],
-      rules: {
-        /* Shared TypeScript rules */
-        '@typescript-eslint/consistent-type-imports': 'warn',
-        '@typescript-eslint/no-explicit-any': 'warn',
-        '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
-        '@typescript-eslint/no-inferrable-types': 'off',
-        '@typescript-eslint/explicit-function-return-type': 'off',
-
-        /* General JS/TS best practices */
-        'no-console': ['warn', { allow: ['warn', 'error', 'log'] }],
-        'prefer-const': 'error',
-        'no-var': 'error',
-        'no-empty': ['warn', { allowEmptyCatch: true }],
-      },
-    })),
-];
-````
-
-## File: libs/common/project.json
-````json
-{
-  "name": "common",
-  "$schema": "../node_modules/nx/schemas/project-schema.json",
-  "sourceRoot": "libs/common/src",
-  "projectType": "library",
-  "targets": {
-    "lint": {
-      "executor": "@nx/eslint:lint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["libs/common/**/*.ts"]
-      }
-    },
-    "test": {
-      "executor": "nx:run-commands",
-      "cache": true,
-      "outputs": ["{workspaceRoot}/coverage/libs/common"],
-      "options": {
-        "cwd": "libs/common",
-        "command": "vitest run"
-      }
-    }
-  },
-  "tags": []
-}
-````
-
-## File: libs/common/vite.config.ts
-````typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/libs/common',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [],
-  test: {
-    name: 'common',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'node',
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/libs/common',
-      provider: 'v8' as const,
-      // Coverage ratchet: measured baseline 2026-07-04 was 100% stmts /
-      // 94% branch on this small lib; held slightly below so one new helper
-      // file doesn't instantly break the build, but keep raising it as the
-      // lib grows. Never lower these — add tests instead.
-      thresholds: {
-        statements: 95,
-        branches: 90,
-        functions: 95,
-        lines: 95,
-      },
-    },
-  },
-}));
-````
-
-## File: libs/uxcommon/src/components/alerts/alert-service.ts
-````typescript
-import { Injectable, signal } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-
-export class AlertMessage {
-  public readonly visible = signal(true);
-  /** How many identical (same text+type) toasts have coalesced into this one (§2). */
-  public readonly count = signal(1);
-
-  public OKBtn: string;
-  public OKBtnCallback?: () => void;
-  public duration = 3000;
-  public id: string;
-  public text: string;
-  public timeoutId: NodeJS.Timeout | undefined;
-  public title?: string;
-  public type?: ALERTTYPE;
-
-  constructor(init?: Partial<AlertMessage>) {
-    Object.assign(this, init);
-    this.id = init?.id ?? crypto.randomUUID();
-    this.OKBtn = init?.OKBtn ?? 'OK';
-    this.duration = init?.duration || 3000;
-    this.text = init?.text ?? 'Alert';
-  }
-}
-
-/** Max simultaneous toasts; oldest drops when a new one arrives (§2). */
-const MAX_TOAST_STACK = 3;
-
-@Injectable({
-  providedIn: 'root',
-})
-export class AlertService {
-  private readonly alertsSignal = signal<AlertMessage[]>([]);
-
-  public readonly alertList = this.alertsSignal.asReadonly();
-  public readonly alerts$ = toObservable(this.alertsSignal);
-
-  public OKBtnCallback(id: string): void {
-    const alert = this.findById(id);
-    alert?.OKBtnCallback?.();
-  }
-
-  public dismiss(id: string): void {
-    const alert = this.findById(id);
-
-    if (!alert) return;
-
-    // Clear any pending removal timeout
-    clearTimeout(alert.timeoutId);
-    alert.timeoutId = undefined;
-
-    alert.visible.set(false);
-
-    // Have to let the animation do its thing first
-    setTimeout(() => {
-      const next = this.alertsSignal().filter((msg) => msg.id !== id);
-      this.alertsSignal.set(next);
-    }, 300);
-  }
-
-  public getAlerts(): AlertMessage[] {
-    return this.alertsSignal();
-  }
-
-  public show(alert: Partial<AlertMessage>): void {
-    // Coalesce an identical (same text + type) toast into a ×N count with a
-    // refreshed timer instead of stacking duplicates (§2).
-    const existing = this.alertsSignal().find((m) => m.text === alert.text && m.type === alert.type);
-
-    if (existing) {
-      existing.count.update((c) => c + 1);
-      clearTimeout(existing.timeoutId);
-      existing.timeoutId = setTimeout(() => this.dismiss(existing.id), existing.duration || 3000);
-      return;
-    }
-
-    const messageWithMeta: AlertMessage = new AlertMessage({ ...alert });
-    // Cap the stack at MAX_TOAST_STACK, dropping the oldest (list is newest-first).
-    this.alertsSignal.update((list) => {
-      const next = [messageWithMeta, ...list];
-      const dropped = next.slice(MAX_TOAST_STACK);
-      dropped.forEach((m) => clearTimeout(m.timeoutId));
-      return next.slice(0, MAX_TOAST_STACK);
-    });
-
-    const duration = messageWithMeta.duration || 3000;
-    messageWithMeta.timeoutId = setTimeout(() => this.dismiss(messageWithMeta.id), duration);
-  }
-
-  public showError(text: string): void {
-    this.show(new AlertMessage({ text, type: 'error' }));
-  }
-
-  public showInfo(text: string): void {
-    this.show(new AlertMessage({ text, type: 'info' }));
-  }
-
-  public showSuccess(text: string): void {
-    this.show(new AlertMessage({ text, type: 'success' }));
-  }
-
-  public showWarn(text: string): void {
-    this.show(new AlertMessage({ text, type: 'warning' }));
-  }
-
-  private findById(id: string) {
-    return this.alertsSignal().find((m) => m.id === id);
-  }
-}
-
-export type ALERTTYPE = 'info' | 'error' | 'warning' | 'success';
-````
-
-## File: libs/uxcommon/src/components/alerts/alerts.html
-````html
-<div
-  class="z-50 top-0 absolute w-full left-0"
-  [class.absolute]="!isPositionRelative()"
-  [class.top-0]="isPositionTop()"
-  [class.bottom-0]="isPositionBottom()"
->
-  @for (alert of alerts(); track alert.id) {
-
-  <div
-    class="alert rounded-none"
-    role="alert"
-    *pcAnimateIf="alert.visible; enter: getEnterAnim(); exit: 'animate-exit-down'"
-    [class.only-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.last-of-type:rounded-b-2xl]="isPositionTop()"
-    [class.only-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.first-of-type:rounded-t-2xl]="isPositionBottom()"
-    [class.alert-info]="alert.type === 'info'"
-    [class.alert-warning]="alert.type === 'warning'"
-    [class.alert-success]="alert.type === 'success'"
-    [class.alert-error]="alert.type === 'error'"
-    [class.error]="alert.type === 'error'"
-    [class.animate-bounce]="isPositionBottom()"
-  >
-    <pc-icon [name]="icon(alert.type!)" class="mr-2 self-start"></pc-icon>
-    <div>
-      <h4 class="text-base font-normal" [class.hidden]="!alert.title">{{ alert.title }}</h4>
-      <div class="font-light" [class.text-sm]="!!alert.title" [innerHTML]="alert.text"></div>
-    </div>
-    @if (alert.count() > 1) {
-    <span class="badge badge-sm border-none bg-base-100/25 font-semibold tabular-nums">×{{ alert.count() }}</span>
-    }
-    <button
-      class="btn btn-sm"
-      [class.hidden]="!alert.OKBtn"
-      [class.btn-info]="alert.type === 'info'"
-      [class.btn-warning]="alert.type === 'warning'"
-      [class.btn-success]="alert.type === 'success'"
-      [class.btn-error]="alert.type === 'error'"
-      (click)="OKBtnClick(alert.id)"
-    >
-      {{ alert.OKBtn }}
-    </button>
-  </div>
-  }
-</div>
-````
-
-## File: libs/uxcommon/src/components/breadcrumbs/breadcrumbs.service.ts
-````typescript
-import { Injectable, signal } from '@angular/core';
-
-import { PcBreadcrumb } from './breadcrumbs';
-
-/**
- * The full breadcrumb strip published by the current page: the crumb trail plus
- * the optional "N of M filtered" record pager. Pages set this; the navbar renders it.
- * The pager's prev/next are callbacks (not outputs) so they can route back to the
- * page that owns the record-navigation handle from wherever the strip is rendered.
- */
-export interface BreadcrumbTrail {
-  crumbs: PcBreadcrumb[];
-  positionLabel: string | null;
-  hasPrev: boolean;
-  hasNext: boolean;
-  prevLabel: string;
-  nextLabel: string;
-  onPrev: () => void;
-  onNext: () => void;
-}
-
-/**
- * Hoists the breadcrumb trail out of the page body and into the navbar.
- *
- * A page (via `pc-detail-header`, or directly) `set()`s its trail on init and
- * `clear()`s it on destroy; the navbar reads `trail()` and renders it. The router
- * destroys the old routed component before creating the new one, so a page's
- * clear-on-destroy always runs before the next page's set-on-init — list/grid pages
- * that never set a trail are left with a cleared (null) strip.
- */
-@Injectable({ providedIn: 'root' })
-export class BreadcrumbsService {
-  private readonly _trail = signal<BreadcrumbTrail | null>(null);
-  public readonly trail = this._trail.asReadonly();
-
-  public set(trail: BreadcrumbTrail): void {
-    this._trail.set(trail);
-  }
-
-  public clear(): void {
-    this._trail.set(null);
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/detail-item/detail-item.ts
-````typescript
-import { Component, inject, input, output } from '@angular/core';
-import { AlertService } from '../alerts/alert-service';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-detail-item',
-  imports: [Icon],
-  template: `
-    <div class="flex flex-col gap-1 mb-4">
-      <span class="text-xs font-semibold text-base-content/50 uppercase tracking-wider">
-        {{ label() }}
-      </span>
-      <div class="flex items-center gap-2">
-        @if (icon()) {
-          <pc-icon [name]="icon()!" [size]="4" class="text-base-content/40 flex-shrink-0"></pc-icon>
-        }
-        @if (value() && link()) {
-          <button
-            type="button"
-            class="text-left text-sm font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary break-words"
-            (click)="linkClicked.emit()"
-          >
-            {{ value() }}
-          </button>
-        } @else {
-          <span class="text-sm font-medium text-base-content break-words">
-            @if (value()) {
-              {{ value() }}
-            } @else {
-              <span class="italic text-base-content/30">Not provided</span>
-            }
-          </span>
-        }
-        @if (value() && copyable()) {
-          <button
-            type="button"
-            class="btn btn-ghost btn-xs btn-circle text-base-content/50 hover:text-primary tooltip flex-shrink-0"
-            [attr.data-tip]="'Copy ' + label()"
-            (click)="copyToClipboard($event)"
-          >
-            <pc-icon name="document-duplicate" [size]="4"></pc-icon>
-          </button>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailItem {
-  public label = input.required<string>();
-  public value = input<string | null | undefined>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public copyable = input<boolean>(false);
-  /** Render the value as a clickable link that emits `linkClicked` (e.g. Address → Household). */
-  public link = input<boolean>(false);
-  public readonly linkClicked = output<void>();
-
-  private readonly alertSvc = inject(AlertService);
-
-  protected copyToClipboard(event: MouseEvent): void {
-    event.stopPropagation();
-    event.preventDefault();
-    const val = this.value();
-    if (!val) return;
-
-    navigator.clipboard
-      .writeText(val)
-      .then(() => {
-        this.alertSvc.showSuccess(`${this.label()} copied to clipboard`);
-      })
-      .catch(() => {
-        this.alertSvc.showError(`Failed to copy ${this.label()}`);
-      });
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/form-actions/form-actions.ts
-````typescript
-import { ChangeDetectorRef, Component, DestroyRef, OnInit, inject, input, output } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { FormGroup, FormGroupDirective, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { merge } from 'rxjs';
-
-@Component({
-  selector: 'pc-form-actions',
-  imports: [ReactiveFormsModule, Icon],
-  templateUrl: './form-actions.html',
-})
-export class FormActions implements OnInit {
-  private readonly rootFormGroup = inject(FormGroupDirective, { optional: true });
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly cdr = inject(ChangeDetectorRef);
-  private readonly destroyRef = inject(DestroyRef);
-
-  private stay = false;
-
-  protected form?: FormGroup;
-
-  public signalForm = input<any>();
-
-  public disabled = input<boolean>(false);
-
-  /**
-   * §4 "Save never disables": when true, the primary button stays enabled
-   * regardless of validity/dirtiness (only `isLoading`/`disabled` gate it). The
-   * consuming form is expected to guide on click (markAsTouched + focus the
-   * first invalid field) rather than block via a dead button.
-   */
-  public saveAlwaysEnabled = input<boolean>(false);
-
-  public showDelete = input<boolean>(false);
-
-  public deleteText = input<string>('Delete');
-
-  public readonly deleteClicked = output<void>();
-
-  public readonly btn1Clicked = output<() => void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-
-  public btn1Text = input<string>('Save');
-
-  public btn2Text = input<string>('Save & add more');
-
-  public buttonsToShow = input<'two' | 'three'>('three');
-
-  public isLoading = input.required<boolean>();
-
-  protected get isSaveDisabled(): boolean {
-    if (this.isLoading()) return true;
-    if (this.disabled()) return true;
-    // Save never disables on validity/dirtiness — the form guides on click.
-    if (this.saveAlwaysEnabled()) return false;
-    const sigF = this.signalForm();
-    if (sigF) {
-      return sigF().invalid() || !sigF().dirty();
-    }
-    if (this.form) {
-      return this.form.invalid || !this.form.dirty;
-    }
-    return false;
-  }
-
-  public cancel() {
-    void this.router.navigate(['../'], { relativeTo: this.route });
-  }
-
-  public handleDeleteClicked() {
-    this.deleteClicked.emit();
-  }
-
-  public handleBtn1Clicked() {
-    this.stay = false;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public handleBtn2Clicked() {
-    this.stay = true;
-    this.btn1Clicked.emit(this.stayOrCancel);
-  }
-
-  public ngOnInit() {
-    this.form = this.rootFormGroup?.control;
-    if (this.form) {
-      merge(this.form.valueChanges, this.form.statusChanges)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(() => {
-          this.cdr.markForCheck();
-        });
-    }
-  }
-
-  public stayOrCancel = () => {
-    if (this.stay) {
-      const sigF = this.signalForm();
-      if (sigF) {
-        sigF().reset();
-      } else if (this.form) {
-        this.form.reset();
-      }
-    } else {
-      this.cancel();
-    }
-  };
-}
-````
-
-## File: libs/uxcommon/src/components/grid-header/grid-header.ts
-````typescript
-import { Component, computed, input, signal } from '@angular/core';
-import { Icon } from '@icons/icon';
-
-@Component({
-  selector: 'pc-grid-header',
-  imports: [Icon],
-  template: `
-    <header class="mb-3 flex flex-wrap items-start justify-between gap-3">
-      <div class="min-w-0">
-        <!-- Breadcrumb-styled title: matches the crumb trail on view/edit pages -->
-        <nav aria-label="Breadcrumb" class="flex items-center gap-1.5 text-xs text-base-content/50">
-          <h1 class="max-w-48 truncate font-medium text-base-content/60">{{ title() }}</h1>
-          @if (description()) {
-            <button
-              type="button"
-              class="btn btn-circle btn-ghost btn-xs text-base-content/40 hover:text-primary"
-              aria-label="About this page"
-              [attr.aria-expanded]="descriptionOpen()"
-              (click)="toggleDescription()"
-            >
-              <pc-icon name="information-circle" [size]="4"></pc-icon>
-            </button>
-          }
-        </nav>
-        @if (countText(); as text) {
-          <p class="mt-0.5 text-xs tabular-nums text-base-content/60" aria-live="polite">{{ text }}</p>
-        }
-        @if (descriptionOpen() && description()) {
-          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-base-content/60">{{ description() }}</p>
-        }
-      </div>
-      <div class="flex items-center gap-2">
-        <ng-content></ng-content>
-      </div>
-    </header>
-  `,
-})
-export class GridHeaderComponent {
-  public readonly title = input.required<string>();
-  public readonly description = input<string>('');
-  public readonly eyebrow = input<string>('');
-
-  /** Initial expanded state of the description; the ⓘ button toggles it afterwards. */
-  public readonly open = input<boolean>(false);
-
-  /** Total row count for the current query; null while unknown (before the first load). */
-  public readonly totalCount = input<number | null>(null);
-
-  /** Whether any user-applied filter is narrowing the results. */
-  public readonly filtered = input<boolean>(false);
-
-  /**
-   * Optional caller-provided sentence for the unfiltered total, e.g. "5,012 people total"
-   * or "1,890 households across 8 wards". When filters are active it is appended after the
-   * matched count: "43 match your filters · 5,012 people total".
-   */
-  public readonly totalSentence = input<string | null>(null);
-
-  private readonly descToggled = signal<boolean | null>(null);
-  protected readonly descriptionOpen = computed(() => this.descToggled() ?? this.open());
-
-  private readonly countFormatter = new Intl.NumberFormat();
-
-  protected readonly countText = computed<string | null>(() => {
-    const count = this.totalCount();
-    const sentence = this.totalSentence();
-    if (count !== null && this.filtered()) {
-      const matched =
-        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
-      return sentence ? `${matched} · ${sentence}` : matched;
-    }
-    if (sentence) return sentence;
-    if (count === null) return null;
-    return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
-  });
-
-  protected toggleDescription(): void {
-    this.descToggled.set(!this.descriptionOpen());
-  }
-}
-````
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.html
-````html
-<dialog #dlg class="modal">
-  @if (state()) {
-  <div class="modal-box">
-    <div class="flex items-center gap-2">
-      <pc-icon [name]="icon()" class="text-xl" />
-      <h3 class="text-lg font-bold">{{ state()!.title }}</h3>
-    </div>
-
-    @if (state()!.message) {
-    <p class="pt-4 pb-6 font-light whitespace-pre-line">{{ state()!.message }}</p>
-    } @if (state()!.type === 'prompt') {
-    <input
-      [placeholder]="state()!.inputPlaceholder || ''"
-      class="input input-bordered w-full mb-4"
-      [value]="promptValue()"
-      (input)="promptValue.set($any($event.target).value)"
-    />
-    } @if (state()!.type === 'choose') {
-    <div class="flex flex-col gap-2 w-full mt-4">
-      @for (choice of state()!.choices; track choice.label) {
-      <button class="btn w-full" [class]="choiceBtnClass(choice.variant)" (click)="onChoice(choice.value)">
-        {{ choice.label }}
-      </button>
-      } @if (showCancel()) {
-      <button class="btn w-full font-normal" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-    </div>
-    } @else {
-    <div class="flex justify-end gap-2">
-      @if (showCancel()) {
-      <button class="btn" [class]="cancelBtnClass()" (click)="onCancel()">{{ state()!.cancelText }}</button>
-      }
-      <button class="btn" [class]="confirmBtnClass()" (click)="onConfirm()">{{ state()!.confirmText }}</button>
-    </div>
-    }
-  </div>
-
-  <form method="dialog" class="modal-backdrop" (submit)="onBackdrop()">
-    <button>close</button>
-  </form>
-  }
-</dialog>
-````
-
-## File: libs/uxcommon/src/components/confirm-dialog.service.ts
-````typescript
-import { signal, computed, Service } from '@angular/core';
-import type { PcIconNameType } from '@icons/icons.index';
-
-export interface DialogChoice<T = any> {
-  label: string;
-  value: T;
-  variant?: DialogVariant;
-}
-
-export interface ChooseOptions<T = any> {
-  allowBackdropClose?: boolean;
-  cancelText?: string;
-  choices: DialogChoice<T>[];
-  icon?: PcIconNameType;
-  message?: string;
-  title: string;
-  variant?: DialogVariant;
-}
-
-export interface BaseDialogOptions {
-  allowBackdropClose?: boolean; // default true for alert/prompt, false for danger confirm
-  cancelText?: string; // default per type
-  confirmText?: string; // default per type
-  /** Style cancel as the primary/safe-default button and confirm as a plain variant-colored one (e.g. "Keep editing" vs. "Discard changes"). */
-  emphasizeCancel?: boolean;
-  icon?: PcIconNameType; // optional icon name for <pc-icon>
-  message?: string;
-  title: string;
-  variant?: DialogVariant;
-}
-
-export interface DialogState {
-  allowBackdropClose: boolean;
-  cancelText: string;
-  confirmText: string;
-  defaultValue?: string;
-  emphasizeCancel?: boolean;
-  icon?: PcIconNameType;
-
-  // prompt
-  inputPlaceholder?: string;
-  message?: string;
-  title: string;
-  type: DialogType;
-  variant: DialogVariant;
-
-  // choose
-  choices?: DialogChoice[];
-}
-
-export interface PromptOptions extends BaseDialogOptions {
-  defaultValue?: string;
-  inputPlaceholder?: string;
-}
-
-@Service()
-export class ConfirmDialogService {
-  private _resolve: ((value?: any) => void) | null = null;
-
-  public readonly stateSignal = signal<DialogState | null>(null);
-
-  public readonly isOpenSignal = computed(() => this.stateSignal() !== null);
-
-  public alert(opts: BaseDialogOptions): Promise<void> {
-    this.open({
-      type: 'alert',
-      title: opts.title,
-      message: opts.message,
-      variant: opts.variant ?? 'info',
-      icon: opts.icon ?? this.defaultIconFor(opts.variant ?? 'info'),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: 'OK',
-      cancelText: '',
-    });
-    return new Promise<void>((resolve) => (this._resolve = resolve));
-  }
-
-  public cancel(): void {
-    // Normalize cancel values per dialog type
-    const st = this.stateSignal();
-    if (st?.type === 'confirm') this._resolve?.(false);
-    else if (st?.type === 'alert') this._resolve?.();
-    else if (st?.type === 'prompt') this._resolve?.(null);
-    else if (st?.type === 'choose') this._resolve?.(null);
-    this.close();
-  }
-
-  public confirm(opts: BaseDialogOptions): Promise<boolean> {
-    const v = opts.variant ?? 'neutral';
-    const allowBackdropClose = opts.allowBackdropClose ?? v !== 'danger';
-    const confirmText = opts.confirmText ?? (v === 'danger' ? 'Delete' : 'OK');
-    const cancelText = opts.cancelText ?? 'Cancel';
-
-    this.open({
-      type: 'confirm',
-      title: opts.title,
-      message: opts.message,
-      variant: v,
-      icon: opts.icon ?? this.defaultIconFor(v),
-      allowBackdropClose,
-      confirmText,
-      cancelText,
-      emphasizeCancel: opts.emphasizeCancel,
-    });
-
-    return new Promise<boolean>((resolve) => (this._resolve = resolve));
-  }
-
-  public choose<T>(opts: ChooseOptions<T>): Promise<T | null> {
-    const v = opts.variant ?? 'neutral';
-    this.open({
-      type: 'choose',
-      title: opts.title,
-      message: opts.message,
-      variant: v,
-      icon: opts.icon ?? this.defaultIconFor(v),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: '',
-      cancelText: opts.cancelText ?? 'Cancel',
-      choices: opts.choices,
-    });
-
-    return new Promise<T | null>((resolve) => (this._resolve = resolve));
-  }
-
-  public defaultIconFor(variant: DialogVariant): PcIconNameType {
-    switch (variant) {
-      case 'danger':
-        return 'exclamation-triangle';
-      case 'warning':
-        return 'exclamation-circle';
-      case 'info':
-        return 'information-circle';
-      case 'success':
-        return 'check-circle';
-      default:
-        return 'x-mark';
-    }
-  }
-
-  public ok(payload?: unknown): void {
-    this._resolve?.(payload ?? true);
-    this.close();
-  }
-
-  public prompt(opts: PromptOptions): Promise<string | null> {
-    this.open({
-      type: 'prompt',
-      title: opts.title,
-      message: opts.message,
-      variant: opts.variant ?? 'neutral',
-      icon: opts.icon ?? ('pencil-square' as PcIconNameType),
-      allowBackdropClose: opts.allowBackdropClose ?? true,
-      confirmText: opts.confirmText ?? 'OK',
-      cancelText: opts.cancelText ?? 'Cancel',
-      inputPlaceholder: opts.inputPlaceholder,
-      defaultValue: opts.defaultValue,
-    });
-    return new Promise<string | null>((resolve) => (this._resolve = resolve));
-  }
-
-  private close(): void {
-    this.stateSignal.set(null);
-    this._resolve = null;
-  }
-
-  private open(st: DialogState): void {
-    this.stateSignal.set(st);
-  }
-}
-
-export type DialogType = 'confirm' | 'alert' | 'prompt' | 'choose';
-
-export type DialogVariant = 'danger' | 'warning' | 'info' | 'success' | 'neutral';
-````
-
-## File: libs/uxcommon/vite.config.mts
-````typescript
-/// <reference types='vitest' />
-import { defineConfig } from 'vite';
-import angular from '@analogjs/vite-plugin-angular';
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/libs/uxcommon',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [angular()],
-  test: {
-    name: 'uxcommon',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'jsdom',
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    setupFiles: ['src/test-setup.ts'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/libs/uxcommon',
-      provider: 'v8' as const,
-      // Coverage ratchet: set just under the measured baseline (2026-07-04:
-      // 81.22% stmts / 63.21% branch / 67.05% funcs / 82.27% lines). These may
-      // only ever be raised, never lowered — if your change drops coverage
-      // below them, add tests rather than editing the thresholds.
-      thresholds: {
-        statements: 80,
-        branches: 62,
-        functions: 66,
-        lines: 81,
-      },
-    },
-  },
-}));
-````
-
 ## File: apps/backend/scripts/setup-db-roles.sql
 ````sql
 -- =============================================================================
@@ -34801,6 +20326,324 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO pplcrm_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO pplcrm_app;
+````
+
+## File: apps/backend/src/app/lib/jobs/handlers/import.handlers.ts
+````typescript
+import type { Kysely } from 'kysely';
+import { env } from '../../../../env';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../../logger';
+import { CompaniesController } from '../../../modules/companies/controller';
+import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo';
+import { PersonsService } from '../../../modules/persons/services/persons.service';
+import { TasksController } from '../../../modules/tasks/controller';
+import { StorageService } from '../../storage.service';
+import { notificationEnabled } from '../../profile-preferences';
+import { TransactionalEmailService } from '../../mail/transactional-mail.service';
+import type { LegacyImportJobPayload } from '../job-payloads';
+
+const storageService = new StorageService();
+const importsRepo = new ImportsRepo();
+const mailService = new TransactionalEmailService();
+
+export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysely<Models>): Promise<void> {
+  // 1. Mark import status as 'processing' in data_imports
+  await importsRepo.update({
+    tenant_id: payload.tenant_id,
+    id: payload.import_id,
+    row: {
+      status: 'processing',
+      updated_at: new Date(),
+    },
+  });
+
+  // 2. Download mapping payload from storage
+  const buffer = await storageService.download(payload.storage_key);
+  const rows = JSON.parse(buffer.toString('utf8'));
+
+  // 3. Process the import rows in chunks
+  if (payload.source === 'companies') {
+    const companiesController = new CompaniesController();
+    await companiesController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else if (payload.source === 'tasks') {
+    const tasksController = new TasksController();
+    await tasksController.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      Number(payload.skipped || 0),
+      rows,
+    );
+  } else {
+    const personsService = new PersonsService();
+    await personsService.processImportRows(
+      payload.import_id,
+      payload.tenant_id,
+      payload.user_id,
+      payload.campaign_id ?? '',
+      payload.tags ?? [],
+      Number(payload.skipped || 0),
+      rows,
+      {
+        duplicateDecision: payload.duplicate_decision ?? 'skip',
+        listName: payload.list_name ?? undefined,
+        clientSkipReasons: payload.client_skip_reasons ?? undefined,
+      },
+    );
+  }
+
+  // 4. Update import status to 'completed'
+  await importsRepo.update({
+    tenant_id: payload.tenant_id,
+    id: payload.import_id,
+    row: {
+      status: 'completed',
+      processed_at: new Date(),
+      updated_at: new Date(),
+    },
+  });
+
+  try {
+    await storageService.delete(payload.storage_key);
+  } catch (storageErr) {
+    logger.error({ err: storageErr }, `Failed to clean up storage key ${payload.storage_key}`);
+  }
+
+  try {
+    const user = await db
+      .selectFrom('authusers')
+      .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+      .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+      .where('authusers.id', '=', payload.user_id)
+      .executeTakeFirst();
+
+    if (user && user.email) {
+      if (notificationEnabled(user.profile_preferences, 'import_summary')) {
+        const importRecord = await db
+          .selectFrom('data_imports')
+          .select(['inserted_count', 'error_count', 'skipped_count'])
+          .where('id', '=', payload.import_id)
+          .where('tenant_id', '=', payload.tenant_id)
+          .executeTakeFirst();
+
+        if (importRecord) {
+          const inserted = importRecord.inserted_count || 0;
+          const errors = importRecord.error_count || 0;
+          const skipped = importRecord.skipped_count || 0;
+
+          await mailService.sendMail({
+            to: user.email,
+            subject: `Spreadsheet Import Complete: ${payload.file_name || 'import.csv'}`,
+            text: `Hi ${user.first_name || 'there'},\n\nYour contact spreadsheet import has completed.\n\nStatistics:\n- Inserted: ${inserted}\n- Errors: ${errors}\n- Skipped: ${skipped}\n\nView imported rows: ${env.appUrl}/imports/${payload.import_id}`,
+            html: `<p>Hi ${user.first_name || 'there'},</p><p>Your contact spreadsheet import has completed.</p><p><strong>Import Statistics:</strong><br>• Inserted: <strong>${inserted}</strong><br>• Errors: <strong>${errors}</strong><br>• Skipped: <strong>${skipped}</strong></p><p><a href="${env.appUrl}/imports/${payload.import_id}">View Imported Rows</a></p>`,
+          });
+        }
+      }
+    }
+  } catch (mailErr) {
+    logger.error({ err: mailErr }, 'Failed to send import completion summary email');
+  }
+}
+````
+
+## File: apps/backend/src/app/lib/jobs/job-payloads.ts
+````typescript
+import { z } from 'zod';
+import type { ZapierEventType } from '../../modules/zapier/zapier.service';
+
+/**
+ * IDs are strings in the database, but historical job payloads may carry them
+ * as numbers (JSON round-trip of bigint columns). Normalize to string.
+ */
+const idSchema = z.union([z.string(), z.number()]).transform(String);
+
+/** Must stay in sync with ZapierEventType in modules/zapier/zapier.service.ts (enforced by `satisfies`). */
+const ZAPIER_EVENT_TYPES = [
+  'person_created',
+  'person_updated',
+  'person_deleted',
+  'person_tag_added',
+  'person_tag_removed',
+] as const satisfies readonly ZapierEventType[];
+
+const exportSortSchema = z.object({
+  colId: z.string().nullish(),
+  sort: z.string().nullish(),
+});
+
+const exportOptionsSchema = z.object({
+  userId: idSchema.nullish(),
+  entity: z.string().nullish(),
+  activity: z.string().nullish(),
+  searchStr: z.string().nullish(),
+  sortModel: z.array(exportSortSchema).nullish(),
+});
+
+export const jobPayloadSchema = z.discriminatedUnion('type', [
+  // ── Lists / companies / maintenance ─────────────────────────────────────
+  z.object({
+    type: z.literal('refresh_list'),
+    tenant_id: idSchema,
+    list_id: idSchema,
+    user_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('enrich_company_google'),
+    company_id: idSchema,
+    tenant_id: idSchema,
+  }),
+  z.object({
+    type: z.literal('refresh_companies_google'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({ type: z.literal('cleanup_activities') }),
+  z.object({ type: z.literal('prune_retention') }),
+  z.object({ type: z.literal('recompute_all_duplicates') }),
+  z.object({
+    type: z.literal('recompute_address_fingerprints'),
+    tenant_id: idSchema.nullish(),
+  }),
+  z.object({
+    type: z.literal('geocode_household'),
+    household_id: idSchema,
+    tenant_id: idSchema,
+  }),
+
+  // ── External account sync ───────────────────────────────────────────────
+  z.object({ type: z.literal('schedule_sync_jobs') }),
+  z.object({
+    type: z.literal('google_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+  z.object({
+    type: z.literal('ms_sync'),
+    tenantId: idSchema,
+    requestedBy: z.string().default('system'),
+  }),
+
+  // ── Notifications & transactional email ─────────────────────────────────
+  z.object({
+    type: z.literal('send-form-notifications'),
+    eventId: idSchema,
+    tenantId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    mobile: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-shift-reminder'),
+    shiftId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-webform-notifications'),
+    formId: idSchema,
+    email: z.string(),
+    firstName: z.string().nullish(),
+    lastName: z.string().nullish(),
+    notes: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-event-registration-confirmation'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-event-reminder'),
+    registrationId: idSchema,
+  }),
+  z.object({
+    type: z.literal('send-transactional-email'),
+    to: z.string(),
+    subject: z.string().nullish(),
+    text: z.string().nullish(),
+    html: z.string().nullish(),
+  }),
+  z.object({
+    type: z.literal('send-subscription-confirmation'),
+    email: z.string(),
+    firstName: z.string().nullish(),
+    confirmUrl: z.string(),
+  }),
+  z.object({ type: z.literal('check_due_tasks') }),
+
+  // ── Newsletters ──────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('send-newsletter'),
+    tenantId: idSchema,
+    newsletterId: idSchema,
+    userId: idSchema,
+    offset: z.number().nullish(),
+    deliveredCount: z.number().nullish(),
+  }),
+  z.object({ type: z.literal('prune_newsletter_events') }),
+
+  // ── Workflows & deletions ────────────────────────────────────────────────
+  z.object({ type: z.literal('process_drip_workflows') }),
+  z.object({ type: z.literal('perform_scheduled_deletions') }),
+
+  // ── Billing & integrations ───────────────────────────────────────────────
+  z.object({
+    type: z.literal('zapier_trigger'),
+    tenant_id: idSchema,
+    event_type: z.enum(ZAPIER_EVENT_TYPES),
+    data: z.record(z.string(), z.unknown()).default({}),
+  }),
+  z.object({
+    type: z.literal('check_usage_limits'),
+    tenant_id: idSchema,
+  }),
+  z.object({ type: z.literal('check_all_usage_limits') }),
+
+  // ── Exports ──────────────────────────────────────────────────────────────
+  z.object({
+    type: z.literal('export_csv'),
+    export_id: idSchema,
+    tenant_id: idSchema,
+    table: z.string().nullish(),
+    entity: z.string().nullish(),
+    options: exportOptionsSchema.default({}),
+    columns: z.array(z.string()).nullish(),
+    user_id: idSchema.nullish(),
+    file_name: z.string().nullish(),
+  }),
+]);
+
+export type JobPayload = z.infer<typeof jobPayloadSchema>;
+export type JobType = JobPayload['type'];
+export type JobPayloadOf<K extends JobType> = Extract<JobPayload, { type: K }>;
+
+/**
+ * CSV imports are queued without a `type` discriminator (legacy shape) and are
+ * matched by the presence of `import_id` + `storage_key` instead.
+ */
+export const legacyImportJobSchema = z.object({
+  import_id: idSchema,
+  storage_key: z.string(),
+  tenant_id: idSchema,
+  user_id: idSchema,
+  source: z.string().nullish(),
+  skipped: z.union([z.string(), z.number()]).nullish(),
+  campaign_id: idSchema.nullish(),
+  tags: z.array(z.string()).nullish(),
+  file_name: z.string().nullish(),
+  // §17 CSV import wizard — see PersonsService.importRows/processImportRows.
+  duplicate_decision: z.enum(['merge', 'skip', 'import_new']).nullish(),
+  list_name: z.string().nullish(),
+  client_skip_reasons: z
+    .array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() }))
+    .nullish(),
+});
+
+export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
 ````
 
 ## File: apps/backend/src/app/lib/jobs/worker.ts
@@ -40325,6 +26168,225 @@ export const HouseholdsRouter = router({
 });
 ````
 
+## File: apps/backend/src/app/modules/imports/repositories/imports.repo.ts
+````typescript
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import { BaseRepository } from '../../../lib/base.repo';
+import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
+
+export type DataImportWithStats = {
+  id: string;
+  tenant_id: string;
+  file_name: string;
+  source: string;
+  /** Live tags.name when the tag still exists, else the import-time snapshot (D-10). */
+  tag_name: string | null;
+  tag_id: string | null;
+  row_count: number;
+  inserted_count: number;
+  error_count: number;
+  skipped_count: number;
+  merged_count: number;
+  tags_applied: string[];
+  households_created: number;
+  source_file_key: string | null;
+  source_file_size: number | null;
+  skip_reasons: Array<{ row: number; email?: string; reason: string }>;
+  processed_at: Date;
+  created_at: Date;
+  updated_at: Date;
+  createdby_id: string;
+  updatedby_id: string;
+  created_by_email: string | null;
+  created_by_name: string | null;
+  contact_count: number;
+  household_count: number;
+  company_count: number;
+  task_count: number;
+  tag_assignment_count: number;
+  tag_exists: boolean;
+  status: string;
+  error_message: string | null;
+};
+
+export class ImportsRepo extends BaseRepository<'data_imports'> {
+  constructor() {
+    super('data_imports');
+  }
+
+  public async getAllWithStats(input: { tenant_id: string }, trx?: Transaction<Models>) {
+    return this.buildStatsQuery(input, trx)
+      .execute()
+      .then((rows) => rows.map((row) => this.mapRow(row)));
+  }
+
+  public async getOneWithStats(input: { tenant_id: string; id: string }, trx?: Transaction<Models>) {
+    const rows = await this.buildStatsQuery(input, trx).where('data_imports.id', '=', input.id).limit(1).execute();
+    const row = rows.at(0);
+    return row ? this.mapRow(row) : null;
+  }
+
+  private buildStatsQuery(input: { tenant_id: string }, trx?: Transaction<Models>) {
+    const contactCountExpr = sql<number>`(
+      SELECT COUNT(1)
+      FROM persons
+      WHERE persons.tenant_id = ${input.tenant_id}
+        AND persons.file_id = data_imports.id
+    )`;
+
+    const householdCountExpr = sql<number>`(
+      SELECT COUNT(1)
+      FROM households
+      WHERE households.tenant_id = ${input.tenant_id}
+        AND households.file_id = data_imports.id
+    )`;
+
+    const companyCountExpr = sql<number>`(
+      SELECT COUNT(1)
+      FROM companies
+      WHERE companies.tenant_id = ${input.tenant_id}
+        AND companies.file_id = data_imports.id
+    )`;
+
+    const taskCountExpr = sql<number>`(
+      SELECT COUNT(1)
+      FROM tasks
+      WHERE tasks.tenant_id = ${input.tenant_id}
+        AND tasks.file_id = data_imports.id
+    )`;
+
+    const tagAssignmentExpr = sql<number>`(
+      SELECT COUNT(1)
+      FROM map_peoples_tags mpt
+      WHERE mpt.tenant_id = ${input.tenant_id}
+        AND mpt.tag_id = data_imports.tag_id
+    )`;
+
+    const tagExistsExpr = sql<number>`(
+      SELECT CASE
+        WHEN EXISTS(
+          SELECT 1
+          FROM tags
+          WHERE tags.tenant_id = ${input.tenant_id}
+            AND tags.id = data_imports.tag_id
+        ) THEN 1 ELSE 0 END
+    )`;
+
+    const nameExpr = sql<string | null>`NULLIF(TRIM(CONCAT_WS(' ', creator.first_name, creator.last_name)), '')`;
+
+    // tags.name via tag_id is the source of truth while the tag exists; the
+    // stored tag_name is the import-time snapshot kept for deleted tags (D-10).
+    const tagNameExpr = sql<string | null>`COALESCE(
+      (SELECT tags.name
+       FROM tags
+       WHERE tags.tenant_id = ${input.tenant_id}
+         AND tags.id = data_imports.tag_id),
+      data_imports.tag_name
+    )`;
+
+    const query = this.getSelect(trx)
+      .where('data_imports.tenant_id', '=', input.tenant_id)
+      .leftJoin('authusers as creator', 'creator.id', 'data_imports.createdby_id')
+      .select([
+        'data_imports.id',
+        'data_imports.tenant_id',
+        'data_imports.file_name',
+        'data_imports.source',
+        tagNameExpr.as('tag_name'),
+        'data_imports.tag_id',
+        'data_imports.row_count',
+        'data_imports.inserted_count',
+        'data_imports.error_count',
+        'data_imports.skipped_count',
+        'data_imports.merged_count',
+        'data_imports.tags_applied',
+        'data_imports.households_created',
+        'data_imports.source_file_key',
+        'data_imports.source_file_size',
+        'data_imports.skip_reasons',
+        'data_imports.processed_at',
+        'data_imports.created_at',
+        'data_imports.updated_at',
+        'data_imports.createdby_id',
+        'data_imports.updatedby_id',
+        'data_imports.status',
+        'data_imports.error_message',
+        sql<string | null>`creator.email`.as('creator_email'),
+        nameExpr.as('creator_name'),
+        contactCountExpr.as('contact_count'),
+        householdCountExpr.as('household_count'),
+        companyCountExpr.as('company_count'),
+        taskCountExpr.as('task_count'),
+        tagAssignmentExpr.as('tag_assignment_count'),
+        tagExistsExpr.as('tag_exists'),
+      ])
+      .orderBy('data_imports.processed_at', 'desc');
+
+    return query;
+  }
+
+  private mapRow(row: Record<string, unknown>): DataImportWithStats {
+    const cast = (value: unknown) => (value == null ? null : String(value));
+    const toNumber = (value: unknown) => {
+      if (value == null) return 0;
+      if (typeof value === 'number') return value;
+      if (typeof value === 'bigint') return Number(value);
+      const parsed = Number(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    const toBool = (value: unknown) => toNumber(value) > 0;
+
+    return {
+      id: cast(row['id']) ?? '',
+      tenant_id: cast(row['tenant_id']) ?? '',
+      file_name: cast(row['file_name']) ?? '',
+      source: cast(row['source']) ?? 'persons',
+      tag_name: cast(row['tag_name']),
+      tag_id: cast(row['tag_id']),
+      row_count: toNumber(row['row_count']),
+      inserted_count: toNumber(row['inserted_count']),
+      error_count: toNumber(row['error_count']),
+      skipped_count: toNumber(row['skipped_count']),
+      merged_count: toNumber(row['merged_count']),
+      tags_applied: Array.isArray(row['tags_applied']) ? (row['tags_applied'] as string[]) : [],
+      households_created: toNumber(row['households_created']),
+      source_file_key: cast(row['source_file_key']),
+      source_file_size: row['source_file_size'] == null ? null : toNumber(row['source_file_size']),
+      skip_reasons: Array.isArray(row['skip_reasons'])
+        ? (row['skip_reasons'] as Array<{ row: number; email?: string; reason: string }>)
+        : [],
+      processed_at: this.coerceDate(row['processed_at']),
+      created_at: this.coerceDate(row['created_at']),
+      updated_at: this.coerceDate(row['updated_at']),
+      createdby_id: cast(row['createdby_id']) ?? '',
+      updatedby_id: cast(row['updatedby_id']) ?? '',
+      created_by_email: cast(row['creator_email']),
+      created_by_name: cast(row['creator_name']),
+      contact_count: toNumber(row['contact_count']),
+      household_count: toNumber(row['household_count']),
+      company_count: toNumber(row['company_count']),
+      task_count: toNumber(row['task_count']),
+      tag_assignment_count: toNumber(row['tag_assignment_count']),
+      tag_exists: toBool(row['tag_exists']),
+      status: cast(row['status']) ?? 'completed',
+      error_message: cast(row['error_message']),
+    };
+  }
+
+  private coerceDate(value: unknown): Date {
+    if (value instanceof Date) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+      const ts = new Date(value);
+      if (!Number.isNaN(ts.valueOf())) return ts;
+    }
+    return new Date(0);
+  }
+}
+````
+
 ## File: apps/backend/src/app/modules/newsletters/controller.ts
 ````typescript
 import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
@@ -41014,269 +27076,6 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     return super.exportCsv(input, auth);
   }
 }
-````
-
-## File: apps/backend/src/app/modules/persons/trpc.router.ts
-````typescript
-import {
-  UpdatePersonsObj,
-  exportCsvInput,
-  exportCsvResponse,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { PersonsController } from './controller';
-import { PersonsService } from './services/persons.service';
-
-const persons = new PersonsController();
-const personsService = new PersonsService();
-
-function add() {
-  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
-}
-
-function attachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
-}
-
-function count() {
-  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
-}
-
-const deleteOneInput = z.union([
-  idSchema,
-  z.object({
-    id: idSchema,
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteOne() {
-  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
-    const id = typeof input === 'string' ? input : input.id;
-    const force = typeof input === 'string' ? false : !!input.force;
-    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
-  });
-}
-
-const deleteManyInput = z.union([
-  z.array(idSchema).min(1, 'At least one ID is required'),
-  z.object({
-    ids: z.array(idSchema).min(1, 'At least one ID is required'),
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteMany() {
-  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
-    const ids = Array.isArray(input) ? input : input.ids;
-    const force = Array.isArray(input) ? false : !!input.force;
-    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
-  });
-}
-
-function detachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      personsService.detachTag({
-        tenant_id: ctx.auth.tenant_id,
-        person_id: input.id,
-        name: input.tag_name,
-        type: input.type ?? 'tag',
-        user_id: ctx.auth.user_id,
-      }),
-    );
-}
-
-function getAll() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
-}
-
-function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
-}
-
-function getByHouseholdId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
-}
-
-function getByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
-}
-
-function countByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema }))
-    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
-}
-
-function countWithCompany() {
-  return authProcedure.query(({ ctx }) => persons.countWithCompany(ctx.auth));
-}
-
-function getById() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
-}
-
-/** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
-function getBySlug() {
-  return authProcedure
-    .input(z.string().trim().min(1).max(200))
-    .query(({ input, ctx }) => persons.getOneBySlug(input, ctx.auth));
-}
-
-function getActivity() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
-}
-
-// Distinct tags
-function getDistinctTags() {
-  return authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
-}
-
-function exportCsv() {
-  return authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
-}
-
-function getTags() {
-  return authProcedure
-    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
-    .query(({ input, ctx }) => {
-      const id = typeof input === 'string' ? input : input.id;
-      const type = typeof input === 'string' ? undefined : input.type;
-      return persons.getTags(id, ctx.auth, type);
-    });
-}
-
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
-    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
-}
-
-function removeHousehold() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
-}
-
-function importMany() {
-  const ImportRow = z.object({
-    first_name: z.string().trim().max(100).optional(),
-    last_name: z.string().trim().max(100).optional(),
-    email: z.string().trim().max(255).optional(),
-    mobile: z.string().trim().max(30).optional(),
-    notes: z.string().trim().max(10000).optional(),
-    home_phone: z.string().trim().max(30).optional(),
-    street_num: z.string().trim().max(30).optional(),
-    street1: z.string().trim().max(150).optional(),
-    street2: z.string().trim().max(150).optional(),
-    apt: z.string().trim().max(30).optional(),
-    city: z.string().trim().max(100).optional(),
-    state: z.string().trim().max(100).optional(),
-    zip: z.string().trim().max(20).optional(),
-    country: z.string().trim().max(100).optional(),
-  });
-
-  const Input = z.object({
-    rows: z.array(ImportRow),
-    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
-    skipped: z.number().int().nonnegative().optional(),
-    file_name: z.string().trim().min(1).max(255).optional(),
-  });
-
-  return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
-}
-
-function getPotentialDuplicates() {
-  return authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
-}
-
-function getDuplicateCounts() {
-  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
-}
-
-function mergePersons() {
-  return authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
-}
-
-function moveEntireHousehold() {
-  return authProcedure
-    .input(
-      z.object({
-        fromHouseholdId: idSchema,
-        toHouseholdId: idSchema,
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
-    );
-}
-
-export const PersonsRouter = router({
-  add: add(),
-  count: count(),
-  getAll: getAll(),
-  update: update(),
-  removeHousehold: removeHousehold(),
-  import: importMany(),
-  getTags: getTags(),
-  getById: getById(),
-  getBySlug: getBySlug(),
-  getActivity: getActivity(),
-  attachTag: attachTag(),
-  detachTag: detachTag(),
-  delete: deleteOne(),
-  deleteMany: deleteMany(),
-  getDistinctTags: getDistinctTags(),
-  getByHouseholdId: getByHouseholdId(),
-  getByCompanyId: getByCompanyId(),
-  countByCompanyId: countByCompanyId(),
-  countWithCompany: countWithCompany(),
-  getAllWithAddress: getAllWithAddress(),
-  exportCsv: exportCsv(),
-  getPotentialDuplicates: getPotentialDuplicates(),
-  getDuplicateCounts: getDuplicateCounts(),
-  mergePersons: mergePersons(),
-  moveEntireHousehold: moveEntireHousehold(),
-});
 ````
 
 ## File: apps/backend/src/app/modules/volunteer-events/controller.ts
@@ -42301,822 +28100,6 @@ export default defineConfig(() => ({
 }));
 ````
 
-## File: libs/common/src/lib/schemas/persons.schema.ts
-````typescript
-import { z } from 'zod';
-import { phoneSchema, notesSchema, idSchema, nullableEmailSchema, addressSchema } from './core.schema';
-
-export const PersonsObj = z.object({
-  id: z.string(),
-  household_id: z.string(),
-  email: z.string(),
-  email2: z.string(),
-  first_name: z.string(),
-  middle_names: z.string(),
-  last_name: z.string(),
-  home_phone: z.string(),
-  mobile: z.string(),
-  notes: z.string(),
-  linkedin: z.string().nullable().optional(),
-  twitter: z.string().nullable().optional(),
-  facebook: z.string().nullable().optional(),
-  instagram: z.string().nullable().optional(),
-  assigned_to: z.string().nullable().optional(),
-  preferred_contact: z.string().nullable().optional(),
-});
-
-export const UpdateHouseholdsObj = addressSchema.extend({
-  home_phone: phoneSchema('Home phone'),
-  notes: notesSchema,
-});
-
-export const UpdatePersonsObj = z.object({
-  campaign_id: idSchema.optional(),
-  household_id: idSchema.optional(),
-  company_id: idSchema.or(z.literal('')).nullable().optional(),
-  email: nullableEmailSchema,
-  email2: nullableEmailSchema,
-  first_name: z.string().trim().max(100, 'First name is too long').nullable().optional(),
-  middle_names: z.string().trim().max(100, 'Middle names are too long').nullable().optional(),
-  last_name: z.string().trim().max(100, 'Last name is too long').nullable().optional(),
-  home_phone: phoneSchema('Home phone'),
-  mobile: phoneSchema('Mobile phone'),
-  notes: notesSchema,
-  linkedin: z.string().trim().max(255, 'LinkedIn URL is too long').nullable().optional(),
-  twitter: z.string().trim().max(255, 'Twitter URL is too long').nullable().optional(),
-  facebook: z.string().trim().max(255, 'Facebook URL is too long').nullable().optional(),
-  instagram: z.string().trim().max(255, 'Instagram URL is too long').nullable().optional(),
-  assigned_to: idSchema.or(z.literal('')).nullable().optional(),
-  preferred_contact: z.string().trim().max(20, 'Preferred contact is too long').nullable().optional(),
-});
-````
-
-## File: libs/common/src/lib/auth.ts
-````typescript
-import { z } from 'zod';
-
-export interface IAuthKeyPayload {
-  name?: string;
-
-  session_id: string;
-
-  tenant_id: string;
-
-  user_id: string;
-
-  role?: string | null;
-
-  source?: string;
-}
-
-export interface IAuthUser {
-  email: string;
-
-  first_name: string;
-
-  last_name?: string;
-
-  id: string;
-
-  role?: string | null;
-
-  avatar_url?: string | null;
-
-  email_verified: boolean;
-
-  passkey_setup_dismissed_at?: Date | null;
-
-  tenant_deletion_scheduled_at?: Date | null;
-
-  tenant_paused_at?: Date | null;
-
-  /** The tenant's public subdomain label — used to build public form URLs (`<slug>.<baseDomain>`). */
-  tenant_slug?: string | null;
-}
-
-export interface IUserStatsSnapshot {
-  emails_assigned: {
-    total: number;
-    open: number;
-    closed: number;
-  };
-  contacts_added: {
-    total: number;
-    last_created_at: Date | null;
-  };
-  files_imported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-  files_exported: {
-    count: number;
-    total_rows: number;
-    last_activity_at: Date | null;
-  };
-}
-
-export interface IAuthUserRecord extends IAuthUser {
-  last_name: string;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  deletion_scheduled_at: Date | null;
-  created_at: Date | null;
-  updated_at: Date | null;
-  previous_email?: string | null;
-  previous_role?: string | null;
-  avatar_url?: string | null;
-  notification_preferences?: {
-    mention_in_comment: boolean;
-    mention_in_comment_in_app: boolean;
-    task_assigned: boolean;
-    task_assigned_in_app: boolean;
-    task_due: boolean;
-    task_due_in_app: boolean;
-    person_assigned: boolean;
-    person_assigned_in_app: boolean;
-    export_ready: boolean;
-    export_ready_in_app: boolean;
-    import_summary: boolean;
-    import_summary_in_app: boolean;
-  };
-}
-
-export interface IAuthUserDetail extends IAuthUserRecord {
-  stats: IUserStatsSnapshot;
-}
-
-export interface IToken {
-  auth_token: string | null;
-  refresh_token: string | null;
-}
-
-/**
- * The one generic message shown for any failed sign-in attempt, regardless of
- * whether the email or the password was wrong — never reveal which, so that
- * sign-in cannot be used to probe which emails have accounts. Shared by the
- * backend error formatter and the frontend so the copy never drifts.
- */
-export const GENERIC_SIGNIN_ERROR = 'Please check your email and password and try again.';
-
-export type signInInputType = z.infer<typeof signInInputObj>;
-
-export type signUpInputType = z.infer<typeof signUpInputObj>;
-
-export const signInInputObj = z.object({
-  email: z.email(),
-  password: z.string().min(8).max(72),
-  rememberMe: z.boolean().optional(),
-});
-
-export const signUpInputObj = z.object({
-  organization: z.string(),
-  email: z.string().max(100),
-  password: z.string().min(8).max(72),
-  first_name: z.string().max(100),
-});
-````
-
-## File: libs/common/src/lib/models.ts
-````typescript
-import type { z } from 'zod';
-
-import type {
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  EmailCommentObj,
-  EmailFolderObj,
-  EmailObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  EmailDraftObj,
-  PersonsObj,
-  SettingsEntryObj,
-  SettingsObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  ListsObj,
-  UpdateMarketingEmailObj,
-  UpdateListObj,
-  UpdateTaskObj,
-  UpdateTeamObj,
-  TasksObj,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  dataExportRecord,
-  sortModelItem,
-  InviteAuthUserObj,
-  ProfilePreferencesObj,
-  UpdateAuthUserObj,
-  Verify2FAObj,
-  ImportListItemObj,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-} from './schema';
-
-export interface INow {
-  now: string;
-}
-
-export type AddTagType = z.infer<typeof AddTagObj>;
-
-export type EmailCommentType = z.infer<typeof EmailCommentObj>;
-
-export type EmailFolderType = z.infer<typeof EmailFolderObj>;
-
-export type EmailType = z.infer<typeof EmailObj>;
-
-export type MarketingEmailType = z.infer<typeof MarketingEmailObj>;
-
-export type AddMarketingEmailType = z.infer<typeof AddMarketingEmailObj>;
-
-export type UpdateMarketingEmailType = z.infer<typeof UpdateMarketingEmailObj>;
-
-export type MarketingEmailTopLinkType = z.infer<typeof marketingEmailTopLinkObj>;
-
-export type EmailDraftType = z.infer<typeof EmailDraftObj>;
-
-export type ImportListItem = z.infer<typeof ImportListItemObj>;
-
-export type PERSONINHOUSEHOLDTYPE = {
-  first_name: string;
-  full_name: string;
-  id: string;
-  last_name: string;
-  middle_names: string;
-};
-
-export type PersonsType = z.infer<typeof PersonsObj>;
-
-export type SettingsType = z.infer<typeof SettingsObj>;
-
-export type SettingsEntryType = z.infer<typeof SettingsEntryObj>;
-
-export type UpsertSettingsInputType = z.infer<typeof UpsertSettingsInputObj>;
-
-export type SortModelType = z.infer<typeof sortModelItem>;
-
-export type UpdateHouseholdsType = z.infer<typeof UpdateHouseholdsObj>;
-
-export type UpdatePersonsType = z.infer<typeof UpdatePersonsObj>;
-
-export type UpdateTagType = z.infer<typeof UpdateTagObj>;
-
-export type getAllOptionsType = z.infer<typeof getAllOptions>;
-
-export type AddListType = z.infer<typeof AddListObj>;
-
-export type AddTeamType = z.infer<typeof AddTeamObj>;
-
-export type InviteAuthUserType = z.infer<typeof InviteAuthUserObj>;
-
-export type Verify2FAType = z.infer<typeof Verify2FAObj>;
-
-export type ListsType = z.infer<typeof ListsObj>;
-
-export type UpdateListType = z.infer<typeof UpdateListObj>;
-
-export type UpdateTeamType = z.infer<typeof UpdateTeamObj>;
-
-export type UpdateAuthUserType = z.infer<typeof UpdateAuthUserObj>;
-
-export type ProfilePreferencesType = z.infer<typeof ProfilePreferencesObj>;
-
-export type AddTaskType = z.infer<typeof AddTaskObj>;
-export type TasksType = z.infer<typeof TasksObj>;
-export type UpdateTaskType = z.infer<typeof UpdateTaskObj>;
-export type ExportCsvInputType = z.infer<typeof exportCsvInput>;
-export type ExportCsvResponseType = z.infer<typeof exportCsvResponse>;
-export type QueueExportInputType = z.infer<typeof queueExportInput>;
-export type DataExportRecordType = z.infer<typeof dataExportRecord>;
-
-export type AddVolunteerEventType = z.infer<typeof AddVolunteerEventObj>;
-export type VolunteerEventsType = z.infer<typeof VolunteerEventsObj>;
-export type UpdateVolunteerEventType = z.infer<typeof UpdateVolunteerEventObj>;
-
-export type AddVolunteerShiftType = z.infer<typeof AddVolunteerShiftObj>;
-export type VolunteerShiftsType = z.infer<typeof VolunteerShiftsObj>;
-export type UpdateVolunteerShiftType = z.infer<typeof UpdateVolunteerShiftObj>;
-
-export type AddWebFormType = z.infer<typeof AddWebFormObj>;
-export type UpdateWebFormType = z.infer<typeof UpdateWebFormObj>;
-export type WebFormsType = z.infer<typeof WebFormsObj>;
-export type CreateFormType = z.infer<typeof CreateFormObj>;
-export type UpdateFormType = z.infer<typeof UpdateFormObj>;
-export type FormSubmissionType = z.infer<typeof FormSubmissionObj>;
-
-export type WorkflowsType = z.infer<typeof WorkflowObj>;
-export type AddWorkflowType = z.infer<typeof AddWorkflowObj>;
-export type UpdateWorkflowType = z.infer<typeof UpdateWorkflowObj>;
-export type WorkflowStepsType = z.infer<typeof WorkflowStepObj>;
-export type AddWorkflowStepType = z.infer<typeof AddWorkflowStepObj>;
-export type UpdateWorkflowStepType = z.infer<typeof UpdateWorkflowStepObj>;
-export type WorkflowEnrollmentsType = z.infer<typeof WorkflowEnrollmentObj>;
-
-export type AddEventType = z.infer<typeof AddEventObj>;
-export type EventType = z.infer<typeof EventObj>;
-export type UpdateEventType = z.infer<typeof UpdateEventObj>;
-
-export type AddTicketTypeType = z.infer<typeof AddTicketTypeObj>;
-export type TicketTypeType = z.infer<typeof TicketTypeObj>;
-export type UpdateTicketTypeType = z.infer<typeof UpdateTicketTypeObj>;
-
-export type AddRegistrationType = z.infer<typeof AddRegistrationObj>;
-export type RegistrationType = z.infer<typeof RegistrationObj>;
-export type UpdateRegistrationType = z.infer<typeof UpdateRegistrationObj>;
-
-export type AddConnectionType = z.infer<typeof AddConnectionObj>;
-
-export type { QueryBuilderRuleNode, QueryBuilderGroupNode, QueryBuilderNode };
-````
-
-## File: libs/common/src/lib/utils.ts
-````typescript
-export function debounce<F extends (...args: any[]) => void>(fn: F, delay = 300) {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
-  return (...args: Parameters<F>) => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => fn(...args), delay);
-  };
-}
-
-export function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Subdomain labels that must never be assigned to a tenant — they collide with app/infra hosts.
- * A tenant's slug becomes `<slug>.<baseDomain>`, so the public form page can resolve the tenant
- * from the Host header; these labels are reserved so a tenant can't shadow `app`, `api`, etc.
- */
-export const RESERVED_SUBDOMAINS = new Set<string>([
-  'app',
-  'www',
-  'api',
-  'admin',
-  'mail',
-  'email',
-  'ftp',
-  'smtp',
-  'imap',
-  'pop',
-  'ns',
-  'ns1',
-  'ns2',
-  'dns',
-  'mx',
-  'static',
-  'assets',
-  'cdn',
-  'media',
-  'files',
-  'download',
-  'downloads',
-  'status',
-  'help',
-  'support',
-  'docs',
-  'blog',
-  'dev',
-  'staging',
-  'stage',
-  'test',
-  'demo',
-  'sandbox',
-  'portal',
-  'dashboard',
-  'account',
-  'accounts',
-  'billing',
-  'pay',
-  'payments',
-  'auth',
-  'login',
-  'logout',
-  'signup',
-  'signin',
-  'register',
-  'public',
-  'forms',
-  'f',
-  'localhost',
-  'root',
-  'system',
-]);
-
-/**
- * Turn a name into a DNS-safe subdomain label: lowercase, ASCII alphanumerics + single hyphens,
- * no leading/trailing hyphen, capped at 40 chars. Returns '' when nothing usable remains — callers
- * must fall back (e.g. `t-<id>`) and check {@link RESERVED_SUBDOMAINS}.
- */
-export function slugifyHandle(name: string): string {
-  return name
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40)
-    .replace(/-+$/g, '');
-}
-
-/**
- * Slugify a record's display name for slug-based record routing
- * (`/people/amira-hassan` \u2014 spec \u00a71: URLs carry slugs, never internal IDs).
- * Lowercase, accent-stripped, non-alphanumerics collapsed to single hyphens,
- * capped at 80 chars. Falls back to `fallback` (e.g. "person") when nothing
- * usable remains, and prefixes the fallback when the result is all digits so a
- * slug can never be mistaken for a numeric record-ID URL. Per-tenant
- * uniqueness is the caller's job \u2014 see `apps/backend/src/app/lib/slug.ts`.
- */
-export function slugifyRecordName(value: string, fallback: string): string {
-  const base = value
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80)
-    .replace(/-+$/g, '');
-  if (!base) return fallback;
-  if (/^\d+$/.test(base)) return `${fallback}-${base}`;
-  return base;
-}
-
-/**
- * Escape a string for safe interpolation into HTML markup (element text or
- * double/single-quoted attribute values).
- */
-export function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-````
-
-## File: libs/uxcommon/src/components/detail-layout/detail-layout.ts
-````typescript
-import { Component, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { DetailHeader } from '../detail-header/detail-header';
-
-@Component({
-  selector: 'pc-detail-layout',
-  imports: [Icon, DetailHeader],
-  host: {
-    '(document:keydown)': 'handleKeydown($event)',
-  },
-  template: `
-    <div class="flex min-h-full flex-col bg-base-200/50 p-6">
-      <div class="flex w-full max-w-7xl flex-col gap-6">
-        <!-- Header -->
-        <pc-detail-header
-          [title]="title()"
-          [subtitle]="subtitle()"
-          [crumbs]="crumbs()"
-          [eyebrow]="eyebrow()"
-          [statusChip]="statusChip()"
-          [icon]="icon()"
-          [iconSize]="iconSize()"
-          [isLoading]="isLoading()"
-          [disabled]="disabled()"
-          [showActions]="showActions()"
-          [showDelete]="showDelete()"
-          [deleteText]="deleteText()"
-          [btn1Text]="btn1Text()"
-          [btn1Icon]="btn1Icon()"
-          [positionLabel]="positionLabel()"
-          [hasPrev]="hasPrev()"
-          [hasNext]="hasNext()"
-          [prevLabel]="prevLabel()"
-          [nextLabel]="nextLabel()"
-          (save)="save.emit($event)"
-          (delete)="delete.emit()"
-          (prevRecord)="prevRecord.emit()"
-          (nextRecord)="nextRecord.emit()"
-        >
-          <ng-content select="[pc-actions-prefix]" pc-actions-prefix></ng-content>
-          <ng-content select="[pc-actions-suffix]" pc-actions-suffix></ng-content>
-          <ng-content select="[pc-overflow-extra]" pc-overflow-extra></ng-content>
-        </pc-detail-header>
-
-        <!-- Body/Content Area -->
-        @if (isLoading()) {
-          <div class="flex justify-center items-center py-20">
-            <progress class="progress w-56"></progress>
-          </div>
-        } @else if (error()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ error() }}</span>
-          </div>
-        } @else if (!hasRecord()) {
-          <div class="alert alert-error shadow-md border-error/20 flex items-center gap-3">
-            <pc-icon name="exclamation-triangle" [size]="6"></pc-icon>
-            <span>{{ notFoundText() }}</span>
-          </div>
-        } @else {
-          <!-- Main Content Slot -->
-          <ng-content></ng-content>
-        }
-      </div>
-    </div>
-  `,
-})
-export class DetailLayout {
-  public title = input.required<string>();
-  public subtitle = input<string | null | undefined>();
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title (§3). */
-  public statusChip = input<string | null>(null);
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(6);
-  public isLoading = input.required<boolean>();
-  public error = input<string | null | undefined>();
-  public hasRecord = input<boolean>(true);
-  public notFoundText = input<string>('Record not found or failed to load.');
-
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  public deleteText = input<string>('Delete');
-  public btn1Text = input<string>('Edit');
-  public btn1Icon = input<PcIconNameType>('pencil-square');
-  public disabled = input<boolean>(false);
-
-  /** Optional "N of M filtered" pager; also drives J/K keyboard navigation while this page is open. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  public readonly save = output<any>();
-  public readonly delete = output<void>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  protected handleKeydown(event: KeyboardEvent): void {
-    if (!this.positionLabel()) return;
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isEditableTarget(event.target)) return;
-
-    const key = event.key.toLowerCase();
-    if (key === 'j' && this.hasNext()) {
-      event.preventDefault();
-      this.nextRecord.emit();
-    } else if (key === 'k' && this.hasPrev()) {
-      event.preventDefault();
-      this.prevRecord.emit();
-    }
-  }
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.tagName === 'INPUT' ||
-    target.tagName === 'TEXTAREA' ||
-    target.tagName === 'SELECT' ||
-    target.isContentEditable
-  );
-}
-````
-
-## File: libs/uxcommon/src/components/stat-card/stat-card.ts
-````typescript
-import { Component, input } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-@Component({
-  selector: 'pc-stat-card',
-  imports: [Icon],
-  template: `
-    <div
-      class="stats border border-base-200 bg-base-100 shadow-sm transition-all duration-200 hover:shadow-md flex flex-row items-center justify-between p-4 rounded w-full"
-    >
-      <div class="stat p-0 leading-normal">
-        @if (title()) {
-          <div class="stat-title text-xs font-semibold uppercase tracking-wider text-base-content/50">
-            {{ title() }}
-          </div>
-        }
-        @if (loading()) {
-          <!-- Known-shape placeholder for the value: a skeleton block, never a spinner (§3). -->
-          <div class="skeleton mt-1 h-6 w-16 rounded"></div>
-        } @else {
-          <div class="stat-value text-xl font-extrabold mt-1 sm:text-2xl tabular-nums" [class]="valueColorClass()">
-            {{ value() }}
-          </div>
-        }
-        <div class="stat-desc text-[10px] text-base-content/40 mt-1">
-          @if (description()) {
-            <span>{{ description() }}</span>
-          }
-          <ng-content select="[pc-stat-desc]"></ng-content>
-        </div>
-      </div>
-
-      <div class="flex-shrink-0 flex items-center justify-center gap-2">
-        @if (icon()) {
-          <div class="w-12 h-12 rounded-xl flex items-center justify-center" [class]="iconBgClass()">
-            <pc-icon [name]="icon()!" [size]="6" [class]="iconColorClass()"></pc-icon>
-          </div>
-        }
-        <ng-content select="[pc-stat-extra]"></ng-content>
-      </div>
-    </div>
-  `,
-})
-export class StatCard {
-  public title = input<string>();
-  public value = input<string | number>();
-  /** When true, the value renders as a skeleton block instead of a number/spinner. */
-  public loading = input<boolean>(false);
-  public description = input<string>();
-  public icon = input<PcIconNameType>();
-  public valueColorClass = input<string>('text-base-content');
-  public iconBgClass = input<string>('bg-base-200/50');
-  public iconColorClass = input<string>('text-base-content/70');
-}
-````
-
-## File: libs/uxcommon/src/components/confirm-dialog-host.ts
-````typescript
-import { Component, ElementRef, computed, effect, inject, signal, viewChild } from '@angular/core';
-import { Icon } from '@uxcommon/components/icons/icon';
-import { ConfirmDialogService, DialogVariant } from './confirm-dialog.service';
-
-@Component({
-  selector: 'pc-dialog-host',
-  imports: [Icon],
-  templateUrl: './confirm-dialog-host.html',
-})
-export class ConfirmDialogHost {
-  private readonly svc = inject(ConfirmDialogService);
-
-  public readonly promptValue = signal(''); // signal instead of ngModel
-
-  private readonly stateSignal = this.svc.stateSignal;
-  private readonly openSignal = this.svc.isOpenSignal;
-  public state = this.stateSignal;
-  // §7.4: destructive dialogs style the SAFE action as primary. Danger variants
-  // default to emphasizing the cancel/keep button unless a caller opts out, and
-  // only when a cancel button is actually shown.
-  public readonly effectiveEmphasizeCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    const explicit = st.emphasizeCancel;
-    const wants = explicit ?? st.variant === 'danger';
-    return wants && this.showCancel();
-  });
-  public confirmBtnClass = computed(() => {
-    const v = (this.state()?.variant ?? 'neutral') as DialogVariant;
-    if (this.effectiveEmphasizeCancel()) {
-      switch (v) {
-        case 'danger':
-          return 'btn-ghost text-error';
-        case 'warning':
-          return 'btn-ghost text-warning';
-        case 'info':
-          return 'btn-ghost text-info';
-        case 'success':
-          return 'btn-ghost text-success';
-        default:
-          return 'btn-ghost';
-      }
-    }
-    switch (v) {
-      case 'danger':
-        return 'btn-error';
-      case 'warning':
-        return 'btn-warning';
-      case 'info':
-        return 'btn-info';
-      case 'success':
-        return 'btn-success';
-      default:
-        return '';
-    }
-  });
-
-  public cancelBtnClass = computed(() => (this.state()?.emphasizeCancel ? 'btn-primary' : ''));
-
-  public choiceBtnClass(v?: DialogVariant): string {
-    if (!v) return '';
-    switch (v) {
-      case 'danger':
-        return 'btn-error';
-      case 'warning':
-        return 'btn-warning';
-      case 'info':
-        return 'btn-info';
-      case 'success':
-        return 'btn-success';
-      default:
-        return '';
-    }
-  }
-
-  public readonly dlgRef = viewChild.required<ElementRef<HTMLDialogElement>>('dlg');
-  public icon = computed(() => this.state()?.icon ?? this.svc.defaultIconFor('neutral'));
-  public showCancel = computed(() => {
-    const st = this.state();
-    if (!st) return false;
-    if (st.type === 'choose') {
-      return !!st.cancelText;
-    }
-    return !!st.cancelText && st.type !== 'alert';
-  });
-
-  constructor() {
-    effect(() => {
-      const open = this.openSignal();
-      const dlg = this.dlgRef()?.nativeElement;
-      if (!dlg) return;
-
-      if (open) {
-        this.promptValue.set(this.stateSignal()?.defaultValue ?? '');
-        if (!dlg.open) {
-          try {
-            dlg.showModal();
-          } catch {}
-        }
-      } else if (dlg.open) {
-        try {
-          dlg.close();
-        } catch {}
-      }
-    });
-  }
-
-  public onBackdrop(): void {
-    const st = this.state();
-    if (st?.allowBackdropClose) this.svc.cancel();
-  }
-
-  public onCancel(): void {
-    this.svc.cancel();
-  }
-
-  public onConfirm(): void {
-    const st = this.state();
-    if (!st) return;
-    if (st.type === 'prompt') this.svc.ok(this.promptValue());
-    else if (st.type === 'alert') this.svc.ok();
-    else this.svc.ok(true);
-  }
-
-  public onChoice(value: unknown): void {
-    this.svc.ok(value);
-  }
-}
-````
-
 ## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
 ````typescript
 import type { FastifyPluginCallback } from 'fastify';
@@ -43201,1951 +28184,297 @@ const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 export default eventsPublicRoute;
 ````
 
-## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
+## File: apps/backend/src/app/modules/persons/trpc.router.ts
 ````typescript
-import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
+import {
+  UpdatePersonsObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { PersonsController } from './controller';
+import { PersonsService } from './services/persons.service';
 
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
+const persons = new PersonsController();
+const personsService = new PersonsService();
 
-export class PersonsRepo extends BaseRepository<'persons'> {
-  constructor() {
-    super('persons');
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    const rows = await this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id)
-      .execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql`now()`,
-      })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
-
-  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
-    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
-    if (!ids.length) return [];
-
-    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
-
-    let query = this.getSelect(trx)
-      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
-      .where('persons.tenant_id', '=', input.tenant_id)
-      .where('persons.id', 'in', ids);
-
-    if (tags.length > 0) {
-      query = query
-        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .where(sql`LOWER(tags.name)`, 'in', tags)
-        .distinct();
-    }
-
-    const rows = await query.execute();
-    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
-    for (const row of rows) {
-      const id = row.id != null ? String(row.id) : '';
-      if (!id || map.has(id)) continue;
-      map.set(id, {
-        id,
-        first_name: row.first_name ?? '',
-        last_name: row.last_name ?? '',
-        email: row.email ?? null,
-      });
-    }
-    return Array.from(map.values());
-  }
-
-  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
-    const row = await this.getSelect()
-      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('createdby_id', '=', input.user_id)
-      .executeTakeFirst();
-
-    return {
-      total: Number(row?.total ?? 0),
-      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
-    };
-  }
-
-  public async moveToNewHousehold(input: {
-    tenant_id: string;
-    person_id: string;
-    user_id: string;
-    campaign_id: string;
-  }) {
-    const households = new HouseholdRepo();
-    return this.transaction().execute(async (trx) => {
-      // Reuse existing blank household if available
-      const existingBlank = await households.getBlankHousehold(
-        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
-        trx,
-      );
-      let targetId = existingBlank?.id as string | undefined;
-
-      if (!targetId) {
-        const newHousehold = await households.add(
-          {
-            row: {
-              tenant_id: input.tenant_id,
-              campaign_id: input.campaign_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            } as OperationDataType<'households', 'insert'>,
-          },
-          trx,
-        );
-        targetId = newHousehold?.id as string | undefined;
-      }
-
-      await this.update(
-        {
-          tenant_id: input.tenant_id,
-          id: input.person_id,
-          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
-        },
-        trx,
-      );
-
-      return { household_id: targetId };
-    });
-  }
-
-  public async getAllWithAddress(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
-      tags?: string[];
-      issues?: string[];
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
-    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
-
-    // Shared where clause builder
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .leftJoin('households', 'persons.household_id', 'households.id')
-        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .leftJoin('companies', 'persons.company_id', 'companies.id')
-        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
-        .where('households.tenant_id', '=', tenantId)
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
-        .$if(!!options.listId, (qb) =>
-          qb.where('persons.id', 'in', (eb: any) =>
-            eb
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('list_id', '=', options.listId ?? '')
-              .where('tenant_id', '=', tenantId),
-          ),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
-          // indexes can serve quick search; normalizeSearch already lowercases,
-          // so the match semantics are identical.
-          return qb.where(
-            sql<boolean>`(
-            persons.first_name ILIKE ${text} OR
-            persons.last_name ILIKE ${text} OR
-            persons.email ILIKE ${text} OR
-            persons.mobile ILIKE ${text} OR
-            households.city ILIKE ${text} OR
-            households.street1 ILIKE ${text} OR
-            companies.name ILIKE ${text} OR
-            tags.name ILIKE ${text}
-          )`,
-          );
-        });
-
-      // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
-      if (filterModel['tags']?.value && filterModel['issues']?.value) {
-        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
-        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
-        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
-        q = q.where((eb) =>
-          eb.or([
-            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
-          ]),
-        );
-      } else if (filterModel['tags']?.value) {
-        q = q.where('tags.type', '=', 'tag');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      } else if (filterModel['issues']?.value) {
-        q = q.where('tags.type', '=', 'issue');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
-      }
-      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
-
-      // Apply advanced query builder filters if present
-      const columnMapping = {
-        first_name: { col: 'persons.first_name' },
-        last_name: { col: 'persons.last_name' },
-        email: { col: 'persons.email' },
-        mobile: { col: 'persons.mobile' },
-        city: { col: 'households.city' },
-        state: { col: 'households.state' },
-        street1: { col: 'households.street1' },
-        street_num: { col: 'households.street_num::text', isCast: true },
-        zip: { col: 'households.zip' },
-        tag: { col: 'tags.name' },
-        tags: { col: 'tags.name' },
-        issues: { col: 'tags.name' },
-        company_name: { col: 'companies.name' },
-      };
-      const advModel =
-        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
-      q = this.applyAdvancedFilters(q, advModel, columnMapping);
-
-      return q;
-    };
-
-    // Count query
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query
-    const rows = await applyFilters(this.getSelect(trx))
-      .select((eb) => [
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'companies.name as company_name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        eb
-          .case()
-          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
-          .then(true)
-          .else(false)
-          .end()
-          .as('household_is_placeholder'),
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
-          'tags',
-        ),
-        sql<
-          string[]
-        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
-      ])
-      .groupBy([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'persons.created_at',
-        'persons.updated_at',
-        'persons.tenant_id',
-        'persons.createdby_id',
-        'persons.updatedby_id',
-        'companies.name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        'tenants.placeholder_household_id',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce((acc, sort) => {
-          let col = sort.colId;
-          if (typeof col === 'string' && !col.includes('.')) {
-            const personsCols = [
-              'id',
-              'first_name',
-              'last_name',
-              'email',
-              'mobile',
-              'notes',
-              'household_id',
-              'company_id',
-              'created_at',
-              'updated_at',
-              'tenant_id',
-              'createdby_id',
-              'updatedby_id',
-            ];
-            if (personsCols.includes(col)) {
-              col = `persons.${col}`;
-            } else {
-              const hhCols = [
-                'country',
-                'zip',
-                'state',
-                'home_phone',
-                'city',
-                'street1',
-                'street2',
-                'street_num',
-                'apt',
-              ];
-              if (hhCols.includes(col)) {
-                col = `households.${col}`;
-              } else if (col === 'company_name') {
-                col = `companies.name`;
-              } else if (col === 'address') {
-                col = `households.street1`;
-              }
-            }
-          }
-          return acc.orderBy(col, sort.sort);
-        }, qb),
-      )
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
-      )
-      .execute();
-
-    return { count, rows };
-  }
-
-  public getByHouseholdId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('household_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public getByCompanyId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
-    return Number(result?.total ?? 0);
-  }
-
-  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
-  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
-    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const row = await query.limit(1).executeTakeFirst();
-    return !!row;
-  }
-
-  /** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
-  public getOneBySlug(input: { tenant_id: string; slug: string }) {
-    return this.getSelect()
-      .selectAll()
-      .where('tenant_id', '=', input.tenant_id)
-      .where('slug', '=', input.slug)
-      .executeTakeFirst();
-  }
-
-  /** People linked to any company — powers the Companies grain sentence ("{n} people in {m} companies"). */
-  public async countWithCompany(input: { tenant_id: string }): Promise<number> {
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('company_id', 'is not', null)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
-    return Number(result?.total ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
-  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
-    let q = this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.id', '=', input.id)
-      .where('persons.tenant_id', '=', input.tenant_id);
-    if (input.type) {
-      q = q.where('tags.type', '=', input.type);
-    }
-    return q.select('tags.name').execute();
-  }
-  public async findByEmail(input: { tenant_id: string; email: string }) {
-    return this.getSelect()
-      .select(['id', 'email'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
-      .executeTakeFirst();
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: unknown[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.home_phone',
-        'persons.notes',
-        'persons.company_id',
-        'persons.household_id',
-        'persons.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
-          reason: row.reason,
-          persons: [],
-        });
-      }
-      groupsMap.get(groupKey)?.persons.push({
-        ...row,
-        id: String(row.id),
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source person not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, unknown> = {};
-      const fields = [
-        'first_name',
-        'middle_names',
-        'last_name',
-        'email',
-        'email2',
-        'mobile',
-        'home_phone',
-        'notes',
-        'company_id',
-        'file_id',
-      ] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Transfer tags (map_peoples_tags)
-      const targetTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select('tag_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
-
-      const sourceTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select(['tag_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTags) {
-        const tagIdStr = String(st.tag_id);
-        if (!targetTagIds.has(tagIdStr)) {
-          await trx
-            .insertInto('map_peoples_tags')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              tag_id: st.tag_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_peoples_tags')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 3. Transfer lists (map_lists_persons)
-      const targetLists = await trx
-        .selectFrom('map_lists_persons')
-        .select('list_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
-
-      const sourceLists = await trx
-        .selectFrom('map_lists_persons')
-        .select(['list_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const sl of sourceLists) {
-        if (!targetListIds.has(String(sl.list_id))) {
-          await trx
-            .insertInto('map_lists_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              list_id: sl.list_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_lists_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 4. Transfer teams (map_teams_persons)
-      const targetTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select('team_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
-
-      const sourceTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select(['team_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTeams) {
-        if (!targetTeamIds.has(String(st.team_id))) {
-          await trx
-            .insertInto('map_teams_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              team_id: st.team_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_teams_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 5. Reassign captaincy if source was captain of any team
-      await trx
-        .updateTable('teams')
-        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('team_captain_id', '=', input.source_id)
-        .execute();
-      // 6. Delete source person
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      // 7. Clean up empty household if source's household is now empty
-      const sourceHhId = source.household_id;
-      if (sourceHhId && sourceHhId !== target.household_id) {
-        const remainingHhMembers = await trx
-          .selectFrom('persons')
-          .select('id')
-          .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', '=', sourceHhId)
-          .execute();
-        if (remainingHhMembers.length === 0) {
-          // Clean up orphaned household associations before deletion
-          await trx
-            .deleteFrom('map_households_tags')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('map_lists_households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('id', '=', sourceHhId)
-            .execute();
-        }
-      }
-
-      return { success: true };
-    });
-  }
+function add() {
+  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
 }
-````
 
-## File: apps/backend/src/app/modules/persons/services/persons.service.ts
-````typescript
-import { env } from '../../../../env';
-import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
-import { slugifyRecordName } from '../../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-
-import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
-import { backfillMissingSlugs, uniqueSlug } from '../../../lib/slug';
-import { notificationEnabled } from '../../../lib/profile-preferences';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
-import { SettingsController } from '../../settings/controller';
-import { TagsRepo } from '../../tags/repositories/tags.repo';
-import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
-import { PersonsRepo } from '../repositories/persons.repo';
-import { CompaniesRepo } from '../../companies/repositories/companies.repo';
-import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
-import { TeamsRepo } from '../../teams/repositories/teams.repo';
-import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { ImportsRepo } from '../../imports/repositories/imports.repo';
-import { UserActivityRepo } from '../../../lib/user-activity.repo';
-import { StorageService } from '../../../lib/storage.service';
-import { WorkflowsController } from '../../workflows/controller';
-import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
-import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
-import { logger } from '../../../logger';
-
-export class PersonsService {
-  private mapPersonsTagRepo = new MapPersonsTagRepo();
-  private settingsController = new SettingsController();
-  private tagsRepo = new TagsRepo();
-  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
-  private teamsRepo = new TeamsRepo();
-  private importsRepo = new ImportsRepo();
-  private personsRepo = new PersonsRepo();
-  private userActivity = new UserActivityRepo();
-  private storageService = new StorageService();
-  private householdRepo = new HouseholdRepo();
-  private companiesRepo = new CompaniesRepo();
-
-  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
-    // Enforce email uniqueness within the tenant
-    const emailToCheck = payload.email?.trim();
-    if (emailToCheck) {
-      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
-      if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A person with the email "${emailToCheck}" already exists.`,
-        });
-      }
-    }
-
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-    const households = new HouseholdRepo();
-
-    let household_id = payload.household_id as string | undefined;
-    if (!household_id) {
-      const existingBlank = await households.getBlankHousehold({
-        tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
-      });
-      if (existingBlank?.id) {
-        household_id = String(existingBlank.id);
-      } else {
-        const created = await households.add({
-          row: {
-            tenant_id: auth.tenant_id,
-            campaign_id: String(campaign_id),
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          } as OperationDataType<'households', 'insert'>,
-        });
-        household_id = String(created?.id);
-      }
-    }
-
-    // Record slug for /people/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
-    const slug = await uniqueSlug(
-      slugifyRecordName(`${payload.first_name ?? ''} ${payload.last_name ?? ''}`, 'person'),
-      (candidate) => this.personsRepo.slugExists(auth.tenant_id, candidate),
-    );
-
-    const row = {
-      ...payload,
-      slug,
-      household_id,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-
-    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
-    if (result && typeof result === 'object') {
-      try {
-        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger usage check in addPerson');
-      }
-      try {
-        const workflowsController = new WorkflowsController();
-        await workflowsController.triggerWorkflow(
-          auth.tenant_id,
-          String((result as Record<string, unknown>)['id']),
-          'contact_created',
-          null,
-        );
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
-      }
-
-      if (payload.assigned_to) {
-        try {
-          const assignee = await this.personsRepo.db
-            .selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', String(payload.assigned_to))
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-              const createdPerson = result as Record<string, unknown>;
-              const personName =
-                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
-              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
-              const mailService = new TransactionalEmailService();
-              await mailService.sendMail({
-                to: assignee.email,
-                subject: `Contact Assigned to You: ${personName}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
-              });
-            }
-          }
-        } catch (mailErr) {
-          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
-        }
-      }
-    }
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'create',
-        entity: 'persons',
-        entity_id: result?.id ? String(result.id) : null,
-        quantity: 1,
-        metadata: {
-          id: result?.id,
-          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
-          ...(auth.source ? { source: auth.source } : {}),
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log create person activity');
-    }
-    try {
-      await queueZapierTrigger(
-        this.personsRepo.db,
-        auth.tenant_id,
-        'person_created',
-        pickPersonFields(result as Record<string, unknown>),
-      );
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
-    }
-    return result;
-  }
-
-  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
-    // Enforce email uniqueness within the tenant (excluding the person being updated)
-    const emailToCheck = data.email?.trim();
-    if (emailToCheck) {
-      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
-      if (existing && String(existing.id) !== String(id)) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A person with the email "${emailToCheck}" already exists.`,
-        });
-      }
-    }
-
-    let original: Record<string, unknown> | null = null;
-    try {
-      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
-        string,
-        unknown
-      > | null;
-    } catch (err) {
-      logger.error({ err }, 'Failed to fetch original person record for activity log');
-    }
-    const result = await this.personsRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: {
-        ...data,
-        updatedby_id: auth.user_id,
-      } as OperationDataType<'persons', 'update'>,
-    });
-    if (result && typeof result === 'object') {
-      const updatedPerson = result as Record<string, unknown>;
-      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
-        const newAssigneeId = data.assigned_to;
-        if (newAssigneeId) {
-          try {
-            const assignee = await this.personsRepo.db
-              .selectFrom('authusers')
-              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-              // String conversion ensures precision is maintained down to the database driver level
-              .where('authusers.id', '=', String(newAssigneeId))
-              .executeTakeFirst();
-
-            if (assignee && assignee.email) {
-              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-                const personName =
-                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
-                  'unnamed contact';
-                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
-                const mailService = new TransactionalEmailService();
-                await mailService.sendMail({
-                  to: assignee.email,
-                  subject: `Contact Assigned to You: ${personName}`,
-                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
-                });
-              }
-            }
-          } catch (mailErr) {
-            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
-          }
-        }
-      }
-    }
-    try {
-      const changes: Record<string, unknown> = {};
-      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
-      if (original && resultObj) {
-        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
-        for (const key of Object.keys(data)) {
-          if (skipKeys.includes(key)) continue;
-          const oldVal = (original as Record<string, unknown>)[key];
-          const newVal = resultObj[key];
-          if (oldVal !== newVal) {
-            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
-          }
-        }
-      }
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'persons',
-        entity_id: id ? String(id) : null,
-        quantity: 1,
-        metadata: {
-          id,
-          entity_label: resultObj
-            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
-            : 'Person',
-          changes,
-          ...(auth.source ? { source: auth.source } : {}),
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log update person activity');
-    }
-    try {
-      await queueZapierTrigger(
-        this.personsRepo.db,
-        auth.tenant_id,
-        'person_updated',
-        pickPersonFields(result as Record<string, unknown>),
-      );
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
-    }
-    return result;
-  }
-
-  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
-    if (!html) return '';
-    const text = html
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (text.length <= limit) return text;
-    return text.substring(0, limit) + '...';
-  }
-
-  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
-    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
-      string,
-      unknown
-    > | null;
-    if (!person) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Person not found',
-      });
-    }
-
-    const emails: string[] = [];
-    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
-    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
-
-    if (emails.length === 0) {
-      return {
-        emails: [],
-        newsletters: [],
-      };
-    }
-
-    const db = this.personsRepo.db;
-
-    // 1. Fetch email conversations (sent and received)
-    const conversations = await db
-      .selectFrom('emails')
-      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
-      .selectAll('emails')
-      .select('email_bodies.body_html as body_html')
-      .where('emails.tenant_id', '=', auth.tenant_id)
-      // Recipient match goes through email_recipients — the source of truth.
-      // emails.to_email is a display-only cache holding a joined "a, b" string,
-      // so an exact IN match would miss multi-recipient emails (D-10).
-      .where((eb) =>
-        eb.or([
-          eb('emails.from_email', 'in', emails),
-          eb.exists(
-            eb
-              .selectFrom('email_recipients')
-              .select('email_recipients.id')
-              .whereRef('email_recipients.email_id', '=', 'emails.id')
-              .where('email_recipients.tenant_id', '=', auth.tenant_id)
-              .where((inner) => inner(inner.fn<string>('lower', ['email_recipients.email']), 'in', emails)),
-          ),
-        ]),
-      )
-      .orderBy('emails.created_at', 'desc')
-      .limit(50)
-      .execute();
-
-    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
-    const newsletterEvents = await db
-      .selectFrom('newsletter_events')
-      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
-      .select([
-        'newsletter_events.id',
-        'newsletter_events.event_type',
-        'newsletter_events.timestamp',
-        'newsletter_events.url',
-        'newsletters.subject as newsletter_subject',
-        'newsletters.name as newsletter_name',
-      ])
-      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
-      .where('newsletter_events.email', 'in', emails)
-      .orderBy('newsletter_events.timestamp', 'desc')
-      .limit(100)
-      .execute();
-
-    return {
-      emails: conversations.map((mail) => {
-        let snippet = '';
-        if (mail.body_html) {
-          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
-        }
-        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
-          snippet = mail.preview;
-        }
-        return {
-          ...mail,
-          preview: snippet,
-        };
+function attachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
       }),
-      newsletters: newsletterEvents,
-    };
-  }
-
-  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const randomHexColor = () =>
-      '#' +
-      Math.floor(Math.random() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0');
-    const row = {
-      name,
-      color: randomHexColor(),
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type,
-    };
-
-    const tag = await this.tagsRepo.addOrGet({
-      row: row as OperationDataType<'tags', 'insert'>,
-      onConflictColumn: 'name',
-    });
-
-    const result = await this.addToMap({
-      tag_id: tag?.id as string | undefined,
-      person_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    });
-
-    if (result && tag?.id) {
-      try {
-        const workflowsController = new WorkflowsController();
-        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger tag_added workflow');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'persons',
-        entity_id: person_id,
-        quantity: 1,
-        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log attach tag activity');
-    }
-    try {
-      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
-        person_id,
-        tag_name: name,
-        tag_type: type,
-      });
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
-    }
-
-    return result;
-  }
-
-  public async detachTag(input: {
-    tenant_id: string;
-    person_id: string;
-    name: string;
-    type?: 'tag' | 'issue';
-    user_id?: string;
-    source?: string;
-  }) {
-    const tag = await this.tagsRepo.getIdByName({
-      tenant_id: input.tenant_id,
-      name: input.name,
-      type: input.type ?? 'tag',
-    });
-
-    if (tag?.id) {
-      await this.mapPersonsTagRepo.deleteMapping({
-        tenant_id: input.tenant_id,
-        person_id: input.person_id,
-        tag_id: tag.id,
-      });
-    }
-
-    try {
-      if (input.user_id) {
-        await this.userActivity.log({
-          tenant_id: input.tenant_id,
-          user_id: input.user_id,
-          activity: 'update',
-          entity: 'persons',
-          entity_id: input.person_id,
-          quantity: 1,
-          metadata: {
-            id: input.person_id,
-            action: `detach_${input.type ?? 'tag'}`,
-            name: input.name,
-            ...(input.source ? { source: input.source } : {}),
-          },
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log detach tag activity');
-    }
-    try {
-      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
-        person_id: input.person_id,
-        tag_name: input.name,
-        tag_type: input.type ?? 'tag',
-      });
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
-    }
-
-    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
-    if (!isVolunteerTag) {
-      return { removed_team_ids: [], removed_teams: [] };
-    }
-
-    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
-      tenant_id: input.tenant_id,
-      person_id: input.person_id,
-    });
-
-    if (!teams.length) {
-      return { removed_team_ids: [], removed_teams: [] };
-    }
-
-    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
-
-    for (const team of teams) {
-      if (team.is_captain && team.team_id) {
-        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
-      }
-    }
-
-    const removedTeams = teams
-      .filter((team) => team.team_id)
-      .map((team) => ({
-        id: team.team_id,
-        name: team.team_name ?? '',
-        was_captain: team.is_captain,
-      }));
-
-    return {
-      removed_team_ids: removedTeams.map((team) => team.id),
-      removed_teams: removedTeams,
-    };
-  }
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        first_name?: string;
-        last_name?: string;
-        email?: string;
-        mobile?: string;
-        notes?: string;
-        home_phone?: string;
-        street_num?: string;
-        street1?: string;
-        street2?: string;
-        apt?: string;
-        city?: string;
-        state?: string;
-        zip?: string;
-        country?: string;
-      }>;
-      tags?: string[];
-      skipped?: number;
-      file_name?: string | null;
-    },
-    auth: IAuthKeyPayload,
-  ) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    let hasImportableRow = false;
-    for (const candidate of input.rows) {
-      const sanitized = this.sanitizeRow(candidate);
-      if (sanitized.first_name || sanitized.last_name || sanitized.email || sanitized.mobile || sanitized.notes) {
-        hasImportableRow = true;
-        break;
-      }
-    }
-
-    if (!hasImportableRow) {
-      const totalSkipped = skippedFromClient + input.rows.length;
-      const personsBefore = await this.personsRepo.count(auth.tenant_id);
-      return {
-        inserted: 0,
-        errors: 0,
-        skipped: totalSkipped,
-        tag: null,
-        file_name: requestedFileName || null,
-        import_id: null,
-        tenant_id: auth.tenant_id,
-        campaign_id,
-        persons_total_after: personsBefore,
-        persons_total_before: personsBefore,
-        status: 'completed',
-      };
-    }
-
-    const importRow = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'persons',
-      tag_name: autoTag,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as any;
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-      } as any,
-    });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          tags,
-          skipped: skippedFromClient,
-          campaign_id,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      tag: autoTag,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      campaign_id,
-      status: 'pending',
-    };
-  }
-
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    campaign_id: string,
-    tags: string[],
-    skipped: number,
-    rows: Record<string, string>[],
-  ) {
-    const households = new HouseholdRepo();
-    const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
-      inserted: 0,
-      errors: 0,
-      households_created: 0,
-      skipped: 0,
-    };
-    const importedPersonIds: string[] = [];
-
-    const errorMessages: string[] = [];
-    let cachedBlankHouseholdId: string | null = null;
-    let autoTagId: string | null = null;
-    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
-
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
-
-      // 1. Sanitize and classify all valid rows in the chunk upfront
-      type ValidEntry = {
-        sanitized: {
-          first_name?: string;
-          last_name?: string;
-          email?: string;
-          mobile?: string;
-          notes?: string;
-          home_phone?: string;
-          street_num?: string;
-          street1?: string;
-          street2?: string;
-          apt?: string;
-          city?: string;
-          state?: string;
-          zip?: string;
-          country?: string;
-        };
-        isBlankAddress: boolean;
-        fp_street: string | null;
-        fp_full: string | null;
-      };
-      const validEntries: ValidEntry[] = [];
-      for (const raw of chunk) {
-        const sanitized = this.sanitizeRow(raw);
-        if (
-          !sanitized.first_name &&
-          !sanitized.last_name &&
-          !sanitized.email &&
-          !sanitized.mobile &&
-          !sanitized.notes
-        ) {
-          results.skipped += 1;
-          continue;
-        }
-        const isBlankAddress =
-          !sanitized.home_phone &&
-          !sanitized.street_num &&
-          !sanitized.street1 &&
-          !sanitized.street2 &&
-          !sanitized.apt &&
-          !sanitized.city &&
-          !sanitized.state &&
-          !sanitized.zip &&
-          !sanitized.country;
-        validEntries.push({
-          sanitized,
-          isBlankAddress,
-          fp_street: isBlankAddress
-            ? null
-            : fingerprintStreet({
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-              }),
-          fp_full: isBlankAddress
-            ? null
-            : fingerprintFull({
-                apt: sanitized.apt,
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-                city: sanitized.city,
-                state: sanitized.state,
-                zip: sanitized.zip,
-                country: sanitized.country,
-              }),
-        });
-      }
-
-      if (validEntries.length === 0) {
-        await this.importsRepo.update({
-          tenant_id: tenant_id,
-          id: import_id,
-          row: {
-            tag_id: autoTagId,
-            inserted_count: results.inserted,
-            error_count: results.errors,
-            skipped_count: skipped + results.skipped,
-            households_created: results.households_created,
-            updatedby_id: user_id,
-            updated_at: new Date(),
-          } as any,
-        });
-        continue;
-      }
-
-      try {
-        const outcome = await this.personsRepo.transaction().execute(async (trx) => {
-          let localBlankHouseholdId = cachedBlankHouseholdId;
-          let localAutoTagId = autoTagId;
-          let householdsCreatedDelta = 0;
-
-          // 2a. Resolve blank household once for the whole chunk
-          if (validEntries.some((e) => e.isBlankAddress)) {
-            if (!localBlankHouseholdId) {
-              const existingBlank = await households.getBlankHousehold({ tenant_id, campaign_id }, trx);
-              if (existingBlank?.id) {
-                localBlankHouseholdId = String(existingBlank.id);
-              } else {
-                const created = await households.add(
-                  {
-                    row: {
-                      tenant_id,
-                      campaign_id,
-                      createdby_id: user_id,
-                      updatedby_id: user_id,
-                      file_id: import_id,
-                    } as OperationDataType<'households', 'insert'>,
-                  },
-                  trx,
-                );
-                localBlankHouseholdId = String(created?.id);
-                householdsCreatedDelta += 1;
-              }
-            }
-          }
-
-          // 2b. Batch-resolve addressed households with a single IN query
-          const fpCache = new Map<string, string>(); // fp_full -> household_id
-          const uniqueFps = [
-            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
-          ];
-          if (uniqueFps.length > 0) {
-            const existingHouseholds = await trx
-              .selectFrom('households')
-              .select(['id', 'address_fp_full'])
-              .where('tenant_id', '=', tenant_id)
-              .where('campaign_id', '=', campaign_id)
-              .where('address_fp_full', 'in', uniqueFps)
-              .execute();
-            for (const h of existingHouseholds) {
-              if (h.address_fp_full) fpCache.set(h.address_fp_full, String(h.id));
-            }
-          }
-
-          // 2c. Create only missing households (deduplicated within this chunk)
-          for (const entry of validEntries) {
-            if (entry.isBlankAddress || !entry.fp_full) continue;
-            if (fpCache.has(entry.fp_full)) continue;
-            const { sanitized, fp_street, fp_full } = entry;
-            const hhRow = {
-              tenant_id,
-              campaign_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-              home_phone: sanitized.home_phone ?? null,
-              street_num: sanitized.street_num ?? null,
-              street1: sanitized.street1 ?? null,
-              street2: sanitized.street2 ?? null,
-              apt: sanitized.apt ?? null,
-              city: sanitized.city ?? null,
-              state: sanitized.state ?? null,
-              zip: sanitized.zip ?? null,
-              country: sanitized.country ?? null,
-              address_fp_street: fp_street,
-              address_fp_full: fp_full,
-              notes: null,
-              file_id: import_id,
-            } as OperationDataType<'households', 'insert'>;
-            const household = await households.add({ row: hhRow }, trx);
-            fpCache.set(fp_full, String(household?.id));
-            householdsCreatedDelta += 1;
-          }
-
-          // 3. Batch insert all persons in one statement
-          const personRows = validEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
-            tenant_id,
-            campaign_id,
-            createdby_id: user_id,
-            updatedby_id: user_id,
-            household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
-            first_name: sanitized.first_name ?? null,
-            middle_names: null,
-            last_name: sanitized.last_name ?? null,
-            email: sanitized.email ?? null,
-            email2: null,
-            mobile: sanitized.mobile ?? null,
-            home_phone: null,
-            file_id: import_id,
-            notes: sanitized.notes ?? null,
-          }));
-          const insertedPersons = await trx
-            .insertInto('persons')
-            .values(personRows)
-            .onConflict((oc) => oc.doNothing())
-            .returningAll()
-            .execute();
-
-          // Count rows silently skipped due to duplicate email
-          const duplicatesSkipped = personRows.length - insertedPersons.length;
-          if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
-
-          // 4. Upsert each unique tag name exactly once (not once per row)
-          const tagRecords: Array<{ name: string; id: string }> = [];
-          for (const name of tags) {
-            const row = {
-              name,
-              tenant_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-            } as OperationDataType<'tags', 'insert'>;
-            const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
-            if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
-            if (tag?.id) tagRecords.push({ name, id: String(tag.id) });
-          }
-
-          // 5. Batch insert all tag-person mappings in one statement
-          if (tagRecords.length > 0 && insertedPersons.length > 0) {
-            const tagMapRows = insertedPersons.flatMap((person) =>
-              tagRecords.map(({ id: tag_id }) => ({
-                tenant_id,
-                person_id: String(person.id),
-                tag_id: tag_id as unknown as string,
-                createdby_id: user_id,
-                updatedby_id: user_id,
-              })),
-            );
-            await (trx as any).insertInto('map_peoples_tags').values(tagMapRows).execute();
-          }
-
-          return {
-            insertedPersons,
-            tagRecords,
-            householdsCreatedDelta,
-            blankHouseholdId: localBlankHouseholdId,
-            autoTagId: localAutoTagId,
-          };
-        });
-
-        // 6. Trigger workflows outside the transaction (fire-and-forget per person)
-        const workflowsController = new WorkflowsController();
-        for (const person of outcome.insertedPersons) {
-          const personId = String(person.id);
-          importedPersonIds.push(personId);
-          try {
-            await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
-          }
-          for (const { name, id: tagId } of outcome.tagRecords) {
-            try {
-              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
-            }
-          }
-        }
-
-        results.inserted += outcome.insertedPersons.length;
-        results.households_created += outcome.householdsCreatedDelta;
-        if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
-        if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
-      } catch (err: unknown) {
-        // If the chunk transaction fails, count all valid rows in the chunk as errors
-        results.errors += validEntries.length;
-        const message = err instanceof Error ? err.message : String(err);
-        errorMessages.push(message);
-        logger.error({ err, message }, 'Import chunk failed');
-      }
-
-      // Update intermediate counts after each chunk
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          tag_id: autoTagId,
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          households_created: results.households_created,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as any,
-      });
-    }
-
-    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
-    try {
-      await backfillMissingSlugs(this.personsRepo.db, 'persons', tenant_id);
-      await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
-    } catch (err) {
-      logger.error({ err }, 'Failed to backfill record slugs after import');
-    }
-
-    // Log the user activity
-    try {
-      await this.userActivity.log({
-        tenant_id,
-        user_id,
-        activity: 'import',
-        entity: 'persons',
-        quantity: results.inserted,
-        metadata: {
-          rows_received: rows.length,
-          tags_applied: tags.slice(0, 10),
-          auto_tag: autoTag,
-          households_created: results.households_created,
-          errors: results.errors,
-          skipped: skipped + results.skipped,
-          import_id,
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log import activity');
-    }
-
-    if (importedPersonIds.length > 0) {
-      try {
-        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
-      } catch (err) {
-        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
-      }
-    }
-
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      households_created: results.households_created,
-      tag_id: autoTagId,
-      errorMessages,
-    };
-  }
-
-  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    return this.personsRepo.moveToNewHousehold({
-      tenant_id: auth.tenant_id,
-      person_id,
-      user_id: auth.user_id,
-      campaign_id,
-    });
-  }
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async getDuplicateCounts(auth: IAuthKeyPayload) {
-    const [people, households, companies] = await Promise.all([
-      this.personsRepo.getDuplicateCount(auth.tenant_id),
-      this.householdRepo.getDuplicateCount(auth.tenant_id),
-      this.companiesRepo.getDuplicateCount(auth.tenant_id),
-    ]);
-    return { people, households, companies };
-  }
-
-  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
-    const result = await this.personsRepo.mergePersons({
-      tenant_id: auth.tenant_id,
-      target_id: input.target_id,
-      source_id: input.source_id,
-      user_id: auth.user_id,
-    });
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'merge',
-      entity: 'persons',
-      quantity: 1,
-      metadata: {
-        target_id: input.target_id,
-        source_id: input.source_id,
-      },
-    });
-    return result;
-  }
-
-  private async addToMap(row: {
-    tag_id: string | undefined;
-    person_id: string;
-    tenant_id: string;
-    createdby_id: string;
-    updatedby_id: string;
-  }) {
-    if (!row.tag_id) {
-      throw new TRPCError({
-        message: 'Failed to add the tag',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    return await this.mapPersonsTagRepo.add({
-      row: row as OperationDataType<'map_peoples_tags', 'insert'>,
-    });
-  }
-
-  private sanitizePhone(v?: string) {
-    if (!v) return undefined;
-    const digits = v.replace(/[^0-9+]/g, '');
-    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
-    return digits.replace(/[^0-9]/g, '');
-  }
-
-  private sanitizeRow(row: {
-    first_name?: string;
-    last_name?: string;
-    email?: string;
-    mobile?: string;
-    notes?: string;
-    home_phone?: string;
-    street_num?: string;
-    street1?: string;
-    street2?: string;
-    apt?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-    country?: string;
-  }) {
-    const trim = (v?: string) => (v ? v.trim() : undefined);
-
-    let first_name = trim(row.first_name);
-    const last_name = trim(row.last_name);
-    let email = (trim(row.email) || '').toLowerCase();
-    let mobile = this.sanitizePhone(row.mobile);
-    const home_phone = this.sanitizePhone(row.home_phone);
-    const notes = trim(row.notes);
-
-    if (!email) {
-      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
-    }
-    if (email && !/.+@.+\..+/.test(email)) email = '';
-
-    if (!mobile) {
-      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
-      mobile = this.sanitizePhone(possiblePhone);
-    }
-
-    if (first_name) first_name = this.stripNoise(first_name);
-    if (!first_name && email) first_name = this.nameFromEmail(email);
-
-    return {
-      first_name,
-      last_name,
-      email: email || undefined,
-      mobile,
-      notes,
-      home_phone,
-      street_num: trim(row.street_num),
-      street1: trim(row.street1),
-      street2: trim(row.street2),
-      apt: trim(row.apt),
-      city: trim(row.city),
-      state: trim(row.state),
-      zip: trim(row.zip),
-      country: trim(row.country),
-    };
-  }
-
-  private findEmail(text: string): string | undefined {
-    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    return m?.[0];
-  }
-
-  private findPhone(text?: string): string | undefined {
-    if (!text) return undefined;
-    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
-    return m?.[0];
-  }
-
-  private stripNoise(text: string): string | undefined {
-    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
-    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
-    const cleaned = noPhone
-      .replace(/[,]+/g, ' ')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    return cleaned || undefined;
-  }
-
-  private nameFromEmail(email: string): string | undefined {
-    const local = (email || '').split('@')[0] || '';
-    const token = local.split(/[._+-]/)[0] || '';
-    if (!token) return undefined;
-    return token.charAt(0).toUpperCase() + token.slice(1);
-  }
+    )
+    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
 }
+
+function count() {
+  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
+}
+
+const deleteOneInput = z.union([
+  idSchema,
+  z.object({
+    id: idSchema,
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteOne() {
+  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
+    const id = typeof input === 'string' ? input : input.id;
+    const force = typeof input === 'string' ? false : !!input.force;
+    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
+  });
+}
+
+const deleteManyInput = z.union([
+  z.array(idSchema).min(1, 'At least one ID is required'),
+  z.object({
+    ids: z.array(idSchema).min(1, 'At least one ID is required'),
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteMany() {
+  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
+    const ids = Array.isArray(input) ? input : input.ids;
+    const force = Array.isArray(input) ? false : !!input.force;
+    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
+  });
+}
+
+function detachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      personsService.detachTag({
+        tenant_id: ctx.auth.tenant_id,
+        person_id: input.id,
+        name: input.tag_name,
+        type: input.type ?? 'tag',
+        user_id: ctx.auth.user_id,
+      }),
+    );
+}
+
+function getAll() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
+}
+
+function getAllWithAddress() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
+}
+
+function getByHouseholdId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
+}
+
+function getByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
+}
+
+function countByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema }))
+    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
+}
+
+function countWithCompany() {
+  return authProcedure.query(({ ctx }) => persons.countWithCompany(ctx.auth));
+}
+
+function getById() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+}
+
+/** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
+function getBySlug() {
+  return authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => persons.getOneBySlug(input, ctx.auth));
+}
+
+function getActivity() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
+}
+
+// Distinct tags
+function getDistinctTags() {
+  return authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
+}
+
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
+}
+
+function getTags() {
+  return authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return persons.getTags(id, ctx.auth, type);
+    });
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
+    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
+}
+
+function removeHousehold() {
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
+}
+
+function importMany() {
+  const ImportRow = z.object({
+    first_name: z.string().trim().max(100).optional(),
+    last_name: z.string().trim().max(100).optional(),
+    email: z.string().trim().max(255).optional(),
+    mobile: z.string().trim().max(30).optional(),
+    notes: z.string().trim().max(10000).optional(),
+    home_phone: z.string().trim().max(30).optional(),
+    street_num: z.string().trim().max(30).optional(),
+    street1: z.string().trim().max(150).optional(),
+    street2: z.string().trim().max(150).optional(),
+    apt: z.string().trim().max(30).optional(),
+    city: z.string().trim().max(100).optional(),
+    state: z.string().trim().max(100).optional(),
+    zip: z.string().trim().max(20).optional(),
+    country: z.string().trim().max(100).optional(),
+  });
+
+  const Input = z.object({
+    rows: z.array(ImportRow),
+    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
+    skipped: z.number().int().nonnegative().optional(),
+    file_name: z.string().trim().min(1).max(255).optional(),
+    // §17 CSV import wizard: how to handle rows whose email matches a person
+    // that already exists — one choice for the whole batch (spec review step
+    // is a single radio group, not a per-row decision).
+    duplicate_decision: z.enum(['merge', 'skip', 'import_new']).optional().default('skip'),
+    // Add every imported/merged person to this static list (created if it
+    // doesn't exist yet). Resolved by exact, case-insensitive name match.
+    list_name: z.string().trim().min(1).max(100).optional(),
+    // Raw uploaded CSV text, retained 90 days for the History page's
+    // per-import re-download (spec §17 footer copy).
+    source_csv: z.string().max(10_000_000).optional(),
+    // Rows the wizard's Review step already excluded/cleaned client-side
+    // (bad-email "Skip" decision) — recorded so History's "download skipped
+    // rows" export covers them too, not just server-detected skips.
+    client_skip_reasons: z
+      .array(
+        z.object({
+          row: z.number().int().nonnegative(),
+          email: z.string().optional(),
+          reason: z.string().max(200),
+        }),
+      )
+      .max(500)
+      .optional(),
+  });
+
+  return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
+}
+
+function checkDuplicateEmails() {
+  return authProcedure
+    .input(z.object({ emails: z.array(z.string().trim().max(255)).max(2000) }))
+    .query(({ input, ctx }) => personsService.checkDuplicateEmails(ctx.auth, input.emails));
+}
+
+function getPotentialDuplicates() {
+  return authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
+}
+
+function getDuplicateCounts() {
+  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
+}
+
+function mergePersons() {
+  return authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
+}
+
+function moveEntireHousehold() {
+  return authProcedure
+    .input(
+      z.object({
+        fromHouseholdId: idSchema,
+        toHouseholdId: idSchema,
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
+    );
+}
+
+export const PersonsRouter = router({
+  add: add(),
+  count: count(),
+  getAll: getAll(),
+  update: update(),
+  removeHousehold: removeHousehold(),
+  import: importMany(),
+  getTags: getTags(),
+  getById: getById(),
+  getBySlug: getBySlug(),
+  getActivity: getActivity(),
+  attachTag: attachTag(),
+  detachTag: detachTag(),
+  delete: deleteOne(),
+  deleteMany: deleteMany(),
+  getDistinctTags: getDistinctTags(),
+  getByHouseholdId: getByHouseholdId(),
+  getByCompanyId: getByCompanyId(),
+  countByCompanyId: countByCompanyId(),
+  countWithCompany: countWithCompany(),
+  getAllWithAddress: getAllWithAddress(),
+  exportCsv: exportCsv(),
+  getPotentialDuplicates: getPotentialDuplicates(),
+  getDuplicateCounts: getDuplicateCounts(),
+  mergePersons: mergePersons(),
+  moveEntireHousehold: moveEntireHousehold(),
+  checkDuplicateEmails: checkDuplicateEmails(),
+});
 ````
 
 ## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
@@ -46759,6 +30088,2247 @@ export class HouseholdRepo extends BaseRepository<'households'> {
 
       return { success: true };
     });
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
+````typescript
+import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
+
+export class PersonsRepo extends BaseRepository<'persons'> {
+  constructor() {
+    super('persons');
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()`,
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+
+  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
+    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
+    if (!ids.length) return [];
+
+    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
+
+    let query = this.getSelect(trx)
+      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
+      .where('persons.tenant_id', '=', input.tenant_id)
+      .where('persons.id', 'in', ids);
+
+    if (tags.length > 0) {
+      query = query
+        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .where(sql`LOWER(tags.name)`, 'in', tags)
+        .distinct();
+    }
+
+    const rows = await query.execute();
+    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
+    for (const row of rows) {
+      const id = row.id != null ? String(row.id) : '';
+      if (!id || map.has(id)) continue;
+      map.set(id, {
+        id,
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? null,
+      });
+    }
+    return Array.from(map.values());
+  }
+
+  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
+    const row = await this.getSelect()
+      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('createdby_id', '=', input.user_id)
+      .executeTakeFirst();
+
+    return {
+      total: Number(row?.total ?? 0),
+      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
+    };
+  }
+
+  public async moveToNewHousehold(input: {
+    tenant_id: string;
+    person_id: string;
+    user_id: string;
+    campaign_id: string;
+  }) {
+    const households = new HouseholdRepo();
+    return this.transaction().execute(async (trx) => {
+      // Reuse existing blank household if available
+      const existingBlank = await households.getBlankHousehold(
+        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
+        trx,
+      );
+      let targetId = existingBlank?.id as string | undefined;
+
+      if (!targetId) {
+        const newHousehold = await households.add(
+          {
+            row: {
+              tenant_id: input.tenant_id,
+              campaign_id: input.campaign_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            } as OperationDataType<'households', 'insert'>,
+          },
+          trx,
+        );
+        targetId = newHousehold?.id as string | undefined;
+      }
+
+      await this.update(
+        {
+          tenant_id: input.tenant_id,
+          id: input.person_id,
+          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
+        },
+        trx,
+      );
+
+      return { household_id: targetId };
+    });
+  }
+
+  public async getAllWithAddress(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
+      tags?: string[];
+      issues?: string[];
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
+
+    // Shared where clause builder
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
+        .leftJoin('households', 'persons.household_id', 'households.id')
+        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .leftJoin('companies', 'persons.company_id', 'companies.id')
+        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
+        .where('households.tenant_id', '=', tenantId)
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('persons.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('list_id', '=', options.listId ?? '')
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
+          return qb.where(
+            sql<boolean>`(
+            persons.first_name ILIKE ${text} OR
+            persons.last_name ILIKE ${text} OR
+            persons.email ILIKE ${text} OR
+            persons.mobile ILIKE ${text} OR
+            households.city ILIKE ${text} OR
+            households.street1 ILIKE ${text} OR
+            companies.name ILIKE ${text} OR
+            tags.name ILIKE ${text}
+          )`,
+          );
+        });
+
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
+          ]),
+        );
+      } else if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      } else if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
+      }
+      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
+
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        first_name: { col: 'persons.first_name' },
+        last_name: { col: 'persons.last_name' },
+        email: { col: 'persons.email' },
+        mobile: { col: 'persons.mobile' },
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        tag: { col: 'tags.name' },
+        tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
+        company_name: { col: 'companies.name' },
+      };
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
+
+      return q;
+    };
+
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
+      .select((eb) => [
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'companies.name as company_name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('household_is_placeholder'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+      ])
+      .groupBy([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'persons.created_at',
+        'persons.updated_at',
+        'persons.tenant_id',
+        'persons.createdby_id',
+        'persons.updatedby_id',
+        'companies.name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        'tenants.placeholder_household_id',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const personsCols = [
+              'id',
+              'first_name',
+              'last_name',
+              'email',
+              'mobile',
+              'notes',
+              'household_id',
+              'company_id',
+              'created_at',
+              'updated_at',
+              'tenant_id',
+              'createdby_id',
+              'updatedby_id',
+            ];
+            if (personsCols.includes(col)) {
+              col = `persons.${col}`;
+            } else {
+              const hhCols = [
+                'country',
+                'zip',
+                'state',
+                'home_phone',
+                'city',
+                'street1',
+                'street2',
+                'street_num',
+                'apt',
+              ];
+              if (hhCols.includes(col)) {
+                col = `households.${col}`;
+              } else if (col === 'company_name') {
+                col = `companies.name`;
+              } else if (col === 'address') {
+                col = `households.street1`;
+              }
+            }
+          }
+          return acc.orderBy(col, sort.sort);
+        }, qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
+      )
+      .execute();
+
+    return { count, rows };
+  }
+
+  public getByHouseholdId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('household_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  public getByCompanyId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
+  /** People linked to any company — powers the Companies grain sentence ("{n} people in {m} companies"). */
+  public async countWithCompany(input: { tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', 'is not', null)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
+    return this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
+    let q = this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.id', '=', input.id)
+      .where('persons.tenant_id', '=', input.tenant_id);
+    if (input.type) {
+      q = q.where('tags.type', '=', input.type);
+    }
+    return q.select('tags.name').execute();
+  }
+  public async findByEmail(input: { tenant_id: string; email: string }) {
+    return this.getSelect()
+      .select(['id', 'email'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
+      .executeTakeFirst();
+  }
+
+  /**
+   * Batched email-identity lookup for the CSV import wizard's Review step
+   * (spec §17) — given a set of candidate emails, return the existing person
+   * each one matches (if any), so the wizard can show "3 rows match people
+   * you already have" with a door to each matched person.
+   */
+  public async findManyByEmails(input: { tenant_id: string; emails: string[] }) {
+    const normalized = Array.from(
+      new Set(input.emails.map((email) => email.trim().toLowerCase()).filter((email) => email.length > 0)),
+    );
+    if (normalized.length === 0) return [];
+
+    return this.getSelect()
+      .select(['id', 'first_name', 'last_name', 'email', 'slug'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, 'in', normalized)
+      .execute();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: unknown[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.home_phone',
+        'persons.notes',
+        'persons.company_id',
+        'persons.household_id',
+        'persons.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          persons: [],
+        });
+      }
+      groupsMap.get(groupKey)?.persons.push({
+        ...row,
+        id: String(row.id),
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source person not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, unknown> = {};
+      const fields = [
+        'first_name',
+        'middle_names',
+        'last_name',
+        'email',
+        'email2',
+        'mobile',
+        'home_phone',
+        'notes',
+        'company_id',
+        'file_id',
+      ] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_peoples_tags)
+      const targetTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select(['tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx
+            .insertInto('map_peoples_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_peoples_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_persons)
+      const targetLists = await trx
+        .selectFrom('map_lists_persons')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx
+        .selectFrom('map_lists_persons')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx
+            .insertInto('map_lists_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              list_id: sl.list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_lists_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 4. Transfer teams (map_teams_persons)
+      const targetTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select('team_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
+
+      const sourceTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select(['team_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTeams) {
+        if (!targetTeamIds.has(String(st.team_id))) {
+          await trx
+            .insertInto('map_teams_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              team_id: st.team_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_teams_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 5. Reassign captaincy if source was captain of any team
+      await trx
+        .updateTable('teams')
+        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('team_captain_id', '=', input.source_id)
+        .execute();
+      // 6. Delete source person
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      // 7. Clean up empty household if source's household is now empty
+      const sourceHhId = source.household_id;
+      if (sourceHhId && sourceHhId !== target.household_id) {
+        const remainingHhMembers = await trx
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', '=', sourceHhId)
+          .execute();
+        if (remainingHhMembers.length === 0) {
+          // Clean up orphaned household associations before deletion
+          await trx
+            .deleteFrom('map_households_tags')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('map_lists_households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', sourceHhId)
+            .execute();
+        }
+      }
+
+      return { success: true };
+    });
+  }
+}
+````
+
+## File: apps/backend/src/app/modules/persons/services/persons.service.ts
+````typescript
+import { env } from '../../../../env';
+import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import { slugifyRecordName } from '../../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
+
+import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
+import { backfillMissingSlugs, uniqueSlug } from '../../../lib/slug';
+import { notificationEnabled } from '../../../lib/profile-preferences';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
+import { SettingsController } from '../../settings/controller';
+import { TagsRepo } from '../../tags/repositories/tags.repo';
+import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
+import { PersonsRepo } from '../repositories/persons.repo';
+import { CompaniesRepo } from '../../companies/repositories/companies.repo';
+import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
+import { TeamsRepo } from '../../teams/repositories/teams.repo';
+import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { ImportsRepo } from '../../imports/repositories/imports.repo';
+import { ListsRepo } from '../../lists/repositories/lists.repo';
+import { MapListsPersonsRepo } from '../../lists/repositories/map-lists-persons.repo';
+import { UserActivityRepo } from '../../../lib/user-activity.repo';
+import { StorageService } from '../../../lib/storage.service';
+import { WorkflowsController } from '../../workflows/controller';
+import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
+import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
+import { logger } from '../../../logger';
+
+export class PersonsService {
+  private mapPersonsTagRepo = new MapPersonsTagRepo();
+  private settingsController = new SettingsController();
+  private tagsRepo = new TagsRepo();
+  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
+  private teamsRepo = new TeamsRepo();
+  private importsRepo = new ImportsRepo();
+  private personsRepo = new PersonsRepo();
+  private userActivity = new UserActivityRepo();
+  private storageService = new StorageService();
+  private householdRepo = new HouseholdRepo();
+  private companiesRepo = new CompaniesRepo();
+  private listsRepo = new ListsRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
+
+  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant
+    const emailToCheck = payload.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
+
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
+    const households = new HouseholdRepo();
+
+    let household_id = payload.household_id as string | undefined;
+    if (!household_id) {
+      const existingBlank = await households.getBlankHousehold({
+        tenant_id: auth.tenant_id,
+        campaign_id: String(campaign_id),
+      });
+      if (existingBlank?.id) {
+        household_id = String(existingBlank.id);
+      } else {
+        const created = await households.add({
+          row: {
+            tenant_id: auth.tenant_id,
+            campaign_id: String(campaign_id),
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          } as OperationDataType<'households', 'insert'>,
+        });
+        household_id = String(created?.id);
+      }
+    }
+
+    // Record slug for /people/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
+    const slug = await uniqueSlug(
+      slugifyRecordName(`${payload.first_name ?? ''} ${payload.last_name ?? ''}`, 'person'),
+      (candidate) => this.personsRepo.slugExists(auth.tenant_id, candidate),
+    );
+
+    const row = {
+      ...payload,
+      slug,
+      household_id,
+      campaign_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+
+    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    if (result && typeof result === 'object') {
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger usage check in addPerson');
+      }
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerWorkflow(
+          auth.tenant_id,
+          String((result as Record<string, unknown>)['id']),
+          'contact_created',
+          null,
+        );
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
+      }
+
+      if (payload.assigned_to) {
+        try {
+          const assignee = await this.personsRepo.db
+            .selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+            .where('authusers.id', '=', String(payload.assigned_to))
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
+              const createdPerson = result as Record<string, unknown>;
+              const personName =
+                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
+              const mailService = new TransactionalEmailService();
+              await mailService.sendMail({
+                to: assignee.email,
+                subject: `Contact Assigned to You: ${personName}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+              });
+            }
+          }
+        } catch (mailErr) {
+          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
+        }
+      }
+    }
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'create',
+        entity: 'persons',
+        entity_id: result?.id ? String(result.id) : null,
+        quantity: 1,
+        metadata: {
+          id: result?.id,
+          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
+          ...(auth.source ? { source: auth.source } : {}),
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log create person activity');
+    }
+    try {
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_created',
+        pickPersonFields(result as Record<string, unknown>),
+      );
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
+    }
+    return result;
+  }
+
+  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant (excluding the person being updated)
+    const emailToCheck = data.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing && String(existing.id) !== String(id)) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
+
+    let original: Record<string, unknown> | null = null;
+    try {
+      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
+        string,
+        unknown
+      > | null;
+    } catch (err) {
+      logger.error({ err }, 'Failed to fetch original person record for activity log');
+    }
+    const result = await this.personsRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: {
+        ...data,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'persons', 'update'>,
+    });
+    if (result && typeof result === 'object') {
+      const updatedPerson = result as Record<string, unknown>;
+      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
+        const newAssigneeId = data.assigned_to;
+        if (newAssigneeId) {
+          try {
+            const assignee = await this.personsRepo.db
+              .selectFrom('authusers')
+              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+              // String conversion ensures precision is maintained down to the database driver level
+              .where('authusers.id', '=', String(newAssigneeId))
+              .executeTakeFirst();
+
+            if (assignee && assignee.email) {
+              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
+                const personName =
+                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
+                  'unnamed contact';
+                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
+                const mailService = new TransactionalEmailService();
+                await mailService.sendMail({
+                  to: assignee.email,
+                  subject: `Contact Assigned to You: ${personName}`,
+                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                });
+              }
+            }
+          } catch (mailErr) {
+            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
+          }
+        }
+      }
+    }
+    try {
+      const changes: Record<string, unknown> = {};
+      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
+      if (original && resultObj) {
+        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
+        for (const key of Object.keys(data)) {
+          if (skipKeys.includes(key)) continue;
+          const oldVal = (original as Record<string, unknown>)[key];
+          const newVal = resultObj[key];
+          if (oldVal !== newVal) {
+            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+          }
+        }
+      }
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: id ? String(id) : null,
+        quantity: 1,
+        metadata: {
+          id,
+          entity_label: resultObj
+            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
+            : 'Person',
+          changes,
+          ...(auth.source ? { source: auth.source } : {}),
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log update person activity');
+    }
+    try {
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_updated',
+        pickPersonFields(result as Record<string, unknown>),
+      );
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
+    }
+    return result;
+  }
+
+  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
+    if (!html) return '';
+    const text = html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (text.length <= limit) return text;
+    return text.substring(0, limit) + '...';
+  }
+
+  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
+    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
+      string,
+      unknown
+    > | null;
+    if (!person) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Person not found',
+      });
+    }
+
+    const emails: string[] = [];
+    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
+    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
+
+    if (emails.length === 0) {
+      return {
+        emails: [],
+        newsletters: [],
+      };
+    }
+
+    const db = this.personsRepo.db;
+
+    // 1. Fetch email conversations (sent and received)
+    const conversations = await db
+      .selectFrom('emails')
+      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
+      .selectAll('emails')
+      .select('email_bodies.body_html as body_html')
+      .where('emails.tenant_id', '=', auth.tenant_id)
+      // Recipient match goes through email_recipients — the source of truth.
+      // emails.to_email is a display-only cache holding a joined "a, b" string,
+      // so an exact IN match would miss multi-recipient emails (D-10).
+      .where((eb) =>
+        eb.or([
+          eb('emails.from_email', 'in', emails),
+          eb.exists(
+            eb
+              .selectFrom('email_recipients')
+              .select('email_recipients.id')
+              .whereRef('email_recipients.email_id', '=', 'emails.id')
+              .where('email_recipients.tenant_id', '=', auth.tenant_id)
+              .where((inner) => inner(inner.fn<string>('lower', ['email_recipients.email']), 'in', emails)),
+          ),
+        ]),
+      )
+      .orderBy('emails.created_at', 'desc')
+      .limit(50)
+      .execute();
+
+    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
+    const newsletterEvents = await db
+      .selectFrom('newsletter_events')
+      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
+      .select([
+        'newsletter_events.id',
+        'newsletter_events.event_type',
+        'newsletter_events.timestamp',
+        'newsletter_events.url',
+        'newsletters.subject as newsletter_subject',
+        'newsletters.name as newsletter_name',
+      ])
+      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
+      .where('newsletter_events.email', 'in', emails)
+      .orderBy('newsletter_events.timestamp', 'desc')
+      .limit(100)
+      .execute();
+
+    return {
+      emails: conversations.map((mail) => {
+        let snippet = '';
+        if (mail.body_html) {
+          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
+        }
+        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
+          snippet = mail.preview;
+        }
+        return {
+          ...mail,
+          preview: snippet,
+        };
+      }),
+      newsletters: newsletterEvents,
+    };
+  }
+
+  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
+    const row = {
+      name,
+      color: randomHexColor(),
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type,
+    };
+
+    const tag = await this.tagsRepo.addOrGet({
+      row: row as OperationDataType<'tags', 'insert'>,
+      onConflictColumn: 'name',
+    });
+
+    const result = await this.addToMap({
+      tag_id: tag?.id as string | undefined,
+      person_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    });
+
+    if (result && tag?.id) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger tag_added workflow');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: person_id,
+        quantity: 1,
+        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log attach tag activity');
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
+        person_id,
+        tag_name: name,
+        tag_type: type,
+      });
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
+    }
+
+    return result;
+  }
+
+  public async detachTag(input: {
+    tenant_id: string;
+    person_id: string;
+    name: string;
+    type?: 'tag' | 'issue';
+    user_id?: string;
+    source?: string;
+  }) {
+    const tag = await this.tagsRepo.getIdByName({
+      tenant_id: input.tenant_id,
+      name: input.name,
+      type: input.type ?? 'tag',
+    });
+
+    if (tag?.id) {
+      await this.mapPersonsTagRepo.deleteMapping({
+        tenant_id: input.tenant_id,
+        person_id: input.person_id,
+        tag_id: tag.id,
+      });
+    }
+
+    try {
+      if (input.user_id) {
+        await this.userActivity.log({
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          activity: 'update',
+          entity: 'persons',
+          entity_id: input.person_id,
+          quantity: 1,
+          metadata: {
+            id: input.person_id,
+            action: `detach_${input.type ?? 'tag'}`,
+            name: input.name,
+            ...(input.source ? { source: input.source } : {}),
+          },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log detach tag activity');
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
+        person_id: input.person_id,
+        tag_name: input.name,
+        tag_type: input.type ?? 'tag',
+      });
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
+    }
+
+    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
+    if (!isVolunteerTag) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
+      tenant_id: input.tenant_id,
+      person_id: input.person_id,
+    });
+
+    if (!teams.length) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
+
+    for (const team of teams) {
+      if (team.is_captain && team.team_id) {
+        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
+      }
+    }
+
+    const removedTeams = teams
+      .filter((team) => team.team_id)
+      .map((team) => ({
+        id: team.team_id,
+        name: team.team_name ?? '',
+        was_captain: team.is_captain,
+      }));
+
+    return {
+      removed_team_ids: removedTeams.map((team) => team.id),
+      removed_teams: removedTeams,
+    };
+  }
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+        mobile?: string;
+        notes?: string;
+        home_phone?: string;
+        street_num?: string;
+        street1?: string;
+        street2?: string;
+        apt?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
+        country?: string;
+      }>;
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+      duplicate_decision?: 'merge' | 'skip' | 'import_new';
+      list_name?: string;
+      /** Raw uploaded CSV text, kept 90 days so the History page can offer a re-download (spec §17). */
+      source_csv?: string;
+      /** Rows the wizard already excluded/cleaned client-side (bad-email "Skip"), recorded for History's skip-reasons export. */
+      client_skip_reasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    let hasImportableRow = false;
+    for (const candidate of input.rows) {
+      const sanitized = this.sanitizeRow(candidate);
+      if (sanitized.first_name || sanitized.last_name || sanitized.email || sanitized.mobile || sanitized.notes) {
+        hasImportableRow = true;
+        break;
+      }
+    }
+
+    if (!hasImportableRow) {
+      const totalSkipped = skippedFromClient + input.rows.length;
+      const personsBefore = await this.personsRepo.count(auth.tenant_id);
+      return {
+        inserted: 0,
+        errors: 0,
+        skipped: totalSkipped,
+        tag: null,
+        file_name: requestedFileName || null,
+        import_id: null,
+        tenant_id: auth.tenant_id,
+        campaign_id,
+        persons_total_after: personsBefore,
+        persons_total_before: personsBefore,
+        status: 'completed',
+      };
+    }
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'persons',
+      tag_name: autoTag,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as any;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    // Keep the original upload downloadable for 90 days (spec §17 History
+    // page footer). Best-effort: a failure here shouldn't fail the import.
+    let sourceFileKey: string | null = null;
+    let sourceFileSize: number | null = null;
+    if (input.source_csv) {
+      try {
+        const sourceBuffer = Buffer.from(input.source_csv, 'utf8');
+        sourceFileKey = `imports/source/${auth.tenant_id}/${importRecordId}.csv`;
+        sourceFileSize = sourceBuffer.byteLength;
+        await this.storageService.upload(sourceFileKey, sourceBuffer, 'text/csv');
+      } catch (err) {
+        logger.error({ err }, 'Failed to retain original CSV upload for the import history page');
+        sourceFileKey = null;
+        sourceFileSize = null;
+      }
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+        source_file_key: sourceFileKey,
+        source_file_size: sourceFileSize,
+      } as any,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          tags,
+          skipped: skippedFromClient,
+          campaign_id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+          duplicate_decision: input.duplicate_decision ?? 'skip',
+          list_name: input.list_name ?? null,
+          client_skip_reasons: input.client_skip_reasons ?? [],
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      tag: autoTag,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      campaign_id,
+      status: 'pending',
+    };
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    campaign_id: string,
+    tags: string[],
+    skipped: number,
+    rows: Record<string, string>[],
+    options?: {
+      duplicateDecision?: 'merge' | 'skip' | 'import_new';
+      listName?: string;
+      clientSkipReasons?: Array<{ row: number; email?: string; reason: string }>;
+    },
+  ) {
+    const households = new HouseholdRepo();
+    const duplicateDecision = options?.duplicateDecision ?? 'skip';
+    const results: {
+      inserted: number;
+      errors: number;
+      households_created: number;
+      skipped: number;
+      merged: number;
+    } = {
+      inserted: 0,
+      errors: 0,
+      households_created: 0,
+      skipped: 0,
+      merged: 0,
+    };
+    const importedPersonIds: string[] = [];
+    // Rows kept downloadable with the reason each was skipped (History page, spec §17) —
+    // seeded with the wizard's own client-side skips (bad-email "Skip"), then appended to below.
+    const skipReasons: Array<{ row: number; email?: string; reason: string }> = [...(options?.clientSkipReasons ?? [])];
+
+    const errorMessages: string[] = [];
+    let cachedBlankHouseholdId: string | null = null;
+    let autoTagId: string | null = null;
+    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Sanitize and classify all valid rows in the chunk upfront
+      type ValidEntry = {
+        sanitized: {
+          first_name?: string;
+          last_name?: string;
+          email?: string;
+          mobile?: string;
+          notes?: string;
+          home_phone?: string;
+          street_num?: string;
+          street1?: string;
+          street2?: string;
+          apt?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+          country?: string;
+        };
+        isBlankAddress: boolean;
+        fp_street: string | null;
+        fp_full: string | null;
+        rowNumber: number;
+      };
+      const SKIP_REASONS_CAP = 500;
+      const validEntries: ValidEntry[] = [];
+      for (const [chunkIdx, raw] of chunk.entries()) {
+        const rowNumber = i + chunkIdx + 1;
+        const sanitized = this.sanitizeRow(raw);
+        if (
+          !sanitized.first_name &&
+          !sanitized.last_name &&
+          !sanitized.email &&
+          !sanitized.mobile &&
+          !sanitized.notes
+        ) {
+          results.skipped += 1;
+          if (skipReasons.length < SKIP_REASONS_CAP) {
+            skipReasons.push({ row: rowNumber, reason: 'Blank row — no importable fields' });
+          }
+          continue;
+        }
+        const isBlankAddress =
+          !sanitized.home_phone &&
+          !sanitized.street_num &&
+          !sanitized.street1 &&
+          !sanitized.street2 &&
+          !sanitized.apt &&
+          !sanitized.city &&
+          !sanitized.state &&
+          !sanitized.zip &&
+          !sanitized.country;
+        validEntries.push({
+          sanitized,
+          isBlankAddress,
+          fp_street: isBlankAddress
+            ? null
+            : fingerprintStreet({
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+              }),
+          fp_full: isBlankAddress
+            ? null
+            : fingerprintFull({
+                apt: sanitized.apt,
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+                city: sanitized.city,
+                state: sanitized.state,
+                zip: sanitized.zip,
+                country: sanitized.country,
+              }),
+          rowNumber,
+        });
+      }
+
+      if (validEntries.length === 0) {
+        await this.importsRepo.update({
+          tenant_id: tenant_id,
+          id: import_id,
+          row: {
+            tag_id: autoTagId,
+            inserted_count: results.inserted,
+            error_count: results.errors,
+            skipped_count: skipped + results.skipped,
+            households_created: results.households_created,
+            updatedby_id: user_id,
+            updated_at: new Date(),
+          } as any,
+        });
+        continue;
+      }
+
+      try {
+        const outcome = await this.personsRepo.transaction().execute(async (trx) => {
+          let localBlankHouseholdId = cachedBlankHouseholdId;
+          let localAutoTagId = autoTagId;
+          let householdsCreatedDelta = 0;
+
+          // 2a. Resolve blank household once for the whole chunk
+          if (validEntries.some((e) => e.isBlankAddress)) {
+            if (!localBlankHouseholdId) {
+              const existingBlank = await households.getBlankHousehold({ tenant_id, campaign_id }, trx);
+              if (existingBlank?.id) {
+                localBlankHouseholdId = String(existingBlank.id);
+              } else {
+                const created = await households.add(
+                  {
+                    row: {
+                      tenant_id,
+                      campaign_id,
+                      createdby_id: user_id,
+                      updatedby_id: user_id,
+                      file_id: import_id,
+                    } as OperationDataType<'households', 'insert'>,
+                  },
+                  trx,
+                );
+                localBlankHouseholdId = String(created?.id);
+                householdsCreatedDelta += 1;
+              }
+            }
+          }
+
+          // 2b. Batch-resolve addressed households with a single IN query
+          const fpCache = new Map<string, string>(); // fp_full -> household_id
+          const uniqueFps = [
+            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
+          ];
+          if (uniqueFps.length > 0) {
+            const existingHouseholds = await trx
+              .selectFrom('households')
+              .select(['id', 'address_fp_full'])
+              .where('tenant_id', '=', tenant_id)
+              .where('campaign_id', '=', campaign_id)
+              .where('address_fp_full', 'in', uniqueFps)
+              .execute();
+            for (const h of existingHouseholds) {
+              if (h.address_fp_full) fpCache.set(h.address_fp_full, String(h.id));
+            }
+          }
+
+          // 2c. Create only missing households (deduplicated within this chunk)
+          for (const entry of validEntries) {
+            if (entry.isBlankAddress || !entry.fp_full) continue;
+            if (fpCache.has(entry.fp_full)) continue;
+            const { sanitized, fp_street, fp_full } = entry;
+            const hhRow = {
+              tenant_id,
+              campaign_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+              home_phone: sanitized.home_phone ?? null,
+              street_num: sanitized.street_num ?? null,
+              street1: sanitized.street1 ?? null,
+              street2: sanitized.street2 ?? null,
+              apt: sanitized.apt ?? null,
+              city: sanitized.city ?? null,
+              state: sanitized.state ?? null,
+              zip: sanitized.zip ?? null,
+              country: sanitized.country ?? null,
+              address_fp_street: fp_street,
+              address_fp_full: fp_full,
+              notes: null,
+              file_id: import_id,
+            } as OperationDataType<'households', 'insert'>;
+            const household = await households.add({ row: hhRow }, trx);
+            fpCache.set(fp_full, String(household?.id));
+            householdsCreatedDelta += 1;
+          }
+
+          // 2d. Duplicate-email resolution (spec §17 Review step — a single
+          // decision governs every row whose email matches a person that
+          // already exists; email is the match key app-wide, same as
+          // Duplicates and Forms).
+          //  - 'skip' (default): exclude the row; counted + reasoned below.
+          //  - 'merge': fill the existing person's blank fields from the row
+          //    (never overwrite), don't insert a second person.
+          //  - 'import_new': insert as a brand-new person anyway; the email
+          //    is cleared first so it can't collide with the unique
+          //    (tenant_id, lower(email)) index — the row becomes a
+          //    name-only duplicate for the Duplicates page to reconcile.
+          const mergeEntries: Array<{ entry: (typeof validEntries)[number]; personId: string }> = [];
+          const insertEntries: typeof validEntries = [];
+          const candidateEmails = [
+            ...new Set(validEntries.map((e) => e.sanitized.email).filter((email): email is string => !!email)),
+          ];
+          const existingByEmail = new Map<string, { id: string }>();
+          if (candidateEmails.length > 0) {
+            const existing = await trx
+              .selectFrom('persons')
+              .select(['id', 'email'])
+              .where('tenant_id', '=', tenant_id)
+              .where(
+                sql`lower(email)`,
+                'in',
+                candidateEmails.map((email) => email.toLowerCase()),
+              )
+              .execute();
+            for (const p of existing) {
+              if (p.email) existingByEmail.set(p.email.toLowerCase(), { id: String(p.id) });
+            }
+          }
+
+          for (const entry of validEntries) {
+            const match = entry.sanitized.email ? existingByEmail.get(entry.sanitized.email.toLowerCase()) : null;
+            if (!match) {
+              insertEntries.push(entry);
+              continue;
+            }
+            if (duplicateDecision === 'merge') {
+              mergeEntries.push({ entry, personId: match.id });
+            } else if (duplicateDecision === 'import_new') {
+              // Keep the row, but the email must go so the insert doesn't
+              // collide with the existing person's email.
+              insertEntries.push({ ...entry, sanitized: { ...entry.sanitized, email: undefined } });
+            } else {
+              results.skipped += 1;
+              if (skipReasons.length < SKIP_REASONS_CAP) {
+                skipReasons.push({
+                  row: entry.rowNumber,
+                  email: entry.sanitized.email,
+                  reason: 'Matches a person you already have — duplicate decision was Skip',
+                });
+              }
+            }
+          }
+
+          // 3. Batch insert all persons in one statement
+          const personRows = insertEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
+            tenant_id,
+            campaign_id,
+            createdby_id: user_id,
+            updatedby_id: user_id,
+            household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
+            first_name: sanitized.first_name ?? null,
+            middle_names: null,
+            last_name: sanitized.last_name ?? null,
+            email: sanitized.email ?? null,
+            email2: null,
+            mobile: sanitized.mobile ?? null,
+            home_phone: null,
+            file_id: import_id,
+            notes: sanitized.notes ?? null,
+          }));
+          const insertedPersons = personRows.length
+            ? await trx
+                .insertInto('persons')
+                .values(personRows)
+                .onConflict((oc) => oc.doNothing())
+                .returningAll()
+                .execute()
+            : [];
+
+          // Count rows silently skipped due to a duplicate email under the 'skip' decision
+          const duplicatesSkipped = personRows.length - insertedPersons.length;
+          if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
+
+          // 3b. Merge decision: fill only the existing person's blank fields — never overwrite.
+          const mergedPersonIds: string[] = [];
+          for (const { entry, personId } of mergeEntries) {
+            await trx
+              .updateTable('persons')
+              .set({
+                first_name: sql`COALESCE(persons.first_name, ${entry.sanitized.first_name ?? null})`,
+                last_name: sql`COALESCE(persons.last_name, ${entry.sanitized.last_name ?? null})`,
+                mobile: sql`COALESCE(persons.mobile, ${entry.sanitized.mobile ?? null})`,
+                notes: sql`COALESCE(persons.notes, ${entry.sanitized.notes ?? null})`,
+                updated_at: sql`now()`,
+                updatedby_id: user_id,
+              })
+              .where('tenant_id', '=', tenant_id)
+              .where('id', '=', personId)
+              .execute();
+            mergedPersonIds.push(personId);
+          }
+          results.merged += mergedPersonIds.length;
+
+          // 4. Upsert each unique tag name exactly once (not once per row)
+          const tagRecords: Array<{ name: string; id: string }> = [];
+          for (const name of tags) {
+            const row = {
+              name,
+              tenant_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+            } as OperationDataType<'tags', 'insert'>;
+            const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
+            if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
+            if (tag?.id) tagRecords.push({ name, id: String(tag.id) });
+          }
+
+          // 5. Batch insert all tag-person mappings in one statement — for
+          // both freshly-inserted persons and persons a 'merge' decision
+          // folded this import's tags into.
+          const taggableIds = [...insertedPersons.map((p) => String(p.id)), ...mergedPersonIds];
+          if (tagRecords.length > 0 && taggableIds.length > 0) {
+            const tagMapRows = taggableIds.flatMap((person_id) =>
+              tagRecords.map(({ id: tag_id }) => ({
+                tenant_id,
+                person_id,
+                tag_id: tag_id as unknown as string,
+                createdby_id: user_id,
+                updatedby_id: user_id,
+              })),
+            );
+            // Merged persons may already carry a tag from an earlier import — don't fail the batch on that.
+            await (trx as any)
+              .insertInto('map_peoples_tags')
+              .values(tagMapRows)
+              .onConflict((oc: any) => oc.doNothing())
+              .execute();
+          }
+
+          return {
+            insertedPersons,
+            mergedPersonIds,
+            tagRecords,
+            householdsCreatedDelta,
+            blankHouseholdId: localBlankHouseholdId,
+            autoTagId: localAutoTagId,
+          };
+        });
+
+        // 6. Trigger workflows outside the transaction (fire-and-forget per person)
+        const workflowsController = new WorkflowsController();
+        for (const person of outcome.insertedPersons) {
+          const personId = String(person.id);
+          importedPersonIds.push(personId);
+          try {
+            await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
+          }
+          for (const { name, id: tagId } of outcome.tagRecords) {
+            try {
+              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
+            }
+          }
+        }
+        // Merged persons aren't new contacts — only the tag_added workflow applies, and
+        // they still belong in the static-list membership pass below.
+        for (const personId of outcome.mergedPersonIds) {
+          importedPersonIds.push(personId);
+          for (const { name, id: tagId } of outcome.tagRecords) {
+            try {
+              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow after CSV import merge');
+            }
+          }
+        }
+
+        results.inserted += outcome.insertedPersons.length;
+        results.households_created += outcome.householdsCreatedDelta;
+        if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
+        if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
+      } catch (err: unknown) {
+        // If the chunk transaction fails, count all valid rows in the chunk as errors
+        results.errors += validEntries.length;
+        const message = err instanceof Error ? err.message : String(err);
+        errorMessages.push(message);
+        logger.error({ err, message }, 'Import chunk failed');
+      }
+
+      // Update intermediate counts after each chunk
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          tag_id: autoTagId,
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          merged_count: results.merged,
+          households_created: results.households_created,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    // Add every imported (and merged-into) person to a static list, creating
+    // it if it doesn't already exist by that exact name (spec §17 "add
+    // everyone to a static list"). This runs here — not as a public
+    // lists.addMembers endpoint — because processImportRows is the only
+    // place that knows the final set of person ids; see pplcrm-forms-style
+    // note in the wizard skill for why no new public list-membership API
+    // was added for this track.
+    if (options?.listName && importedPersonIds.length > 0) {
+      try {
+        await this.addImportedPersonsToStaticList(tenant_id, user_id, options.listName, importedPersonIds);
+      } catch (err) {
+        logger.error({ err }, 'Failed to add imported people to the requested static list');
+      }
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.personsRepo.db, 'persons', tenant_id);
+      await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill record slugs after import');
+    }
+
+    // Final History-page facts: every tag actually applied, and the reason
+    // each skipped row was skipped (spec §17 — "skipped rows stay
+    // downloadable with the reason each was skipped").
+    try {
+      await this.importsRepo.update({
+        tenant_id,
+        id: import_id,
+        row: {
+          merged_count: results.merged,
+          tags_applied: JSON.stringify(tags),
+          skip_reasons: JSON.stringify(skipReasons),
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to persist final import stats');
+    }
+
+    // Log the user activity
+    try {
+      await this.userActivity.log({
+        tenant_id,
+        user_id,
+        activity: 'import',
+        entity: 'persons',
+        quantity: results.inserted,
+        metadata: {
+          rows_received: rows.length,
+          tags_applied: tags.slice(0, 10),
+          auto_tag: autoTag,
+          households_created: results.households_created,
+          errors: results.errors,
+          skipped: skipped + results.skipped,
+          import_id,
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log import activity');
+    }
+
+    if (importedPersonIds.length > 0) {
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
+      } catch (err) {
+        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
+      }
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      merged: results.merged,
+      households_created: results.households_created,
+      tag_id: autoTagId,
+      errorMessages,
+    };
+  }
+
+  /**
+   * Find-or-create a static people list by exact, case-insensitive name and
+   * add every given person id to it (spec §17 "add everyone to a static
+   * list"). Runs inside the import job because that's the only place the
+   * final imported/merged person ids are known — see the call site comment
+   * in processImportRows.
+   */
+  private async addImportedPersonsToStaticList(
+    tenant_id: string,
+    user_id: string,
+    listName: string,
+    personIds: string[],
+  ): Promise<void> {
+    const trimmedName = listName.trim();
+    if (!trimmedName) return;
+
+    const existingList = await this.listsRepo.db
+      .selectFrom('lists')
+      .select(['id'])
+      .where('tenant_id', '=', tenant_id)
+      .where(sql`lower(name)`, '=', trimmedName.toLowerCase())
+      .where('object', '=', 'people')
+      .executeTakeFirst();
+
+    let listId = existingList?.id != null ? String(existingList.id) : undefined;
+
+    if (!listId) {
+      const created = await this.listsRepo.add({
+        row: {
+          tenant_id,
+          name: trimmedName,
+          description: `Created by the CSV import wizard on ${new Date().toLocaleDateString()}.`,
+          object: 'people',
+          is_dynamic: false,
+          definition: null,
+          status: 'idle',
+          createdby_id: user_id,
+          updatedby_id: user_id,
+        } as OperationDataType<'lists', 'insert'>,
+      });
+      if (created?.id != null) listId = String(created.id);
+    }
+    if (!listId) return;
+
+    const uniqueIds = [...new Set(personIds)];
+    const rows = uniqueIds.map((person_id) => ({
+      tenant_id,
+      list_id: listId as string,
+      person_id,
+      createdby_id: user_id,
+      updatedby_id: user_id,
+    })) as OperationDataType<'map_lists_persons', 'insert'>[];
+
+    // A person may already belong to this list (e.g. re-running an import
+    // into the same list) — the primary key is (tenant_id, list_id,
+    // person_id), so skip rows that would collide instead of failing the batch.
+    await this.mapListsPersonsRepo.db
+      .insertInto('map_lists_persons')
+      .values(rows)
+      .onConflict((oc) => oc.columns(['tenant_id', 'list_id', 'person_id']).doNothing())
+      .execute();
+  }
+
+  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    return this.personsRepo.moveToNewHousehold({
+      tenant_id: auth.tenant_id,
+      person_id,
+      user_id: auth.user_id,
+      campaign_id,
+    });
+  }
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  /**
+   * CSV import wizard Review step (spec §17) — email is the match key across
+   * this app (Duplicates, Forms). Given the emails mapped from the uploaded
+   * file, report which ones already belong to a person so the wizard can
+   * render "N rows match people you already have" with a door to each match.
+   */
+  public async checkDuplicateEmails(auth: IAuthKeyPayload, emails: string[]) {
+    const matches = await this.personsRepo.findManyByEmails({ tenant_id: auth.tenant_id, emails });
+    return matches.map((match) => ({
+      email: (match.email ?? '').toLowerCase(),
+      person_id: String(match.id),
+      name:
+        [match.first_name, match.last_name]
+          .filter((part) => !!part)
+          .join(' ')
+          .trim() || 'Unnamed person',
+      slug: match.slug ?? null,
+    }));
+  }
+
+  public async getDuplicateCounts(auth: IAuthKeyPayload) {
+    const [people, households, companies] = await Promise.all([
+      this.personsRepo.getDuplicateCount(auth.tenant_id),
+      this.householdRepo.getDuplicateCount(auth.tenant_id),
+      this.companiesRepo.getDuplicateCount(auth.tenant_id),
+    ]);
+    return { people, households, companies };
+  }
+
+  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
+    const result = await this.personsRepo.mergePersons({
+      tenant_id: auth.tenant_id,
+      target_id: input.target_id,
+      source_id: input.source_id,
+      user_id: auth.user_id,
+    });
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'merge',
+      entity: 'persons',
+      quantity: 1,
+      metadata: {
+        target_id: input.target_id,
+        source_id: input.source_id,
+      },
+    });
+    return result;
+  }
+
+  private async addToMap(row: {
+    tag_id: string | undefined;
+    person_id: string;
+    tenant_id: string;
+    createdby_id: string;
+    updatedby_id: string;
+  }) {
+    if (!row.tag_id) {
+      throw new TRPCError({
+        message: 'Failed to add the tag',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    return await this.mapPersonsTagRepo.add({
+      row: row as OperationDataType<'map_peoples_tags', 'insert'>,
+    });
+  }
+
+  private sanitizePhone(v?: string) {
+    if (!v) return undefined;
+    const digits = v.replace(/[^0-9+]/g, '');
+    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
+    return digits.replace(/[^0-9]/g, '');
+  }
+
+  private sanitizeRow(row: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    mobile?: string;
+    notes?: string;
+    home_phone?: string;
+    street_num?: string;
+    street1?: string;
+    street2?: string;
+    apt?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+  }) {
+    const trim = (v?: string) => (v ? v.trim() : undefined);
+
+    let first_name = trim(row.first_name);
+    const last_name = trim(row.last_name);
+    let email = (trim(row.email) || '').toLowerCase();
+    let mobile = this.sanitizePhone(row.mobile);
+    const home_phone = this.sanitizePhone(row.home_phone);
+    const notes = trim(row.notes);
+
+    if (!email) {
+      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
+    }
+    if (email && !/.+@.+\..+/.test(email)) email = '';
+
+    if (!mobile) {
+      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
+      mobile = this.sanitizePhone(possiblePhone);
+    }
+
+    if (first_name) first_name = this.stripNoise(first_name);
+    if (!first_name && email) first_name = this.nameFromEmail(email);
+
+    return {
+      first_name,
+      last_name,
+      email: email || undefined,
+      mobile,
+      notes,
+      home_phone,
+      street_num: trim(row.street_num),
+      street1: trim(row.street1),
+      street2: trim(row.street2),
+      apt: trim(row.apt),
+      city: trim(row.city),
+      state: trim(row.state),
+      zip: trim(row.zip),
+      country: trim(row.country),
+    };
+  }
+
+  private findEmail(text: string): string | undefined {
+    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return m?.[0];
+  }
+
+  private findPhone(text?: string): string | undefined {
+    if (!text) return undefined;
+    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
+    return m?.[0];
+  }
+
+  private stripNoise(text: string): string | undefined {
+    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
+    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
+    const cleaned = noPhone
+      .replace(/[,]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return cleaned || undefined;
+  }
+
+  private nameFromEmail(email: string): string | undefined {
+    const local = (email || '').split('@')[0] || '';
+    const token = local.split(/[._+-]/)[0] || '';
+    if (!token) return undefined;
+    return token.charAt(0).toUpperCase() + token.slice(1);
   }
 }
 ````
@@ -55367,159 +40937,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public GRANT SELECT,INS
 \unrestrict PdhMgW15yoOGkfvhi9OHOzvlFqivKLBZmLPSF587hGo1WywFij4P80p3lhhB6hn
 ````
 
-## File: libs/uxcommon/src/components/detail-header/detail-header.ts
-````typescript
-import { Component, DestroyRef, computed, effect, inject, input, output } from '@angular/core';
-import { Icon } from '@icons/icon';
-import { PcIconNameType } from '@icons/icons.index';
-
-import { PcBreadcrumb } from '../breadcrumbs/breadcrumbs';
-import { BreadcrumbsService } from '../breadcrumbs/breadcrumbs.service';
-import { FormActions } from '../form-actions/form-actions';
-
-@Component({
-  selector: 'pc-detail-header',
-  imports: [Icon, FormActions],
-  template: `
-    <div class="flex flex-col gap-2 border-b border-base-200 pb-4">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex min-w-0 items-center gap-3">
-          @if (icon()) {
-            <pc-icon [name]="icon()!" class="text-primary" [size]="iconSize()"></pc-icon>
-          }
-          <div class="min-w-0">
-            @if (eyebrow()) {
-              <p class="text-[11px] font-semibold uppercase tracking-widest text-base-content/50">{{ eyebrow() }}</p>
-            }
-            <div class="flex min-w-0 items-center gap-2">
-              <h1 class="truncate text-xl font-bold">{{ title() }}</h1>
-              @if (statusChip()) {
-                <span
-                  class="shrink-0 rounded-full bg-success/15 px-2 py-0.5 text-xs font-medium text-success whitespace-nowrap"
-                  >{{ statusChip() }}</span
-                >
-              }
-            </div>
-            @if (dirtyFieldCount() > 0) {
-              <p class="mt-0.5 flex items-center gap-1.5 text-sm text-warning">
-                <span class="h-1.5 w-1.5 rounded-full bg-warning" aria-hidden="true"></span>
-                Unsaved changes · {{ dirtyFieldCount() }} field{{ dirtyFieldCount() === 1 ? '' : 's' }}
-              </p>
-            } @else if (subtitle()) {
-              <p class="mt-0.5 text-sm text-base-content/60">{{ subtitle() }}</p>
-            }
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <ng-content select="[pc-actions-prefix]"></ng-content>
-          @if (showActions()) {
-            <pc-form-actions
-              class="w-full"
-              [isLoading]="isLoading()"
-              [signalForm]="form()"
-              [disabled]="disabled()"
-              [saveAlwaysEnabled]="saveAlwaysEnabled()"
-              [buttonsToShow]="formActionsButtons()"
-              [btn1Text]="btn1Text()"
-              [btn1Icon]="btn1Icon()"
-              [showDelete]="false"
-              (btn1Clicked)="save.emit($event)"
-            ></pc-form-actions>
-          }
-          <ng-content select="[pc-actions-suffix]"></ng-content>
-          @if (showDelete()) {
-            <div class="dropdown dropdown-end">
-              <button type="button" tabindex="0" class="btn btn-circle btn-ghost btn-sm" aria-label="More actions">
-                <pc-icon name="ellipsis-vertical" [size]="5"></pc-icon>
-              </button>
-              <ul
-                tabindex="0"
-                class="menu dropdown-content z-30 w-56 rounded-box border border-base-200 bg-base-100 p-2 shadow-lg"
-              >
-                <!-- Page-supplied overflow items (e.g. Export vCard, Merge…) render above Delete (§3) -->
-                <ng-content select="[pc-overflow-extra]"></ng-content>
-                <li>
-                  <button type="button" class="text-error" [disabled]="isLoading()" (click)="delete.emit()">
-                    <pc-icon name="trash" [size]="4"></pc-icon>
-                    {{ deleteText() }}
-                  </button>
-                </li>
-              </ul>
-            </div>
-          }
-        </div>
-      </div>
-    </div>
-  `,
-})
-export class DetailHeader {
-  private readonly breadcrumbs = inject(BreadcrumbsService);
-
-  public readonly delete = output<void>();
-  public readonly save = output<any>();
-  public readonly prevRecord = output<void>();
-  public readonly nextRecord = output<void>();
-
-  public btn1Icon = input<PcIconNameType>('save');
-  public btn1Text = input<string>('Save');
-  public buttonsToShow = input<'two' | 'three'>('three');
-  public crumbs = input<PcBreadcrumb[]>([]);
-  public deleteText = input<string>('Delete');
-  public disabled = input<boolean>(false);
-  /** §4: keep the primary button enabled regardless of validity/dirtiness. */
-  public saveAlwaysEnabled = input<boolean>(false);
-  public eyebrow = input<string>('');
-  /** Optional success-tinted status chip beside the title, e.g. "Monthly donor" (§3). */
-  public statusChip = input<string | null>(null);
-  public form = input<any>();
-  public icon = input<PcIconNameType | null | undefined>();
-  public iconSize = input<number>(5);
-  public isLoading = input.required<boolean>();
-  public showActions = input<boolean>(true);
-  public showDelete = input<boolean>(false);
-  public subtitle = input<string | null | undefined>();
-  public title = input.required<string>();
-
-  /** Optional "N of M filtered" pager, rendered inline with the breadcrumb trail. */
-  public positionLabel = input<string | null>(null);
-  public hasPrev = input<boolean>(false);
-  public hasNext = input<boolean>(false);
-  public prevLabel = input<string>('Previous record');
-  public nextLabel = input<string>('Next record');
-
-  /** When > 0, replaces the subtitle with an amber "Unsaved changes · N fields" line. */
-  public dirtyFieldCount = input<number>(0);
-
-  // Delete moved to the overflow menu. Suppressing the third button whenever
-  // Delete is offered preserves the layout form-actions previously produced
-  // when it rendered the Delete button inline.
-  protected readonly formActionsButtons = computed<'two' | 'three'>(() =>
-    this.showDelete() ? 'two' : this.buttonsToShow(),
-  );
-
-  constructor() {
-    // The breadcrumb trail + record pager render in the navbar, not the page body.
-    // Publish this page's trail whenever its inputs change; clear it on destroy so
-    // the strip empties when navigating to a page (e.g. a grid) that owns no trail.
-    effect(() => {
-      this.breadcrumbs.set({
-        crumbs: this.crumbs(),
-        positionLabel: this.positionLabel(),
-        hasPrev: this.hasPrev(),
-        hasNext: this.hasNext(),
-        prevLabel: this.prevLabel(),
-        nextLabel: this.nextLabel(),
-        onPrev: () => this.prevRecord.emit(),
-        onNext: () => this.nextRecord.emit(),
-      });
-    });
-
-    inject(DestroyRef).onDestroy(() => this.breadcrumbs.clear());
-  }
-}
-````
-
 ## File: apps/backend/src/app/lib/base.repo.ts
 ````typescript
 // tsco:ignore
@@ -59334,199 +44751,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
 }
 ````
 
-## File: libs/common/src/index.ts
-````typescript
-export type {
-  IAuthKeyPayload,
-  IAuthUser,
-  IAuthUserDetail,
-  IAuthUserRecord,
-  IUserStatsSnapshot,
-  IToken,
-  signInInputType,
-  signUpInputType,
-} from './lib/auth';
-
-export { GENERIC_SIGNIN_ERROR, signInInputObj, signUpInputObj } from './lib/auth';
-
-export type {
-  INow,
-  AddTagType,
-  AddListType,
-  AddMarketingEmailType,
-  AddTaskType,
-  AddTeamType,
-  InviteAuthUserType,
-  Verify2FAType,
-  PERSONINHOUSEHOLDTYPE,
-  PersonsType,
-  MarketingEmailType,
-  MarketingEmailTopLinkType,
-  TasksType,
-  ListsType,
-  SettingsType,
-  SettingsEntryType,
-  UpsertSettingsInputType,
-  SortModelType,
-  UpdateHouseholdsType,
-  UpdatePersonsType,
-  UpdateTagType,
-  UpdateListType,
-  UpdateTeamType,
-  UpdateAuthUserType,
-  ProfilePreferencesType,
-  UpdateMarketingEmailType,
-  UpdateTaskType,
-  getAllOptionsType,
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  QueueExportInputType,
-  DataExportRecordType,
-  ImportListItem,
-  AddVolunteerEventType,
-  VolunteerEventsType,
-  UpdateVolunteerEventType,
-  AddVolunteerShiftType,
-  VolunteerShiftsType,
-  UpdateVolunteerShiftType,
-  AddWebFormType,
-  UpdateWebFormType,
-  WebFormsType,
-  CreateFormType,
-  UpdateFormType,
-  FormSubmissionType,
-  QueryBuilderRuleNode,
-  QueryBuilderGroupNode,
-  QueryBuilderNode,
-  WorkflowsType,
-  AddWorkflowType,
-  UpdateWorkflowType,
-  WorkflowStepsType,
-  AddWorkflowStepType,
-  UpdateWorkflowStepType,
-  WorkflowEnrollmentsType,
-  AddEventType,
-  EventType,
-  UpdateEventType,
-  AddTicketTypeType,
-  TicketTypeType,
-  UpdateTicketTypeType,
-  AddRegistrationType,
-  RegistrationType,
-  UpdateRegistrationType,
-  AddConnectionType,
-} from './lib/models';
-
-export {
-  cloneQueryBuilderNode,
-  AddTagObj,
-  AddListObj,
-  AddMarketingEmailObj,
-  AddTaskObj,
-  AddTeamObj,
-  InviteAuthUserObj,
-  Verify2FAObj,
-  PersonsObj,
-  MarketingEmailObj,
-  marketingEmailTopLinkObj,
-  TasksObj,
-  ListsObj,
-  SettingsObj,
-  SettingsEntryObj,
-  UpsertSettingsInputObj,
-  UpdateHouseholdsObj,
-  UpdatePersonsObj,
-  UpdateTagObj,
-  UpdateListObj,
-  UpdateTeamObj,
-  UpdateAuthUserObj,
-  NotificationPreferencesObj,
-  ProfilePreferencesObj,
-  UpdateMarketingEmailObj,
-  UpdateTaskObj,
-  sortModelItem,
-  getAllOptions,
-  exportCsvInput,
-  exportCsvResponse,
-  queueExportInput,
-  dataExportRecord,
-  ImportListItemObj,
-  dbIdSchema,
-  uuidSchema,
-  addressSchema,
-  idSchema,
-  folderIdSchema,
-  regularFolderIdSchema,
-  nameSchema,
-  descriptionSchema,
-  emailSchema,
-  phoneSchema,
-  notesSchema,
-  AddVolunteerEventObj,
-  VolunteerEventsObj,
-  UpdateVolunteerEventObj,
-  AddVolunteerShiftObj,
-  VolunteerShiftsObj,
-  UpdateVolunteerShiftObj,
-  AddWebFormObj,
-  UpdateWebFormObj,
-  WebFormsObj,
-  CreateFormObj,
-  UpdateFormObj,
-  FormSubmissionObj,
-  FormFieldObj,
-  FormTypeEnum,
-  FORM_TYPES,
-  FORM_STATUSES,
-  FORM_TEMPLATES,
-  FORM_STANDARD_CATALOG,
-  FORM_EMAIL_FIELD,
-  normForm,
-  fieldsForTemplate,
-  WorkflowObj,
-  AddWorkflowObj,
-  UpdateWorkflowObj,
-  WorkflowStepObj,
-  AddWorkflowStepObj,
-  UpdateWorkflowStepObj,
-  WorkflowEnrollmentObj,
-  CompanyInputObj,
-  CompanyEnrichmentObj,
-  AddEventObj,
-  EventObj,
-  UpdateEventObj,
-  AddTicketTypeObj,
-  TicketTypeObj,
-  UpdateTicketTypeObj,
-  AddRegistrationObj,
-  RegistrationObj,
-  UpdateRegistrationObj,
-  AddConnectionObj,
-  RELATION_TYPES,
-  RELATION_TYPE_LABELS,
-  relationTypeSchema,
-} from './lib/schema';
-
-export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
-
-export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
-export { calculateWorkingTimeMs } from './lib/sla';
-
-export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
-
-export type { EmailStatus, EmailFolderConfig } from './lib/emails';
-
-export { jsend, JSendFail as JSendFailError, JSendError as JSendServerError, httpStatusForJSend } from './lib/jsend';
-
-export type {
-  JSend,
-  JSendSuccessInterface as JSendSuccess,
-  JSendFailInterface as JSendFail,
-  JSendStatus,
-  JSendErrorInterface as JSendError,
-} from './lib/jsend';
-````
-
 ## File: apps/backend/src/env.ts
 ````typescript
 import { z } from 'zod';
@@ -60642,957 +45866,5 @@ const renderFormHtml = (
 </body>
 </html>
 `;
-};
-````
-
-## File: libs/common/src/lib/kysely.models.ts
-````typescript
-// tsco:ignore
-/* eslint-disable @typescript-eslint/no-explicit-any */
-//
-// ====================================================================
-// When adding a new table, you have to  :-
-// 1. Add a model and add it to the interface Models
-
-// ====================================================================
-import type {
-  ColumnType,
-  Insertable,
-  OperandValueExpressionOrList,
-  SelectExpression,
-  Selectable,
-  Updateable,
-} from 'kysely';
-import type { EmailStatus } from './emails';
-import type { z } from 'zod';
-import type { addressSchema } from './schema';
-
-export type Keys<T> = keyof T;
-type Json = ColumnType<JsonValue, string, string>;
-type JsonArray = JsonValue[];
-type JsonObject = { [K in string]?: JsonValue };
-type JsonPrimitive = boolean | number | string | null;
-type JsonValue = JsonArray | JsonObject | JsonPrimitive;
-type Timestamp = ColumnType<Date, Date | string, Date | string>;
-type Generated<T> =
-  T extends ColumnType<infer S, infer I, infer U> ? ColumnType<S, I | undefined, U> : ColumnType<T, T | undefined, T>;
-
-export interface Models {
-  authusers: AuthUsers;
-  campaigns: Campaigns;
-  households: Households;
-  map_campaigns_users: MapCampaignsUsers;
-  map_households_tags: MapHouseholdsTags;
-  map_peoples_tags: MapPeoplesTags;
-  map_roles_users: MapRolesUsers;
-  lists: Lists;
-  map_lists_persons: MapListsPersons;
-  map_lists_households: MapListsHouseholds;
-  teams: Teams;
-  map_teams_persons: MapTeamsPersons;
-  map_teams_lists: MapTeamsLists;
-  map_newsletters_lists: MapNewslettersLists;
-  map_web_forms_lists: MapWebFormsLists;
-  tasks: Tasks;
-  persons: Persons;
-  profiles: Profiles;
-  roles: Roles;
-  sessions: Sessions;
-  tags: Tags;
-  tenants: Tenants;
-  settings: Settings;
-  donations: Donations;
-  donation_periods: DonationPeriods;
-  donation_pledges: DonationPledges;
-  emails: Emails;
-  newsletters: Newsletters;
-  newsletter_events: NewsletterEvents;
-  person_newsletter_engagements: PersonNewsletterEngagements;
-  email_comments: EmailComments;
-  email_bodies: EmailBodies;
-  email_headers: EmailHeaders;
-  email_recipients: EmailRecipients;
-  email_attachments: EmailAttachments;
-  email_drafts: EmailDrafts;
-  email_trash: EmailTrash;
-  email_read_states: EmailReadStates;
-  task_comments: TaskComments;
-  task_subtasks: TaskSubtasks;
-  task_attachments: TaskAttachments;
-  user_activity: UserActivity;
-  ms_oauth_tokens: MsOauthTokens;
-  google_oauth_tokens: GoogleOauthTokens;
-  data_imports: DataImports;
-  companies: Companies;
-  files: Files;
-  notifications: Notifications;
-  volunteer_events: VolunteerEvents;
-  volunteer_shifts: VolunteerShifts;
-  events: Events;
-  event_ticket_types: EventTicketTypes;
-  event_registrations: EventRegistrations;
-  web_forms: WebForms;
-  form_submissions: FormSubmissions;
-  background_jobs: BackgroundJobs;
-  webhook_events: WebhookEvents;
-  data_exports: DataExports;
-  potential_duplicates: PotentialDuplicates;
-  workflows: Workflows;
-  workflow_steps: WorkflowSteps;
-  workflow_enrollments: WorkflowEnrollments;
-  person_connections: PersonConnections;
-  passkeys: Passkeys;
-  zapier_subscriptions: ZapierSubscriptions;
-}
-
-export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
-
-export type GetOperandType<
-  T extends Keys<TablesOperationMap>,
-  Op extends Keys<TablesOperationMap[T]>,
-  Key extends Keys<TablesOperationMap[T][Op]>,
-> = unknown extends TablesOperationMap[T][Op][Key]
-  ? never
-  : TablesOperationMap[T][Op][Key] extends never
-    ? never
-    : TablesOperationMap[T][Op][Key];
-
-export type OperationDataType<
-  T extends Keys<Models>,
-  Op extends 'select' | 'update' | 'insert',
-> = TablesOperationMap[T][Op];
-
-export type TypeId<T extends keyof Models> = string & { _table?: T };
-export type TypeTenantId<T extends keyof Models> = string & { _table?: T };
-
-type ExtractTableAlias<DB, TE> = TE extends `${string} as ${infer TA}`
-  ? TA extends keyof DB
-    ? TA
-    : never
-  : TE extends keyof DB
-    ? TE
-    : never;
-
-export type TypeColumn<T extends keyof Models, U> = OperandValueExpressionOrList<
-  Models,
-  ExtractTableAlias<Models, T>,
-  U
->;
-export type TypeTableColumns<T extends keyof Models> = T extends keyof Models
-  ? SelectExpression<Models, ExtractTableAlias<Models, T>>
-  : never;
-
-export type TablesOperationMap = {
-  [K in Keys<Models>]: {
-    select: Selectable<Models[K]>;
-    insert: Insertable<Models[K]> & { tenant_id: string };
-    update: Updateable<Models[K]>;
-  };
-};
-
-export type TypeColumnValue<TTable extends keyof Models, TColumn extends keyof Models[TTable]> = UnwrapSelect<
-  Models[TTable][TColumn]
->;
-
-/*
-type TableType = {
-  [K in Keys<Models>]: K;
-};
-*/
-
-// ====================================================================
-// The following are the type definitions for the database schema
-// Since I use a base controller to handle the CRUD operations, I don't
-// know the exact type of the table until runtime. So I use the following
-// type definitions to help me out.
-// ====================================================================
-interface RecordType {
-  id: Generated<string>;
-  tenant_id: string;
-  createdby_id: string;
-  updatedby_id: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-interface JunctionRecordType {
-  tenant_id: string;
-  createdby_id: string;
-  updatedby_id: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-export type AddressType = z.infer<typeof addressSchema>;
-
-interface AuthUsers extends RecordType {
-  email: string;
-  first_name: string;
-  last_name: string;
-  password: string;
-  password_reset_code: string | null;
-  // TODO: move to Sessions
-  password_reset_code_created_at: Timestamp | null;
-  role: string | null;
-  verified: boolean;
-  two_factor_enabled: boolean;
-  two_factor_code: string | null;
-  two_factor_expires_at: Timestamp | null;
-  two_factor_attempts: Generated<number>;
-  deletion_scheduled_at: Timestamp | null;
-  previous_email: string | null;
-  previous_role: string | null;
-  passkey_setup_dismissed_at: Timestamp | null;
-}
-
-interface Campaigns extends Omit<RecordType, 'createdby_id'> {
-  admin_id: string;
-  createdby_id: string;
-  description: string | null;
-  startdate: string | null;
-  enddate: string | null;
-  name: string;
-  notes: string | null;
-}
-
-export interface Households extends Omit<RecordType, 'createdby_id'>, AddressType {
-  campaign_id: string;
-  createdby_id: string;
-  file_id: string | null;
-  home_phone: string | null;
-  notes: string | null;
-  address_fp_street: string | null;
-  address_fp_full: string | null;
-  is_placeholder?: boolean;
-  district: string | null;
-  precinct: string | null;
-  ward: string | null;
-  geocoding_status: string | null;
-  /** URL slug, unique per tenant (spec §1). Generated app-side — see lib/slug.ts. */
-  slug: string | null;
-}
-
-interface MapCampaignsUsers extends Omit<JunctionRecordType, 'createdby_id' | 'updatedby_id'> {
-  campaign_id: string;
-  user_id: string;
-}
-
-interface MapHouseholdsTags extends JunctionRecordType {
-  household_id: string;
-  tag_id: string;
-}
-
-export interface MapPeoplesTags extends JunctionRecordType {
-  person_id: string;
-  tag_id: string;
-  deletable: Generated<boolean>;
-}
-
-interface MapRolesUsers extends JunctionRecordType {
-  role_id: string;
-  user_id: string;
-}
-
-interface Teams extends RecordType {
-  name: string;
-  description: string | null;
-  team_captain_id: string | null;
-  team_lead_user_id: string | null;
-}
-
-interface MapTeamsPersons extends JunctionRecordType {
-  team_id: string;
-  person_id: string;
-}
-
-interface MapTeamsLists extends JunctionRecordType {
-  team_id: string;
-  list_id: string;
-}
-
-export interface MapListsPersons extends JunctionRecordType {
-  list_id: string;
-  person_id: string;
-}
-
-interface MapListsHouseholds extends JunctionRecordType {
-  list_id: string;
-  household_id: string;
-}
-
-/**
- * Normalized newsletter list targeting (replaces the JSONB
- * newsletters.target_lists document as the source of truth). `mode` carries
- * the {include, exclude} split; list_id/newsletter_id cascade on delete.
- */
-export interface MapNewslettersLists extends JunctionRecordType {
-  newsletter_id: string;
-  list_id: string;
-  mode: Generated<'include' | 'exclude'>;
-}
-
-/**
- * Normalized web-form list targeting (replaces the JSONB
- * web_forms.target_lists document as the source of truth).
- */
-export interface MapWebFormsLists extends JunctionRecordType {
-  web_form_id: string;
-  list_id: string;
-}
-
-export interface Persons extends Omit<RecordType, 'createdby_id'> {
-  campaign_id: string;
-  household_id: string | null;
-  createdby_id: string;
-  first_name: string | null;
-  middle_names: string | null;
-  last_name: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  home_phone: string | null;
-  file_id: string | null;
-  company_id: string | null;
-  notes: string | null;
-  linkedin: string | null;
-  twitter: string | null;
-  facebook: string | null;
-  instagram: string | null;
-  assigned_to: string | null;
-  opt_in_status: string | null;
-  opt_in_confirmed_at: Timestamp | null;
-  preferred_contact: string | null;
-  /** URL slug, unique per tenant (spec §1: /people/amira-hassan). Generated app-side — see lib/slug.ts. */
-  slug: string | null;
-}
-
-interface Profiles extends RecordType, AddressType {
-  auth_id: string;
-  avatar_file_id: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  home_phone: string | null;
-  /** Typed contract: ProfilePreferencesObj ({ notifications: {...} }). */
-  preferences: Json | null;
-}
-
-interface Settings extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
-  key: string;
-  value: JsonValue;
-  createdby_id: string | null;
-  updatedby_id: string | null;
-}
-
-export interface Donations extends Omit<RecordType, 'createdby_id' | 'updatedby_id'> {
-  person_id: string | null;
-  amount: number;
-  status: Generated<string>;
-  stripe_session_id: string | null;
-  pledge_id: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  street: string | null;
-  apt: string | null;
-  city: string | null;
-  state: string | null;
-  zip: string | null;
-  country: string | null;
-}
-
-export interface DonationPeriods extends RecordType {
-  name: string;
-  start_date: ColumnType<Date, Date | string, Date | string>;
-  end_date: ColumnType<Date, Date | string, Date | string> | null;
-  limit_amount: number;
-  is_active: Generated<boolean>;
-}
-
-export interface DonationPledges extends RecordType {
-  person_id: string | null;
-  stripe_subscription_id: string | null;
-  stripe_customer_id: string | null;
-  monthly_amount: number;
-  status: Generated<string>;
-  started_at: Generated<Timestamp>;
-  cancelled_at: Timestamp | null;
-  next_billing_date: ColumnType<Date, Date | string, Date | string> | null;
-  first_name: string | null;
-  last_name: string | null;
-  email: string | null;
-  state: string | null;
-  country: string | null;
-}
-
-interface Roles extends RecordType {
-  name: string;
-  description: string | null;
-  permissions: Json | null;
-}
-
-interface Sessions extends Omit<RecordType, 'createdby_id' | 'updatedby_id' | 'updated_at'> {
-  session_id: Generated<string>;
-  user_id: string;
-  ip_address: string;
-  last_accessed: Generated<Timestamp>;
-  other_properties: Json | null;
-  refresh_token: Generated<string>;
-  status: string;
-  user_agent: string;
-  expires_at: Timestamp | null;
-  last_used_at: Timestamp | null;
-}
-
-export interface Lists extends RecordType {
-  name: string;
-  description: string | null;
-  object: 'people' | 'households';
-  is_dynamic: boolean;
-  definition: Json | null;
-  last_refreshed_at: Timestamp | null;
-  status: Generated<'idle' | 'refreshing' | 'failed'>;
-}
-
-export interface Tags extends RecordType {
-  name: string;
-  description: string | null;
-  color: string | null;
-  deletable: boolean;
-  type: Generated<'tag' | 'issue'>;
-}
-
-export interface Tasks extends RecordType {
-  name: string;
-  details?: string;
-  due_at: Timestamp | null;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived' | null;
-  priority: 'low' | 'medium' | 'high' | 'urgent' | null;
-  completed_at: Timestamp | null;
-  position: number | null;
-  assigned_to: string | null;
-  team_id: string | null;
-  file_id: string | null;
-}
-
-interface Tenants extends RecordType, AddressType {
-  name: string;
-  slug: string | null;
-  admin_id: string | null;
-  email: string | null;
-  email2: string | null;
-  mobile: string | null;
-  notes: string | null;
-  placeholder_household_id: string | null;
-  stripe_customer_id: string | null;
-  stripe_subscription_id: string | null;
-  subscription_plan: string | null;
-  subscription_status: string | null;
-  subscription_ends_at: Timestamp | null;
-  deletion_scheduled_at: Timestamp | null;
-  suspended_at: Timestamp | null;
-  paused_at: Timestamp | null;
-}
-
-interface Emails extends RecordType {
-  folder_id: string;
-  from_email: string | null;
-  /** Display-only cache of the To list; email_recipients is the source of truth (D-10). */
-  to_email: string | null;
-  subject: string | null;
-  preview: string | null;
-  assigned_to: string | null;
-  is_favourite: boolean;
-  deleted_at: Timestamp | null;
-  status: EmailStatus | null;
-}
-
-interface Newsletters extends RecordType {
-  name: string;
-  status: string;
-  subject: string | null;
-  preview_text: string | null;
-  audience_description: string | null;
-  target_lists: Json | null;
-  segments: Json | null;
-  total_recipients: Generated<number>;
-  delivered_count: Generated<number>;
-  bounce_count: Generated<number>;
-  open_rate: Generated<number>;
-  click_rate: Generated<number>;
-  unique_opens: Generated<number>;
-  unique_clicks: Generated<number>;
-  unsubscribe_count: Generated<number>;
-  spam_complaint_count: Generated<number>;
-  reply_count: Generated<number>;
-  send_date: Timestamp | null;
-  last_engagement_at: Timestamp | null;
-  summary: string | null;
-  html_content: string | null;
-  plain_text_content: string | null;
-  top_links: Json | null;
-  attachments: Json | null;
-}
-
-export interface NewsletterEvents {
-  id: Generated<string>;
-  tenant_id: string;
-  newsletter_id: string;
-  email: string;
-  event_type: string;
-  sg_event_id: string;
-  sg_message_id: string | null;
-  url: string | null;
-  ip: string | null;
-  user_agent: string | null;
-  timestamp: Timestamp;
-  created_at: Generated<Timestamp>;
-}
-
-export interface PersonNewsletterEngagements {
-  tenant_id: string;
-  newsletter_id: string;
-  email: string;
-  open_count: number;
-  click_count: number;
-  has_unsubscribed: boolean;
-  hard_bounced: boolean;
-  soft_bounced: boolean;
-  first_opened_at: Timestamp | null;
-  last_opened_at: Timestamp | null;
-  first_clicked_at: Timestamp | null;
-  last_clicked_at: Timestamp | null;
-  bounced_at: Timestamp | null;
-  unsubscribed_at: Timestamp | null;
-}
-
-interface WebForms extends RecordType {
-  name: string;
-  description: string | null;
-  redirect_url: string | null;
-  target_tags: Json | null;
-  target_lists: Json | null;
-  status: 'draft' | 'published' | 'archived';
-  fields: Json | null;
-  send_confirmation: boolean;
-  send_alert: boolean;
-  form_type: string;
-  type: string | null;
-  slug: string;
-  submit_label: string | null;
-  thanks_title: string | null;
-  thanks_body: string | null;
-  confirm_subject: string | null;
-  confirm_body: string | null;
-  notify_team_on: Generated<boolean>;
-  archived_at: Timestamp | null;
-}
-
-interface FormSubmissions {
-  id: Generated<string>;
-  tenant_id: string;
-  form_id: string;
-  person_id: string;
-  answers: Json;
-  created_at: Generated<Timestamp>;
-}
-
-interface EmailComments extends RecordType {
-  email_id: string;
-  author_id: string;
-  comment: string;
-}
-
-interface EmailBodies extends RecordType {
-  email_id: string;
-  body_html: string;
-}
-
-interface EmailHeaders extends RecordType {
-  email_id: string;
-  headers_json: Json | null;
-  raw_headers: string | null;
-  date_sent: Timestamp | null;
-}
-
-interface EmailRecipients extends RecordType {
-  email_id: string;
-  kind: 'to' | 'cc' | 'bcc';
-  name: string | null;
-  email: string;
-  pos: number;
-}
-
-interface EmailAttachments extends RecordType {
-  email_id: string;
-  filename: string;
-  content_type: string;
-  size_bytes: number;
-  cid: string | null;
-  is_inline: boolean;
-  pos: number;
-  file_id: string | null;
-}
-
-interface EmailDrafts extends RecordType {
-  user_id: string;
-  thread_id: string | null;
-  to_list: JsonValue | null;
-  cc_list: JsonValue | null;
-  bcc_list: JsonValue | null;
-  subject: string | null;
-  body_html: string | null;
-  body_delta: JsonValue | null;
-  meta: JsonValue | null;
-  is_locked: boolean;
-}
-
-interface EmailTrash extends RecordType {
-  email_id: string;
-  from_folder_id: string;
-  trashed_at: Timestamp;
-}
-
-export interface EmailReadStates {
-  tenant_id: string;
-  user_id: string;
-  email_id: string;
-  is_read: boolean;
-  created_at: Generated<Timestamp>;
-}
-
-interface UserActivity extends RecordType {
-  user_id: string;
-  activity: string;
-  entity: string;
-  entity_id: string | null;
-  quantity: number;
-  metadata: Json | null;
-}
-
-interface DataImports extends RecordType {
-  file_name: string;
-  source: string;
-  /**
-   * Tag name requested at import time; label of record once the tag is deleted
-   * (tag deletion nulls tag_id). While the tag exists, tags.name via tag_id is
-   * the source of truth (D-10).
-   */
-  tag_name: string | null;
-  tag_id: string | null;
-  row_count: number;
-  inserted_count: number;
-  error_count: number;
-  skipped_count: number;
-  households_created: number;
-  metadata: Json | null;
-  processed_at: Timestamp;
-  status: Generated<string>;
-  error_message: string | null;
-}
-
-export interface DataExports {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string;
-  entity: string;
-  file_name: string;
-  status: Generated<'pending' | 'processing' | 'completed' | 'failed'>;
-  row_count: number | null;
-  storage_key: string | null;
-  columns: ColumnType<string[] | null, string | null, string | null>;
-  error: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface BackgroundJobs {
-  id: Generated<string>;
-  tenant_id: string | null;
-  queue: Generated<string>;
-  status: Generated<string>;
-  payload: Json;
-  attempts: Generated<number>;
-  max_attempts: Generated<number>;
-  error: string | null;
-  run_at: Generated<Timestamp>;
-  locked_at: Timestamp | null;
-  locked_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface WebhookEvents {
-  id: Generated<string>;
-  tenant_id: string | null;
-  stripe_event_id: string;
-  type: string;
-  payload: Json;
-  status: Generated<string>;
-  attempts: Generated<number>;
-  max_attempts: Generated<number>;
-  error: string | null;
-  run_at: Generated<Timestamp>;
-  locked_at: Timestamp | null;
-  locked_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-  processed_at: Timestamp | null;
-}
-
-export interface PotentialDuplicates {
-  id: Generated<string>;
-  tenant_id: string;
-  group_key: string;
-  person_id: string | null;
-  household_id?: string | null;
-  company_id?: string | null;
-  reason: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-interface MsOauthTokens {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string | null;
-  access_token: string;
-  refresh_token: string;
-  expires_at: Timestamp;
-  ms_email: string | null;
-  delta_link: string | null;
-  synced_at: Timestamp | null;
-  last_sync_error: string | null;
-  last_sync_error_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface GoogleOauthTokens {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string | null;
-  access_token: string;
-  refresh_token: string;
-  expires_at: Timestamp;
-  google_email: string | null;
-  delta_link: string | null;
-  synced_at: Timestamp | null;
-  last_sync_error: string | null;
-  last_sync_error_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface TaskComments extends RecordType {
-  task_id: string;
-  author_id: string;
-  comment: string;
-}
-
-export interface TaskSubtasks extends RecordType {
-  task_id: string;
-  name: string;
-  status: 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | null;
-  position: number | null;
-}
-
-export interface TaskAttachments extends RecordType {
-  task_id: string;
-  filename: string;
-  content_type: string | null;
-  size_bytes: number | null;
-  url: string | null;
-}
-
-export interface Companies extends RecordType {
-  name: string;
-  description: string | null;
-  website: string | null;
-  email: string | null;
-  phone: string | null;
-  industry: string | null;
-  notes: string | null;
-  /** Typed contract: CompanyEnrichmentObj (Google Places enrichment payload). */
-  enrichment: Json | null;
-  file_id: string | null;
-  /** URL slug, unique per tenant (spec §1). Generated app-side — see lib/slug.ts. */
-  slug: string | null;
-}
-
-export interface Files {
-  id: Generated<string>;
-  tenant_id: string;
-  filename: string;
-  mime_type: string | null;
-  size_bytes: number | null;
-  storage_key: string;
-  sha256_hex: string | null;
-  uploaded_by: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface Notifications {
-  id: Generated<string>;
-  tenant_id: string;
-  user_id: string;
-  title: string;
-  message: string;
-  type: string;
-  read: boolean;
-  link: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface VolunteerEvents extends RecordType {
-  name: string;
-  description: string | null;
-  location_address: string | null;
-  start_time: Timestamp;
-  end_time: Timestamp;
-  capacity: number | null;
-  contact_email: string | null;
-  contact_phone: string | null;
-  is_private: boolean;
-  send_reminder: boolean;
-  slug: string;
-  send_signup_confirmation: boolean;
-  send_volunteer_alert: boolean;
-  fields: Generated<string[]>;
-}
-
-export interface VolunteerShifts extends RecordType {
-  event_id: string;
-  person_id: string;
-  status: 'signed_up' | 'attended' | 'no_show' | 'cancelled';
-  hours_worked: number | null;
-  notes: string | null;
-}
-
-export interface Events extends RecordType {
-  name: string;
-  description: string | null;
-  location_address: string | null;
-  start_time: Timestamp;
-  end_time: Timestamp;
-  capacity: number | null;
-  contact_email: string | null;
-  contact_phone: string | null;
-  slug: string;
-  is_published: Generated<boolean>;
-  send_reminder: Generated<boolean>;
-  send_registration_confirmation: Generated<boolean>;
-  fields: Generated<string[]>;
-}
-
-export interface EventTicketTypes extends RecordType {
-  event_id: string;
-  name: string;
-  description: string | null;
-  price_cents: Generated<number>;
-  capacity: number | null;
-  sort_order: Generated<number>;
-}
-
-export interface EventRegistrations extends RecordType {
-  event_id: string;
-  person_id: string;
-  ticket_type_id: string | null;
-  status: Generated<'registered' | 'attended' | 'no_show' | 'cancelled'>;
-  checked_in_at: Timestamp | null;
-  notes: string | null;
-}
-
-export interface Workflows extends RecordType {
-  name: string;
-  description: string | null;
-  trigger_type: string;
-  status: string;
-  trigger_event_id: string | null;
-}
-
-export interface WorkflowSteps {
-  id: Generated<string>;
-  tenant_id: string;
-  workflow_id: string;
-  step_number: number;
-  delay_days: number;
-  delay_unit: 'days' | 'hours';
-  subject: string;
-  preview_text: string | null;
-  html_content: string | null;
-  plain_text_content: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface WorkflowEnrollments {
-  id: Generated<string>;
-  tenant_id: string;
-  workflow_id: string;
-  person_id: string;
-  status: string;
-  current_step_number: number;
-  next_run_at: Timestamp | null;
-  enrolled_at: Generated<Timestamp>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export type RelationType =
-  | 'referred_by'
-  | 'referred_to'
-  | 'close_friend'
-  | 'family_member'
-  | 'spouse'
-  | 'colleague'
-  | 'org_affiliation'
-  | 'introduced_by'
-  | 'introduced_to'
-  | 'custom';
-
-export interface PersonConnections extends RecordType {
-  from_person_id: string;
-  to_person_id: string;
-  relation_type: RelationType;
-  custom_label: string | null;
-  is_mutual: Generated<boolean>;
-  notes: string | null;
-}
-
-interface Passkeys {
-  id: Generated<string>;
-  user_id: string;
-  tenant_id: string;
-  credential_id: string;
-  public_key: string;
-  counter: Generated<number>;
-  device_type: string;
-  backed_up: Generated<boolean>;
-  transports: string[] | null;
-  aaguid: string | null;
-  friendly_name: string | null;
-  created_at: Generated<Timestamp>;
-}
-
-interface ZapierSubscriptions {
-  id: Generated<string>;
-  tenant_id: string;
-  event_type: string;
-  webhook_url: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-type UnwrapSelect<T> = T extends ColumnType<infer S, any, any> ? S : T;
-
-type SelectShape<T> = { [K in keyof T]: UnwrapSelect<T[K]> };
-
-export type HouseholdCol = keyof Models['households'];
-export type PersonsdCol = keyof Models['persons'];
-
-export type HouseholdWithExtras = SelectShape<Models['households']> & {
-  persons_count: number;
-  tags: string[] | null;
 };
 ````
