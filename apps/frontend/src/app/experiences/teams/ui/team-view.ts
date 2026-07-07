@@ -87,7 +87,7 @@ export class TeamViewComponent {
   });
 
   protected readonly activeTasksCount = computed(() => {
-    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'canceled').length;
+    return this.teamTasks().filter((t) => t.status !== 'done' && t.status !== 'archived').length;
   });
 
   constructor() {
@@ -197,9 +197,9 @@ export class TeamViewComponent {
         return 'success';
       case 'in_progress':
         return 'info';
-      case 'blocked':
+      case 'waiting':
         return 'error';
-      case 'canceled':
+      case 'archived':
         return 'neutral';
       default:
         return 'ghost';

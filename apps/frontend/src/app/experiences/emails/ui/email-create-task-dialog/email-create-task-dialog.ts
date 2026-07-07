@@ -4,7 +4,12 @@ import { Icon } from '@icons/icon';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 
-import { AddTaskObj } from '../../../../../../../../libs/common/src';
+import {
+  AddTaskObj,
+  TASK_BOARD_STATUSES,
+  TASK_STATUS_LABELS,
+  TaskBoardStatus,
+} from '../../../../../../../../libs/common/src';
 import type { IAuthUser } from '../../../../../../../../libs/common/src/lib/auth';
 import type { EmailType } from '../../../../../../../../libs/common/src/lib/models';
 import { UserService } from '../../../../services/user.service';
@@ -34,12 +39,13 @@ export class EmailCreateTaskDialog {
   protected readonly isLoading = this._loading.visible;
 
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
 
   protected readonly payload = signal({
     name: '',
     details: '',
-    status: 'todo' as 'todo' | 'in_progress' | 'blocked' | 'done' | 'canceled' | 'archived',
+    status: 'todo' as TaskBoardStatus,
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
     due_at: '',
     assigned_to: '',
@@ -69,7 +75,15 @@ export class EmailCreateTaskDialog {
       `<p><a href="${url}">View email thread: ${subject}</a></p>` +
       `<p>From: ${fromPart}<br>Date: ${datePart}<br>Subject: ${subject}</p>`;
 
-    this.payload.set({ name: '', details, status: 'todo', priority: 'medium', due_at: '', assigned_to: '', team_id: '' });
+    this.payload.set({
+      name: '',
+      details,
+      status: 'todo',
+      priority: 'medium',
+      due_at: '',
+      assigned_to: '',
+      team_id: '',
+    });
     this.error.set(null);
 
     if (!this.users().length || !this.teamsList().length) {
