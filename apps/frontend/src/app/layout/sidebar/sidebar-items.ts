@@ -2,6 +2,8 @@ import type { PcIconNameType } from '@icons/icons.index';
 
 export interface ISidebarItem {
   adminOnly?: boolean;
+  /** Live numeric badge (e.g. Tasks' SLA-breach count). Populated at runtime — never static data. */
+  badgeCount?: number | null;
   children?: ISidebarItem[];
   collapsed?: boolean;
   favourite?: boolean;
@@ -61,11 +63,12 @@ export const SidebarItems: ISidebarItem[] = [
         route: '/tasks',
         icon: 'task',
         shortcut: 'k',
-        // TODO(badge): show SLA-breach count (spec §4). Needs a tenant-scoped
-        // `tasks.countSlaBreaches` query; no such endpoint yet.
+        // badgeCount is populated at runtime by Sidebar from `tasks.countSlaBreaches`
+        // (spec §4) — see sidebar.ts. Static data here is intentionally left unset.
       },
-      // Hidden: the board lives behind the Tasks page (swap button is Wave 1B),
-      // but the `g b` chord, the pin button and the help overlay keep working.
+      // Hidden: the board is reachable from the Tasks page via the header swap button
+      // (List <-> Board, both at /tasks and /tasks/board) — this entry only keeps the
+      // `g b` chord, the pin button and the help overlay working.
       {
         name: `Task board`,
         route: '/board',
