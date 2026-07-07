@@ -93,9 +93,9 @@ export class ListsRepo extends BaseRepository<'lists'> {
         'lists.updated_at',
         'lists.last_refreshed_at',
         // The stored rule definition — the frontend renders it as the human
-        // "DEFINITION" sentence. Selectable alongside the aggregate because
-        // lists.id (the PK) is in GROUP BY, so all lists.* are functionally
-        // dependent and need no explicit grouping.
+        // "DEFINITION" sentence. Must be in GROUP BY below (Postgres does not
+        // infer functional dependency from lists.id here), or the aggregate
+        // query fails with "column lists.definition must appear in the GROUP BY".
         'lists.definition',
         sql<number>`COUNT(DISTINCT map_lists_persons.person_id)`.as('people_count'),
         sql<number>`COUNT(DISTINCT map_lists_households.household_id)`.as('household_count'),
@@ -133,6 +133,7 @@ export class ListsRepo extends BaseRepository<'lists'> {
         'lists.is_dynamic',
         'lists.updated_at',
         'lists.last_refreshed_at',
+        'lists.definition',
         'authusers.first_name',
         'authusers.last_name',
       ])
