@@ -1,10 +1,12 @@
-import { Location } from '@angular/common';
-import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { DatePipe, Location } from '@angular/common';
+import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
-import { Loader } from '@googlemaps/js-api-loader';
 import type { IAuthUser } from '@common';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { Icon } from '@icons/icon';
+import { PcMap } from '@uxcommon/components/map/map';
+import type { PcMapMarker } from '@uxcommon/components/map/map-types';
+import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { UserService } from '../../../services/user.service';
@@ -41,6 +43,9 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     DetailItem,
     SystemMetadata,
     Tags,
+    PcMap,
+    GeocodeChip,
+    DatePipe,
   ],
   templateUrl: './household-view.html',
 })
@@ -56,7 +61,6 @@ export class HouseholdView {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
-  private readonly loader = inject(Loader);
   private readonly dialogSvc = inject(ConfirmDialogService);
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
@@ -98,8 +102,24 @@ export class HouseholdView {
     return !!(h && h.lat && h.lng && !h.is_placeholder);
   });
 
-  private mapInitialized = false;
-  private readonly mapContainer = viewChild<ElementRef>('mapContainer');
+  /** One static, deep-linkable marker for the household's verified location (§6 map card). */
+  protected readonly mapMarkers = computed<PcMapMarker[]>(() => {
+    const h = this.household();
+    if (!h || !h.lat || !h.lng || h.is_placeholder) return [];
+    return [{ position: { lat: Number(h.lat), lng: Number(h.lng) }, tooltip: this.addressString() }];
+  });
+
+  /** Header subtitle — "Ward 5 · 3 people · last touch" (§6). Parts drop out honestly when absent. */
+  protected readonly subtitle = computed(() => {
+    const h = this.household();
+    if (!h || h.is_placeholder) return null;
+    const parts: string[] = [];
+    if (h.ward) parts.push(`Ward ${h.ward}`);
+    const n = this.peopleCount();
+    parts.push(`${n} ${n === 1 ? 'person' : 'people'}`);
+    if (h.updated_at) parts.push(`last touch ${this.formatLastTouch(h.updated_at)}`);
+    return parts.join(' · ');
+  });
 
   // Active tab state
   protected activeTab = signal<string>('activity');
@@ -114,15 +134,6 @@ export class HouseholdView {
     effect(() => {
       const currentId = this.id();
       void untracked(() => this.loadAllData(currentId));
-    });
-
-    effect(() => {
-      const elRef = this.mapContainer();
-      if (elRef) {
-        void this.initMap(elRef.nativeElement);
-      } else {
-        this.mapInitialized = false;
-      }
     });
 
     // Load users for addedby/updatedby display names
@@ -229,33 +240,16 @@ export class HouseholdView {
     }
   }
 
-  private async initMap(mapEl: HTMLElement) {
-    const h = this.household();
-    if (!h || !h.lat || !h.lng || h.is_placeholder || this.mapInitialized) return;
-
-    try {
-      await this.loader.importLibrary('maps');
-      const { AdvancedMarkerElement } = (await this.loader.importLibrary('marker')) as any;
-      const center = { lat: Number(h.lat), lng: Number(h.lng) };
-      const map = new google.maps.Map(mapEl, {
-        center,
-        zoom: 15,
-        disableDefaultUI: false,
-        zoomControl: true,
-        streetViewControl: false,
-        mapTypeControl: false,
-        mapId: 'DEMO_MAP_ID',
-      });
-
-      new AdvancedMarkerElement({
-        position: center,
-        map,
-        title: this.addressString(),
-      });
-      this.mapInitialized = true;
-    } catch (err) {
-      console.error('Failed to load Google Map:', err);
-    }
+  /** Compact relative "last touch" — matches the house tabular, low-chrome style. */
+  private formatLastTouch(value: Date | string): string {
+    const then = new Date(value).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffDays = Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 0) return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 30) return `${diffDays}d ago`;
+    if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`;
+    return `${Math.floor(diffDays / 365)}y ago`;
   }
 
   protected copyToClipboard(text: string | null | undefined, label: string) {
