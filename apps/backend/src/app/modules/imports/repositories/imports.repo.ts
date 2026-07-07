@@ -9,6 +9,7 @@ export type DataImportWithStats = {
   tenant_id: string;
   file_name: string;
   source: string;
+  /** Live tags.name when the tag still exists, else the import-time snapshot (D-10). */
   tag_name: string | null;
   tag_id: string | null;
   row_count: number;
@@ -98,6 +99,16 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
 
     const nameExpr = sql<string | null>`NULLIF(TRIM(CONCAT_WS(' ', creator.first_name, creator.last_name)), '')`;
 
+    // tags.name via tag_id is the source of truth while the tag exists; the
+    // stored tag_name is the import-time snapshot kept for deleted tags (D-10).
+    const tagNameExpr = sql<string | null>`COALESCE(
+      (SELECT tags.name
+       FROM tags
+       WHERE tags.tenant_id = ${input.tenant_id}
+         AND tags.id = data_imports.tag_id),
+      data_imports.tag_name
+    )`;
+
     const query = this.getSelect(trx)
       .where('data_imports.tenant_id', '=', input.tenant_id)
       .leftJoin('authusers as creator', 'creator.id', 'data_imports.createdby_id')
@@ -106,7 +117,7 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
         'data_imports.tenant_id',
         'data_imports.file_name',
         'data_imports.source',
-        'data_imports.tag_name',
+        tagNameExpr.as('tag_name'),
         'data_imports.tag_id',
         'data_imports.row_count',
         'data_imports.inserted_count',

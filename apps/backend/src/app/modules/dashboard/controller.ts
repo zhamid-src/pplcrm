@@ -85,27 +85,29 @@ export class DashboardController {
         .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
     );
 
-    // 4. Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
-    const sentEmails = await this.db
-      .selectFrom('emails')
-      .select(['to_email', 'created_at'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '3')
-      .orderBy('created_at', 'asc')
+    // 4. Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
+    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
+    const sentRecipients = await this.db
+      .selectFrom('email_recipients')
+      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
+      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
+      .where('email_recipients.tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('email_recipients.kind', '=', 'to')
+      .where('emails.folder_id', '=', '3')
+      .orderBy('emails.created_at', 'asc')
       .execute();
 
     const sentMap = new Map<string, number[]>();
-    for (const sent of sentEmails) {
-      if (!sent.to_email) continue;
-      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
-      for (const e of emails) {
-        let list = sentMap.get(e);
-        if (!list) {
-          list = [];
-          sentMap.set(e, list);
-        }
-        list.push(new Date(sent.created_at).getTime());
+    for (const sent of sentRecipients) {
+      const e = String(sent.email).toLowerCase().trim();
+      if (!e) continue;
+      let list = sentMap.get(e);
+      if (!list) {
+        list = [];
+        sentMap.set(e, list);
       }
+      list.push(new Date(sent.created_at).getTime());
     }
 
     // Initialize user stats map
@@ -512,27 +514,29 @@ export class DashboardController {
         .map((c: any) => [c.email_id, new Date(c.earliest_comment_at).getTime()]),
     );
 
-    // Fetch all sent emails for the tenant to match outbound replies in memory (folder_id '3' is Sent)
-    const sentEmails = await this.db
-      .selectFrom('emails')
-      .select(['to_email', 'created_at'])
-      .where('tenant_id', '=', tenant_id)
-      .where('folder_id', '=', '3')
-      .orderBy('created_at', 'asc')
+    // Fetch sent-email recipients for the tenant to match outbound replies in memory (folder_id '3' is Sent).
+    // email_recipients is the source of truth; emails.to_email is a display-only cache (D-10).
+    const sentRecipients = await this.db
+      .selectFrom('email_recipients')
+      .innerJoin('emails', 'emails.id', 'email_recipients.email_id')
+      .select(['email_recipients.email as email', 'emails.created_at as created_at'])
+      .where('email_recipients.tenant_id', '=', tenant_id)
+      .where('emails.tenant_id', '=', tenant_id)
+      .where('email_recipients.kind', '=', 'to')
+      .where('emails.folder_id', '=', '3')
+      .orderBy('emails.created_at', 'asc')
       .execute();
 
     const sentMap = new Map<string, number[]>();
-    for (const sent of sentEmails) {
-      if (!sent.to_email) continue;
-      const emails = sent.to_email.toLowerCase().match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
-      for (const e of emails) {
-        let list = sentMap.get(e);
-        if (!list) {
-          list = [];
-          sentMap.set(e, list);
-        }
-        list.push(new Date(sent.created_at).getTime());
+    for (const sent of sentRecipients) {
+      const e = String(sent.email).toLowerCase().trim();
+      if (!e) continue;
+      let list = sentMap.get(e);
+      if (!list) {
+        list = [];
+        sentMap.set(e, list);
       }
+      list.push(new Date(sent.created_at).getTime());
     }
 
     const breachedEmailsList: Array<{
