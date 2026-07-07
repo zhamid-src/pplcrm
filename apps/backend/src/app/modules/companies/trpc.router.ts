@@ -13,6 +13,11 @@ const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.
 export const CompaniesRouter = router({
   ...crud,
 
+  // Tenant-scoped slug resolution for /companies/:slug URLs (spec §1).
+  getBySlug: authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
+
   import: authProcedure
     .input(
       z.object({

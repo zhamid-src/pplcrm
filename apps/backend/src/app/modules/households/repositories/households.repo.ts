@@ -456,6 +456,25 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .execute();
   }
 
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
   /** Distinct geocoded wards — powers the Households grain sentence ("{n} households across {m} wards"). */
   public async countDistinctWards(tenant_id: string): Promise<number> {
     const result = await this.getSelect()

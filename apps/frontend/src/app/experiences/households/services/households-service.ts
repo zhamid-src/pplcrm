@@ -33,6 +33,11 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.countDistinctWards.query();
   }
 
+  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.households.getBySlug.query(slug);
+  }
+
   public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
     return this.api.households.detachTag.mutate({ id: id, tag_name, type });
   }

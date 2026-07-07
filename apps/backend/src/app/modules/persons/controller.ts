@@ -4,9 +4,12 @@ import type {
   IAuthKeyPayload,
   getAllOptionsType,
 } from '../../../../../../libs/common/src';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import type { QueryParams } from '../../lib/base.repo';
+import { uniqueSlug } from '../../lib/slug';
 import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
 import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
@@ -21,6 +24,22 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
 
   constructor() {
     super(new PersonsRepo());
+  }
+
+  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  public override async update(input: { tenant_id: string; id: string; row: OperationDataType<'persons', 'update'> }) {
+    const row = input.row as Record<string, unknown>;
+    if ('first_name' in row || 'last_name' in row) {
+      const original = (await this.getRepo().getOneById({ id: input.id, tenant_id: input.tenant_id })) as
+        | Record<string, unknown>
+        | undefined;
+      const first = ('first_name' in row ? row['first_name'] : original?.['first_name']) ?? '';
+      const last = ('last_name' in row ? row['last_name'] : original?.['last_name']) ?? '';
+      row['slug'] = await uniqueSlug(slugifyRecordName(`${String(first)} ${String(last)}`, 'person'), (candidate) =>
+        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+      );
+    }
+    return super.update(input);
   }
 
   public getAllWithAddress(
@@ -57,6 +76,10 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
 
   public countWithCompany(auth: IAuthKeyPayload) {
     return this.getRepo().countWithCompany({ tenant_id: auth.tenant_id });
+  }
+
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
   }
 
   public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {

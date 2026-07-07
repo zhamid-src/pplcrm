@@ -1,3 +1,4 @@
+import { Location } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -44,6 +45,7 @@ export class CompanyView {
   private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly userService = inject(UserService);
   private readonly dialogs = inject(ConfirmDialogService);
 
@@ -111,6 +113,11 @@ export class CompanyView {
       // 1. Load company details (triggers Google enrichment job on backend)
       const data = await this.companiesSvc.getById(id);
       this.company.set(data);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof data?.slug === 'string' && data.slug.length > 0) {
+        this.location.replaceState(`/companies/${data.slug}`);
+      }
 
       // 2. Load employee count via dedicated count endpoint (no row data fetched)
       const count = await this.personsSvc.countByCompanyId(id);

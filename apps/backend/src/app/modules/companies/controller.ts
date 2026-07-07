@@ -1,7 +1,10 @@
 import { BaseController } from '../../lib/base.controller';
 import { CompaniesRepo } from './repositories/companies.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
 import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
@@ -10,6 +13,32 @@ import { logger } from '../../logger';
 export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
   constructor() {
     super(new CompaniesRepo());
+  }
+
+  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
+  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
+    const rowObj = row as Record<string, unknown>;
+    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
+      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
+      );
+    }
+    return super.add(row, trx);
+  }
+
+  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'companies', 'update'>;
+  }) {
+    const row = input.row as Record<string, unknown>;
+    if ('name' in row) {
+      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+      );
+    }
+    return super.update(input);
   }
 
   public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
@@ -67,6 +96,10 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
 
   public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
     return this.getAllWithCounts(auth.tenant_id, options);
+  }
+
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
   }
 
   private readonly importsRepo = new ImportsRepo();
@@ -246,6 +279,13 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
           updated_at: new Date(),
         } as any,
       });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill company slugs after import');
     }
 
     return {

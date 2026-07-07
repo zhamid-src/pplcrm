@@ -217,6 +217,8 @@ export interface Households extends Omit<RecordType, 'createdby_id'>, AddressTyp
   precinct: string | null;
   ward: string | null;
   geocoding_status: string | null;
+  /** URL slug, unique per tenant (spec §1). Generated app-side — see lib/slug.ts. */
+  slug: string | null;
 }
 
 interface MapCampaignsUsers extends Omit<JunctionRecordType, 'createdby_id' | 'updatedby_id'> {
@@ -309,6 +311,8 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   opt_in_status: string | null;
   opt_in_confirmed_at: Timestamp | null;
   preferred_contact: string | null;
+  /** URL slug, unique per tenant (spec §1: /people/amira-hassan). Generated app-side — see lib/slug.ts. */
+  slug: string | null;
 }
 
 interface Profiles extends RecordType, AddressType {
@@ -761,6 +765,8 @@ export interface Companies extends RecordType {
   /** Typed contract: CompanyEnrichmentObj (Google Places enrichment payload). */
   enrichment: Json | null;
   file_id: string | null;
+  /** URL slug, unique per tenant (spec §1). Generated app-side — see lib/slug.ts. */
+  slug: string | null;
 }
 
 export interface Files {
