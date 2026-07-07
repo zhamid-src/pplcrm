@@ -1,4 +1,4 @@
-import './env';
+import { env } from './env';
 
 import { migrateToLatest } from './app/kyselyinit';
 import { WebhookEventWorker } from './app/lib/jobs/webhook-worker';
@@ -11,7 +11,12 @@ const worker = new BackgroundJobWorker();
 const webhookWorker = new WebhookEventWorker();
 
 void (async () => {
-  await migrateToLatest();
+  // S-2: in production, migrations are a separate deploy step run as the owner
+  // role (MIGRATE_ON_BOOT=false) — the serve process connects as the
+  // least-privilege app role and must not attempt DDL. In dev this defaults on.
+  if (env.migrateOnBoot) {
+    await migrateToLatest();
+  }
   worker.start();
   webhookWorker.start();
 })();

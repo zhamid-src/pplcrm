@@ -8,6 +8,21 @@ const envSchema = z.object({
   DB_PASSWORD: z.string().min(1, 'DB_PASSWORD is required'),
   DB_PORT: z.coerce.number().default(5432),
   DB_HOST: z.string().default('localhost'),
+  // S-2 (schema review 2026-07-06): least-privilege role split. DB_USER is the
+  // runtime role (CRUD only, not an object owner, cannot bypass RLS). Migrations
+  // need DDL and object ownership, so they connect as DB_MIGRATION_USER (the
+  // owner role). When these are unset they fall back to DB_USER/DB_PASSWORD, so
+  // a single-role setup keeps working unchanged.
+  DB_MIGRATION_USER: z.string().optional(),
+  DB_MIGRATION_PASSWORD: z.string().optional(),
+  // Whether the serve process runs pending migrations at boot. Convenient in dev
+  // (default true); set to false in production, where migrations are a separate
+  // deploy step run as the owner role and the runtime role has no DDL rights.
+  MIGRATE_ON_BOOT: z
+    .string()
+    .optional()
+    .default('true')
+    .transform((val) => val !== 'false'),
   DB_SSL: z
     .string()
     .optional()
@@ -92,6 +107,17 @@ export const env = {
     host: parsedEnv.DB_HOST,
     ssl: parsedEnv.DB_SSL,
   },
+  // Same target database, but connecting as the owner role for DDL/migrations.
+  // Falls back to the runtime credentials when the migration role is unset.
+  migrationDb: {
+    user: parsedEnv.DB_MIGRATION_USER ?? parsedEnv.DB_USER,
+    database: parsedEnv.DB_NAME,
+    password: parsedEnv.DB_MIGRATION_PASSWORD ?? parsedEnv.DB_PASSWORD,
+    port: parsedEnv.DB_PORT,
+    host: parsedEnv.DB_HOST,
+    ssl: parsedEnv.DB_SSL,
+  },
+  migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
   apiUrl: parsedEnv.API_URL,
   appUrl: parsedEnv.APP_URL,
   publicFormsBaseDomain: parsedEnv.PUBLIC_FORMS_BASE_DOMAIN,

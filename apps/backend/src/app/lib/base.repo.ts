@@ -2,7 +2,6 @@
 
 import type { INow, QueryBuilderGroupNode } from '../../../../../libs/common/src';
 
-import { promises as fs } from 'fs';
 import type {
   DeleteQueryBuilder,
   DeleteResult,
@@ -20,8 +19,7 @@ import type {
   UpdateQueryBuilder,
   UpdateResult,
 } from 'kysely';
-import { FileMigrationProvider, Kysely, Migrator, PostgresDialect, sql } from 'kysely';
-import path from 'path';
+import { Kysely, PostgresDialect, sql } from 'kysely';
 
 import type {
   Models,
@@ -52,22 +50,12 @@ type ColName<TB extends keyof Models> = keyof Models[TB] & string;
 
 export class BaseRepository<T extends keyof Models> {
   private static _db = new Kysely<Models>({ dialect });
-  private static _migrationFolder = path.resolve(process.cwd(), 'apps/backend/src/app/_migrations');
 
   public static get dbInstance(): Kysely<Models> {
     return BaseRepository._db;
   }
 
   protected readonly table: T;
-
-  public static migrator = new Migrator({
-    db: BaseRepository._db,
-    provider: new FileMigrationProvider({
-      fs,
-      path,
-      migrationFolder: BaseRepository._migrationFolder,
-    }),
-  });
 
   constructor(tableIn: T) {
     this.table = tableIn;
