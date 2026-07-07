@@ -31,6 +31,7 @@ const KNOWN_APP_ROUTES = new Set([
   '/events/pages',
   '/donation-pages',
   '/tasks',
+  '/tasks/board',
   '/board',
   '/files',
   '/imports',

@@ -3,7 +3,7 @@ import { Component, CUSTOM_ELEMENTS_SCHEMA, effect, inject, input, signal, untra
 import { FormsModule } from '@angular/forms';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { Router, RouterModule } from '@angular/router';
-import { IAuthUser } from '../../../../../../../libs/common/src';
+import { IAuthUser, TASK_BOARD_STATUSES, TASK_STATUS_LABELS, isTaskStatus } from '../../../../../../../libs/common/src';
 import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { TeamsService } from '../../teams/services/teams-service';
 import { QuillModule } from 'ngx-quill';
@@ -96,7 +96,8 @@ export class TaskView {
 
   // Priority classes and options for display/inputs
   protected readonly priorities = ['low', 'medium', 'high', 'urgent'];
-  protected readonly statuses = ['todo', 'in_progress', 'blocked', 'done', 'canceled'];
+  protected readonly statuses = TASK_BOARD_STATUSES;
+  protected readonly statusLabels = TASK_STATUS_LABELS;
 
   constructor() {
     effect(() => {
@@ -423,22 +424,28 @@ export class TaskView {
     return parsed.toISOString().slice(0, 10);
   }
 
+  protected statusLabel(status: string): string {
+    return isTaskStatus(status) ? TASK_STATUS_LABELS[status] : this.toTitleCase(status);
+  }
+
   // Styling helper classes
   protected getStatusBadgeClass(status: string): string {
-    const s = String(status || '').toLowerCase();
-    switch (s) {
+    if (!isTaskStatus(status)) return 'badge-ghost'; // unrecognized/corrupt data — neutral, not a crash
+    switch (status) {
       case 'done':
         return 'badge-success text-success-content';
       case 'in_progress':
         return 'badge-info text-info-content';
-      case 'blocked':
+      case 'waiting':
         return 'badge-error text-error-content';
-      case 'canceled':
-        return 'badge-neutral text-neutral-content';
       case 'archived':
-        return 'badge-warning text-warning-content';
-      default:
+        return 'badge-neutral text-neutral-content';
+      case 'todo':
         return 'badge-ghost';
+      default: {
+        const _exhaustive: never = status;
+        return _exhaustive;
+      }
     }
   }
 

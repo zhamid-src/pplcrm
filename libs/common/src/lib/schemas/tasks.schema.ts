@@ -1,12 +1,55 @@
 import { z } from 'zod';
 import { nameSchema, notesSchema, idSchema } from './core.schema';
 
+/**
+ * Canonical task status vocabulary (spec §4). This is the single source of truth —
+ * every layer (DB check constraint, Zod schemas, backend queries, frontend board/list)
+ * derives from this list. Do not hand-roll a parallel status array anywhere.
+ *
+ * `waiting` replaces the old `blocked` name (board column is "Waiting", with an
+ * optional waiting-reason line on the card/row). `archived` absorbs the old `canceled`
+ * state — a canceled task is, in practice, a task nobody is coming back to, which is
+ * exactly what "archived" already means in this app (hidden from the active views,
+ * reachable via the grid's Archived toggle). See the 2026-07-07 migration that
+ * normalizes existing rows to this vocabulary.
+ */
+export const TASK_STATUSES = ['todo', 'in_progress', 'waiting', 'done', 'archived'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+/** The four board columns (spec §4) — `archived` sits outside the active workflow. */
+export const TASK_BOARD_STATUSES = ['todo', 'in_progress', 'waiting', 'done'] as const;
+export type TaskBoardStatus = (typeof TASK_BOARD_STATUSES)[number];
+
+/** Statuses that count as "open" for SLA-breach and count-sentence purposes. */
+export const TASK_OPEN_STATUSES = ['todo', 'in_progress', 'waiting'] as const;
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: 'To do',
+  in_progress: 'In progress',
+  waiting: 'Waiting',
+  done: 'Done',
+  archived: 'Archived',
+};
+
+/** Type guard — narrows an unknown/loosely-typed status string to the canonical vocabulary. */
+export function isTaskStatus(value: unknown): value is TaskStatus {
+  return typeof value === 'string' && (TASK_STATUSES as readonly string[]).includes(value);
+}
+
+/** Type guard for the four board columns specifically (excludes `archived`). */
+export function isTaskBoardStatus(value: unknown): value is TaskBoardStatus {
+  return typeof value === 'string' && (TASK_BOARD_STATUSES as readonly string[]).includes(value);
+}
+
+const taskStatusEnum = z.enum(TASK_STATUSES);
+const taskPriorityEnum = z.enum(['low', 'medium', 'high', 'urgent']);
+
 export const AddTaskObj = z.object({
   name: nameSchema('Task name', 200),
   details: z.string().trim().max(10000, 'Details too long').optional(),
   due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).default('todo').optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  status: taskStatusEnum.default('todo').optional(),
+  priority: taskPriorityEnum.optional(),
   completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
   position: z.number().int().optional(),
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),
@@ -18,8 +61,8 @@ export const TasksObj = z.object({
   name: z.string(),
   details: z.string().optional(),
   due_at: z.coerce.date().optional(),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).nullable().optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).nullable().optional(),
+  status: taskStatusEnum.nullable().optional(),
+  priority: taskPriorityEnum.nullable().optional(),
   completed_at: z.coerce.date().optional(),
   position: z.number().int().optional(),
   assigned_to: z.string().nullable().optional(),
@@ -30,8 +73,8 @@ export const UpdateTaskObj = z.object({
   name: nameSchema('Task name', 200).optional(),
   details: notesSchema,
   due_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
-  status: z.enum(['todo', 'in_progress', 'blocked', 'done', 'canceled', 'archived']).optional(),
-  priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
+  status: taskStatusEnum.optional(),
+  priority: taskPriorityEnum.optional(),
   completed_at: z.preprocess((val) => (val === '' || val === null ? undefined : val), z.coerce.date().optional()),
   position: z.number().int().optional(),
   assigned_to: idSchema.or(z.literal('')).nullable().optional(),

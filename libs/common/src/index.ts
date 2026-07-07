@@ -85,6 +85,12 @@ export {
   AddListObj,
   AddMarketingEmailObj,
   AddTaskObj,
+  TASK_STATUSES,
+  TASK_BOARD_STATUSES,
+  TASK_OPEN_STATUSES,
+  TASK_STATUS_LABELS,
+  isTaskStatus,
+  isTaskBoardStatus,
   AddTeamObj,
   InviteAuthUserObj,
   Verify2FAObj,
@@ -170,6 +176,7 @@ export {
 } from './lib/schema';
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
+export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
 
 export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
 export { calculateWorkingTimeMs } from './lib/sla';
