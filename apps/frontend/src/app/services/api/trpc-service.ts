@@ -87,12 +87,13 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
           next: (value) => observer.next(value),
           error: (err) => {
             const meta = op.context as { skipErrorHandler?: boolean } | undefined;
+            const path = op.path ?? '';
+            const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
             let finalErr: any = err;
+            let code: string | undefined;
 
             if (err instanceof TRPCClientError) {
-              const code = err.data?.code as string | undefined;
-              const path = op.path ?? '';
-              const isSignIn = path === 'auth.signIn' || path.endsWith('.signIn') || path === 'signIn';
+              code = err.data?.code as string | undefined;
 
               let msg = err.message;
               if (isSignIn && (code === 'BAD_REQUEST' || code === 'UNAUTHORIZED' || code === 'NOT_FOUND')) {
@@ -108,9 +109,16 @@ function errorLink(errorSvc: ErrorService): TRPCLink<TRPCRouter> {
             }
 
             // Aborted requests (component teardown, superseded loads) are not
-            // user-facing failures — never toast them.
-            if (!meta?.skipErrorHandler && !isAbortError(err)) {
-              errorSvc.handle(finalErr);
+            // user-facing failures — never toast or redirect them.
+            if (!isAbortError(err)) {
+              if (code === 'UNAUTHORIZED' && !isSignIn) {
+                // A dead session must sign the user out even when the caller passed skipErrorHandler:
+                // that flag suppresses the error toast, not the sign-out. redirectToSignIn() no-ops on
+                // public pages and de-dupes, so probes and public routes stay put.
+                errorSvc.redirectToSignIn();
+              } else if (!meta?.skipErrorHandler) {
+                errorSvc.handle(finalErr);
+              }
             }
 
             observer.error(finalErr);

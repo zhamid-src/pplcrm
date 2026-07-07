@@ -130,6 +130,7 @@ These rules are strict and enforced by ESLint. Violations must be fixed, not sup
 - **tRPC First:** Expose all internal client-server endpoints via tRPC routers to maintain end-to-end type safety.
 - **Fastify REST:** Only use standard Fastify REST routes for external webhooks, file binary downloads/uploads, or when REST is explicitly required.
 - **Error Handling:** Throw standard `TRPCError` instances (e.g., `BAD_REQUEST`, `NOT_FOUND`). Never leak DB errors or stack traces to the client.
+- **`UNAUTHORIZED` means "not signed in", never "not allowed":** The client force-signs-the-user-out on any `UNAUTHORIZED` (401), even on `skipErrorHandler` calls. Use it **only** for authentication/session failures (missing/invalid/expired token or session, bad credentials). Every role/permission/ownership denial is `FORBIDDEN` (403) — throwing `UNAUTHORIZED` there logs the user out instead of saying "you don't have permission". See `pplcrm-trpc-backend`.
 
 ### Type-Safe Database Access (Kysely)
 
