@@ -33,8 +33,11 @@ input block in `datagrid.ts` for the full list before adding a new input; the fl
 probably exists. `provideDataGridConfig` merges per-grid copy (delete/export dialog text,
 failure messages) and `pageSize` over `DEFAULT_DATA_GRID_CONFIG` (`datagrid.tokens.ts`).
 
-Simple grid: `teams-grid.ts`. Full-featured grid (CSV import, tag options, custom delete
-confirm, loading gate): `persons-grid.ts`.
+Simple grid: `teams-grid.ts`. Full-featured grid (tag options, custom delete confirm, loading
+gate): `persons-grid.ts`. Its `(importCSV)` handler now just navigates to the CSV import wizard
+(`/imports/new`, spec §17) instead of opening a modal — for the in-grid modal importer pattern
+(`pc-csv-importer` from `libs/uxcommon/components/csv-import`), see `companies-grid.ts`,
+`households-grid.ts`, or `tasks-grid.ts`, which still use it (only people import got the wizard).
 
 Two Wave-0 additions: `totalSentence` (string input, e.g. "5,012 people total") replaces the
 header's default "{n} total" wording and composes with the filtered count ("43 match your
