@@ -5,10 +5,23 @@ import { provideRouter } from '@angular/router';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CompaniesGrid } from './companies-grid';
 import { CompaniesService } from '../services/companies-service';
+import { PersonsService } from '../../persons/services/persons-service';
+import { HouseholdsService } from '../../households/services/households-service';
+
+// pc-grain-tabs (rendered inside every grid) injects all three grain services and
+// calls count() on each; the grid's count-sentence also calls countWithCompany
+// (persons) / countDistinctWards (households). Stub every grain count method so the
+// two services the grid under test doesn't already mock never reach real tRPC.
+const grainCountStub = {
+  count: () => Promise.resolve(0),
+  countWithCompany: () => Promise.resolve(0),
+  countDistinctWards: () => Promise.resolve(0),
+};
 
 class MockCompaniesService {
   import = vi.fn();
   getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
+  count = vi.fn().mockResolvedValue(0);
   abort = vi.fn();
   refreshCount = signal(0);
   triggerRefresh = vi.fn();
@@ -24,7 +37,12 @@ describe('CompaniesGrid', () => {
 
     await TestBed.configureTestingModule({
       imports: [CompaniesGrid],
-      providers: [provideRouter([]), { provide: CompaniesService, useValue: mockCompaniesSvc }],
+      providers: [
+        provideRouter([]),
+        { provide: CompaniesService, useValue: mockCompaniesSvc },
+        { provide: PersonsService, useValue: grainCountStub },
+        { provide: HouseholdsService, useValue: grainCountStub },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(CompaniesGrid);
