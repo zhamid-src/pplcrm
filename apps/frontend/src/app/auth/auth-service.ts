@@ -9,8 +9,20 @@ import { startAuthentication, startRegistration } from '@simplewebauthn/browser'
 export class AuthService extends TRPCService<'authusers'> {
   private user = signal<IAuthUser | null>(null);
 
-  public async getCurrentUser() {
-    const user = (await this.api.auth.currentUser.query().catch(() => null)) as IAuthUser;
+  public async getCurrentUser(opts?: { silent?: boolean }) {
+    // The startup probe (init) passes silent: it swallows failures into `null` and lets the route
+    // guards decide who gets in. A guest's UNAUTHORIZED here is a normal answer, not a toast-worthy
+    // error — without this, every cold load of a public page (e.g. a password-reset link) flashes an
+    // "unauthorized" toast.
+    const request = opts?.silent
+      ? (
+          this.api.auth.currentUser.query as unknown as (
+            input: undefined,
+            o: { context: { skipErrorHandler: boolean } },
+          ) => Promise<IAuthUser>
+        )(undefined, { context: { skipErrorHandler: true } })
+      : this.api.auth.currentUser.query();
+    const user = (await request.catch(() => null)) as IAuthUser;
     if (user) this.user.set(user);
     return user;
   }
@@ -27,7 +39,7 @@ export class AuthService extends TRPCService<'authusers'> {
     // Cold load: the in-memory access token is gone. Re-mint one from the HttpOnly refresh cookie
     // before asking who the user is, so a page reload doesn't look like a sign-out (SECURITY-REVIEW 2.1).
     await silentRefresh(this.tokenService);
-    return this.getCurrentUser();
+    return this.getCurrentUser({ silent: true });
   }
 
   public async uploadAvatar(file: File): Promise<{ avatar_url: string }> {

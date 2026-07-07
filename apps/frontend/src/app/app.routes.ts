@@ -22,7 +22,7 @@ export const appRoutes = [
     loadComponent: () => import('./auth/reset-password-page/reset-password-page').then((m) => m.ResetPasswordPage),
   },
   {
-    path: 'newpassword',
+    path: 'new-password',
     loadComponent: () => import('./auth/new-password-page/new-password-page').then((m) => m.NewPasswordPage),
   },
   {

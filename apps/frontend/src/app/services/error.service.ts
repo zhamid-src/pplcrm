@@ -7,6 +7,7 @@ import { ApiError } from './api/api-error';
 import { getUserErrorMessage } from './api/user-message';
 
 import { TokenService } from './api/token-service';
+import { isCurrentRoutePublic } from '../routing/public-routes';
 
 @Service()
 export class ErrorService {
@@ -53,6 +54,10 @@ export class ErrorService {
   }
 
   private redirect(): boolean {
+    // Guests belong on public pages (reset links, public forms, subscription confirmation). A stray
+    // 401/UNAUTHORIZED there must not bounce them to /signin — let the caller surface the error.
+    if (isCurrentRoutePublic(this.router.url)) return false;
+
     const now = Date.now();
     if (now - this.lastRedirect < 3000) return false;
     this.lastRedirect = now;
@@ -64,10 +69,7 @@ export class ErrorService {
   }
 
   private redirectFromCode(code?: string): boolean {
-    if (code === 'UNAUTHORIZED' && !this.router.url.startsWith('/signin') && !this.router.url.startsWith('/signup')) {
-      this.redirect();
-      return true;
-    }
+    if (code === 'UNAUTHORIZED') return this.redirect();
     return false;
   }
 
