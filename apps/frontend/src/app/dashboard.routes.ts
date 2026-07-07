@@ -102,8 +102,8 @@ export const dashboardRoutes: Routes = [
     children: [
       {
         path: '',
-        loadComponent: () => import('./experiences/tags/ui/tags-grid').then((m) => m.TagsGridComponent),
-        data: { shouldReuse: true, key: 'tagsgridroot' },
+        loadComponent: () => import('./experiences/tags/ui/tags-admin').then((m) => m.TagsAdmin),
+        data: { shouldReuse: true, key: 'tagsadminroot' },
       },
       {
         path: 'add',
@@ -117,8 +117,8 @@ export const dashboardRoutes: Routes = [
     children: [
       {
         path: '',
-        loadComponent: () => import('./experiences/tags/ui/issues-grid').then((m) => m.IssuesGridComponent),
-        data: { shouldReuse: true, key: 'issuesgridroot' },
+        loadComponent: () => import('./experiences/tags/ui/issues-admin').then((m) => m.IssuesAdmin),
+        data: { shouldReuse: true, key: 'issuesadminroot' },
       },
       {
         path: 'add',
