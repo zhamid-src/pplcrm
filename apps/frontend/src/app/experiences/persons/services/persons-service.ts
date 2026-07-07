@@ -35,9 +35,9 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
     return this.api.persons.countWithCompany.query();
   }
 
-  /** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
-  public getBySlug(slug: string) {
-    return this.api.persons.getBySlug.query(slug);
+  /** Resolve a person by opaque public_id for /people/:slug URLs (spec §1). */
+  public getByPublicId(publicId: string) {
+    return this.api.persons.getByPublicId.query(publicId);
   }
   public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
     const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;

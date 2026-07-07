@@ -4,12 +4,12 @@ import type {
   IAuthKeyPayload,
   getAllOptionsType,
 } from '../../../../../../libs/common/src';
-import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { buildPersonSlug, normalizeCrockford, PUBLIC_ID_LENGTH } from '../../../../../../libs/common/src';
 import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { TRPCError } from '@trpc/server';
 import { BaseController } from '../../lib/base.controller';
 import type { QueryParams } from '../../lib/base.repo';
-import { uniqueSlug } from '../../lib/slug';
+import { generatePersonPublicId } from '../../lib/person-public-id';
 import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
 import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
 import { PersonsRepo } from './repositories/persons.repo';
@@ -26,7 +26,11 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     super(new PersonsRepo());
   }
 
-  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  /**
+   * Rename regenerates the display slug from the person's existing public_id
+   * (spec §1). The public_id NEVER changes, so old URLs keep resolving; only the
+   * decorative name prefix tracks the current name.
+   */
   public override async update(input: { tenant_id: string; id: string; row: OperationDataType<'persons', 'update'> }) {
     const row = input.row as Record<string, unknown>;
     if ('first_name' in row || 'last_name' in row) {
@@ -35,9 +39,12 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
         | undefined;
       const first = ('first_name' in row ? row['first_name'] : original?.['first_name']) ?? '';
       const last = ('last_name' in row ? row['last_name'] : original?.['last_name']) ?? '';
-      row['slug'] = await uniqueSlug(slugifyRecordName(`${String(first)} ${String(last)}`, 'person'), (candidate) =>
-        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
-      );
+      const existing = original?.['public_id'];
+      // Post-migration every person has a public_id; mint one only for the
+      // (effectively impossible) legacy row that somehow lacks it.
+      const publicId = typeof existing === 'string' && existing.length > 0 ? existing : generatePersonPublicId();
+      if (publicId !== existing) row['public_id'] = publicId;
+      row['slug'] = buildPersonSlug(String(first), String(last), publicId);
     }
     return super.update(input);
   }
@@ -78,8 +85,16 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     return this.getRepo().countWithCompany({ tenant_id: auth.tenant_id });
   }
 
-  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
+  /**
+   * Resolve a person by opaque public_id (spec §1). Accepts any raw segment
+   * form — the caller may pass a full display slug, a hyphen-split id, or a bare
+   * id — normalizes to canonical Crockford, and looks it up tenant-scoped.
+   * Returns undefined for a malformed segment or an unknown id.
+   */
+  public getByPublicId(publicId: string, auth: IAuthKeyPayload) {
+    const normalized = normalizeCrockford(publicId);
+    if (normalized.length !== PUBLIC_ID_LENGTH) return Promise.resolve(undefined);
+    return this.getRepo().getByPublicId({ tenant_id: auth.tenant_id, public_id: normalized });
   }
 
   public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {

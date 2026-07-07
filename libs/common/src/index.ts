@@ -179,6 +179,14 @@ export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.sc
 export type { TaskStatus, TaskBoardStatus } from './lib/schemas/tasks.schema';
 
 export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
+export {
+  CROCKFORD_ALPHABET,
+  PUBLIC_ID_LENGTH,
+  encodeCrockford,
+  normalizeCrockford,
+  extractPublicIdFromSlug,
+  buildPersonSlug,
+} from './lib/public-id';
 export { calculateWorkingTimeMs } from './lib/sla';
 
 export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';
