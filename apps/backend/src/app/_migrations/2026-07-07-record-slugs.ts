@@ -30,6 +30,12 @@ export async function up(db: Kysely<any>): Promise<void> {
   for (const { table, fallback, source } of TABLES) {
     await sql`ALTER TABLE ${sql.table(table)} ADD COLUMN IF NOT EXISTS slug text`.execute(db);
 
+    // persons/households/companies run with FORCE ROW LEVEL SECURITY (S-1 tenant
+    // backstop), which also applies to the table owner. A migration connection
+    // sets no tenant GUC, so the UPDATE backfills below would be rejected
+    // (42501) on a from-scratch bootstrap. Lift RLS for just this backfill.
+    await sql`ALTER TABLE ${sql.table(table)} NO FORCE ROW LEVEL SECURITY`.execute(db);
+
     // Backfill: slugify the source, guard all-digit results, dedupe per tenant
     // with -2, -3… suffixes (deterministic by id).
     await sql`
@@ -70,6 +76,10 @@ export async function up(db: Kysely<any>): Promise<void> {
       ) d
       WHERE t.id = d.id AND d.rn > 1
     `.execute(db);
+
+    // Restore the tenant backstop before the unique index (DDL, unaffected by
+    // RLS, but leaving the table permanently unprotected would be a real gap).
+    await sql`ALTER TABLE ${sql.table(table)} FORCE ROW LEVEL SECURITY`.execute(db);
 
     // Same shape as events_tenant_slug_unique. Partial (slug IS NOT NULL) so a
     // not-yet-backfilled bulk row can exist mid-import without tripping it.
