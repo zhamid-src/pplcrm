@@ -78,7 +78,7 @@
       </pc-profile-card>
 
       <!-- Public Signup Link Card -->
-      @if (event().public_url) {
+      @if (publicUrl()) {
       <pc-card title="Public Signup Link" icon="globe-americas">
         <button pc-card-actions class="btn btn-xs btn-outline btn-primary" (click)="copySnippet()">
           <pc-icon name="document-duplicate" [size]="3"></pc-icon> Copy

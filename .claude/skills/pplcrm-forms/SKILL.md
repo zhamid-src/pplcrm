@@ -1,6 +1,6 @@
 ---
 name: pplcrm-forms
-description: "How the North Star 'living funnel' Forms experience works end-to-end — the web_forms lifecycle (draft/published/archived), the FormField model + normForm() email-identity invariant + creation templates, the two-mode forms-page (browse + live edit), form_submissions, the cross-tenant public /f/:slug page, and why donation forms stay on a separate path. USE WHEN editing anything under experiences/forms, the web-forms backend module, web_forms/form_submissions schema, the public form page, or reconciling forms with donations. EXAMPLES: 'add a field type to forms', 'why is the email field locked', 'the public /f/:slug page 404s', 'do donation forms show in the Forms page'."
+description: "How the North Star 'living funnel' Forms experience works end-to-end — the web_forms lifecycle (draft/published/archived), the FormField model + normForm() email-identity invariant + creation templates, the two-mode forms-page (browse + live edit), form_submissions, the tenant-subdomain public /f/:slug page, and why donation forms stay on a separate path (/d/:slug). USE WHEN editing anything under experiences/forms, the web-forms backend module, web_forms/form_submissions schema, the public form page, or reconciling forms with donations. EXAMPLES: 'add a field type to forms', 'why is the email field locked', 'the public /f/:slug page 404s', 'do donation forms show in the Forms page'."
 ---
 
 # PeopleCRM Forms (living-funnel model)
@@ -39,11 +39,13 @@ grid + form-editor model is gone; `forms-grid.ts` and `form-editor.ts` were dele
   `syncTargetLists` and the submit path reads it). The JSONB `web_forms.target_lists` column is
   legacy dual-write only, slated to drop. `target_tags` stays JSONB deliberately: it holds tag
   _names_ with get-or-create-at-submit semantics, not ids. `repositories/web-forms.repo.ts`
-  (`listForms`/`getFormSubmissions`/`countSubmissions`/`slugExists`/`getBySlugAnyTenant`),
+  (`listForms`/`getFormSubmissions`/`countSubmissions`/`slugExists`/`getBySlugPublic`),
   `trpc.router.ts` (`list`/`getForEdit`/`create`/`updateLive`/`publish`/`unpublish`/`archive`/
-  `restore`/`deleteDraft`/`submissions`), `routes/web-forms-public.route.ts` (public REST:
-  `GET /f/:slug` JSON config, `GET /view/:formId` + `POST /submit/:formId` server-rendered/submit,
-  all under the `/api/forms` prefix).
+  `restore`/`deleteDraft`/`submissions`), `routes/web-forms-public.route.ts` (public REST, all under
+  the `/api/forms` prefix and ALL tenant-scoped by slug via `lib/public-tenant.ts`:
+  `GET /f/:slug` JSON config for the SPA page, `GET /d/:slug` server-rendered donation page,
+  `POST /submit/:slug` for both. There are **no UUID-keyed public routes** — `/view/:formId` and
+  `/submit/:formId` were removed in the tenant-subdomain URL convergence, July 2026).
 - **Frontend** — `apps/frontend/src/app/experiences/forms/ui/`: `forms-page.ts/html` (the two-mode
   browse + live-edit shell), `form-render.ts` (read-only preview card, reused in the pane),
   `public-form.ts` (the unauthenticated `/f/:slug` page, registered in `app.routes.ts` — NOT the
@@ -60,20 +62,28 @@ grid + form-editor model is gone; `forms-grid.ts` and `form-editor.ts` were dele
   `add`/`update` path, the Stripe checkout in `submitFormPublic`, and the `/donation-pages`
   (fundraising) UI. `listForms` **filters donation types out**; `form_submissions` is **not** written
   for them. `type` (the template chip) is NULL for donation forms. Don't merge the two type sets.
+  Every form (donation included) now has a NOT NULL per-tenant-unique `slug` (legacy `addForm`
+  generates one via `uniqueSlug`; NULLs were backfilled by `2026-07-29-b-web-forms-slug-backfill`).
+  Donation forms render only on the server-rendered `GET /api/forms/d/:slug` page (it has the amount
+  field + Stripe); `getPublicFormBySlug` deliberately 404s them so they never render on the /f/ SPA
+  page without an amount field.
 - **`status` mapping.** The legacy add/update path accepts `active` and maps it to `published`
   (`mapLegacyStatus`), because the fundraising UI still sends `active`. The DB CHECK only allows
   `draft|published|archived`; the column default is `draft`.
-- **Public `/f/:slug` resolves the tenant from the subdomain, then scopes the form lookup.** Form slug
+- **Every public route resolves the tenant from the subdomain, then scopes the lookup.** Form slug
   is unique **per tenant**; the tenant is identified by the Host (`<tenantSlug>.<baseDomain>`, base from
-  `env.publicFormsBaseDomain` / `environment.publicFormsBaseDomain`, default `localhost` in dev). The
-  route reads `?t=<tenantSlug>` (the SPA passes its own subdomain — robust across hosts) or falls back
-  to `tenantSlugFromHost(req.hostname)`, resolves it via `getTenantIdBySlug` (the `tenants` table is
-  tenant-safety allow-listed), then calls the **tenant-scoped** `getBySlugPublic(tenantId, slug)`. There
-  is no cross-tenant form query — do not reintroduce one. Tenant slugs are DNS-safe, globally unique,
-  generated at signup (`createTenant` → `generateTenantSlug`, `@common/slugifyHandle` +
-  `RESERVED_SUBDOMAINS`), exposed to the SPA via `currentUser.tenant_slug`, and used to build the
-  public URL in `forms-page` (`https://<tenantSlug>.<baseDomain>/f/<formSlug>`). Ships behind wildcard
-  DNS + cert; in dev, `<slug>.localhost` works in Chrome.
+  `env.publicBaseDomain` / `environment.publicBaseDomain`, default `localhost` in dev). Routes read
+  `?t=<tenantSlug>` (the SPA passes its own subdomain — robust across hosts) or fall back to the Host,
+  via the shared **`apps/backend/src/app/lib/public-tenant.ts`** (`resolveTenantFromRequest`,
+  `tenantSlugFromHost`, `publicOrgName`; the `tenants` table is tenant-safety allow-listed), then call
+  the **tenant-scoped** `getBySlugPublic(tenantId, slug)`. There is no cross-tenant form query — do not
+  reintroduce one. Tenant slugs are DNS-safe, globally unique, generated at signup (`createTenant` →
+  `generateTenantSlug`, `@common/slugifyHandle` + `RESERVED_SUBDOMAINS`), exposed to the SPA via
+  `currentUser.tenant_slug`, and used to build public URLs via the shared frontend helper
+  `apps/frontend/src/app/shared/public-pages.ts` (`publicPageUrl` → `https://<tenantSlug>.<base>/f/<formSlug>`;
+  event pages use `/e/<slug>`, volunteer pages `/volunteer` + `/v/<slug>` — same model, see the
+  events/volunteer-events modules). Ships behind wildcard DNS + cert; in dev, `<slug>.localhost` works
+  in Chrome.
 - **`full_name` split.** New forms collect one `full_name`; `submitFormPublic` splits it on the last
   space into first/last so the person record still gets a name. The person model has no full_name.
 - **Live edit has no Save.** `forms-page` debounces `forms.updateLive`; every control mutates

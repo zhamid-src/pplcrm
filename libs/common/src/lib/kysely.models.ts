@@ -524,7 +524,7 @@ interface WebForms extends RecordType {
   send_alert: boolean;
   form_type: string;
   type: string | null;
-  slug: string | null;
+  slug: string;
   submit_label: string | null;
   thanks_title: string | null;
   thanks_body: string | null;

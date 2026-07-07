@@ -321,6 +321,7 @@ describe('EventsController', () => {
       const ip = `10.0.0.${rand().slice(-2)}`;
 
       const result = await controller.rsvpPublic(
+        tenantId,
         event.slug,
         { email: `rsvp-${rand()}@example.com`, first_name: 'Rae', last_name: 'Svp' },
         ip,
@@ -349,7 +350,9 @@ describe('EventsController', () => {
       await controller.addEvent(eventPayload({ is_published: false }), auth);
       const ip = `10.0.1.${rand().slice(-2)}`;
 
-      await expect(controller.rsvpPublic('non-existent-slug', { email: 'x@example.com' }, ip)).rejects.toMatchObject({
+      await expect(
+        controller.rsvpPublic(tenantId, 'non-existent-slug', { email: 'x@example.com' }, ip),
+      ).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
     });
@@ -358,14 +361,21 @@ describe('EventsController', () => {
       const event = await controller.addEvent(eventPayload({ is_published: true }), auth);
       const ip = `10.0.2.${rand().slice(-2)}`;
 
-      await expect(controller.rsvpPublic(event.slug, {}, ip)).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      await expect(controller.rsvpPublic(tenantId, event.slug, {}, ip)).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
     });
 
     it('silently succeeds when the honeypot field is filled', async () => {
       const event = await controller.addEvent(eventPayload({ is_published: true }), auth);
       const ip = `10.0.3.${rand().slice(-2)}`;
 
-      const result = await controller.rsvpPublic(event.slug, { email: 'bot@example.com', _hp: 'i-am-a-bot' }, ip);
+      const result = await controller.rsvpPublic(
+        tenantId,
+        event.slug,
+        { email: 'bot@example.com', _hp: 'i-am-a-bot' },
+        ip,
+      );
       expect(result).toEqual({ success: true });
 
       const personRow = await db
@@ -382,8 +392,10 @@ describe('EventsController', () => {
       const ip = `10.0.4.${rand().slice(-2)}`;
       const email = `dup-${rand()}@example.com`;
 
-      await controller.rsvpPublic(event.slug, { email, first_name: 'Dup' }, ip);
-      await expect(controller.rsvpPublic(event.slug, { email, first_name: 'Dup' }, ip + '-b')).rejects.toMatchObject({
+      await controller.rsvpPublic(tenantId, event.slug, { email, first_name: 'Dup' }, ip);
+      await expect(
+        controller.rsvpPublic(tenantId, event.slug, { email, first_name: 'Dup' }, ip + '-b'),
+      ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
       });
     });
@@ -393,15 +405,39 @@ describe('EventsController', () => {
       const ip = `10.0.5.${rand()}`;
 
       for (let i = 0; i < 5; i++) {
-        await controller.rsvpPublic(event.slug, { email: `limit-${i}-${rand()}@example.com` }, ip).catch(() => {
-          /* capacity/other errors are fine, we only care about the 6th call */
-        });
+        await controller
+          .rsvpPublic(tenantId, event.slug, { email: `limit-${i}-${rand()}@example.com` }, ip)
+          .catch(() => {
+            /* capacity/other errors are fine, we only care about the 6th call */
+          });
       }
 
       await expect(
-        controller.rsvpPublic(event.slug, { email: `limit-final-${rand()}@example.com` }, ip),
+        controller.rsvpPublic(tenantId, event.slug, { email: `limit-final-${rand()}@example.com` }, ip),
       ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
     });
+  });
+
+  it('resolves the same event slug per tenant (no cross-tenant misrouting)', async () => {
+    const seedB = await createTestSeed(db);
+    const authB: IAuthKeyPayload = {
+      tenant_id: seedB.tenantId,
+      user_id: seedB.userId,
+      name: 'Tenant B User',
+      session_id: 'session-b',
+    };
+    try {
+      const a = await controller.addEvent(eventPayload({ slug: 'summer-bbq', is_published: true }), auth);
+      const b = await controller.addEvent(eventPayload({ slug: 'summer-bbq', is_published: true }), authB);
+
+      const ra = await controller.getEventBySlug(tenantId, 'summer-bbq');
+      const rb = await controller.getEventBySlug(seedB.tenantId, 'summer-bbq');
+      expect(String(ra?.id)).toBe(String(a.id));
+      expect(String(rb?.id)).toBe(String(b.id));
+      expect(String(ra?.id)).not.toBe(String(rb?.id));
+    } finally {
+      await cleanTenant(db, seedB.tenantId);
+    }
   });
 
   it('propagates unexpected non-TRPC errors from addEvent', async () => {

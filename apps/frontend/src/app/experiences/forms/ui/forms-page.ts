@@ -22,6 +22,7 @@ import { FormDetail, FormSubmissionRow, FormsService } from '../services/forms-s
 import { FormRenderComponent } from './form-render';
 import { SettingsService } from '@experiences/settings/services/settings-service';
 import { environment } from '../../../../environments/environment';
+import { publicPageUrl } from '../../../shared/public-pages';
 
 interface TemplateOption {
   type: FormType;
@@ -95,13 +96,7 @@ export class FormsPageComponent implements OnInit {
   protected readonly publicUrl = computed(() => {
     const form = this.selected();
     if (!form?.slug) return '';
-    const tenantSlug = this.auth.getUser()?.tenant_slug;
-    const base = environment.publicFormsBaseDomain;
-    if (tenantSlug && base) {
-      return `https://${tenantSlug}.${base}/f/${form.slug}`;
-    }
-    // Dev fallback when no tenant subdomain is configured — current origin.
-    return `${this.appOrigin()}/f/${form.slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `f/${form.slug}`);
   });
 
   private readonly saveDebounced = debounce(() => void this.flushPatch(), 400);
@@ -452,7 +447,8 @@ export class FormsPageComponent implements OnInit {
   private rawHtmlSnippet(): string {
     const form = this.selected();
     if (!form) return '';
-    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.id}`;
+    const tenantSlug = this.auth.getUser()?.tenant_slug ?? '';
+    const action = `${environment.apiUrl.replace(/\/$/, '')}/api/forms/submit/${form.slug}?t=${encodeURIComponent(tenantSlug)}`;
     const lines: string[] = [`<form action="${action}" method="POST">`];
     for (const field of form.fields.filter((f) => f.on)) {
       const req = field.required ? ' required' : '';
@@ -545,11 +541,6 @@ export class FormsPageComponent implements OnInit {
 
   private replaceForm(updated: FormDetail): void {
     this.forms.update((list) => list.map((f) => (f.id === updated.id ? { ...f, ...updated } : f)));
-  }
-
-  private appOrigin(): string {
-    if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin;
-    return environment.apiUrl.replace(/\/$/, '');
   }
 
   private templateLabel(type: FormType): string {

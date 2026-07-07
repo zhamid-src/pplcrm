@@ -14,7 +14,8 @@ import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs'
 import { DetailRow } from '@uxcommon/components/detail-row/detail-row';
 import { Card as PcCard } from '@uxcommon/components/card/card';
 import { createLoadingGate } from '@uxcommon/loading-gate';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { EventsFrontendService } from '../services/events-frontend-service';
 import { EventsService } from '../../../services/api/events-service';
 import { PersonsService } from '../../persons/services/persons-service';
@@ -46,6 +47,7 @@ export class EventViewComponent {
   protected readonly recordNav = injectRecordNavigation('event', this.id);
 
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
   private readonly eventsSvc = inject(EventsService);
   private readonly personsSvc = inject(PersonsService);
@@ -98,7 +100,7 @@ export class EventViewComponent {
   protected readonly publicUrl = computed(() => {
     const slug = this.event()?.slug;
     if (!slug) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `e/${slug}`);
   });
 
   protected readonly remainingCapacity = computed(() => {

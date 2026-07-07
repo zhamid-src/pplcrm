@@ -63,7 +63,11 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
             title: 'Open [Events](/events/pages) and click +',
             detail: 'Set the what, when, and where, and publish the event page.',
           },
-          { title: 'Share the page', detail: 'Registrations flow straight into the CRM as people sign up.' },
+          {
+            title: 'Share the page',
+            detail:
+              'Every event gets a public link on your organization’s own web address — copy it from the event’s **Public link** panel. Registrations flow straight into the CRM as people sign up.',
+          },
           {
             title: 'Review turnout',
             detail: 'Registrations and attendance appear on the event — and on each person’s **Events** tab.',
@@ -73,7 +77,7 @@ export const ENGAGEMENT_ARTICLES: HelpArticle[] = [
       { kind: 'h2', id: 'shifts', text: 'Volunteer shifts' },
       {
         kind: 'p',
-        text: 'Create shifts under [Shifts](/events/shifts) with a time and a place. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
+        text: 'Create shifts under [Shifts](/events/shifts) with a time and a place. Each shift has its own public signup link, and your organization also gets a public **Volunteer events** page listing every upcoming public shift — the link is on the shift’s edit page. As volunteers sign up and serve, their hours accumulate on their profile’s **Volunteer** tab — which makes recognizing your most dedicated people easy.',
       },
       {
         kind: 'callout',

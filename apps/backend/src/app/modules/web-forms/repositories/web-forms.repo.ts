@@ -10,27 +10,13 @@ export class WebFormsRepo extends BaseRepository<'web_forms'> {
     super('web_forms');
   }
 
-  public async getByIdPublic(id: string, trx?: Transaction<Models>) {
-    return this.getSelect(trx).selectAll().where('id', '=', id).executeTakeFirst();
-  }
-
-  /** Public lookup by slug within a known tenant. */
+  /** Public lookup by slug within a known tenant (resolved from the subdomain — lib/public-tenant). */
   public async getBySlugPublic(tenantId: string, slug: string, trx?: Transaction<Models>) {
     return this.getSelect(trx)
       .selectAll()
       .where('tenant_id', '=', tenantId)
       .where('slug', '=', slug)
       .executeTakeFirst();
-  }
-
-  /**
-   * Resolve a tenant id from its public subdomain slug. The public form page identifies the tenant by
-   * Host (`<slug>.<baseDomain>`), then this scopes the form lookup — no cross-tenant form query. The
-   * `tenants` table is a tenant-safety allow-listed table (you look it up *by* its own key).
-   */
-  public async getTenantIdBySlug(tenantSlug: string): Promise<string | null> {
-    const row = await this.db.selectFrom('tenants').select('id').where('slug', '=', tenantSlug).executeTakeFirst();
-    return row ? String(row.id) : null;
   }
 
   public async slugExists(tenantId: string, slug: string, excludeId?: string): Promise<boolean> {

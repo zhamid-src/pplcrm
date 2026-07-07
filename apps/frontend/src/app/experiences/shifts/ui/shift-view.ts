@@ -6,7 +6,8 @@ import { Icon } from '@icons/icon';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { ShiftsService } from '../services/shifts-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { Tabs, TabPanel, PcTabOption } from '@uxcommon/components/tabs/tabs';
 import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
@@ -45,6 +46,7 @@ export class ShiftViewComponent {
   protected readonly recordNav = injectRecordNavigation('shift', this.id);
 
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly volunteerEventsSvc = inject(ShiftsService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly route = inject(ActivatedRoute);
@@ -85,9 +87,9 @@ export class ShiftViewComponent {
   });
 
   protected readonly publicUrl = computed(() => {
-    const detail = this.event();
-    if (!detail || !detail.public_url) return '';
-    return environment.apiUrl + detail.public_url;
+    const slug = this.event()?.slug;
+    if (!slug) return '';
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `v/${slug}`);
   });
 
   constructor() {

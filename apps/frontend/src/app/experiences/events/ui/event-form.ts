@@ -13,7 +13,8 @@ import { Textarea as PcTextarea } from '@uxcommon/components/textarea/textarea';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { FieldsSelector } from '@uxcommon/components/fields-selector/fields-selector';
 import { PublicLinkPanel } from '@uxcommon/components/public-link-panel/public-link-panel';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 
 import { AddEventObj, AddEventType, UpdateEventType } from '../../../../../../../libs/common/src';
 import { EventsService } from '../../../services/api/events-service';
@@ -43,6 +44,7 @@ export class EventFormComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
   private readonly dialogs = inject(ConfirmDialogService);
+  private readonly auth = inject(AuthService);
   private readonly eventsFrontendSvc = inject(EventsFrontendService);
   private readonly eventsSvc = inject(EventsService);
   private readonly router = inject(Router);
@@ -54,7 +56,7 @@ export class EventFormComponent implements OnInit {
   protected readonly publicUrl = computed(() => {
     const slug = this.payload().slug;
     if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/event-pages/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `e/${slug}`);
   });
   protected readonly detail = signal<any>(null);
 

@@ -6,6 +6,7 @@ import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { FormsService } from '@experiences/forms/services/forms-service';
 import { SettingsService } from '@experiences/settings/services/settings-service';
+import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { FundraisingFormComponent } from './fundraising-form';
 
@@ -64,6 +65,7 @@ describe('FundraisingFormComponent', () => {
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
         { provide: ConfirmDialogService, useValue: mockConfirmDialogSvc },
         { provide: SettingsService, useValue: mockSettingsSvc },
+        { provide: AuthService, useValue: { getUser: vi.fn().mockReturnValue({ tenant_slug: 'testorg' }) } },
       ],
     }).compileComponents();
 
@@ -255,6 +257,7 @@ describe('FundraisingFormComponent', () => {
     mockFormsSvc.getById.mockResolvedValue({
       id: 'page-123',
       name: 'Monthly Giving',
+      slug: 'monthly-giving',
       form_type: 'recurring_donation',
     });
 
@@ -265,7 +268,7 @@ describe('FundraisingFormComponent', () => {
     const snippet = component['embedSnippet']();
     expect(snippet).toContain('Monthly Pledge Amount');
     expect(snippet).toContain('Start Monthly Pledge');
-    expect(snippet).toContain(`/api/forms/submit/page-123`);
+    expect(snippet).toContain(`/api/forms/submit/monthly-giving?t=testorg`);
   });
 
   it('should generate a one-time donation embed snippet by default', async () => {
@@ -273,6 +276,7 @@ describe('FundraisingFormComponent', () => {
     mockFormsSvc.getById.mockResolvedValue({
       id: 'page-123',
       name: 'One Time',
+      slug: 'one-time',
       form_type: 'donation',
     });
 
@@ -300,7 +304,7 @@ describe('FundraisingFormComponent', () => {
 
   it('should copy the embed snippet to the clipboard and show a success alert', async () => {
     mockActivatedRoute.snapshot.paramMap.get.mockReturnValue('page-123');
-    mockFormsSvc.getById.mockResolvedValue({ id: 'page-123', name: 'Gala', form_type: 'donation' });
+    mockFormsSvc.getById.mockResolvedValue({ id: 'page-123', name: 'Gala', slug: 'gala', form_type: 'donation' });
 
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, writable: true });

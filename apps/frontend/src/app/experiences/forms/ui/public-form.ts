@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } 
 import { ActivatedRoute } from '@angular/router';
 import { FormField } from '../../../../../../../libs/common/src';
 
-import { environment } from '../../../../environments/environment';
+import { apiBase, tenantQuery } from '../../../shared/public-pages';
 
 interface PublicForm {
   id: string;
@@ -176,9 +176,7 @@ export class PublicFormComponent implements OnInit {
       return;
     }
     try {
-      const tenant = this.tenantFromHost();
-      const query = tenant ? `?t=${encodeURIComponent(tenant)}` : '';
-      const res = await fetch(`${this.apiBase()}/api/forms/f/${encodeURIComponent(slug)}${query}`);
+      const res = await fetch(`${apiBase()}/api/forms/f/${encodeURIComponent(slug)}${tenantQuery()}`);
       if (res.status === 404) {
         this.state.set('notfound');
         return;
@@ -243,7 +241,8 @@ export class PublicFormComponent implements OnInit {
       const payload: Record<string, string> = {};
       for (const [key, value] of this.values.entries()) payload[key] = value;
 
-      const res = await fetch(`${this.apiBase()}/api/forms/submit/${form.id}`, {
+      const slug = this.route.snapshot.paramMap.get('slug') ?? '';
+      const res = await fetch(`${apiBase()}/api/forms/submit/${encodeURIComponent(slug)}${tenantQuery()}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(payload),
@@ -263,21 +262,5 @@ export class PublicFormComponent implements OnInit {
     } finally {
       this.submitting.set(false);
     }
-  }
-
-  private apiBase(): string {
-    return environment.apiUrl.replace(/\/$/, '');
-  }
-
-  /** The tenant subdomain the public page is being served on (`riverton.mydomain.com` → `riverton`). */
-  private tenantFromHost(): string | null {
-    const host = window.location.hostname.toLowerCase();
-    const base = environment.publicFormsBaseDomain.toLowerCase();
-    if (!host || host === base) return null;
-    const suffix = `.${base}`;
-    if (!host.endsWith(suffix)) return null;
-    const label = host.slice(0, -suffix.length);
-    if (!label || label.includes('.')) return null;
-    return label;
   }
 }
