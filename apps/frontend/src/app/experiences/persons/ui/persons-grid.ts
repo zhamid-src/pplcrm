@@ -2,6 +2,7 @@ import { Component, inject, input, OnInit, signal, viewChild } from '@angular/co
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
 import { Icon } from '@icons/icon';
@@ -24,7 +25,7 @@ import { DATA_TYPE, PersonsService } from '../services/persons-service';
 
 @Component({
   selector: 'pc-persons-grid',
-  imports: [DataGrid, Icon, FormsModule, CsvImportComponent],
+  imports: [DataGrid, GrainTabs, Icon, FormsModule, CsvImportComponent],
   templateUrl: './persons-grid.html',
   providers: [
     { provide: AbstractAPIService, useExisting: PersonsService },
@@ -253,6 +254,9 @@ export class PersonsGrid implements OnInit {
 
   protected tagsInput = '';
 
+  /** Grain total sentence for the header (spec §5): "{n} people total". */
+  protected readonly totalSentence = signal<string | null>(null);
+
   public ngOnInit() {
     void this.initializeComponent();
   }
@@ -283,6 +287,8 @@ export class PersonsGrid implements OnInit {
         }),
       );
       this.narrowTypeOptions.set(opts.map((o, i) => ({ ...o, count: counts[i] })));
+      const total = counts[0] ?? 0;
+      this.totalSentence.set(total === 1 ? '1 person total' : `${new Intl.NumberFormat().format(total)} people total`);
     } catch (err) {
       console.error('Failed to load view counts', err);
     }

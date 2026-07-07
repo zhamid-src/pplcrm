@@ -1,8 +1,10 @@
 import { env } from '../../../../env';
 import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import { slugifyRecordName } from '../../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 
 import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
+import { backfillMissingSlugs, uniqueSlug } from '../../../lib/slug';
 import { notificationEnabled } from '../../../lib/profile-preferences';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
 import { SettingsController } from '../../settings/controller';
@@ -71,8 +73,15 @@ export class PersonsService {
       }
     }
 
+    // Record slug for /people/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
+    const slug = await uniqueSlug(
+      slugifyRecordName(`${payload.first_name ?? ''} ${payload.last_name ?? ''}`, 'person'),
+      (candidate) => this.personsRepo.slugExists(auth.tenant_id, candidate),
+    );
+
     const row = {
       ...payload,
+      slug,
       household_id,
       campaign_id,
       tenant_id: auth.tenant_id,
@@ -967,6 +976,14 @@ export class PersonsService {
           updated_at: new Date(),
         } as any,
       });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.personsRepo.db, 'persons', tenant_id);
+      await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill record slugs after import');
     }
 
     // Log the user activity

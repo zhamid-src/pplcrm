@@ -171,7 +171,7 @@ export {
 
 export type { FormType, FormStatus, FormField } from './lib/schemas/web-forms.schema';
 
-export { debounce, escapeHtml, sleep, slugifyHandle, RESERVED_SUBDOMAINS } from './lib/utils';
+export { debounce, escapeHtml, sleep, slugifyHandle, slugifyRecordName, RESERVED_SUBDOMAINS } from './lib/utils';
 export { calculateWorkingTimeMs } from './lib/sla';
 
 export { SPECIAL_FOLDERS, EMAIL_FOLDERS } from './lib/emails';

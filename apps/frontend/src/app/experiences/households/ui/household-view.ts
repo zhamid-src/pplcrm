@@ -1,3 +1,4 @@
+import { Location } from '@angular/common';
 import { Component, ElementRef, viewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { Loader } from '@googlemaps/js-api-loader';
@@ -54,6 +55,7 @@ export class HouseholdView {
   private readonly personsSvc = inject(PersonsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly loader = inject(Loader);
   private readonly dialogSvc = inject(ConfirmDialogService);
   private readonly _loading = createLoadingGate();
@@ -139,6 +141,11 @@ export class HouseholdView {
       // 1. Load household details
       const householdData = (await this.householdsSvc.getById(id)) as Households;
       this.household.set(householdData);
+      // Spec §1: the address bar shows the record slug, never the internal id.
+      // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.
+      if (typeof householdData?.slug === 'string' && householdData.slug.length > 0) {
+        this.location.replaceState(`/households/${householdData.slug}`);
+      }
 
       // 2. Load tags and issues
       const tagList = await this.householdsSvc.getTags(id, 'tag');

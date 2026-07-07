@@ -51,6 +51,7 @@ apps/
       app/
         _migrations/
           0001_baseline.ts
+          2026-07-07-record-slugs.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -104,6 +105,7 @@ apps/
           rest-auth.ts
           secret-crypto.ts
           signed-download.ts
+          slug.ts
           storage.service.ts
           tenant-context.ts
           token-hash.ts
@@ -1160,6 +1162,540 @@ export async function scheduleNextRun(db: Kysely<Models>, type: JobType, delayMs
 }
 ```
 
+## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
+
+```typescript
+import { Client } from 'pg';
+import { env } from '../../../env';
+import { BillingController } from '../../modules/billing/controller';
+import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
+import { DonationsController } from '../../modules/donations/controller';
+import { logger } from '../../logger';
+
+export class WebhookEventWorker {
+  private isRunning = false;
+  private timer: NodeJS.Timeout | null = null;
+  private activeJobsCount = 0;
+  private shutdownResolver: (() => void) | null = null;
+  private pgClient: Client | null = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+
+  private readonly webhookEventsRepo = new WebhookEventsRepo();
+  private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
+
+  public start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    logger.info('Webhook Event Worker started.');
+    void this.setupListener();
+    this.poll();
+  }
+
+  public async stop(): Promise<void> {
+    this.isRunning = false;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.pgClient) {
+      try {
+        await this.pgClient.end();
+      } catch (err) {
+        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
+      }
+      this.pgClient = null;
+    }
+
+    if (this.activeJobsCount > 0) {
+      logger.info(
+        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
+      );
+      await new Promise<void>((resolve) => {
+        this.shutdownResolver = resolve;
+      });
+    }
+    logger.info('Webhook Event Worker stopped.');
+  }
+
+  private async setupListener() {
+    if (!this.isRunning) return;
+    try {
+      this.pgClient = new Client(env.db);
+      await this.pgClient.connect();
+
+      this.pgClient.on('notification', (msg) => {
+        if (msg.channel === 'webhook_events_channel') {
+          logger.debug('Webhook Event Worker received notify, waking up...');
+          this.wakeUp();
+        }
+      });
+
+      this.pgClient.on('error', (err) => {
+        logger.error({ err }, 'Postgres listener client error');
+        this.reconnectListener();
+      });
+
+      this.pgClient.on('end', () => {
+        logger.warn('Postgres listener connection closed');
+        this.reconnectListener();
+      });
+
+      await this.pgClient.query('LISTEN webhook_events_channel');
+      logger.info('Listening for webhook_events notifications');
+    } catch (err) {
+      logger.error({ err }, 'Failed to setup Postgres listener');
+      this.reconnectListener();
+    }
+  }
+
+  private reconnectListener() {
+    if (this.pgClient) {
+      this.pgClient.end().catch(() => {
+        /* noop */
+      });
+      this.pgClient = null;
+    }
+    if (!this.isRunning) return;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      void this.setupListener();
+    }, 5000);
+  }
+
+  private wakeUp() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.poll();
+  }
+
+  private poll() {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => {
+      void this.runPollCycle();
+    }, 0);
+  }
+
+  private async runPollCycle(): Promise<void> {
+    let processedAnEvent = false;
+    try {
+      this.activeJobsCount++;
+      processedAnEvent = await this.processNextEvent();
+    } catch (err) {
+      logger.error({ err }, 'Error in webhook event worker poll cycle');
+    } finally {
+      this.activeJobsCount--;
+
+      // If shutdown was requested and no active jobs remain, resolve the stop() promise
+      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
+        this.shutdownResolver();
+      } else {
+        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
+        // or back off to 30 seconds if no events were found.
+        const delay = processedAnEvent ? 10 : 30000;
+        this.pollWithDelay(delay);
+      }
+    }
+  }
+
+  private pollWithDelay(ms: number) {
+    if (!this.isRunning) return;
+    this.timer = setTimeout(() => this.poll(), ms);
+  }
+
+  private async processNextEvent(): Promise<boolean> {
+    const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
+
+    // Try to find and lock a webhook event using SKIP LOCKED
+    const eventRecord = await this.db.transaction().execute(async (trx: any) => {
+      const pendingEvent = (await trx
+        .selectFrom('webhook_events')
+        .selectAll()
+        .where('status', '=', 'pending')
+        .where('run_at', '<=', new Date())
+        .orderBy('id', 'asc')
+        .limit(1)
+        .forUpdate()
+        .skipLocked()
+        .executeTakeFirst()) as any;
+
+      if (!pendingEvent) return null;
+
+      const updatedEvent = await trx
+        .updateTable('webhook_events')
+        .set({
+          status: 'processing',
+          locked_at: new Date(),
+          locked_by: workerId,
+          attempts: Number(pendingEvent.attempts || 0) + 1,
+          updated_at: new Date(),
+        })
+        .where('id', '=', pendingEvent.id)
+        .returningAll()
+        .executeTakeFirst();
+
+      return updatedEvent;
+    });
+
+    if (!eventRecord) return false;
+
+    logger.info(
+      { webhookEventId: eventRecord.id, stripeEventId: eventRecord.stripe_event_id, type: eventRecord.type },
+      'Processing webhook event',
+    );
+
+    const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
+
+    try {
+      const stripeObj = payload.data?.object;
+      const eventType: string = payload.type;
+
+      // Helper to resolve an admin userId for the tenant
+      const resolveUserId = async (tenantId: string, metaUserId: string | null): Promise<string> => {
+        if (metaUserId) return metaUserId;
+        const tenantRow = await this.db
+          .selectFrom('tenants')
+          .select('admin_id')
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+        if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
+        return String(tenantRow.admin_id);
+      };
+
+      const isOneTimeDonation =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring !== 'true';
+      const isRecurringCheckoutComplete =
+        eventType === 'checkout.session.completed' &&
+        stripeObj?.metadata?.personId &&
+        stripeObj?.metadata?.isRecurring === 'true';
+      const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
+      const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
+      const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
+      const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
+
+      if (isOneTimeDonation) {
+        // Standard one-time donation via checkout.session.completed
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const amountCents = Number(stripeObj.metadata.amount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const sessionId = String(stripeObj.id);
+        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
+
+        await donationsController.recordSuccessfulDonation(
+          tenantId,
+          personId,
+          amountCents,
+          sessionId,
+          province,
+          country,
+          createdBy,
+        );
+      } else if (isRecurringCheckoutComplete) {
+        // Subscription checkout completed — create the pledge record.
+        // The first invoice payment is handled separately by invoice.payment_succeeded.
+        const donationsController = new DonationsController();
+        const tenantId = String(stripeObj.metadata.tenantId);
+        const personId = String(stripeObj.metadata.personId);
+        const monthlyAmountCents = Number(stripeObj.metadata.monthlyAmount);
+        const province = String(stripeObj.metadata.residencyProvince || '');
+        const country = String(stripeObj.metadata.residencyCountry || '');
+        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
+        const subscriptionId = String(stripeObj.subscription || '');
+        const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
+
+        if (subscriptionId) {
+          await donationsController.recordNewPledge(
+            tenantId,
+            personId,
+            monthlyAmountCents,
+            subscriptionId,
+            customerId,
+            province,
+            country,
+            createdBy,
+          );
+        }
+      } else if (isInvoicePaid) {
+        // A subscription invoice was paid — record it as a donation installment.
+        const donationsController = new DonationsController();
+        const subscriptionId = String(stripeObj.subscription);
+        const invoiceId = String(stripeObj.id);
+        const amountPaidCents = Number(stripeObj.amount_paid || 0);
+
+        const pledge = (await this.db
+          .selectFrom('donation_pledges')
+          .selectAll()
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .executeTakeFirst()) as any;
+
+        if (pledge && amountPaidCents > 0) {
+          // Avoid duplicate recording (invoice id as session id key)
+          const alreadyRecorded = await this.db
+            .selectFrom('donations')
+            .select('id')
+            .where('stripe_session_id', '=', invoiceId)
+            .executeTakeFirst();
+
+          if (!alreadyRecorded) {
+            const createdBy = await resolveUserId(String(pledge.tenant_id), null);
+            await donationsController.recordSuccessfulDonation(
+              String(pledge.tenant_id),
+              String(pledge.person_id),
+              amountPaidCents,
+              invoiceId,
+              pledge.state || '',
+              pledge.country || '',
+              createdBy,
+              String(pledge.id),
+            );
+          }
+        }
+      } else if (isSubscriptionUpdated) {
+        // Sync pledge status from Stripe subscription status
+        const subscriptionId = String(stripeObj.id);
+        const stripeStatus: string = stripeObj.status;
+        const statusMap: Record<string, string> = {
+          active: 'active',
+          past_due: 'past_due',
+          canceled: 'cancelled',
+          unpaid: 'unpaid',
+        };
+        const mappedStatus = statusMap[stripeStatus];
+        const nextBillingDate = stripeObj.current_period_end
+          ? new Date(stripeObj.current_period_end * 1000).toISOString().slice(0, 10)
+          : null;
+
+        if (mappedStatus) {
+          await this.db
+            .updateTable('donation_pledges')
+            .set({
+              status: mappedStatus,
+              next_billing_date: nextBillingDate,
+              cancelled_at: mappedStatus === 'cancelled' ? new Date() : null,
+              updated_at: new Date(),
+            })
+            .where('stripe_subscription_id', '=', subscriptionId)
+            .execute();
+        }
+      } else if (isSubscriptionDeleted) {
+        const subscriptionId = String(stripeObj.id);
+        await this.db
+          .updateTable('donation_pledges')
+          .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .execute();
+      } else if (isInvoiceFailed) {
+        const subscriptionId = String(stripeObj.subscription);
+        await this.db
+          .updateTable('donation_pledges')
+          .set({ status: 'past_due', updated_at: new Date() })
+          .where('stripe_subscription_id', '=', subscriptionId)
+          .execute();
+      } else {
+        const billingController = new BillingController();
+        await billingController.processWebhookEvent(payload);
+      }
+
+      // Mark event as processed/completed
+      await this.db
+        .updateTable('webhook_events')
+        .set({
+          status: 'processed',
+          locked_at: null,
+          locked_by: null,
+          processed_at: new Date(),
+          updated_at: new Date(),
+        })
+        .where('id', '=', eventRecord.id)
+        .execute();
+
+      logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
+    } catch (err) {
+      const errorMsg = err instanceof Error && err.message ? err.message : String(err);
+      logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
+
+      const attempts = Number(eventRecord.attempts || 0);
+      const maxAttempts = Number(eventRecord.max_attempts || 3);
+
+      if (attempts < maxAttempts) {
+        // Retry with backoff (attempts * 30s delay)
+        const delaySeconds = attempts * 30;
+        const runAt = new Date(Date.now() + delaySeconds * 1000);
+        logger.info(
+          { webhookEventId: eventRecord.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts },
+          'Rescheduling webhook event',
+        );
+
+        await this.db
+          .updateTable('webhook_events')
+          .set({
+            status: 'pending',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            run_at: runAt,
+            updated_at: new Date(),
+          })
+          .where('id', '=', eventRecord.id)
+          .execute();
+      } else {
+        logger.error(
+          { webhookEventId: eventRecord.id, maxAttempts },
+          'Webhook event exceeded maximum attempts, marking as failed',
+        );
+        await this.db
+          .updateTable('webhook_events')
+          .set({
+            status: 'failed',
+            locked_at: null,
+            locked_by: null,
+            error: errorMsg,
+            updated_at: new Date(),
+          })
+          .where('id', '=', eventRecord.id)
+          .execute();
+      }
+    }
+
+    return true;
+  }
+}
+```
+
+## File: apps/backend/src/app/lib/mail/newsletter-mail.service.ts
+
+```typescript
+import { env } from '../../../env';
+import { InternalError } from '../../errors/app-errors';
+import { logger } from '../../logger';
+
+export interface SendNewsletterOptions {
+  fromName: string;
+  fromEmail: string;
+  replyTo?: string;
+  recipients: string[];
+  subject: string;
+  html: string;
+  text?: string;
+  sendgridApiKey?: string;
+  subuserUsername?: string;
+  newsletterId?: string;
+  tenantId?: string;
+}
+
+export class NewsletterEmailService {
+  public async sendNewsletter(options: SendNewsletterOptions): Promise<number> {
+    const apiKey = options.sendgridApiKey || env.sendgridApiKey;
+
+    if (!apiKey) {
+      logger.info(
+        {
+          from: `"${options.fromName}" <${options.fromEmail}>`,
+          replyTo: options.replyTo || null,
+          recipientCount: options.recipients.length,
+          subject: options.subject,
+        },
+        '[SENDGRID DEV MOCK] Newsletter Outbound',
+      );
+      return options.recipients.length;
+    }
+
+    const uniqueRecipients = [...new Set(options.recipients)];
+    if (uniqueRecipients.length === 0) return 0;
+
+    // SendGrid allows up to 1000 personalizations per API request
+    const CHUNK_SIZE = 1000;
+    let deliveredCount = 0;
+
+    for (let i = 0; i < uniqueRecipients.length; i += CHUNK_SIZE) {
+      const chunk = uniqueRecipients.slice(i, i + CHUNK_SIZE);
+      const personalizations = chunk.map((email) => ({
+        to: [{ email }],
+      }));
+
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      };
+
+      if (options.subuserUsername) {
+        headers['on-behalf-of'] = options.subuserUsername;
+      }
+
+      const body = {
+        personalizations,
+        from: {
+          email: options.fromEmail,
+          name: options.fromName,
+        },
+        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
+        subject: options.subject,
+        content: [
+          {
+            type: 'text/html',
+            value: options.html,
+          },
+          ...(options.text
+            ? [
+                {
+                  type: 'text/plain',
+                  value: options.text,
+                },
+              ]
+            : []),
+        ],
+        ...(options.newsletterId && options.tenantId
+          ? {
+              custom_args: {
+                newsletter_id: options.newsletterId,
+                tenant_id: options.tenantId,
+              },
+            }
+          : {}),
+        // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
+        // the server-appended footer with a working, per-recipient unsubscribe URL.
+        tracking_settings: {
+          subscription_tracking: {
+            enable: true,
+            substitution_tag: '<% unsubscribe %>',
+          },
+        },
+      };
+
+      try {
+        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`SendGrid API responded with status ${response.status}: ${errorText}`);
+        }
+
+        deliveredCount += chunk.length;
+      } catch (error) {
+        throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
+      }
+    }
+
+    return deliveredCount;
+  }
+}
+```
+
 ## File: apps/backend/src/app/lib/mail/sanitize-util.ts
 
 ```typescript
@@ -1172,6 +1708,328 @@ const purify = DOMPurify(window);
 export function sanitizeHtml(html: string | null | undefined): string {
   if (!html) return '';
   return purify.sanitize(html);
+}
+```
+
+## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
+
+```typescript
+import { promises as dns } from 'dns';
+import { logger } from '../../logger';
+
+export interface DNSVerificationRecord {
+  host: string;
+  type: string;
+  data: string;
+  valid: boolean;
+}
+
+export interface DomainAuthData {
+  id: number;
+  domain: string;
+  subdomain: string;
+  dns: {
+    mail_cname?: DNSVerificationRecord;
+    dkim1?: DNSVerificationRecord;
+    dkim2?: DNSVerificationRecord;
+  };
+}
+
+export interface LinkBrandingData {
+  id: number;
+  domain: string;
+  subdomain: string;
+  valid: boolean;
+  dns: {
+    domain?: DNSVerificationRecord;
+  };
+}
+
+export class SendGridWhitelabelService {
+  private isValidApiKey(apiKey?: string): boolean {
+    if (!apiKey) return false;
+    const trimmed = apiKey.trim();
+    // Typical SendGrid API key starts with SG.
+    return trimmed.length > 20 && trimmed.startsWith('SG.');
+  }
+
+  private async request<T = any>(
+    path: string,
+    options: {
+      method: string;
+      body?: any;
+      apiKey?: string;
+      subuser?: string;
+    },
+  ): Promise<T> {
+    const { method, body, apiKey, subuser } = options;
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    };
+
+    if (subuser) {
+      headers['on-behalf-of'] = subuser;
+    }
+
+    const response = await fetch(`https://api.sendgrid.com/v3${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`SendGrid API responded with ${response.status}: ${text}`);
+    }
+
+    if (response.status === 204) {
+      return {} as T;
+    }
+
+    return response.json();
+  }
+
+  public async createDomainAuthentication(domain: string, apiKey?: string, subuser?: string): Promise<DomainAuthData> {
+    if (!this.isValidApiKey(apiKey)) {
+      // Return simulated/mock domain auth records
+      const mockId = Math.floor(100000 + Math.random() * 900000);
+      return {
+        id: mockId,
+        domain,
+        subdomain: 'em',
+        dns: {
+          mail_cname: {
+            host: `em.${domain}`,
+            type: 'CNAME',
+            data: `u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+          dkim1: {
+            host: `s1._domainkey.${domain}`,
+            type: 'CNAME',
+            data: `s1.domainkey.u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+          dkim2: {
+            host: `s2._domainkey.${domain}`,
+            type: 'CNAME',
+            data: `s2.domainkey.u${mockId}.wl.sendgrid.net`,
+            valid: false,
+          },
+        },
+      };
+    }
+
+    try {
+      const res = await this.request<any>('/whitelabel/domains', {
+        method: 'POST',
+        apiKey,
+        subuser,
+        body: {
+          domain,
+          subdomain: 'em',
+          automatic_security: true,
+          custom_spf: false,
+          default: false,
+        },
+      });
+
+      return {
+        id: res.id,
+        domain: res.domain,
+        subdomain: res.subdomain,
+        dns: {
+          mail_cname: res.dns?.mail_cname ? { ...res.dns.mail_cname, valid: !!res.dns.mail_cname.valid } : undefined,
+          dkim1: res.dns?.dkim1 ? { ...res.dns.dkim1, valid: !!res.dns.dkim1.valid } : undefined,
+          dkim2: res.dns?.dkim2 ? { ...res.dns.dkim2, valid: !!res.dns.dkim2.valid } : undefined,
+        },
+      };
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] real API call failed, falling back to mock',
+      );
+      return this.createDomainAuthentication(domain, undefined);
+    }
+  }
+
+  public async createLinkBranding(domain: string, apiKey?: string, subuser?: string): Promise<LinkBrandingData> {
+    if (!this.isValidApiKey(apiKey)) {
+      const mockId = Math.floor(100000 + Math.random() * 900000);
+      return {
+        id: mockId,
+        domain,
+        subdomain: 'email',
+        valid: false,
+        dns: {
+          domain: {
+            host: `email.${domain}`,
+            type: 'CNAME',
+            data: 'sendgrid.net',
+            valid: false,
+          },
+        },
+      };
+    }
+
+    try {
+      const res = await this.request<any>('/whitelabel/links', {
+        method: 'POST',
+        apiKey,
+        subuser,
+        body: {
+          domain,
+          subdomain: 'email',
+          default: false,
+        },
+      });
+
+      return {
+        id: res.id,
+        domain: res.domain,
+        subdomain: res.subdomain,
+        valid: !!res.valid,
+        dns: {
+          domain: res.dns?.domain ? { ...res.dns.domain, valid: !!res.dns.domain.valid } : undefined,
+        },
+      };
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] real Link Branding API failed, falling back to mock',
+      );
+      return this.createLinkBranding(domain, undefined);
+    }
+  }
+
+  public async validateDomainAuthentication(
+    id: number,
+    apiKey?: string,
+    subuser?: string,
+  ): Promise<{ valid: boolean; validationResults: Record<string, boolean> }> {
+    if (!this.isValidApiKey(apiKey)) {
+      return {
+        valid: true,
+        validationResults: {
+          mail_cname: true,
+          dkim1: true,
+          dkim2: true,
+        },
+      };
+    }
+
+    try {
+      const res = await this.request<any>(`/whitelabel/domains/${id}/validate`, {
+        method: 'POST',
+        apiKey,
+        subuser,
+      });
+
+      const validationResults: Record<string, boolean> = {};
+      if (res.validation_results) {
+        for (const k of Object.keys(res.validation_results)) {
+          validationResults[k] = !!res.validation_results[k]?.valid;
+        }
+      }
+
+      return {
+        valid: !!res.valid,
+        validationResults,
+      };
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Validate domain API failed, falling back to true',
+      );
+      return {
+        valid: true,
+        validationResults: {
+          mail_cname: true,
+          dkim1: true,
+          dkim2: true,
+        },
+      };
+    }
+  }
+
+  public async validateLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<boolean> {
+    if (!this.isValidApiKey(apiKey)) {
+      return true;
+    }
+
+    try {
+      const res = await this.request<any>(`/whitelabel/links/${id}/validate`, {
+        method: 'POST',
+        apiKey,
+        subuser,
+      });
+
+      return !!res.valid;
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Validate link branding API failed, falling back to true',
+      );
+      return true;
+    }
+  }
+
+  public async deleteDomainAuthentication(id: number, apiKey?: string, subuser?: string): Promise<void> {
+    if (!this.isValidApiKey(apiKey)) return;
+
+    try {
+      await this.request(`/whitelabel/domains/${id}`, {
+        method: 'DELETE',
+        apiKey,
+        subuser,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Delete domain authentication failed',
+      );
+    }
+  }
+
+  public async deleteLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<void> {
+    if (!this.isValidApiKey(apiKey)) return;
+
+    try {
+      await this.request(`/whitelabel/links/${id}`, {
+        method: 'DELETE',
+        apiKey,
+        subuser,
+      });
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '[SendGridWhitelabelService] Delete link branding failed',
+      );
+    }
+  }
+
+  public async verifyDmarc(domain: string): Promise<boolean> {
+    try {
+      const records = await dns.resolveTxt(`_dmarc.${domain}`);
+      return records.some((r) => r.join('').toUpperCase().includes('V=DMARC1'));
+    } catch {
+      return false;
+    }
+  }
+
+  public async verifyCname(host: string, expectedData?: string): Promise<boolean> {
+    try {
+      const records = await dns.resolveCname(host);
+      if (expectedData) {
+        return records.some((r) => r.toLowerCase().trim() === expectedData.toLowerCase().trim());
+      }
+      return records.length > 0;
+    } catch {
+      return false;
+    }
+  }
 }
 ```
 
@@ -2394,6 +3252,272 @@ export class TenantsRepo extends BaseRepository<'tenants'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/auth/passkey.controller.ts
+
+```typescript
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from '@simplewebauthn/server';
+import type {
+  AuthenticationResponseJSON,
+  AuthenticatorTransportFuture,
+  RegistrationResponseJSON,
+} from '@simplewebauthn/types';
+
+import { randomBytes } from 'crypto';
+
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
+import { env } from '../../../env';
+import { BadRequestError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
+import { BaseRepository } from '../../lib/base.repo';
+import { consumeChallenge, storeChallenge } from '../../lib/webauthn-challenges';
+import { createTokens } from './auth-tokens';
+
+export class PasskeyController {
+  private get db() {
+    return BaseRepository.dbInstance;
+  }
+
+  // ── Email Check ──────────────────────────────────────────────────────────
+  public async checkEmailPasskeys(email: string): Promise<{ hasPasskeys: boolean }> {
+    const user = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'tenant_id'])
+      .where('email', '=', email.trim().toLowerCase())
+      .executeTakeFirst();
+
+    if (!user) return { hasPasskeys: false };
+
+    const row = await this.db
+      .selectFrom('passkeys')
+      .select(this.db.fn.countAll<string>().as('count'))
+      .where('user_id', '=', user.id)
+      .where('tenant_id', '=', user.tenant_id)
+      .executeTakeFirst();
+
+    return { hasPasskeys: Number(row?.count ?? 0) > 0 };
+  }
+
+  public async deletePasskey(auth: IAuthKeyPayload, id: string) {
+    const result = await this.db
+      .deleteFrom('passkeys')
+      .where('id', '=', id)
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (Number(result.numDeletedRows) === 0) {
+      throw new NotFoundError('Passkey not found.');
+    }
+    return { success: true };
+  }
+
+  // ── Authentication ────────────────────────────────────────────────────────
+  public async getAuthenticationOptions() {
+    const nonce = randomBytes(16).toString('hex');
+
+    const options = await generateAuthenticationOptions({
+      rpID,
+      userVerification: 'preferred',
+      allowCredentials: [], // discoverable credential — browser prompts user to choose
+    });
+
+    storeChallenge(`auth:${nonce}`, options.challenge);
+    return { options, nonce };
+  }
+
+  // ── Registration ─────────────────────────────────────────────────────────
+  public async getRegistrationOptions(auth: IAuthKeyPayload) {
+    const user = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'email', 'first_name', 'last_name'])
+      .where('id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!user) throw new NotFoundError('User not found');
+
+    const existingPasskeys = await this.db
+      .selectFrom('passkeys')
+      .select(['credential_id', 'transports'])
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .execute();
+
+    const options = await generateRegistrationOptions({
+      rpName,
+      rpID,
+      userName: user.email,
+      userDisplayName: [user.first_name, (user as any).last_name].filter(Boolean).join(' '),
+      attestationType: 'none',
+      excludeCredentials: existingPasskeys.map((pk) => ({
+        id: pk.credential_id,
+        transports: (pk.transports as AuthenticatorTransportFuture[] | null) ?? undefined,
+      })),
+      authenticatorSelection: {
+        residentKey: 'preferred',
+        userVerification: 'preferred',
+      },
+    });
+
+    storeChallenge(`reg:${auth.user_id}`, options.challenge);
+    return options;
+  }
+
+  // ── Management ────────────────────────────────────────────────────────────
+  public async listPasskeys(auth: IAuthKeyPayload) {
+    return this.db
+      .selectFrom('passkeys')
+      .select(['id', 'friendly_name', 'device_type', 'backed_up', 'aaguid', 'transports', 'created_at'])
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .orderBy('created_at', 'asc')
+      .execute();
+  }
+
+  public async updatePasskeyName(auth: IAuthKeyPayload, id: string, friendlyName: string) {
+    const result = await this.db
+      .updateTable('passkeys')
+      .set({ friendly_name: friendlyName })
+      .where('id', '=', id)
+      .where('user_id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (Number(result.numUpdatedRows) === 0) {
+      throw new NotFoundError('Passkey not found.');
+    }
+    return { success: true };
+  }
+
+  public async verifyAuthentication(
+    response: AuthenticationResponseJSON,
+    nonce: string,
+    ipAddress?: string,
+    userAgent?: string,
+    rememberMe?: boolean,
+  ) {
+    const challenge = consumeChallenge(`auth:${nonce}`);
+    if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
+
+    // NOTE: unscoped by design — credential_id lookup happens before tenant is known; passkey row carries tenant_id for post-auth scoping
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const passkey = await this.db
+      .selectFrom('passkeys')
+      .selectAll()
+      .where('credential_id', '=', response.id)
+      .executeTakeFirst();
+
+    if (!passkey) throw new UnauthorizedError('Passkey not recognized.');
+
+    const verification = await verifyAuthenticationResponse({
+      response,
+      expectedChallenge: challenge,
+      expectedOrigin: getExpectedOrigins(),
+      expectedRPID: rpID,
+      credential: {
+        id: passkey.credential_id,
+        publicKey: Buffer.from(passkey.public_key, 'base64url'),
+        counter: Number(passkey.counter),
+        transports: (passkey.transports as AuthenticatorTransportFuture[] | null) ?? undefined,
+      },
+      requireUserVerification: false,
+    });
+
+    if (!verification.verified) throw new UnauthorizedError('Passkey authentication failed.');
+
+    await this.db
+      .updateTable('passkeys')
+      .set({ counter: verification.authenticationInfo.newCounter as any })
+      .where('credential_id', '=', passkey.credential_id)
+      .where('tenant_id', '=', passkey.tenant_id)
+      .execute();
+
+    // Fetch the user
+    const user = await this.db
+      .selectFrom('authusers')
+      .select(['id', 'email', 'first_name', 'last_name', 'tenant_id', 'role', 'verified', 'deletion_scheduled_at'])
+      .where('id', '=', passkey.user_id)
+      .executeTakeFirst();
+
+    if (!user) throw new UnauthorizedError();
+    if (!user.verified) throw new UnauthorizedError('Email not verified.');
+
+    const tenantId = String(user.tenant_id);
+    const userId = String(user.id);
+
+    return createTokens({
+      user_id: userId,
+      tenant_id: tenantId,
+      name: user.first_name,
+      ipAddress,
+      userAgent,
+      rememberMe,
+    });
+  }
+
+  public async verifyRegistration(auth: IAuthKeyPayload, response: RegistrationResponseJSON, friendlyName?: string) {
+    const challenge = consumeChallenge(`reg:${auth.user_id}`);
+    if (!challenge) throw new BadRequestError('Registration challenge expired or not found. Please try again.');
+
+    const verification = await verifyRegistrationResponse({
+      response,
+      expectedChallenge: challenge,
+      expectedOrigin: getExpectedOrigins(),
+      expectedRPID: rpID,
+      requireUserVerification: false,
+    });
+
+    if (!verification.verified || !verification.registrationInfo) {
+      throw new BadRequestError('Passkey registration verification failed.');
+    }
+
+    const { credential, credentialDeviceType, credentialBackedUp, aaguid } = verification.registrationInfo;
+
+    const user = await this.db
+      .selectFrom('authusers')
+      .select('tenant_id')
+      .where('id', '=', auth.user_id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirstOrThrow();
+
+    await this.db
+      .insertInto('passkeys')
+      .values({
+        user_id: auth.user_id,
+        tenant_id: user.tenant_id,
+        credential_id: credential.id,
+        public_key: Buffer.from(credential.publicKey).toString('base64url'),
+        counter: credential.counter,
+        device_type: credentialDeviceType,
+        backed_up: credentialBackedUp,
+        transports: (credential.transports as string[] | undefined) ?? null,
+        aaguid: aaguid ?? null,
+        friendly_name: friendlyName ?? null,
+      })
+      .execute();
+
+    return { verified: true };
+  }
+}
+
+function getExpectedOrigins(): string[] {
+  const origins: string[] = [env.appUrl];
+  if (env.apiUrl !== env.appUrl) {
+    try {
+      origins.push(new URL(env.apiUrl).origin);
+    } catch {}
+  }
+  return origins;
+}
+
+const rpID = env.webAuthnRpId;
+const rpName = env.webAuthnRpName;
+```
+
 ## File: apps/backend/src/app/modules/billing/repositories/webhook-events.repo.ts
 
 ```typescript
@@ -2404,6 +3528,36 @@ export class WebhookEventsRepo extends BaseRepository<'webhook_events'> {
     super('webhook_events');
   }
 }
+```
+
+## File: apps/backend/src/app/modules/billing/routes/billing-webhook.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { BillingController } from '../controller';
+import { logger } from '../../../logger';
+
+const controller = new BillingController();
+
+const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req, reply) => {
+    const signature = (req.headers['stripe-signature'] as string) || '';
+    const payload = req.body as string; // Raw string thanks to custom ContentTypeParser
+
+    try {
+      await controller.handleWebhook(payload, signature);
+      return reply.code(200).send({ received: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(`Webhook error: ${message}`);
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default billingWebhookRoute;
 ```
 
 ## File: apps/backend/src/app/modules/billing/trpc.router.ts
@@ -2430,54 +3584,6 @@ export const BillingRouter = router({
     .mutation(({ ctx, input }) => controller.activateMockPlan(ctx.auth, input.plan)),
 
   cancelMockPlan: adminOrOwnerProcedure.mutation(({ ctx }) => controller.cancelMockPlan(ctx.auth)),
-});
-```
-
-## File: apps/backend/src/app/modules/companies/trpc.router.ts
-
-```typescript
-import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { CompaniesController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const companies = new CompaniesController();
-
-const CompanyInputSchema = CompanyInputObj;
-
-const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
-
-export const CompaniesRouter = router({
-  ...crud,
-
-  import: authProcedure
-    .input(
-      z.object({
-        rows: z.array(CompanyInputSchema),
-        skipped: z.number().int().nonnegative().optional(),
-        file_name: z.string().trim().min(1).max(255).optional(),
-      }),
-    )
-    .mutation(async ({ input, ctx }) => {
-      ctx.res.status(202);
-      return companies.importRows(input, ctx.auth);
-    }),
-
-  getPotentialDuplicates: authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
-
-  mergeCompanies: authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
 });
 ```
 
@@ -5185,508 +6291,6 @@ export class MapHouseholdsTagsRepo extends BaseRepository<'map_households_tags'>
 }
 ```
 
-## File: apps/backend/src/app/modules/households/controller.ts
-
-```typescript
-import type {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  UpdateHouseholdsType,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-import { sql } from 'kysely';
-
-import type { QueryParams } from '../../lib/base.repo';
-import { BaseRepository } from '../../lib/base.repo';
-import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
-import { HouseholdRepo } from './repositories/households.repo';
-import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
-import { TagsRepo } from '../tags/repositories/tags.repo';
-import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
-import { BaseController } from '../../lib/base.controller';
-import { SettingsController } from '../settings/controller';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { logger } from '../../logger';
-
-export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
-  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
-  private settingsController = new SettingsController();
-  private tagsRepo = new TagsRepo();
-
-  constructor() {
-    super(new HouseholdRepo());
-  }
-
-  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
-    // Filter out any placeholder households — they are permanent and undeletable
-    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
-    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
-
-    if (safeIds.length === 0) return false;
-    // Members move to the tenant's placeholder household (persons.household_id is
-    // NOT NULL) rather than being cascade-deleted along with the household.
-    return this.getRepo().deleteManyReassigningPersons({
-      tenant_id: auth.tenant_id,
-      ids: safeIds,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-
-    const fp_street = fingerprintStreet({
-      street_num: payload.street_num,
-      street1: payload.street1,
-      street2: payload.street2,
-    });
-    const fp_full = fingerprintFull({
-      apt: payload.apt,
-      street_num: payload.street_num,
-      street1: payload.street1,
-      street2: payload.street2,
-      city: payload.city,
-      state: payload.state,
-      zip: payload.zip,
-      country: payload.country,
-    });
-
-    // Try to dedupe: find existing by fingerprint
-    if (fp_street || fp_full) {
-      const existing = await this.getRepo().findByFingerprint({
-        tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
-        fp_street: fp_street,
-        fp_full: fp_full,
-      });
-      if (existing?.id) return { id: String(existing.id) } as any;
-    }
-
-    const row = {
-      ...payload,
-      address_fp_street: fp_street,
-      address_fp_full: fp_full,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    return this.add(row as OperationDataType<'households', 'insert'>);
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const household = await super.getOneById(input);
-    if (!household) return undefined;
-
-    const tenantRow = await (BaseRepository as any)['_db']
-      .selectFrom('tenants')
-      .select('placeholder_household_id')
-      .where('id', '=', input.tenant_id)
-      .executeTakeFirst();
-
-    const is_placeholder = tenantRow?.placeholder_household_id
-      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
-      : false;
-    return {
-      ...household,
-      is_placeholder,
-    } as any;
-  }
-
-  public override async update(input: {
-    tenant_id: string;
-    id: string;
-    row: OperationDataType<'households', 'update'>;
-  }) {
-    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
-    if (placeholders.has(input.id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'The placeholder household cannot be edited.',
-      });
-    }
-
-    const keys = Object.keys(input.row || {});
-    const affectsAddress = keys.some((k) =>
-      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
-    );
-
-    // Perform the main update without fingerprint columns first
-    const result = await super.update(input);
-
-    // Attempt fingerprint recompute in a separate, non-fatal step
-    if (affectsAddress) {
-      try {
-        const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
-        const merged = { ...current, ...(input.row as any) };
-
-        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
-        let district = null;
-        let precinct = null;
-        let ward = null;
-
-        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
-        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
-          try {
-            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
-            district = matched.district;
-            precinct = matched.precinct;
-            ward = matched.ward;
-            geocoding_status = 'success';
-          } catch (err) {
-            logger.error({ err }, 'Failed to map coordinates to district during update');
-          }
-        }
-
-        const fpRow: any = {
-          address_fp_street: fingerprintStreet({
-            street_num: merged.street_num,
-            street1: merged.street1,
-            street2: merged.street2,
-          }),
-          address_fp_full: fingerprintFull({
-            apt: merged.apt,
-            street_num: merged.street_num,
-            street1: merged.street1,
-            street2: merged.street2,
-            city: merged.city,
-            state: merged.state,
-            zip: merged.zip,
-            country: merged.country,
-          }),
-          geocoding_status,
-          district,
-          precinct,
-          ward,
-        };
-        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
-
-        // Queue geocoding background job if geocoding status is pending
-        if (geocoding_status === 'pending') {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: input.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'geocode_household',
-                household_id: input.id,
-                tenant_id: input.tenant_id,
-              }),
-              run_at: new Date(),
-              max_attempts: 3,
-            })
-            .execute();
-        }
-        // Duplicate maintenance is only calculated nightly
-      } catch (err) {
-        logger.error({ err }, 'Failed to update address fingerprint and queue duplicates maintenance');
-      }
-    }
-
-    return result;
-  }
-
-  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
-    if (placeholders.has(household_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Cannot attach tags to the placeholder household.',
-      });
-    }
-
-    const randomHexColor = () =>
-      '#' +
-      Math.floor(Math.random() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0');
-    const row = {
-      name,
-      color: randomHexColor(),
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type,
-    };
-
-    const tag = await this.tagsRepo.addOrGet({
-      row: row as OperationDataType<'tags', 'insert'>,
-      onConflictColumn: 'name',
-    });
-
-    return this.addToMap({
-      tag_id: tag?.id as string | undefined,
-      household_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    });
-  }
-
-  public async detachTag(
-    tenant_id: string,
-    household_id: string,
-    tag_name: string,
-    type: 'tag' | 'issue' = 'tag',
-    userId?: string,
-  ) {
-    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
-    if (placeholders.has(household_id)) {
-      throw new TRPCError({
-        code: 'FORBIDDEN',
-        message: 'Cannot detach tags from the placeholder household.',
-      });
-    }
-
-    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
-    if (tag?.id) {
-      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
-    }
-
-    try {
-      if (userId) {
-        await this.userActivity.log({
-          tenant_id,
-          user_id: userId,
-          activity: 'update',
-          entity: 'households',
-          entity_id: household_id,
-          quantity: 1,
-          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log detach tag activity');
-    }
-  }
-
-  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    const { tags, ...queryParams } = options || {};
-    return this.getRepo().getAllWithPeopleCount({
-      tenant_id: auth.tenant_id,
-      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
-      tags,
-    });
-  }
-
-  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
-  }
-
-  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getDistinctTags(auth.tenant_id, type);
-  }
-
-  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getTags(id, auth.tenant_id, type);
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getAllWithPeopleCount(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'households',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-
-  private async addToMap(row: {
-    tag_id: string | undefined;
-    household_id: string;
-    tenant_id: string;
-    createdby_id: string;
-    updatedby_id: string;
-  }) {
-    if (!row.tag_id) {
-      throw new TRPCError({
-        message: 'Failed to add the tag',
-        code: 'INTERNAL_SERVER_ERROR',
-      });
-    }
-
-    return await this.mapHouseholdsTagRepo.add({
-      row: row as OperationDataType<'map_households_tags', 'insert'>,
-    });
-  }
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().mergeHouseholds({
-      tenant_id: auth.tenant_id,
-      target_id,
-      source_id,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
-    const job = await this.getRepo()
-      .db.selectFrom('background_jobs')
-      .select(['created_at'])
-      .where('tenant_id', '=', tenantId)
-      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-      .orderBy('created_at', 'desc')
-      .executeTakeFirst();
-
-    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
-  }
-
-  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-
-    const existingJob = await this.getRepo()
-      .db.selectFrom('background_jobs')
-      .select(['created_at'])
-      .where('tenant_id', '=', tenantId)
-      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
-      .where('created_at', '>', oneMonthAgo)
-      .executeTakeFirst();
-
-    if (existingJob) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
-      });
-    }
-
-    await this.getRepo()
-      .db.insertInto('background_jobs')
-      .values({
-        tenant_id: tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'recompute_address_fingerprints',
-          tenant_id: tenantId,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      })
-      .execute();
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/households/trpc.router.ts
-
-```typescript
-import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
-
-import { z } from 'zod';
-
-import { authProcedure, router } from '../../../trpc';
-import { HouseholdsController } from './controller';
-import { createCrudRouter } from '../../lib/crud-router';
-
-const households = new HouseholdsController();
-
-const crud = createCrudRouter(households, UpdateHouseholdsObj, UpdateHouseholdsObj);
-
-export const HouseholdsRouter = router({
-  ...crud,
-
-  getAll: authProcedure.query(({ ctx }) => households.getAll(ctx.auth.tenant_id)),
-
-  add: authProcedure.input(UpdateHouseholdsObj).mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
-
-  deleteMany: authProcedure
-    .input(z.array(idSchema).min(1, 'At least one ID is required'))
-    .mutation(({ input, ctx }) => households.deleteManyForTenant(ctx.auth, input)),
-
-  attachTag: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth)),
-
-  detachTag: authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id),
-    ),
-
-  getTags: authProcedure
-    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
-    .query(({ input, ctx }) => {
-      const id = typeof input === 'string' ? input : input.id;
-      const type = typeof input === 'string' ? undefined : input.type;
-      return households.getTags(id, ctx.auth, type);
-    }),
-
-  getDistinctTags: authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)),
-
-  getAllWithPeopleCount: authProcedure
-    .input(z.any().optional())
-    .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)),
-
-  getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
-
-  getPotentialDuplicates: authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => households.getPotentialDuplicates(ctx.auth, input)),
-
-  mergeHouseholds: authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)),
-
-  getLastFingerprintRecomputation: authProcedure.query(({ ctx }) =>
-    households.getLastFingerprintRecomputation(ctx.auth.tenant_id),
-  ),
-
-  recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
-    households.recomputeAddressFingerprints(ctx.auth.tenant_id),
-  ),
-});
-```
-
 ## File: apps/backend/src/app/modules/imports/controller.ts
 
 ```typescript
@@ -6306,6 +6910,288 @@ const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
 export default msSyncCallbackRoute;
 ```
 
+## File: apps/backend/src/app/modules/ms-sync/ms-sync.service.ts
+
+```typescript
+import { Client } from '@microsoft/microsoft-graph-client';
+import type { Kysely } from 'kysely';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { MsOAuthService } from './ms-oauth.service';
+import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
+import type { IngestableEmail } from '../emails/services/email-ingester.service';
+import { EmailIngesterService } from '../emails/services/email-ingester.service';
+import { logger } from '../../logger';
+
+const MAX_MESSAGES_PER_SYNC = 50;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getStatusCode(err: unknown): number | undefined {
+  return isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined;
+}
+
+function getRetryAfterHeader(err: unknown): string | undefined {
+  if (!isRecord(err)) return undefined;
+  const headers = err['headers'];
+  if (!isRecord(headers)) return undefined;
+  const getFn = headers['get'];
+  if (typeof getFn === 'function') {
+    const value: unknown = (getFn as (name: string) => unknown).call(headers, 'Retry-After');
+    if (typeof value === 'string') return value;
+  }
+  const raw = headers['retry-after'];
+  return typeof raw === 'string' ? raw : undefined;
+}
+
+async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      return await callFn();
+    } catch (err) {
+      if (getStatusCode(err) === 429 && attempt <= maxRetries) {
+        let delayMs = 5000;
+        const retryAfter = getRetryAfterHeader(err);
+        if (retryAfter) {
+          const parsed = parseInt(retryAfter, 10);
+          if (!isNaN(parsed)) {
+            delayMs = parsed * 1000;
+          }
+        } else {
+          delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
+        }
+        logger.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+export class MsSyncService {
+  private readonly ingester: EmailIngesterService;
+
+  constructor(
+    private readonly db: Kysely<Models>,
+    private readonly oauthSvc: MsOAuthService,
+  ) {
+    this.ingester = new EmailIngesterService(db, 'ms');
+  }
+
+  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
+    const accessToken = await this.oauthSvc.getValidToken(tenantId);
+    const client = this.buildGraphClient(accessToken);
+
+    const syncFolders = [
+      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.INBOX },
+      { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
+      { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
+      { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
+    ];
+
+    // Read stored delta map.
+    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
+    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
+    // positions after a successful sync, so no explicit clear is needed.
+    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
+    let deltaMap: Record<string, string> = {};
+    if (dbDeltaLink) {
+      try {
+        const parsed = JSON.parse(dbDeltaLink);
+        if (!parsed._needs_full_sync) {
+          deltaMap = parsed;
+        }
+        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
+      } catch {
+        // If not valid JSON, it's a legacy plain URL string. Clear it.
+        deltaMap = {};
+      }
+    }
+
+    let inserted = 0;
+    const nextDeltaMap: Record<string, string> = { ...deltaMap };
+
+    for (const folder of syncFolders) {
+      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
+
+      let pageUrl: string | null =
+        folderDeltaLink ??
+        `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
+
+      const allMessages: any[] = [];
+      let isInitialSync = folderDeltaLink === null;
+      let hasMore = true;
+
+      while (pageUrl && hasMore) {
+        const url = pageUrl;
+        try {
+          const response: any = await graphCallWithRetry(() => client.api(url).get());
+          const messages = response.value ?? [];
+          allMessages.push(...messages);
+
+          const nextLink = response['@odata.nextLink'] ?? null;
+          const deltaLink = response['@odata.deltaLink'] ?? null;
+
+          if (deltaLink) {
+            nextDeltaMap[folder.wellKnownName] = deltaLink;
+            hasMore = false;
+          } else if (nextLink) {
+            pageUrl = nextLink;
+          } else {
+            hasMore = false;
+          }
+        } catch (err) {
+          if (getStatusCode(err) === 410) {
+            // Delta link expired for this folder, clear it
+            delete nextDeltaMap[folder.wellKnownName];
+            isInitialSync = true;
+            allMessages.length = 0; // clear any partially loaded pages before restarting
+            pageUrl = `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // Process all messages fetched in this sync run
+      for (const msg of allMessages) {
+        if (msg['@removed']) {
+          const msId = msg.id;
+          if (msId) {
+            await this.ingester.deleteMessage(tenantId, msId);
+          }
+          continue;
+        }
+
+        try {
+          const wasSaved = await this.saveMessage(client, msg, tenantId, requestedBy, folder.pplcrmId);
+          if (wasSaved) inserted++;
+        } catch (err) {
+          logger.error({ err }, `Failed to ingest MS Graph message ${msg.id}`);
+        }
+      }
+
+      // If it was an initial/full sync (meaning we started with no delta link, or it expired and we retried),
+      // we have retrieved the entire list of active server messages.
+      // Therefore, any local email that has an MS preview key but is NOT in the server's list must have been deleted or moved.
+      if (isInitialSync) {
+        const serverMsIds = new Set(allMessages.filter((m) => !m['@removed']).map((m) => String(m.id)));
+        const localEmails = await this.db
+          .selectFrom('emails')
+          .select(['id', 'preview'])
+          .where('tenant_id', '=', tenantId)
+          .where('folder_id', '=', folder.pplcrmId)
+          .where('preview', 'like', 'ms:%')
+          .execute();
+
+        for (const localEmail of localEmails) {
+          const previewKey = localEmail.preview ?? '';
+          const msId = previewKey.replace(/^ms:/, '');
+          if (!serverMsIds.has(msId)) {
+            await this.ingester.deleteMessage(tenantId, msId);
+          }
+        }
+      }
+    }
+
+    // Save updated delta map back to database
+    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
+
+    return { inserted };
+  }
+
+  public async removeAllLocalEmails(tenantId: string): Promise<void> {
+    await this.ingester.removeAllLocalEmails(tenantId);
+  }
+
+  private async saveMessage(
+    client: Client,
+    msg: any,
+    tenantId: string,
+    requestedBy: string,
+    folderId: string,
+  ): Promise<boolean> {
+    const msId: string = msg.id ?? '';
+    if (!msId) return false;
+
+    const fromEmail = msg.from?.emailAddress?.address ?? null;
+    const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;
+    const subject = msg.subject ?? null;
+    let dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
+    if (isNaN(dateSent.getTime())) {
+      dateSent = new Date();
+    }
+    const bodyHtml = msg.body?.content ?? '';
+
+    // Fetch Graph attachments if any
+    let graphAttachments: any[] = [];
+    const hasCid = bodyHtml && bodyHtml.includes('cid:');
+    if (msg.hasAttachments || hasCid) {
+      try {
+        const attRes = await graphCallWithRetry(() => client.api(`/me/messages/${msId}/attachments`).get());
+        graphAttachments = attRes.value ?? [];
+      } catch (err) {
+        logger.error({ err }, `Failed to fetch attachments for message ${msId}`);
+      }
+    }
+
+    const fileAttachments = graphAttachments.filter(
+      (att: any) => att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes,
+    );
+
+    // Map MS Graph attachments to IngestableEmail attachments
+    const attachments = fileAttachments.map((att: any) => ({
+      name: att.name,
+      contentType: att.contentType,
+      size: att.size,
+      contentId: att.contentId ?? null,
+      isInline: att.isInline ?? false,
+      fetchContent: async () => Buffer.from(att.contentBytes, 'base64'),
+    }));
+
+    // Map recipients
+    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
+    const toList: any[] = msg.toRecipients ?? [];
+    const ccList: any[] = msg.ccRecipients ?? [];
+    const bccList: any[] = msg.bccRecipients ?? [];
+
+    toList.forEach((r) => {
+      recipients.push({ kind: 'to', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
+    });
+    ccList.forEach((r) => {
+      recipients.push({ kind: 'cc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
+    });
+    bccList.forEach((r) => {
+      recipients.push({ kind: 'bcc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
+    });
+
+    const ingestable: IngestableEmail = {
+      id: msId,
+      internetMessageId: msg.internetMessageId ?? null,
+      fromEmail,
+      toEmail,
+      subject,
+      dateSent,
+      bodyHtml,
+      recipients,
+      attachments,
+    };
+
+    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
+  }
+
+  private buildGraphClient(accessToken: string): Client {
+    return Client.init({
+      authProvider: (done) => done(null, accessToken),
+    });
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
 
 ```typescript
@@ -6580,6 +7466,199 @@ export class NewslettersRepo extends BaseRepository<'newsletters'> {
     return { rows, count };
   }
 }
+```
+
+## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
+
+```typescript
+import { createPublicKey, createVerify } from 'crypto';
+import type { FastifyPluginCallback } from 'fastify';
+import { BaseRepository } from '../../../lib/base.repo';
+import { env } from '../../../../env';
+import { sql } from 'kysely';
+
+const db = new BaseRepository('newsletters').db;
+
+const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
+const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
+
+/**
+ * Verifies a SendGrid Signed Event Webhook request.
+ * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
+ * against the base64-DER public verification key configured in the dashboard.
+ */
+function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
+  const verificationKey = env.sendgridWebhookVerificationKey;
+  if (!verificationKey || !signature || !timestamp) {
+    return false;
+  }
+
+  try {
+    const publicKey = createPublicKey({
+      key: Buffer.from(verificationKey, 'base64'),
+      format: 'der',
+      type: 'spki',
+    });
+    const verifier = createVerify('sha256');
+    verifier.update(timestamp + rawBody);
+    verifier.end();
+    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
+  } catch {
+    return false;
+  }
+}
+
+const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req: any, reply) => {
+    // req.body is the raw string (see content-type parser in fastify.server.ts)
+    const rawBody = typeof req.body === 'string' ? req.body : '';
+    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
+    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
+
+    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
+      return reply.code(401).send({ error: 'Unauthorized' });
+    }
+
+    let parsedBody: any;
+    try {
+      parsedBody = JSON.parse(rawBody);
+    } catch {
+      return reply.code(400).send({ error: 'Invalid payload' });
+    }
+
+    const events = Array.isArray(parsedBody) ? parsedBody : [parsedBody];
+
+    try {
+      const processedNewsletters = new Set<string>();
+
+      // Insert all events that have newsletter_id and tenant_id
+      for (const ev of events) {
+        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
+          continue;
+        }
+
+        const newsletterId = ev.newsletter_id;
+        const tenantId = ev.tenant_id;
+        const eventType = ev.event || '';
+        const email = ev.email || '';
+        const sgEventId = ev.sg_event_id;
+        const sgMessageId = ev.sg_message_id || null;
+        const url = ev.url || null;
+        const ip = ev.ip || null;
+        const userAgent = ev.useragent || null;
+        const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
+
+        try {
+          await db
+            .insertInto('newsletter_events')
+            .values({
+              tenant_id: tenantId,
+              newsletter_id: newsletterId,
+              email,
+              event_type: eventType,
+              sg_event_id: sgEventId,
+              sg_message_id: sgMessageId,
+              url,
+              ip,
+              user_agent: userAgent,
+              timestamp,
+              created_at: new Date() as any,
+            })
+            .onConflict((oc) => oc.column('sg_event_id').doNothing())
+            .execute();
+
+          processedNewsletters.add(`${tenantId}:${newsletterId}`);
+        } catch (insertErr) {
+          req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
+        }
+      }
+
+      // Recompute aggregates for each processed newsletter
+      for (const key of processedNewsletters) {
+        const [tenantId, newsletterId] = key.split(':') as [string, string];
+
+        await db.transaction().execute(async (trx) => {
+          // 1. Fetch aggregates
+          const stats = await trx
+            .selectFrom('newsletter_events')
+            .select([
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'delivered')`.as('delivered'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced'),
+              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'open')`.as('unique_opens'),
+              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'click')`.as('unique_clicks'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'unsubscribe')`.as('unsubscribes'),
+              sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
+              sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
+            ])
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .executeTakeFirst();
+
+          // 2. Fetch top links clicked
+          const topLinksResult = await trx
+            .selectFrom('newsletter_events')
+            .select(['url'])
+            .select(({ fn }) => fn.count<number>('id').as('clicks'))
+            .where('newsletter_id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .where('event_type', '=', 'click')
+            .where('url', 'is not', null)
+            .groupBy('url')
+            .orderBy('clicks', 'desc')
+            .execute();
+
+          const topLinks = topLinksResult.map((l) => ({
+            url: l.url,
+            clicks: Number(l.clicks),
+          }));
+
+          // 3. Update the newsletters table row
+          const newsletter = await trx
+            .selectFrom('newsletters')
+            .select(['total_recipients'])
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .executeTakeFirst();
+
+          const totalRecipients = Number(newsletter?.total_recipients ?? 0);
+          const uniqueOpens = Number(stats?.unique_opens ?? 0);
+          const uniqueClicks = Number(stats?.unique_clicks ?? 0);
+
+          const openRate = totalRecipients > 0 ? (uniqueOpens / totalRecipients) * 100 : 0;
+          const clickRate = totalRecipients > 0 ? (uniqueClicks / totalRecipients) * 100 : 0;
+
+          await trx
+            .updateTable('newsletters')
+            .set({
+              delivered_count: Number(stats?.delivered ?? 0),
+              bounce_count: Number(stats?.bounced ?? 0),
+              unique_opens: uniqueOpens,
+              unique_clicks: uniqueClicks,
+              unsubscribe_count: Number(stats?.unsubscribes ?? 0),
+              spam_complaint_count: Number(stats?.spamreports ?? 0),
+              last_engagement_at: stats?.last_engagement || null,
+              open_rate: openRate,
+              click_rate: clickRate,
+              top_links: JSON.stringify(topLinks) as any,
+              updated_at: new Date(),
+            })
+            .where('id', '=', newsletterId)
+            .where('tenant_id', '=', tenantId)
+            .execute();
+        });
+      }
+
+      return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
+    } catch (err) {
+      req.log.error(err, 'SendGrid webhook processing error');
+      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  done();
+};
+
+export default newslettersWebhookRoute;
 ```
 
 ## File: apps/backend/src/app/modules/notifications/repositories/notifications.repo.ts
@@ -7260,481 +8339,6 @@ export class DuplicateMaintenanceService {
     }
   }
 }
-```
-
-## File: apps/backend/src/app/modules/persons/controller.ts
-
-```typescript
-import type {
-  ExportCsvInputType,
-  ExportCsvResponseType,
-  IAuthKeyPayload,
-  getAllOptionsType,
-} from '../../../../../../libs/common/src';
-import { TRPCError } from '@trpc/server';
-import { BaseController } from '../../lib/base.controller';
-import type { QueryParams } from '../../lib/base.repo';
-import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
-import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
-import { PersonsRepo } from './repositories/persons.repo';
-import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
-import { queueZapierTrigger } from '../zapier/zapier.service';
-import { logger } from '../../logger';
-
-export class PersonsController extends BaseController<'persons', PersonsRepo> {
-  private mapPersonsTagRepo = new MapPersonsTagRepo();
-  private mapListsPersonsRepo = new MapListsPersonsRepo();
-  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
-
-  constructor() {
-    super(new PersonsRepo());
-  }
-
-  public getAllWithAddress(
-    auth: IAuthKeyPayload,
-    options?: getAllOptionsType,
-  ): Promise<{ rows: { [x: string]: unknown }[]; count: number }> {
-    const { tags, ...queryParams } = options || {};
-    return this.getRepo().getAllWithAddress({
-      tenant_id: auth.tenant_id,
-      options: queryParams as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
-      tags,
-    });
-  }
-
-  public getByHouseholdId(household_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getByHouseholdId({
-      id: household_id,
-      tenant_id: auth.tenant_id,
-      options: options as QueryParams<'persons'>,
-    });
-  }
-
-  public getByCompanyId(company_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
-    return this.getRepo().getByCompanyId({
-      id: company_id,
-      tenant_id: auth.tenant_id,
-      options: options as QueryParams<'persons'>,
-    });
-  }
-
-  public countByCompanyId(company_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().countByCompanyId({ id: company_id, tenant_id: auth.tenant_id });
-  }
-
-  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getDistinctTags(auth.tenant_id, type);
-  }
-
-  public getTags(person_id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
-    return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id, type });
-  }
-
-  public async moveEntireHousehold(oldHouseholdId: string, newHouseholdId: string, tenantId: string) {
-    return this.getRepo()
-      .transaction()
-      .execute(
-        async (trx) =>
-          await trx
-            .updateTable('persons')
-            .set({ household_id: newHouseholdId })
-            .where('household_id', '=', oldHouseholdId)
-            .where('tenant_id', '=', tenantId)
-            .returningAll()
-            .execute(),
-      );
-  }
-
-  public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
-    if (!idsToDelete?.length) return false;
-
-    let personSnapshots: Array<{
-      id: unknown;
-      email: string | null;
-      first_name: string | null;
-      last_name: string | null;
-    }> = [];
-    try {
-      personSnapshots = await this.getRepo()
-        .db.selectFrom('persons')
-        .select(['id', 'email', 'first_name', 'last_name'])
-        .where('tenant_id', '=', tenant_id)
-        .where('id', 'in', idsToDelete)
-        .execute();
-    } catch {
-      /* ignore — snapshots are best-effort */
-    }
-
-    const result = await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        // Check if any person is a team captain
-        const captainedTeams = await trx
-          .selectFrom('teams')
-          .select(['id', 'name', 'team_captain_id'])
-          .where('tenant_id', '=', tenant_id)
-          .where('team_captain_id', 'in', idsToDelete)
-          .execute();
-
-        if (captainedTeams.length > 0 && !force) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?',
-          });
-        }
-
-        // Unlink captaincy if forced and captained teams exist
-        if (captainedTeams.length > 0) {
-          await trx
-            .updateTable('teams')
-            .set({ team_captain_id: null })
-            .where('tenant_id', '=', tenant_id)
-            .where('team_captain_id', 'in', idsToDelete)
-            .execute();
-        }
-
-        // Delete volunteer shifts
-        await trx
-          .deleteFrom('volunteer_shifts')
-          .where('tenant_id', '=', tenant_id)
-          .where('person_id', 'in', idsToDelete)
-          .execute();
-
-        // Delete team mappings
-        await this.mapTeamsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
-        // Delete tag mappings
-        await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
-        // Delete list mappings
-        await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
-        // Delete persons within the same transaction
-        const result = await this.getRepo().deleteMany({ tenant_id, ids: idsToDelete }, trx);
-
-        return result;
-      });
-
-    try {
-      for (const p of personSnapshots) {
-        await queueZapierTrigger(this.getRepo().db, tenant_id, 'person_deleted', {
-          id: String(p.id),
-          email: p.email,
-          first_name: p.first_name,
-          last_name: p.last_name,
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_deleted trigger(s)');
-    }
-
-    return result;
-  }
-
-  public override async delete(
-    tenant_id: string,
-    idToDelete: string,
-    userId?: string,
-    force?: boolean,
-  ): Promise<boolean> {
-    const result = await this.deleteMany(tenant_id, [idToDelete], force);
-    try {
-      if (userId) {
-        await this.userActivity.log({
-          tenant_id: tenant_id,
-          user_id: userId,
-          activity: 'delete',
-          entity: 'persons',
-          entity_id: idToDelete ? String(idToDelete) : null,
-          quantity: 1,
-          metadata: { id: idToDelete },
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log delete person activity');
-    }
-    return result;
-  }
-
-  public override async exportCsv(
-    input: ExportCsvInputType & { tenant_id: string },
-    auth?: IAuthKeyPayload,
-  ): Promise<ExportCsvResponseType> {
-    if (auth) {
-      const result = await this.getAllWithAddress(auth, input?.options);
-      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
-      const response = this.buildCsvResponse(rows, input) as {
-        csv: string;
-        fileName: string;
-        columns: string[];
-        rowCount: number;
-      };
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'export',
-        entity: 'persons',
-        quantity: response.rowCount,
-        metadata: {
-          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
-          returned_columns: response.columns.slice(0, 12),
-          file_name: response.fileName,
-        },
-      });
-      return response;
-    }
-    return super.exportCsv(input, auth);
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/persons/trpc.router.ts
-
-```typescript
-import {
-  UpdatePersonsObj,
-  exportCsvInput,
-  exportCsvResponse,
-  getAllOptions,
-  idSchema,
-} from '../../../../../../libs/common/src';
-import { z } from 'zod';
-import { authProcedure, router } from '../../../trpc';
-import { PersonsController } from './controller';
-import { PersonsService } from './services/persons.service';
-
-const persons = new PersonsController();
-const personsService = new PersonsService();
-
-function add() {
-  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
-}
-
-function attachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
-}
-
-function count() {
-  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
-}
-
-const deleteOneInput = z.union([
-  idSchema,
-  z.object({
-    id: idSchema,
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteOne() {
-  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
-    const id = typeof input === 'string' ? input : input.id;
-    const force = typeof input === 'string' ? false : !!input.force;
-    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
-  });
-}
-
-const deleteManyInput = z.union([
-  z.array(idSchema).min(1, 'At least one ID is required'),
-  z.object({
-    ids: z.array(idSchema).min(1, 'At least one ID is required'),
-    force: z.boolean().optional(),
-  }),
-]);
-
-function deleteMany() {
-  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
-    const ids = Array.isArray(input) ? input : input.ids;
-    const force = Array.isArray(input) ? false : !!input.force;
-    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
-  });
-}
-
-function detachTag() {
-  return authProcedure
-    .input(
-      z.object({
-        id: idSchema,
-        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
-        type: z.enum(['tag', 'issue']).default('tag').optional(),
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      personsService.detachTag({
-        tenant_id: ctx.auth.tenant_id,
-        person_id: input.id,
-        name: input.tag_name,
-        type: input.type ?? 'tag',
-        user_id: ctx.auth.user_id,
-      }),
-    );
-}
-
-function getAll() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
-}
-
-function getAllWithAddress() {
-  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
-}
-
-function getByHouseholdId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
-}
-
-function getByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema, options: getAllOptions }))
-    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
-}
-
-function countByCompanyId() {
-  return authProcedure
-    .input(z.object({ id: idSchema }))
-    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
-}
-
-function getById() {
-  return authProcedure
-    .input(idSchema)
-    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
-}
-
-function getActivity() {
-  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
-}
-
-// Distinct tags
-function getDistinctTags() {
-  return authProcedure
-    .input(z.enum(['tag', 'issue']).optional())
-    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
-}
-
-function exportCsv() {
-  return authProcedure
-    .input(exportCsvInput)
-    .output(exportCsvResponse)
-    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
-}
-
-function getTags() {
-  return authProcedure
-    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
-    .query(({ input, ctx }) => {
-      const id = typeof input === 'string' ? input : input.id;
-      const type = typeof input === 'string' ? undefined : input.type;
-      return persons.getTags(id, ctx.auth, type);
-    });
-}
-
-function update() {
-  return authProcedure
-    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
-    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
-}
-
-function removeHousehold() {
-  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
-}
-
-function importMany() {
-  const ImportRow = z.object({
-    first_name: z.string().trim().max(100).optional(),
-    last_name: z.string().trim().max(100).optional(),
-    email: z.string().trim().max(255).optional(),
-    mobile: z.string().trim().max(30).optional(),
-    notes: z.string().trim().max(10000).optional(),
-    home_phone: z.string().trim().max(30).optional(),
-    street_num: z.string().trim().max(30).optional(),
-    street1: z.string().trim().max(150).optional(),
-    street2: z.string().trim().max(150).optional(),
-    apt: z.string().trim().max(30).optional(),
-    city: z.string().trim().max(100).optional(),
-    state: z.string().trim().max(100).optional(),
-    zip: z.string().trim().max(20).optional(),
-    country: z.string().trim().max(100).optional(),
-  });
-
-  const Input = z.object({
-    rows: z.array(ImportRow),
-    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
-    skipped: z.number().int().nonnegative().optional(),
-    file_name: z.string().trim().min(1).max(255).optional(),
-  });
-
-  return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
-}
-
-function getPotentialDuplicates() {
-  return authProcedure
-    .input(
-      z
-        .object({
-          page: z.number().int().positive().optional().default(1),
-          pageSize: z.number().int().positive().optional().default(20),
-        })
-        .optional(),
-    )
-    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
-}
-
-function getDuplicateCounts() {
-  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
-}
-
-function mergePersons() {
-  return authProcedure
-    .input(z.object({ target_id: idSchema, source_id: idSchema }))
-    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
-}
-
-function moveEntireHousehold() {
-  return authProcedure
-    .input(
-      z.object({
-        fromHouseholdId: idSchema,
-        toHouseholdId: idSchema,
-      }),
-    )
-    .mutation(({ input, ctx }) =>
-      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
-    );
-}
-
-export const PersonsRouter = router({
-  add: add(),
-  count: count(),
-  getAll: getAll(),
-  update: update(),
-  removeHousehold: removeHousehold(),
-  import: importMany(),
-  getTags: getTags(),
-  getById: getById(),
-  getActivity: getActivity(),
-  attachTag: attachTag(),
-  detachTag: detachTag(),
-  delete: deleteOne(),
-  deleteMany: deleteMany(),
-  getDistinctTags: getDistinctTags(),
-  getByHouseholdId: getByHouseholdId(),
-  getByCompanyId: getByCompanyId(),
-  countByCompanyId: countByCompanyId(),
-  getAllWithAddress: getAllWithAddress(),
-  exportCsv: exportCsv(),
-  getPotentialDuplicates: getPotentialDuplicates(),
-  getDuplicateCounts: getDuplicateCounts(),
-  mergePersons: mergePersons(),
-  moveEntireHousehold: moveEntireHousehold(),
-});
 ```
 
 ## File: apps/backend/src/app/modules/settings/repositories/settings.repo.ts
@@ -10280,6 +10884,392 @@ export class WorkflowsRepo extends BaseRepository<'workflows'> {
 }
 ```
 
+## File: apps/backend/src/app/modules/workflows/controller.ts
+
+```typescript
+import { BaseController } from '../../lib/base.controller';
+import { WorkflowsRepo } from './repositories/workflows.repo';
+import { WorkflowEnrollmentsRepo } from './repositories/workflow-enrollments.repo';
+import type { Transaction, Kysely } from 'kysely';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { TRPCError } from '@trpc/server';
+import { logger } from '../../logger';
+
+export class WorkflowsController extends BaseController<'workflows', WorkflowsRepo> {
+  private readonly enrollmentsRepo = new WorkflowEnrollmentsRepo();
+
+  constructor() {
+    super(new WorkflowsRepo());
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const workflow = await super.getOneById(input);
+    if (!workflow) return workflow;
+    return this.resolveCreatorAndUpdater(input.tenant_id, workflow);
+  }
+
+  public async getSteps(tenantId: string, workflowId: string, trx?: Transaction<Models>) {
+    const db = trx || this.getRepo().db;
+    const steps = await db
+      .selectFrom('workflow_steps')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('workflow_id', '=', workflowId)
+      .orderBy('step_number', 'asc')
+      .execute();
+    return steps.map((s) => ({
+      ...s,
+      id: String(s.id),
+      workflow_id: String(s.workflow_id),
+    }));
+  }
+
+  public async saveSteps(tenantId: string, workflowId: string, steps: any[], userId: string) {
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // 1. Verify workflow exists and belongs to tenant
+        const workflow = await trx
+          .selectFrom('workflows')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', workflowId)
+          .executeTakeFirst();
+
+        if (!workflow) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Workflow not found.',
+          });
+        }
+
+        // 2. Delete all existing steps
+        await trx
+          .deleteFrom('workflow_steps')
+          .where('tenant_id', '=', tenantId)
+          .where('workflow_id', '=', workflowId)
+          .execute();
+
+        // 3. Insert new steps
+        if (steps.length > 0) {
+          const insertRows = steps.map(
+            (step, idx) =>
+              ({
+                tenant_id: tenantId,
+                workflow_id: workflowId,
+                step_number: idx + 1,
+                delay_days: Number(step.delay_days || 0),
+                delay_unit: step.delay_unit || 'days',
+                subject: step.subject || 'Follow-up Email',
+                preview_text: step.preview_text || null,
+                html_content: step.html_content || null,
+                plain_text_content: step.plain_text_content || null,
+              }) as any,
+          );
+
+          await trx.insertInto('workflow_steps').values(insertRows).execute();
+        }
+
+        // Log update activity
+        await this.userActivity.log(
+          {
+            tenant_id: tenantId,
+            user_id: userId,
+            activity: 'update',
+            entity: 'workflows',
+            entity_id: workflowId,
+            quantity: 1,
+            metadata: { id: workflowId, action: 'save_steps', stepsCount: steps.length },
+          },
+          trx,
+        );
+      });
+
+    return { success: true };
+  }
+
+  public async getEnrollments(tenantId: string, workflowId: string, options?: any) {
+    return this.enrollmentsRepo.getEnrollmentsWithPersonDetails({
+      tenant_id: tenantId,
+      workflow_id: workflowId,
+      options,
+    });
+  }
+
+  public async enrollPerson(
+    tenantId: string,
+    personId: string,
+    workflowId: string,
+    userId: string,
+    trx?: Transaction<Models> | Kysely<Models>,
+  ) {
+    const executeLogic = async (t: Transaction<Models> | Kysely<Models>) => {
+      // 1. Verify person exists
+      const person = await t
+        .selectFrom('persons')
+        .select(['id', 'first_name', 'last_name', 'email'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', personId)
+        .executeTakeFirst();
+
+      if (!person) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Person not found.',
+        });
+      }
+
+      // 2. Verify workflow exists and is active
+      const workflow = await t
+        .selectFrom('workflows')
+        .select(['id', 'status', 'name'])
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', workflowId)
+        .executeTakeFirst();
+
+      if (!workflow) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Workflow not found.',
+        });
+      }
+
+      // 3. Check if already enrolled in an active state
+      const existing = await t
+        .selectFrom('workflow_enrollments')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('workflow_id', '=', workflowId)
+        .where('person_id', '=', personId)
+        .where('status', '=', 'active')
+        .executeTakeFirst();
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This person is already enrolled in this workflow.',
+        });
+      }
+
+      // 4. Find the first step of this workflow
+      const firstStep = await t
+        .selectFrom('workflow_steps')
+        .select(['step_number', 'delay_days', 'delay_unit'])
+        .where('tenant_id', '=', tenantId)
+        .where('workflow_id', '=', workflowId)
+        .orderBy('step_number', 'asc')
+        .executeTakeFirst();
+
+      if (!firstStep) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This workflow does not have any steps yet.',
+        });
+      }
+
+      // 5. Calculate next run at based on step delay
+      const delayMs =
+        firstStep.delay_unit === 'hours'
+          ? firstStep.delay_days * 60 * 60 * 1000
+          : firstStep.delay_days * 24 * 60 * 60 * 1000;
+      const nextRunAt = new Date(Date.now() + delayMs);
+
+      // 6. Insert enrollment
+      const insertRow = {
+        tenant_id: tenantId,
+        workflow_id: workflowId,
+        person_id: personId,
+        status: 'active',
+        current_step_number: firstStep.step_number,
+        next_run_at: nextRunAt,
+      } as OperationDataType<'workflow_enrollments', 'insert'>;
+
+      const result = await t
+        .insertInto('workflow_enrollments')
+        .values(insertRow)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      // Log user activity
+      await this.userActivity.log(
+        {
+          tenant_id: tenantId,
+          user_id: userId,
+          activity: 'assign',
+          entity: 'workflows',
+          entity_id: workflowId,
+          quantity: 1,
+          metadata: {
+            id: workflowId,
+            person_id: personId,
+            person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
+            next_run_at: nextRunAt.toISOString(),
+          },
+        },
+        typeof (t as any).transaction === 'undefined' ? (t as Transaction<Models>) : undefined,
+      );
+
+      return {
+        ...result,
+        id: String(result.id),
+        workflow_id: String(result.workflow_id),
+        person_id: String(result.person_id),
+      };
+    };
+
+    if (trx) {
+      return executeLogic(trx);
+    } else {
+      return this.getRepo()
+        .transaction()
+        .execute(async (t) => executeLogic(t));
+    }
+  }
+
+  public async cancelEnrollment(tenantId: string, enrollmentId: string, userId: string) {
+    return this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        const enrollment = await trx
+          .selectFrom('workflow_enrollments')
+          .select(['id', 'workflow_id', 'person_id', 'status'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', enrollmentId)
+          .executeTakeFirst();
+
+        if (!enrollment) {
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Enrollment not found.',
+          });
+        }
+
+        if (enrollment.status !== 'active') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Only active enrollments can be cancelled.',
+          });
+        }
+
+        await trx
+          .updateTable('workflow_enrollments')
+          .set({
+            status: 'cancelled',
+            next_run_at: null,
+            updated_at: new Date(),
+          })
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', enrollmentId)
+          .execute();
+
+        // Look up person's name for log
+        const person = await trx
+          .selectFrom('persons')
+          .select(['first_name', 'last_name'])
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', enrollment.person_id)
+          .executeTakeFirst();
+
+        // Log activity
+        await this.userActivity.log(
+          {
+            tenant_id: tenantId,
+            user_id: userId,
+            activity: 'unassign',
+            entity: 'workflows',
+            entity_id: String(enrollment.workflow_id),
+            quantity: 1,
+            metadata: {
+              id: String(enrollment.workflow_id),
+              person_id: String(enrollment.person_id),
+              person_name: person ? `${person.first_name || ''} ${person.last_name || ''}`.trim() : 'Unknown Contact',
+            },
+          },
+          trx,
+        );
+
+        return { success: true };
+      });
+  }
+
+  public async triggerWorkflow(
+    tenantId: string,
+    personId: string,
+    triggerType: string,
+    triggerEventId: string | null | undefined,
+    trx?: Transaction<Models> | Kysely<Models>,
+  ) {
+    const db = trx || this.getRepo().db;
+    let query = db
+      .selectFrom('workflows')
+      .select(['id', 'name'])
+      .where('tenant_id', '=', tenantId)
+      .where('trigger_type', '=', triggerType)
+      .where('status', '=', 'active');
+
+    if (triggerEventId) {
+      query = query.where((eb) =>
+        eb.or([eb('trigger_event_id', 'is', null), eb('trigger_event_id', '=', triggerEventId as any)]),
+      );
+    } else {
+      query = query.where('trigger_event_id', 'is', null);
+    }
+
+    const activeWorkflows = await query.execute();
+    if (activeWorkflows.length === 0) return;
+
+    // Look up the default tenant admin actor ID
+    const tenantRow = await db.selectFrom('tenants').select('admin_id').where('id', '=', tenantId).executeTakeFirst();
+    if (!tenantRow?.admin_id) {
+      logger.warn(`triggerWorkflow: skipping automation for tenant ${tenantId} — admin_id not configured.`);
+      return;
+    }
+    const creatorId = String(tenantRow.admin_id);
+
+    for (const wf of activeWorkflows) {
+      try {
+        await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx as any);
+      } catch (err) {
+        // Safe check in case they're already enrolled
+        if (err instanceof Error && err.message.includes('already enrolled')) {
+          logger.info(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
+        } else {
+          logger.error({ err }, `Failed to enroll person ${personId} in workflow ${wf.id}`);
+        }
+      }
+    }
+  }
+
+  public async triggerVolunteerSignup(
+    tenantId: string,
+    personId: string,
+    eventId: string | null | undefined,
+    trx: Transaction<Models>,
+  ) {
+    return this.triggerWorkflow(tenantId, personId, 'volunteer_signup', eventId, trx);
+  }
+
+  public async triggerTagAdded(
+    tenantId: string,
+    personId: string,
+    tagId: string,
+    tagName: string,
+    trx?: Transaction<Models> | Kysely<Models>,
+  ) {
+    // 1. General tag_added trigger (filtered by tagId, or any tag if no filter)
+    await this.triggerWorkflow(tenantId, personId, 'tag_added', tagId, trx);
+
+    // 2. Specialized triggers based on tag name
+    const normalized = tagName.trim().toLowerCase();
+    if (normalized === 'subscriber') {
+      await this.triggerWorkflow(tenantId, personId, 'new_subscriber', null, trx);
+    } else if (normalized === 'unsubscribed') {
+      await this.triggerWorkflow(tenantId, personId, 'new_unsubscriber', null, trx);
+    }
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/workflows/trpc.router.ts
 
 ```typescript
@@ -11093,6 +12083,100 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public
 SQL
 
 echo "pplcrm_test provisioned. Schema is built on the next 'nx test backend' run."
+```
+
+## File: apps/backend/src/app/\_migrations/2026-07-07-record-slugs.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Record slugs for persons, households and companies (spec §1 security surface:
+ * routes use record slugs — /people/amira-hassan — never internal IDs).
+ *
+ * Follows the existing slug shape used by events/web_forms/volunteer_events:
+ * a `slug text` column with a `UNIQUE (tenant_id, slug)` btree index (compare
+ * `events_tenant_slug_unique`). Generation on create/rename lives in the app
+ * layer (`apps/backend/src/app/lib/slug.ts`, generalized from the web-forms
+ * `uniqueSlug` pattern); this migration only adds the columns, backfills every
+ * existing row with collision suffixes (-2, -3, … per tenant), and enforces
+ * uniqueness.
+ *
+ * Slug sources: persons = first+last name (fallback "person"), households =
+ * street number + street (fallback "household"), companies = name (fallback
+ * "company"). An all-digit slug gets the fallback prefixed so a slug can never
+ * be mistaken for a numeric-ID URL, which the frontend still accepts and
+ * redirects. Pattern notes for later waves: docs/RECORD-SLUGS.md.
+ */
+
+const TABLES = [
+  { table: 'persons', fallback: 'person', source: `coalesce(first_name, '') || ' ' || coalesce(last_name, '')` },
+  { table: 'households', fallback: 'household', source: `coalesce(street_num, '') || ' ' || coalesce(street1, '')` },
+  { table: 'companies', fallback: 'company', source: `coalesce(name, '')` },
+] as const;
+
+export async function up(db: Kysely<any>): Promise<void> {
+  for (const { table, fallback, source } of TABLES) {
+    await sql`ALTER TABLE ${sql.table(table)} ADD COLUMN IF NOT EXISTS slug text`.execute(db);
+
+    // Backfill: slugify the source, guard all-digit results, dedupe per tenant
+    // with -2, -3… suffixes (deterministic by id).
+    await sql`
+      WITH base AS (
+        SELECT id, tenant_id,
+          left(btrim(regexp_replace(lower(${sql.raw(source)}), '[^a-z0-9]+', '-', 'g'), '-'), 80) AS b
+        FROM ${sql.table(table)}
+        WHERE slug IS NULL
+      ),
+      named AS (
+        SELECT id, tenant_id,
+          CASE
+            WHEN b = '' THEN ${fallback}
+            WHEN b ~ '^[0-9]+$' THEN ${fallback} || '-' || b
+            ELSE b
+          END AS b
+        FROM base
+      ),
+      deduped AS (
+        SELECT id, b, row_number() OVER (PARTITION BY tenant_id, b ORDER BY id) AS rn
+        FROM named
+      )
+      UPDATE ${sql.table(table)} t
+      SET slug = CASE WHEN d.rn = 1 THEN d.b ELSE d.b || '-' || d.rn END
+      FROM deduped d
+      WHERE t.id = d.id
+    `.execute(db);
+
+    // Residual duplicates are possible when a real name slugifies to an
+    // already-suffixed value (e.g. a person literally named "Amira Hassan 2").
+    // Disambiguate those rare rows with the row id, which is always unique.
+    await sql`
+      UPDATE ${sql.table(table)} t
+      SET slug = t.slug || '-' || t.id
+      FROM (
+        SELECT id, row_number() OVER (PARTITION BY tenant_id, slug ORDER BY id) AS rn
+        FROM ${sql.table(table)}
+      ) d
+      WHERE t.id = d.id AND d.rn > 1
+    `.execute(db);
+
+    // Same shape as events_tenant_slug_unique. Partial (slug IS NOT NULL) so a
+    // not-yet-backfilled bulk row can exist mid-import without tripping it.
+    await sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}
+      ON ${sql.table(table)} USING btree (tenant_id, slug)
+      WHERE (slug IS NOT NULL)
+    `.execute(db);
+  }
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  for (const { table } of TABLES) {
+    await sql`DROP INDEX IF EXISTS ${sql.raw(`${table}_tenant_slug_unique`)}`.execute(db);
+    await sql`ALTER TABLE ${sql.table(table)} DROP COLUMN IF EXISTS slug`.execute(db);
+  }
+}
 ```
 
 ## File: apps/backend/src/app/errors/to-trpc-errors.ts
@@ -13110,858 +14194,219 @@ export const legacyImportJobSchema = z.object({
 export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;
 ```
 
-## File: apps/backend/src/app/lib/jobs/webhook-worker.ts
+## File: apps/backend/src/app/lib/mail/transactional-mail.service.ts
 
 ```typescript
-import { Client } from 'pg';
-import { env } from '../../../env';
-import { BillingController } from '../../modules/billing/controller';
-import { WebhookEventsRepo } from '../../modules/billing/repositories/webhook-events.repo';
-import { DonationsController } from '../../modules/donations/controller';
-import { logger } from '../../logger';
-
-export class WebhookEventWorker {
-  private isRunning = false;
-  private timer: NodeJS.Timeout | null = null;
-  private activeJobsCount = 0;
-  private shutdownResolver: (() => void) | null = null;
-  private pgClient: Client | null = null;
-  private reconnectTimer: NodeJS.Timeout | null = null;
-
-  private readonly webhookEventsRepo = new WebhookEventsRepo();
-  private readonly db = this.webhookEventsRepo.db; // Kysely DB instance
-
-  public start() {
-    if (this.isRunning) return;
-    this.isRunning = true;
-    logger.info('Webhook Event Worker started.');
-    void this.setupListener();
-    this.poll();
-  }
-
-  public async stop(): Promise<void> {
-    this.isRunning = false;
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.pgClient) {
-      try {
-        await this.pgClient.end();
-      } catch (err) {
-        logger.error({ err }, 'Error closing Postgres listener client on shutdown');
-      }
-      this.pgClient = null;
-    }
-
-    if (this.activeJobsCount > 0) {
-      logger.info(
-        `Webhook Event Worker: Waiting for ${this.activeJobsCount} active events to process before shutting down...`,
-      );
-      await new Promise<void>((resolve) => {
-        this.shutdownResolver = resolve;
-      });
-    }
-    logger.info('Webhook Event Worker stopped.');
-  }
-
-  private async setupListener() {
-    if (!this.isRunning) return;
-    try {
-      this.pgClient = new Client(env.db);
-      await this.pgClient.connect();
-
-      this.pgClient.on('notification', (msg) => {
-        if (msg.channel === 'webhook_events_channel') {
-          logger.debug('Webhook Event Worker received notify, waking up...');
-          this.wakeUp();
-        }
-      });
-
-      this.pgClient.on('error', (err) => {
-        logger.error({ err }, 'Postgres listener client error');
-        this.reconnectListener();
-      });
-
-      this.pgClient.on('end', () => {
-        logger.warn('Postgres listener connection closed');
-        this.reconnectListener();
-      });
-
-      await this.pgClient.query('LISTEN webhook_events_channel');
-      logger.info('Listening for webhook_events notifications');
-    } catch (err) {
-      logger.error({ err }, 'Failed to setup Postgres listener');
-      this.reconnectListener();
-    }
-  }
-
-  private reconnectListener() {
-    if (this.pgClient) {
-      this.pgClient.end().catch(() => {
-        /* noop */
-      });
-      this.pgClient = null;
-    }
-    if (!this.isRunning) return;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = setTimeout(() => {
-      void this.setupListener();
-    }, 5000);
-  }
-
-  private wakeUp() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.poll();
-  }
-
-  private poll() {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => {
-      void this.runPollCycle();
-    }, 0);
-  }
-
-  private async runPollCycle(): Promise<void> {
-    let processedAnEvent = false;
-    try {
-      this.activeJobsCount++;
-      processedAnEvent = await this.processNextEvent();
-    } catch (err) {
-      logger.error({ err }, 'Error in webhook event worker poll cycle');
-    } finally {
-      this.activeJobsCount--;
-
-      // If shutdown was requested and no active jobs remain, resolve the stop() promise
-      if (!this.isRunning && this.activeJobsCount === 0 && this.shutdownResolver) {
-        this.shutdownResolver();
-      } else {
-        // Poll again immediately (10ms) if an event was processed to drain the queue quickly,
-        // or back off to 30 seconds if no events were found.
-        const delay = processedAnEvent ? 10 : 30000;
-        this.pollWithDelay(delay);
-      }
-    }
-  }
-
-  private pollWithDelay(ms: number) {
-    if (!this.isRunning) return;
-    this.timer = setTimeout(() => this.poll(), ms);
-  }
-
-  private async processNextEvent(): Promise<boolean> {
-    const workerId = `webhook-worker-${process.pid}-${Math.random().toString(36).slice(2, 9)}`;
-
-    // Try to find and lock a webhook event using SKIP LOCKED
-    const eventRecord = await this.db.transaction().execute(async (trx: any) => {
-      const pendingEvent = (await trx
-        .selectFrom('webhook_events')
-        .selectAll()
-        .where('status', '=', 'pending')
-        .where('run_at', '<=', new Date())
-        .orderBy('id', 'asc')
-        .limit(1)
-        .forUpdate()
-        .skipLocked()
-        .executeTakeFirst()) as any;
-
-      if (!pendingEvent) return null;
-
-      const updatedEvent = await trx
-        .updateTable('webhook_events')
-        .set({
-          status: 'processing',
-          locked_at: new Date(),
-          locked_by: workerId,
-          attempts: Number(pendingEvent.attempts || 0) + 1,
-          updated_at: new Date(),
-        })
-        .where('id', '=', pendingEvent.id)
-        .returningAll()
-        .executeTakeFirst();
-
-      return updatedEvent;
-    });
-
-    if (!eventRecord) return false;
-
-    logger.info(
-      { webhookEventId: eventRecord.id, stripeEventId: eventRecord.stripe_event_id, type: eventRecord.type },
-      'Processing webhook event',
-    );
-
-    const payload = typeof eventRecord.payload === 'string' ? JSON.parse(eventRecord.payload) : eventRecord.payload;
-
-    try {
-      const stripeObj = payload.data?.object;
-      const eventType: string = payload.type;
-
-      // Helper to resolve an admin userId for the tenant
-      const resolveUserId = async (tenantId: string, metaUserId: string | null): Promise<string> => {
-        if (metaUserId) return metaUserId;
-        const tenantRow = await this.db
-          .selectFrom('tenants')
-          .select('admin_id')
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-        if (!tenantRow?.admin_id) throw new Error(`Tenant ${tenantId} has no admin_id.`);
-        return String(tenantRow.admin_id);
-      };
-
-      const isOneTimeDonation =
-        eventType === 'checkout.session.completed' &&
-        stripeObj?.metadata?.personId &&
-        stripeObj?.metadata?.isRecurring !== 'true';
-      const isRecurringCheckoutComplete =
-        eventType === 'checkout.session.completed' &&
-        stripeObj?.metadata?.personId &&
-        stripeObj?.metadata?.isRecurring === 'true';
-      const isInvoicePaid = eventType === 'invoice.payment_succeeded' && stripeObj?.subscription;
-      const isSubscriptionUpdated = eventType === 'customer.subscription.updated';
-      const isSubscriptionDeleted = eventType === 'customer.subscription.deleted';
-      const isInvoiceFailed = eventType === 'invoice.payment_failed' && stripeObj?.subscription;
-
-      if (isOneTimeDonation) {
-        // Standard one-time donation via checkout.session.completed
-        const donationsController = new DonationsController();
-        const tenantId = String(stripeObj.metadata.tenantId);
-        const personId = String(stripeObj.metadata.personId);
-        const amountCents = Number(stripeObj.metadata.amount);
-        const province = String(stripeObj.metadata.residencyProvince || '');
-        const country = String(stripeObj.metadata.residencyCountry || '');
-        const sessionId = String(stripeObj.id);
-        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
-
-        await donationsController.recordSuccessfulDonation(
-          tenantId,
-          personId,
-          amountCents,
-          sessionId,
-          province,
-          country,
-          createdBy,
-        );
-      } else if (isRecurringCheckoutComplete) {
-        // Subscription checkout completed — create the pledge record.
-        // The first invoice payment is handled separately by invoice.payment_succeeded.
-        const donationsController = new DonationsController();
-        const tenantId = String(stripeObj.metadata.tenantId);
-        const personId = String(stripeObj.metadata.personId);
-        const monthlyAmountCents = Number(stripeObj.metadata.monthlyAmount);
-        const province = String(stripeObj.metadata.residencyProvince || '');
-        const country = String(stripeObj.metadata.residencyCountry || '');
-        const createdBy = await resolveUserId(tenantId, stripeObj.metadata.createdBy || null);
-        const subscriptionId = String(stripeObj.subscription || '');
-        const customerId = stripeObj.customer ? String(stripeObj.customer) : null;
-
-        if (subscriptionId) {
-          await donationsController.recordNewPledge(
-            tenantId,
-            personId,
-            monthlyAmountCents,
-            subscriptionId,
-            customerId,
-            province,
-            country,
-            createdBy,
-          );
-        }
-      } else if (isInvoicePaid) {
-        // A subscription invoice was paid — record it as a donation installment.
-        const donationsController = new DonationsController();
-        const subscriptionId = String(stripeObj.subscription);
-        const invoiceId = String(stripeObj.id);
-        const amountPaidCents = Number(stripeObj.amount_paid || 0);
-
-        const pledge = (await this.db
-          .selectFrom('donation_pledges')
-          .selectAll()
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .executeTakeFirst()) as any;
-
-        if (pledge && amountPaidCents > 0) {
-          // Avoid duplicate recording (invoice id as session id key)
-          const alreadyRecorded = await this.db
-            .selectFrom('donations')
-            .select('id')
-            .where('stripe_session_id', '=', invoiceId)
-            .executeTakeFirst();
-
-          if (!alreadyRecorded) {
-            const createdBy = await resolveUserId(String(pledge.tenant_id), null);
-            await donationsController.recordSuccessfulDonation(
-              String(pledge.tenant_id),
-              String(pledge.person_id),
-              amountPaidCents,
-              invoiceId,
-              pledge.state || '',
-              pledge.country || '',
-              createdBy,
-              String(pledge.id),
-            );
-          }
-        }
-      } else if (isSubscriptionUpdated) {
-        // Sync pledge status from Stripe subscription status
-        const subscriptionId = String(stripeObj.id);
-        const stripeStatus: string = stripeObj.status;
-        const statusMap: Record<string, string> = {
-          active: 'active',
-          past_due: 'past_due',
-          canceled: 'cancelled',
-          unpaid: 'unpaid',
-        };
-        const mappedStatus = statusMap[stripeStatus];
-        const nextBillingDate = stripeObj.current_period_end
-          ? new Date(stripeObj.current_period_end * 1000).toISOString().slice(0, 10)
-          : null;
-
-        if (mappedStatus) {
-          await this.db
-            .updateTable('donation_pledges')
-            .set({
-              status: mappedStatus,
-              next_billing_date: nextBillingDate,
-              cancelled_at: mappedStatus === 'cancelled' ? new Date() : null,
-              updated_at: new Date(),
-            })
-            .where('stripe_subscription_id', '=', subscriptionId)
-            .execute();
-        }
-      } else if (isSubscriptionDeleted) {
-        const subscriptionId = String(stripeObj.id);
-        await this.db
-          .updateTable('donation_pledges')
-          .set({ status: 'cancelled', cancelled_at: new Date(), updated_at: new Date() })
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .execute();
-      } else if (isInvoiceFailed) {
-        const subscriptionId = String(stripeObj.subscription);
-        await this.db
-          .updateTable('donation_pledges')
-          .set({ status: 'past_due', updated_at: new Date() })
-          .where('stripe_subscription_id', '=', subscriptionId)
-          .execute();
-      } else {
-        const billingController = new BillingController();
-        await billingController.processWebhookEvent(payload);
-      }
-
-      // Mark event as processed/completed
-      await this.db
-        .updateTable('webhook_events')
-        .set({
-          status: 'processed',
-          locked_at: null,
-          locked_by: null,
-          processed_at: new Date(),
-          updated_at: new Date(),
-        })
-        .where('id', '=', eventRecord.id)
-        .execute();
-
-      logger.info({ webhookEventId: eventRecord.id }, 'Webhook event completed successfully');
-    } catch (err) {
-      const errorMsg = err instanceof Error && err.message ? err.message : String(err);
-      logger.error({ err, webhookEventId: eventRecord.id }, 'Failed to process webhook event');
-
-      const attempts = Number(eventRecord.attempts || 0);
-      const maxAttempts = Number(eventRecord.max_attempts || 3);
-
-      if (attempts < maxAttempts) {
-        // Retry with backoff (attempts * 30s delay)
-        const delaySeconds = attempts * 30;
-        const runAt = new Date(Date.now() + delaySeconds * 1000);
-        logger.info(
-          { webhookEventId: eventRecord.id, runAt: runAt.toISOString(), attempt: attempts, maxAttempts },
-          'Rescheduling webhook event',
-        );
-
-        await this.db
-          .updateTable('webhook_events')
-          .set({
-            status: 'pending',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            run_at: runAt,
-            updated_at: new Date(),
-          })
-          .where('id', '=', eventRecord.id)
-          .execute();
-      } else {
-        logger.error(
-          { webhookEventId: eventRecord.id, maxAttempts },
-          'Webhook event exceeded maximum attempts, marking as failed',
-        );
-        await this.db
-          .updateTable('webhook_events')
-          .set({
-            status: 'failed',
-            locked_at: null,
-            locked_by: null,
-            error: errorMsg,
-            updated_at: new Date(),
-          })
-          .where('id', '=', eventRecord.id)
-          .execute();
-      }
-    }
-
-    return true;
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/mail/newsletter-mail.service.ts
-
-```typescript
+import type { Kysely, Transaction } from 'kysely';
 import { env } from '../../../env';
 import { InternalError } from '../../errors/app-errors';
 import { logger } from '../../logger';
+import { BaseRepository } from '../base.repo';
 
-export interface SendNewsletterOptions {
-  fromName: string;
-  fromEmail: string;
-  replyTo?: string;
-  recipients: string[];
+export interface SendMailOptions {
+  to: string;
   subject: string;
+  text: string;
   html: string;
-  text?: string;
-  sendgridApiKey?: string;
-  subuserUsername?: string;
-  newsletterId?: string;
-  tenantId?: string;
+  tenant_id?: string | null;
 }
 
-export class NewsletterEmailService {
-  public async sendNewsletter(options: SendNewsletterOptions): Promise<number> {
-    const apiKey = options.sendgridApiKey || env.sendgridApiKey;
+export class TransactionalEmailService {
+  private serverToken = env.postmarkServerToken;
+  private fromEmail = env.postmarkFromEmail;
 
-    if (!apiKey) {
+  private wrapInTemplate(title: string, contentHtml: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f8fafc;
+      color: #1e293b;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #f8fafc;
+      padding: 40px 20px;
+      box-sizing: border-box;
+    }
+    .container {
+      max-width: 580px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      border: 1px solid #e2e8f0;
+    }
+    .header {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      padding: 32px;
+      text-align: center;
+    }
+    .header h1 {
+      color: #ffffff;
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.025em;
+    }
+    .content {
+      padding: 40px 32px;
+      line-height: 1.6;
+      font-size: 16px;
+    }
+    .content h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #0f172a;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .content p {
+      margin-top: 0;
+      margin-bottom: 24px;
+      color: #475569;
+    }
+    .btn-container {
+      margin: 32px 0;
+      text-align: center;
+    }
+    .btn {
+      display: inline-block;
+      background-color: #4f46e5;
+      color: #ffffff !important;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .otp-container {
+      margin: 32px auto;
+      text-align: center;
+    }
+    .otp-code {
+      display: inline-block;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 6px;
+      color: #4f46e5;
+      background-color: #f1f5f9;
+      padding: 12px 24px;
+      border-radius: 8px;
+      border: 1px dashed #cbd5e1;
+    }
+    .footer {
+      background-color: #f8fafc;
+      padding: 24px 32px;
+      text-align: center;
+      border-top: 1px solid #e2e8f0;
+      font-size: 13px;
+      color: #64748b;
+    }
+    .footer p {
+      margin: 8px 0;
+      color: #64748b;
+    }
+    .footer a {
+      color: #4f46e5;
+      text-decoration: none;
+    }
+    .warning {
+      font-size: 14px;
+      color: #64748b;
+      background-color: #f8fafc;
+      border-left: 4px solid #cbd5e1;
+      padding: 12px 16px;
+      margin-top: 24px;
+      border-radius: 0 4px 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <h1>PplCRM</h1>
+      </div>
+      <div class="content">
+        ${contentHtml}
+      </div>
+      <div class="footer">
+        <p>This is a transactional message related to your account security. Unlike marketing messages, you cannot unsubscribe from these alerts.</p>
+        <p>&copy; ${new Date().getFullYear()} PplCRM. All rights reserved.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+  }
+
+  public async sendMail(options: SendMailOptions): Promise<void> {
+    const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
+
+    if (!this.serverToken) {
       logger.info(
-        {
-          from: `"${options.fromName}" <${options.fromEmail}>`,
-          replyTo: options.replyTo || null,
-          recipientCount: options.recipients.length,
+        { from: this.fromEmail, to: options.to, subject: options.subject },
+        '[POSTMARK DEV MOCK] Transactional Email Outbound',
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch('https://api.postmarkapp.com/email', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-Postmark-Server-Token': this.serverToken,
+        },
+        body: JSON.stringify({
+          From: this.fromEmail,
+          To: options.to,
+          Subject: options.subject,
+          TextBody: options.text,
+          HtmlBody: wrappedHtml,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
+      }
+    } catch (error) {
+      throw new InternalError('Failed to send transactional email', undefined, { cause: error });
+    }
+  }
+
+  public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
+    const dbClient = (trx || BaseRepository.dbInstance) as any;
+    await dbClient
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-transactional-email',
+          to: options.to,
           subject: options.subject,
-        },
-        '[SENDGRID DEV MOCK] Newsletter Outbound',
-      );
-      return options.recipients.length;
-    }
-
-    const uniqueRecipients = [...new Set(options.recipients)];
-    if (uniqueRecipients.length === 0) return 0;
-
-    // SendGrid allows up to 1000 personalizations per API request
-    const CHUNK_SIZE = 1000;
-    let deliveredCount = 0;
-
-    for (let i = 0; i < uniqueRecipients.length; i += CHUNK_SIZE) {
-      const chunk = uniqueRecipients.slice(i, i + CHUNK_SIZE);
-      const personalizations = chunk.map((email) => ({
-        to: [{ email }],
-      }));
-
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      };
-
-      if (options.subuserUsername) {
-        headers['on-behalf-of'] = options.subuserUsername;
-      }
-
-      const body = {
-        personalizations,
-        from: {
-          email: options.fromEmail,
-          name: options.fromName,
-        },
-        ...(options.replyTo ? { reply_to: { email: options.replyTo } } : {}),
-        subject: options.subject,
-        content: [
-          {
-            type: 'text/html',
-            value: options.html,
-          },
-          ...(options.text
-            ? [
-                {
-                  type: 'text/plain',
-                  value: options.text,
-                },
-              ]
-            : []),
-        ],
-        ...(options.newsletterId && options.tenantId
-          ? {
-              custom_args: {
-                newsletter_id: options.newsletterId,
-                tenant_id: options.tenantId,
-              },
-            }
-          : {}),
-        // Enable subscription tracking so SendGrid replaces the `<% unsubscribe %>` substitution tag in
-        // the server-appended footer with a working, per-recipient unsubscribe URL.
-        tracking_settings: {
-          subscription_tracking: {
-            enable: true,
-            substitution_tag: '<% unsubscribe %>',
-          },
-        },
-      };
-
-      try {
-        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`SendGrid API responded with status ${response.status}: ${errorText}`);
-        }
-
-        deliveredCount += chunk.length;
-      } catch (error) {
-        throw new InternalError('Failed to send newsletter via SendGrid', undefined, { cause: error });
-      }
-    }
-
-    return deliveredCount;
-  }
-}
-```
-
-## File: apps/backend/src/app/lib/mail/sendgrid-whitelabel.service.ts
-
-```typescript
-import { promises as dns } from 'dns';
-import { logger } from '../../logger';
-
-export interface DNSVerificationRecord {
-  host: string;
-  type: string;
-  data: string;
-  valid: boolean;
-}
-
-export interface DomainAuthData {
-  id: number;
-  domain: string;
-  subdomain: string;
-  dns: {
-    mail_cname?: DNSVerificationRecord;
-    dkim1?: DNSVerificationRecord;
-    dkim2?: DNSVerificationRecord;
-  };
-}
-
-export interface LinkBrandingData {
-  id: number;
-  domain: string;
-  subdomain: string;
-  valid: boolean;
-  dns: {
-    domain?: DNSVerificationRecord;
-  };
-}
-
-export class SendGridWhitelabelService {
-  private isValidApiKey(apiKey?: string): boolean {
-    if (!apiKey) return false;
-    const trimmed = apiKey.trim();
-    // Typical SendGrid API key starts with SG.
-    return trimmed.length > 20 && trimmed.startsWith('SG.');
-  }
-
-  private async request<T = any>(
-    path: string,
-    options: {
-      method: string;
-      body?: any;
-      apiKey?: string;
-      subuser?: string;
-    },
-  ): Promise<T> {
-    const { method, body, apiKey, subuser } = options;
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    };
-
-    if (subuser) {
-      headers['on-behalf-of'] = subuser;
-    }
-
-    const response = await fetch(`https://api.sendgrid.com/v3${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`SendGrid API responded with ${response.status}: ${text}`);
-    }
-
-    if (response.status === 204) {
-      return {} as T;
-    }
-
-    return response.json();
-  }
-
-  public async createDomainAuthentication(domain: string, apiKey?: string, subuser?: string): Promise<DomainAuthData> {
-    if (!this.isValidApiKey(apiKey)) {
-      // Return simulated/mock domain auth records
-      const mockId = Math.floor(100000 + Math.random() * 900000);
-      return {
-        id: mockId,
-        domain,
-        subdomain: 'em',
-        dns: {
-          mail_cname: {
-            host: `em.${domain}`,
-            type: 'CNAME',
-            data: `u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-          dkim1: {
-            host: `s1._domainkey.${domain}`,
-            type: 'CNAME',
-            data: `s1.domainkey.u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-          dkim2: {
-            host: `s2._domainkey.${domain}`,
-            type: 'CNAME',
-            data: `s2.domainkey.u${mockId}.wl.sendgrid.net`,
-            valid: false,
-          },
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<any>('/whitelabel/domains', {
-        method: 'POST',
-        apiKey,
-        subuser,
-        body: {
-          domain,
-          subdomain: 'em',
-          automatic_security: true,
-          custom_spf: false,
-          default: false,
-        },
-      });
-
-      return {
-        id: res.id,
-        domain: res.domain,
-        subdomain: res.subdomain,
-        dns: {
-          mail_cname: res.dns?.mail_cname ? { ...res.dns.mail_cname, valid: !!res.dns.mail_cname.valid } : undefined,
-          dkim1: res.dns?.dkim1 ? { ...res.dns.dkim1, valid: !!res.dns.dkim1.valid } : undefined,
-          dkim2: res.dns?.dkim2 ? { ...res.dns.dkim2, valid: !!res.dns.dkim2.valid } : undefined,
-        },
-      };
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] real API call failed, falling back to mock',
-      );
-      return this.createDomainAuthentication(domain, undefined);
-    }
-  }
-
-  public async createLinkBranding(domain: string, apiKey?: string, subuser?: string): Promise<LinkBrandingData> {
-    if (!this.isValidApiKey(apiKey)) {
-      const mockId = Math.floor(100000 + Math.random() * 900000);
-      return {
-        id: mockId,
-        domain,
-        subdomain: 'email',
-        valid: false,
-        dns: {
-          domain: {
-            host: `email.${domain}`,
-            type: 'CNAME',
-            data: 'sendgrid.net',
-            valid: false,
-          },
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<any>('/whitelabel/links', {
-        method: 'POST',
-        apiKey,
-        subuser,
-        body: {
-          domain,
-          subdomain: 'email',
-          default: false,
-        },
-      });
-
-      return {
-        id: res.id,
-        domain: res.domain,
-        subdomain: res.subdomain,
-        valid: !!res.valid,
-        dns: {
-          domain: res.dns?.domain ? { ...res.dns.domain, valid: !!res.dns.domain.valid } : undefined,
-        },
-      };
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] real Link Branding API failed, falling back to mock',
-      );
-      return this.createLinkBranding(domain, undefined);
-    }
-  }
-
-  public async validateDomainAuthentication(
-    id: number,
-    apiKey?: string,
-    subuser?: string,
-  ): Promise<{ valid: boolean; validationResults: Record<string, boolean> }> {
-    if (!this.isValidApiKey(apiKey)) {
-      return {
-        valid: true,
-        validationResults: {
-          mail_cname: true,
-          dkim1: true,
-          dkim2: true,
-        },
-      };
-    }
-
-    try {
-      const res = await this.request<any>(`/whitelabel/domains/${id}/validate`, {
-        method: 'POST',
-        apiKey,
-        subuser,
-      });
-
-      const validationResults: Record<string, boolean> = {};
-      if (res.validation_results) {
-        for (const k of Object.keys(res.validation_results)) {
-          validationResults[k] = !!res.validation_results[k]?.valid;
-        }
-      }
-
-      return {
-        valid: !!res.valid,
-        validationResults,
-      };
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Validate domain API failed, falling back to true',
-      );
-      return {
-        valid: true,
-        validationResults: {
-          mail_cname: true,
-          dkim1: true,
-          dkim2: true,
-        },
-      };
-    }
-  }
-
-  public async validateLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<boolean> {
-    if (!this.isValidApiKey(apiKey)) {
-      return true;
-    }
-
-    try {
-      const res = await this.request<any>(`/whitelabel/links/${id}/validate`, {
-        method: 'POST',
-        apiKey,
-        subuser,
-      });
-
-      return !!res.valid;
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Validate link branding API failed, falling back to true',
-      );
-      return true;
-    }
-  }
-
-  public async deleteDomainAuthentication(id: number, apiKey?: string, subuser?: string): Promise<void> {
-    if (!this.isValidApiKey(apiKey)) return;
-
-    try {
-      await this.request(`/whitelabel/domains/${id}`, {
-        method: 'DELETE',
-        apiKey,
-        subuser,
-      });
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Delete domain authentication failed',
-      );
-    }
-  }
-
-  public async deleteLinkBranding(id: number, apiKey?: string, subuser?: string): Promise<void> {
-    if (!this.isValidApiKey(apiKey)) return;
-
-    try {
-      await this.request(`/whitelabel/links/${id}`, {
-        method: 'DELETE',
-        apiKey,
-        subuser,
-      });
-    } catch (err) {
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        '[SendGridWhitelabelService] Delete link branding failed',
-      );
-    }
-  }
-
-  public async verifyDmarc(domain: string): Promise<boolean> {
-    try {
-      const records = await dns.resolveTxt(`_dmarc.${domain}`);
-      return records.some((r) => r.join('').toUpperCase().includes('V=DMARC1'));
-    } catch {
-      return false;
-    }
-  }
-
-  public async verifyCname(host: string, expectedData?: string): Promise<boolean> {
-    try {
-      const records = await dns.resolveCname(host);
-      if (expectedData) {
-        return records.some((r) => r.toLowerCase().trim() === expectedData.toLowerCase().trim());
-      }
-      return records.length > 0;
-    } catch {
-      return false;
-    }
+          text: options.text,
+          html: options.html,
+        }),
+        run_at: new Date(),
+        max_attempts: 5,
+      })
+      .execute();
   }
 }
 ```
@@ -14471,6 +14916,97 @@ export function verifyEmailAttachmentToken(st: string, emailId: string): SignedE
     throw new UnauthorizedError('Unauthorized: Invalid download token');
   }
   return parsed as SignedEmailAttachmentPayload;
+}
+```
+
+## File: apps/backend/src/app/lib/slug.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+import type { Models } from '../../../../../libs/common/src/lib/kysely.models';
+
+/**
+ * Record-slug helpers (spec §1: routes use record slugs — /people/amira-hassan —
+ * never internal IDs). Generalized from the web-forms `uniqueSlug` pattern so
+ * every slug-bearing entity (web_forms, persons, households, companies, …)
+ * shares one collision strategy: base, base-2, base-3, … unique per tenant.
+ *
+ * Compute the base with `slugifyRecordName` from @common, then call
+ * {@link uniqueSlug} with a tenant-scoped lookup. For bulk insert paths (CSV
+ * imports, seeds) use {@link backfillMissingSlugs} — one set-based statement
+ * instead of a query per row.
+ */
+
+/**
+ * Find the first free slug for `base` using the caller's tenant-scoped
+ * `isTaken` check — every repo exposes the same `slugExists(tenant_id, slug,
+ * excludeId?)` shape (pass the record's own id as `excludeId` on rename so it
+ * can keep its slug).
+ */
+export async function uniqueSlug(base: string, isTaken: (candidate: string) => Promise<boolean>): Promise<string> {
+  let candidate = base;
+  let n = 2;
+  while (await isTaken(candidate)) {
+    candidate = `${base}-${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+/** Slug source definitions for the record tables backfilled by bulk paths. */
+const BULK_SLUG_SOURCES = {
+  persons: { fallback: 'person', source: `coalesce(first_name, '') || ' ' || coalesce(last_name, '')` },
+  households: { fallback: 'household', source: `coalesce(street_num, '') || ' ' || coalesce(street1, '')` },
+  companies: { fallback: 'company', source: `coalesce(name, '')` },
+} as const;
+
+export type SluggedTable = keyof typeof BULK_SLUG_SOURCES;
+
+/**
+ * Fill in slugs for every row of `table` in `tenant_id` that has none yet —
+ * the set-based companion to {@link uniqueSlug} for bulk insert paths (CSV
+ * import workers, onboarding seeds). Slugify + all-digit guard match the
+ * 2026-07-07-record-slugs migration; collision handling differs from the
+ * interactive path: the first row of a base keeps the bare slug only when no
+ * existing row holds it, and every other row gets an id suffix (`{base}-{id}`)
+ * — always unique in one statement, no per-row query loop.
+ */
+export async function backfillMissingSlugs(db: Kysely<Models>, table: SluggedTable, tenant_id: string): Promise<void> {
+  const { fallback, source } = BULK_SLUG_SOURCES[table];
+  await sql`
+    WITH base AS (
+      SELECT id, tenant_id,
+        left(btrim(regexp_replace(lower(${sql.raw(source)}), '[^a-z0-9]+', '-', 'g'), '-'), 80) AS b
+      FROM ${sql.table(table)}
+      WHERE slug IS NULL AND tenant_id = ${tenant_id}
+    ),
+    named AS (
+      SELECT id, tenant_id,
+        CASE
+          WHEN b = '' THEN ${fallback}
+          WHEN b ~ '^[0-9]+$' THEN ${fallback} || '-' || b
+          ELSE b
+        END AS b
+      FROM base
+    ),
+    deduped AS (
+      SELECT n.id,
+        n.b || CASE WHEN rn = 1 AND NOT EXISTS (
+          SELECT 1 FROM ${sql.table(table)} x
+          WHERE x.tenant_id = n.tenant_id AND x.slug = n.b
+        ) THEN '' ELSE '-' || n.id END AS candidate
+      FROM (
+        SELECT id, tenant_id, b, row_number() OVER (PARTITION BY tenant_id, b ORDER BY id) AS rn
+        FROM named
+      ) n
+    )
+    UPDATE ${sql.table(table)} t
+    SET slug = d.candidate
+    FROM deduped d
+    WHERE t.id = d.id
+  `.execute(db);
 }
 ```
 
@@ -15014,272 +15550,6 @@ export async function seedOnboardingData(
 }
 ```
 
-## File: apps/backend/src/app/modules/auth/passkey.controller.ts
-
-```typescript
-import {
-  generateAuthenticationOptions,
-  generateRegistrationOptions,
-  verifyAuthenticationResponse,
-  verifyRegistrationResponse,
-} from '@simplewebauthn/server';
-import type {
-  AuthenticationResponseJSON,
-  AuthenticatorTransportFuture,
-  RegistrationResponseJSON,
-} from '@simplewebauthn/types';
-
-import { randomBytes } from 'crypto';
-
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src';
-import { env } from '../../../env';
-import { BadRequestError, NotFoundError, UnauthorizedError } from '../../errors/app-errors';
-import { BaseRepository } from '../../lib/base.repo';
-import { consumeChallenge, storeChallenge } from '../../lib/webauthn-challenges';
-import { createTokens } from './auth-tokens';
-
-export class PasskeyController {
-  private get db() {
-    return BaseRepository.dbInstance;
-  }
-
-  // ── Email Check ──────────────────────────────────────────────────────────
-  public async checkEmailPasskeys(email: string): Promise<{ hasPasskeys: boolean }> {
-    const user = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'tenant_id'])
-      .where('email', '=', email.trim().toLowerCase())
-      .executeTakeFirst();
-
-    if (!user) return { hasPasskeys: false };
-
-    const row = await this.db
-      .selectFrom('passkeys')
-      .select(this.db.fn.countAll<string>().as('count'))
-      .where('user_id', '=', user.id)
-      .where('tenant_id', '=', user.tenant_id)
-      .executeTakeFirst();
-
-    return { hasPasskeys: Number(row?.count ?? 0) > 0 };
-  }
-
-  public async deletePasskey(auth: IAuthKeyPayload, id: string) {
-    const result = await this.db
-      .deleteFrom('passkeys')
-      .where('id', '=', id)
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (Number(result.numDeletedRows) === 0) {
-      throw new NotFoundError('Passkey not found.');
-    }
-    return { success: true };
-  }
-
-  // ── Authentication ────────────────────────────────────────────────────────
-  public async getAuthenticationOptions() {
-    const nonce = randomBytes(16).toString('hex');
-
-    const options = await generateAuthenticationOptions({
-      rpID,
-      userVerification: 'preferred',
-      allowCredentials: [], // discoverable credential — browser prompts user to choose
-    });
-
-    storeChallenge(`auth:${nonce}`, options.challenge);
-    return { options, nonce };
-  }
-
-  // ── Registration ─────────────────────────────────────────────────────────
-  public async getRegistrationOptions(auth: IAuthKeyPayload) {
-    const user = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'email', 'first_name', 'last_name'])
-      .where('id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (!user) throw new NotFoundError('User not found');
-
-    const existingPasskeys = await this.db
-      .selectFrom('passkeys')
-      .select(['credential_id', 'transports'])
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .execute();
-
-    const options = await generateRegistrationOptions({
-      rpName,
-      rpID,
-      userName: user.email,
-      userDisplayName: [user.first_name, (user as any).last_name].filter(Boolean).join(' '),
-      attestationType: 'none',
-      excludeCredentials: existingPasskeys.map((pk) => ({
-        id: pk.credential_id,
-        transports: (pk.transports as AuthenticatorTransportFuture[] | null) ?? undefined,
-      })),
-      authenticatorSelection: {
-        residentKey: 'preferred',
-        userVerification: 'preferred',
-      },
-    });
-
-    storeChallenge(`reg:${auth.user_id}`, options.challenge);
-    return options;
-  }
-
-  // ── Management ────────────────────────────────────────────────────────────
-  public async listPasskeys(auth: IAuthKeyPayload) {
-    return this.db
-      .selectFrom('passkeys')
-      .select(['id', 'friendly_name', 'device_type', 'backed_up', 'aaguid', 'transports', 'created_at'])
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .orderBy('created_at', 'asc')
-      .execute();
-  }
-
-  public async updatePasskeyName(auth: IAuthKeyPayload, id: string, friendlyName: string) {
-    const result = await this.db
-      .updateTable('passkeys')
-      .set({ friendly_name: friendlyName })
-      .where('id', '=', id)
-      .where('user_id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirst();
-
-    if (Number(result.numUpdatedRows) === 0) {
-      throw new NotFoundError('Passkey not found.');
-    }
-    return { success: true };
-  }
-
-  public async verifyAuthentication(
-    response: AuthenticationResponseJSON,
-    nonce: string,
-    ipAddress?: string,
-    userAgent?: string,
-    rememberMe?: boolean,
-  ) {
-    const challenge = consumeChallenge(`auth:${nonce}`);
-    if (!challenge) throw new UnauthorizedError('Authentication challenge expired. Please try again.');
-
-    // NOTE: unscoped by design — credential_id lookup happens before tenant is known; passkey row carries tenant_id for post-auth scoping
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const passkey = await this.db
-      .selectFrom('passkeys')
-      .selectAll()
-      .where('credential_id', '=', response.id)
-      .executeTakeFirst();
-
-    if (!passkey) throw new UnauthorizedError('Passkey not recognized.');
-
-    const verification = await verifyAuthenticationResponse({
-      response,
-      expectedChallenge: challenge,
-      expectedOrigin: getExpectedOrigins(),
-      expectedRPID: rpID,
-      credential: {
-        id: passkey.credential_id,
-        publicKey: Buffer.from(passkey.public_key, 'base64url'),
-        counter: Number(passkey.counter),
-        transports: (passkey.transports as AuthenticatorTransportFuture[] | null) ?? undefined,
-      },
-      requireUserVerification: false,
-    });
-
-    if (!verification.verified) throw new UnauthorizedError('Passkey authentication failed.');
-
-    await this.db
-      .updateTable('passkeys')
-      .set({ counter: verification.authenticationInfo.newCounter as any })
-      .where('credential_id', '=', passkey.credential_id)
-      .where('tenant_id', '=', passkey.tenant_id)
-      .execute();
-
-    // Fetch the user
-    const user = await this.db
-      .selectFrom('authusers')
-      .select(['id', 'email', 'first_name', 'last_name', 'tenant_id', 'role', 'verified', 'deletion_scheduled_at'])
-      .where('id', '=', passkey.user_id)
-      .executeTakeFirst();
-
-    if (!user) throw new UnauthorizedError();
-    if (!user.verified) throw new UnauthorizedError('Email not verified.');
-
-    const tenantId = String(user.tenant_id);
-    const userId = String(user.id);
-
-    return createTokens({
-      user_id: userId,
-      tenant_id: tenantId,
-      name: user.first_name,
-      ipAddress,
-      userAgent,
-      rememberMe,
-    });
-  }
-
-  public async verifyRegistration(auth: IAuthKeyPayload, response: RegistrationResponseJSON, friendlyName?: string) {
-    const challenge = consumeChallenge(`reg:${auth.user_id}`);
-    if (!challenge) throw new BadRequestError('Registration challenge expired or not found. Please try again.');
-
-    const verification = await verifyRegistrationResponse({
-      response,
-      expectedChallenge: challenge,
-      expectedOrigin: getExpectedOrigins(),
-      expectedRPID: rpID,
-      requireUserVerification: false,
-    });
-
-    if (!verification.verified || !verification.registrationInfo) {
-      throw new BadRequestError('Passkey registration verification failed.');
-    }
-
-    const { credential, credentialDeviceType, credentialBackedUp, aaguid } = verification.registrationInfo;
-
-    const user = await this.db
-      .selectFrom('authusers')
-      .select('tenant_id')
-      .where('id', '=', auth.user_id)
-      .where('tenant_id', '=', auth.tenant_id)
-      .executeTakeFirstOrThrow();
-
-    await this.db
-      .insertInto('passkeys')
-      .values({
-        user_id: auth.user_id,
-        tenant_id: user.tenant_id,
-        credential_id: credential.id,
-        public_key: Buffer.from(credential.publicKey).toString('base64url'),
-        counter: credential.counter,
-        device_type: credentialDeviceType,
-        backed_up: credentialBackedUp,
-        transports: (credential.transports as string[] | undefined) ?? null,
-        aaguid: aaguid ?? null,
-        friendly_name: friendlyName ?? null,
-      })
-      .execute();
-
-    return { verified: true };
-  }
-}
-
-function getExpectedOrigins(): string[] {
-  const origins: string[] = [env.appUrl];
-  if (env.apiUrl !== env.appUrl) {
-    try {
-      origins.push(new URL(env.apiUrl).origin);
-    } catch {}
-  }
-  return origins;
-}
-
-const rpID = env.webAuthnRpId;
-const rpName = env.webAuthnRpName;
-```
-
 ## File: apps/backend/src/app/modules/auth/trpc.router.ts
 
 ```typescript
@@ -15600,36 +15870,6 @@ export const AuthRouter = router({
   updatePasskeyName: updatePasskeyName(),
   dismissPasskeyPrompt: dismissPasskeyPrompt(),
 });
-```
-
-## File: apps/backend/src/app/modules/billing/routes/billing-webhook.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { BillingController } from '../controller';
-import { logger } from '../../../logger';
-
-const controller = new BillingController();
-
-const billingWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req, reply) => {
-    const signature = (req.headers['stripe-signature'] as string) || '';
-    const payload = req.body as string; // Raw string thanks to custom ContentTypeParser
-
-    try {
-      await controller.handleWebhook(payload, signature);
-      return reply.code(200).send({ received: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error(`Webhook error: ${message}`);
-      return reply.code(400).send({ error: message });
-    }
-  });
-
-  done();
-};
-
-export default billingWebhookRoute;
 ```
 
 ## File: apps/backend/src/app/modules/billing/controller.ts
@@ -16466,236 +16706,6 @@ export async function queueUsageLimitCheck(tenantId: string, db: any): Promise<v
 }
 ```
 
-## File: apps/backend/src/app/modules/companies/repositories/companies.repo.ts
-
-```typescript
-import type { Selectable, Transaction } from 'kysely';
-import { sql } from 'kysely';
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { BaseRepository } from '../../../lib/base.repo';
-
-export class CompaniesRepo extends BaseRepository<'companies'> {
-  constructor() {
-    super('companies');
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // Note: tenant ID is taken in the subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: any[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // Note: tenant ID is taken in the subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'companies.id',
-        'companies.name',
-        'companies.description',
-        'companies.website',
-        'companies.email',
-        'companies.phone',
-        'companies.industry',
-        'companies.notes',
-        'companies.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const companyIds = rows.map((r) => String(r.id));
-    if (companyIds.length === 0) {
-      return { groups: [], total };
-    }
-
-    const persons = await this.db
-      .selectFrom('persons')
-      .select(['id', 'first_name', 'last_name', 'email', 'company_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('company_id', 'in', companyIds)
-      .execute();
-
-    const companyToPersons = new Map<string, any[]>();
-    for (const p of persons) {
-      const compId = String(p.company_id);
-      let companyPersons = companyToPersons.get(compId);
-      if (!companyPersons) {
-        companyPersons = [];
-        companyToPersons.set(compId, companyPersons);
-      }
-      companyPersons.push(p);
-    }
-
-    const groupsMap = new Map<string, { reason: string; companies: any[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      let group = groupsMap.get(groupKey);
-      if (!group) {
-        group = {
-          reason: row.reason,
-          companies: [],
-        };
-        groupsMap.set(groupKey, group);
-      }
-      group.companies.push({
-        ...row,
-        id: String(row.id),
-        persons: companyToPersons.get(String(row.id)) || [],
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.companies.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergeCompanies(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['companies']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['companies']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source company not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, any> = {};
-      const fields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Reassign people (persons.company_id)
-      await trx
-        .updateTable('persons')
-        .set({ company_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('company_id', '=', input.source_id)
-        .execute();
-
-      // 3. Delete source company
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      return { success: true };
-    });
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    const rows = await this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id)
-      .execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql`now()`,
-        updatedby_id: input.user_id,
-      } as unknown as OperationDataType<'companies', 'update'>)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/companies/services/companies-enrichment.service.ts
 
 ```typescript
@@ -16857,6 +16867,59 @@ export class CompaniesEnrichmentService {
     return unenriched.length;
   }
 }
+```
+
+## File: apps/backend/src/app/modules/companies/trpc.router.ts
+
+```typescript
+import { idSchema, CompanyInputObj } from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { CompaniesController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const companies = new CompaniesController();
+
+const CompanyInputSchema = CompanyInputObj;
+
+const crud = createCrudRouter(companies, CompanyInputSchema, CompanyInputSchema.partial());
+
+export const CompaniesRouter = router({
+  ...crud,
+
+  // Tenant-scoped slug resolution for /companies/:slug URLs (spec §1).
+  getBySlug: authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
+
+  import: authProcedure
+    .input(
+      z.object({
+        rows: z.array(CompanyInputSchema),
+        skipped: z.number().int().nonnegative().optional(),
+        file_name: z.string().trim().min(1).max(255).optional(),
+      }),
+    )
+    .mutation(async ({ input, ctx }) => {
+      ctx.res.status(202);
+      return companies.importRows(input, ctx.auth);
+    }),
+
+  getPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => companies.getPotentialDuplicates(ctx.auth, input)),
+
+  mergeCompanies: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => companies.mergeCompanies(input.target_id, input.source_id, ctx.auth)),
+});
 ```
 
 ## File: apps/backend/src/app/modules/donations/trpc.router.ts
@@ -18636,481 +18699,6 @@ export class MsOAuthService {
 }
 ```
 
-## File: apps/backend/src/app/modules/ms-sync/ms-sync.service.ts
-
-```typescript
-import { Client } from '@microsoft/microsoft-graph-client';
-import type { Kysely } from 'kysely';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import type { MsOAuthService } from './ms-oauth.service';
-import { ALL_FOLDERS } from '../../../../../../libs/common/src/lib/emails';
-import type { IngestableEmail } from '../emails/services/email-ingester.service';
-import { EmailIngesterService } from '../emails/services/email-ingester.service';
-import { logger } from '../../logger';
-
-const MAX_MESSAGES_PER_SYNC = 50;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function getStatusCode(err: unknown): number | undefined {
-  return isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : undefined;
-}
-
-function getRetryAfterHeader(err: unknown): string | undefined {
-  if (!isRecord(err)) return undefined;
-  const headers = err['headers'];
-  if (!isRecord(headers)) return undefined;
-  const getFn = headers['get'];
-  if (typeof getFn === 'function') {
-    const value: unknown = (getFn as (name: string) => unknown).call(headers, 'Retry-After');
-    if (typeof value === 'string') return value;
-  }
-  const raw = headers['retry-after'];
-  return typeof raw === 'string' ? raw : undefined;
-}
-
-async function graphCallWithRetry<T>(callFn: () => Promise<T>, maxRetries = 3): Promise<T> {
-  let attempt = 0;
-  while (true) {
-    attempt++;
-    try {
-      return await callFn();
-    } catch (err) {
-      if (getStatusCode(err) === 429 && attempt <= maxRetries) {
-        let delayMs = 5000;
-        const retryAfter = getRetryAfterHeader(err);
-        if (retryAfter) {
-          const parsed = parseInt(retryAfter, 10);
-          if (!isNaN(parsed)) {
-            delayMs = parsed * 1000;
-          }
-        } else {
-          delayMs = Math.pow(2, attempt) * 2000; // 4s, 8s, 16s...
-        }
-        logger.warn(`MS Graph API rate limited (429). Retrying in ${delayMs}ms (attempt ${attempt}/${maxRetries})...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-export class MsSyncService {
-  private readonly ingester: EmailIngesterService;
-
-  constructor(
-    private readonly db: Kysely<Models>,
-    private readonly oauthSvc: MsOAuthService,
-  ) {
-    this.ingester = new EmailIngesterService(db, 'ms');
-  }
-
-  public async syncTenant(tenantId: string, requestedBy: string): Promise<{ inserted: number }> {
-    const accessToken = await this.oauthSvc.getValidToken(tenantId);
-    const client = this.buildGraphClient(accessToken);
-
-    const syncFolders = [
-      { wellKnownName: 'inbox', pplcrmId: ALL_FOLDERS.INBOX },
-      { wellKnownName: 'sentitems', pplcrmId: ALL_FOLDERS.SENT },
-      { wellKnownName: 'deleteditems', pplcrmId: ALL_FOLDERS.TRASH },
-      { wellKnownName: 'junkemail', pplcrmId: ALL_FOLDERS.SPAM },
-    ];
-
-    // Read stored delta map.
-    // A sentinel value { _needs_full_sync: true } signals that all folders must be fully resynced
-    // (set on reconnect or after removeAllLocalEmails). saveDeltaLink overwrites it with real
-    // positions after a successful sync, so no explicit clear is needed.
-    const dbDeltaLink = await this.oauthSvc.getDeltaLink(tenantId);
-    let deltaMap: Record<string, string> = {};
-    if (dbDeltaLink) {
-      try {
-        const parsed = JSON.parse(dbDeltaLink);
-        if (!parsed._needs_full_sync) {
-          deltaMap = parsed;
-        }
-        // _needs_full_sync → leave deltaMap empty, triggering a full sync for every folder
-      } catch {
-        // If not valid JSON, it's a legacy plain URL string. Clear it.
-        deltaMap = {};
-      }
-    }
-
-    let inserted = 0;
-    const nextDeltaMap: Record<string, string> = { ...deltaMap };
-
-    for (const folder of syncFolders) {
-      const folderDeltaLink = deltaMap[folder.wellKnownName] || null;
-
-      let pageUrl: string | null =
-        folderDeltaLink ??
-        `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
-
-      const allMessages: any[] = [];
-      let isInitialSync = folderDeltaLink === null;
-      let hasMore = true;
-
-      while (pageUrl && hasMore) {
-        const url = pageUrl;
-        try {
-          const response: any = await graphCallWithRetry(() => client.api(url).get());
-          const messages = response.value ?? [];
-          allMessages.push(...messages);
-
-          const nextLink = response['@odata.nextLink'] ?? null;
-          const deltaLink = response['@odata.deltaLink'] ?? null;
-
-          if (deltaLink) {
-            nextDeltaMap[folder.wellKnownName] = deltaLink;
-            hasMore = false;
-          } else if (nextLink) {
-            pageUrl = nextLink;
-          } else {
-            hasMore = false;
-          }
-        } catch (err) {
-          if (getStatusCode(err) === 410) {
-            // Delta link expired for this folder, clear it
-            delete nextDeltaMap[folder.wellKnownName];
-            isInitialSync = true;
-            allMessages.length = 0; // clear any partially loaded pages before restarting
-            pageUrl = `/me/mailFolders/${folder.wellKnownName}/messages/delta?$top=${MAX_MESSAGES_PER_SYNC}&$select=id,subject,from,toRecipients,ccRecipients,bccRecipients,body,receivedDateTime,hasAttachments,parentFolderId,internetMessageId`;
-          } else {
-            throw err;
-          }
-        }
-      }
-
-      // Process all messages fetched in this sync run
-      for (const msg of allMessages) {
-        if (msg['@removed']) {
-          const msId = msg.id;
-          if (msId) {
-            await this.ingester.deleteMessage(tenantId, msId);
-          }
-          continue;
-        }
-
-        try {
-          const wasSaved = await this.saveMessage(client, msg, tenantId, requestedBy, folder.pplcrmId);
-          if (wasSaved) inserted++;
-        } catch (err) {
-          logger.error({ err }, `Failed to ingest MS Graph message ${msg.id}`);
-        }
-      }
-
-      // If it was an initial/full sync (meaning we started with no delta link, or it expired and we retried),
-      // we have retrieved the entire list of active server messages.
-      // Therefore, any local email that has an MS preview key but is NOT in the server's list must have been deleted or moved.
-      if (isInitialSync) {
-        const serverMsIds = new Set(allMessages.filter((m) => !m['@removed']).map((m) => String(m.id)));
-        const localEmails = await this.db
-          .selectFrom('emails')
-          .select(['id', 'preview'])
-          .where('tenant_id', '=', tenantId)
-          .where('folder_id', '=', folder.pplcrmId)
-          .where('preview', 'like', 'ms:%')
-          .execute();
-
-        for (const localEmail of localEmails) {
-          const previewKey = localEmail.preview ?? '';
-          const msId = previewKey.replace(/^ms:/, '');
-          if (!serverMsIds.has(msId)) {
-            await this.ingester.deleteMessage(tenantId, msId);
-          }
-        }
-      }
-    }
-
-    // Save updated delta map back to database
-    await this.oauthSvc.saveDeltaLink(tenantId, JSON.stringify(nextDeltaMap));
-
-    return { inserted };
-  }
-
-  public async removeAllLocalEmails(tenantId: string): Promise<void> {
-    await this.ingester.removeAllLocalEmails(tenantId);
-  }
-
-  private async saveMessage(
-    client: Client,
-    msg: any,
-    tenantId: string,
-    requestedBy: string,
-    folderId: string,
-  ): Promise<boolean> {
-    const msId: string = msg.id ?? '';
-    if (!msId) return false;
-
-    const fromEmail = msg.from?.emailAddress?.address ?? null;
-    const toEmail = msg.toRecipients?.[0]?.emailAddress?.address ?? null;
-    const subject = msg.subject ?? null;
-    let dateSent = msg.receivedDateTime ? new Date(msg.receivedDateTime) : new Date();
-    if (isNaN(dateSent.getTime())) {
-      dateSent = new Date();
-    }
-    const bodyHtml = msg.body?.content ?? '';
-
-    // Fetch Graph attachments if any
-    let graphAttachments: any[] = [];
-    const hasCid = bodyHtml && bodyHtml.includes('cid:');
-    if (msg.hasAttachments || hasCid) {
-      try {
-        const attRes = await graphCallWithRetry(() => client.api(`/me/messages/${msId}/attachments`).get());
-        graphAttachments = attRes.value ?? [];
-      } catch (err) {
-        logger.error({ err }, `Failed to fetch attachments for message ${msId}`);
-      }
-    }
-
-    const fileAttachments = graphAttachments.filter(
-      (att: any) => att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes,
-    );
-
-    // Map MS Graph attachments to IngestableEmail attachments
-    const attachments = fileAttachments.map((att: any) => ({
-      name: att.name,
-      contentType: att.contentType,
-      size: att.size,
-      contentId: att.contentId ?? null,
-      isInline: att.isInline ?? false,
-      fetchContent: async () => Buffer.from(att.contentBytes, 'base64'),
-    }));
-
-    // Map recipients
-    const recipients: Array<{ kind: 'to' | 'cc' | 'bcc'; name: string | null; email: string }> = [];
-    const toList: any[] = msg.toRecipients ?? [];
-    const ccList: any[] = msg.ccRecipients ?? [];
-    const bccList: any[] = msg.bccRecipients ?? [];
-
-    toList.forEach((r) => {
-      recipients.push({ kind: 'to', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-    ccList.forEach((r) => {
-      recipients.push({ kind: 'cc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-    bccList.forEach((r) => {
-      recipients.push({ kind: 'bcc', name: r.emailAddress?.name ?? null, email: r.emailAddress?.address ?? '' });
-    });
-
-    const ingestable: IngestableEmail = {
-      id: msId,
-      internetMessageId: msg.internetMessageId ?? null,
-      fromEmail,
-      toEmail,
-      subject,
-      dateSent,
-      bodyHtml,
-      recipients,
-      attachments,
-    };
-
-    return this.ingester.ingestEmail(ingestable, tenantId, requestedBy, folderId);
-  }
-
-  private buildGraphClient(accessToken: string): Client {
-    return Client.init({
-      authProvider: (done) => done(null, accessToken),
-    });
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/newsletters/routes/newsletters-webhook.route.ts
-
-```typescript
-import { createPublicKey, createVerify } from 'crypto';
-import type { FastifyPluginCallback } from 'fastify';
-import { BaseRepository } from '../../../lib/base.repo';
-import { env } from '../../../../env';
-import { sql } from 'kysely';
-
-const db = new BaseRepository('newsletters').db;
-
-const SIGNATURE_HEADER = 'x-twilio-email-event-webhook-signature';
-const TIMESTAMP_HEADER = 'x-twilio-email-event-webhook-timestamp';
-
-/**
- * Verifies a SendGrid Signed Event Webhook request.
- * SendGrid signs `timestamp + rawBody` with an ECDSA (P-256) key; we verify it
- * against the base64-DER public verification key configured in the dashboard.
- */
-function verifySendGridSignature(rawBody: string, signature?: string, timestamp?: string): boolean {
-  const verificationKey = env.sendgridWebhookVerificationKey;
-  if (!verificationKey || !signature || !timestamp) {
-    return false;
-  }
-
-  try {
-    const publicKey = createPublicKey({
-      key: Buffer.from(verificationKey, 'base64'),
-      format: 'der',
-      type: 'spki',
-    });
-    const verifier = createVerify('sha256');
-    verifier.update(timestamp + rawBody);
-    verifier.end();
-    return verifier.verify(publicKey, Buffer.from(signature, 'base64'));
-  } catch {
-    return false;
-  }
-}
-
-const newslettersWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req: any, reply) => {
-    // req.body is the raw string (see content-type parser in fastify.server.ts)
-    const rawBody = typeof req.body === 'string' ? req.body : '';
-    const signature = req.headers[SIGNATURE_HEADER] as string | undefined;
-    const timestamp = req.headers[TIMESTAMP_HEADER] as string | undefined;
-
-    if (!verifySendGridSignature(rawBody, signature, timestamp)) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
-
-    let parsedBody: any;
-    try {
-      parsedBody = JSON.parse(rawBody);
-    } catch {
-      return reply.code(400).send({ error: 'Invalid payload' });
-    }
-
-    const events = Array.isArray(parsedBody) ? parsedBody : [parsedBody];
-
-    try {
-      const processedNewsletters = new Set<string>();
-
-      // Insert all events that have newsletter_id and tenant_id
-      for (const ev of events) {
-        if (!ev || !ev.newsletter_id || !ev.tenant_id || !ev.sg_event_id) {
-          continue;
-        }
-
-        const newsletterId = ev.newsletter_id;
-        const tenantId = ev.tenant_id;
-        const eventType = ev.event || '';
-        const email = ev.email || '';
-        const sgEventId = ev.sg_event_id;
-        const sgMessageId = ev.sg_message_id || null;
-        const url = ev.url || null;
-        const ip = ev.ip || null;
-        const userAgent = ev.useragent || null;
-        const timestamp = ev.timestamp ? new Date(ev.timestamp * 1000) : new Date();
-
-        try {
-          await db
-            .insertInto('newsletter_events')
-            .values({
-              tenant_id: tenantId,
-              newsletter_id: newsletterId,
-              email,
-              event_type: eventType,
-              sg_event_id: sgEventId,
-              sg_message_id: sgMessageId,
-              url,
-              ip,
-              user_agent: userAgent,
-              timestamp,
-              created_at: new Date() as any,
-            })
-            .onConflict((oc) => oc.column('sg_event_id').doNothing())
-            .execute();
-
-          processedNewsletters.add(`${tenantId}:${newsletterId}`);
-        } catch (insertErr) {
-          req.log.error(insertErr, `Failed to insert webhook event ${sgEventId}`);
-        }
-      }
-
-      // Recompute aggregates for each processed newsletter
-      for (const key of processedNewsletters) {
-        const [tenantId, newsletterId] = key.split(':') as [string, string];
-
-        await db.transaction().execute(async (trx) => {
-          // 1. Fetch aggregates
-          const stats = await trx
-            .selectFrom('newsletter_events')
-            .select([
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'delivered')`.as('delivered'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type IN ('bounce', 'dropped'))`.as('bounced'),
-              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'open')`.as('unique_opens'),
-              sql<number>`COUNT(DISTINCT email) FILTER (WHERE event_type = 'click')`.as('unique_clicks'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'unsubscribe')`.as('unsubscribes'),
-              sql<number>`COUNT(id) FILTER (WHERE event_type = 'spamreport')`.as('spamreports'),
-              sql<Date | null>`MAX(timestamp) FILTER (WHERE event_type IN ('open', 'click'))`.as('last_engagement'),
-            ])
-            .where('newsletter_id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .executeTakeFirst();
-
-          // 2. Fetch top links clicked
-          const topLinksResult = await trx
-            .selectFrom('newsletter_events')
-            .select(['url'])
-            .select(({ fn }) => fn.count<number>('id').as('clicks'))
-            .where('newsletter_id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .where('event_type', '=', 'click')
-            .where('url', 'is not', null)
-            .groupBy('url')
-            .orderBy('clicks', 'desc')
-            .execute();
-
-          const topLinks = topLinksResult.map((l) => ({
-            url: l.url,
-            clicks: Number(l.clicks),
-          }));
-
-          // 3. Update the newsletters table row
-          const newsletter = await trx
-            .selectFrom('newsletters')
-            .select(['total_recipients'])
-            .where('id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .executeTakeFirst();
-
-          const totalRecipients = Number(newsletter?.total_recipients ?? 0);
-          const uniqueOpens = Number(stats?.unique_opens ?? 0);
-          const uniqueClicks = Number(stats?.unique_clicks ?? 0);
-
-          const openRate = totalRecipients > 0 ? (uniqueOpens / totalRecipients) * 100 : 0;
-          const clickRate = totalRecipients > 0 ? (uniqueClicks / totalRecipients) * 100 : 0;
-
-          await trx
-            .updateTable('newsletters')
-            .set({
-              delivered_count: Number(stats?.delivered ?? 0),
-              bounce_count: Number(stats?.bounced ?? 0),
-              unique_opens: uniqueOpens,
-              unique_clicks: uniqueClicks,
-              unsubscribe_count: Number(stats?.unsubscribes ?? 0),
-              spam_complaint_count: Number(stats?.spamreports ?? 0),
-              last_engagement_at: stats?.last_engagement || null,
-              open_rate: openRate,
-              click_rate: clickRate,
-              top_links: JSON.stringify(topLinks) as any,
-              updated_at: new Date(),
-            })
-            .where('id', '=', newsletterId)
-            .where('tenant_id', '=', tenantId)
-            .execute();
-        });
-      }
-
-      return reply.code(200).send({ success: true, processedCount: processedNewsletters.size });
-    } catch (err) {
-      req.log.error(err, 'SendGrid webhook processing error');
-      return reply.code(500).send({ error: err instanceof Error ? err.message : String(err) });
-    }
-  });
-
-  done();
-};
-
-export default newslettersWebhookRoute;
-```
-
 ## File: apps/backend/src/app/modules/newsletters/trpc.router.ts
 
 ```typescript
@@ -19149,738 +18737,6 @@ export const NewslettersRouter = router({
     .input(sendTestSchema)
     .mutation(async ({ input, ctx }) => newsletters.sendTestEmail(ctx.auth.tenant_id, input)),
 });
-```
-
-## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
-
-```typescript
-import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
-
-export class PersonsRepo extends BaseRepository<'persons'> {
-  constructor() {
-    super('persons');
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    const rows = await this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id)
-      .execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql`now()`,
-      })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
-
-  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
-    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
-    if (!ids.length) return [];
-
-    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
-
-    let query = this.getSelect(trx)
-      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
-      .where('persons.tenant_id', '=', input.tenant_id)
-      .where('persons.id', 'in', ids);
-
-    if (tags.length > 0) {
-      query = query
-        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .where(sql`LOWER(tags.name)`, 'in', tags)
-        .distinct();
-    }
-
-    const rows = await query.execute();
-    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
-    for (const row of rows) {
-      const id = row.id != null ? String(row.id) : '';
-      if (!id || map.has(id)) continue;
-      map.set(id, {
-        id,
-        first_name: row.first_name ?? '',
-        last_name: row.last_name ?? '',
-        email: row.email ?? null,
-      });
-    }
-    return Array.from(map.values());
-  }
-
-  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
-    const row = await this.getSelect()
-      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('createdby_id', '=', input.user_id)
-      .executeTakeFirst();
-
-    return {
-      total: Number(row?.total ?? 0),
-      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
-    };
-  }
-
-  public async moveToNewHousehold(input: {
-    tenant_id: string;
-    person_id: string;
-    user_id: string;
-    campaign_id: string;
-  }) {
-    const households = new HouseholdRepo();
-    return this.transaction().execute(async (trx) => {
-      // Reuse existing blank household if available
-      const existingBlank = await households.getBlankHousehold(
-        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
-        trx,
-      );
-      let targetId = existingBlank?.id as string | undefined;
-
-      if (!targetId) {
-        const newHousehold = await households.add(
-          {
-            row: {
-              tenant_id: input.tenant_id,
-              campaign_id: input.campaign_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            } as OperationDataType<'households', 'insert'>,
-          },
-          trx,
-        );
-        targetId = newHousehold?.id as string | undefined;
-      }
-
-      await this.update(
-        {
-          tenant_id: input.tenant_id,
-          id: input.person_id,
-          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
-        },
-        trx,
-      );
-
-      return { household_id: targetId };
-    });
-  }
-
-  public async getAllWithAddress(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
-      tags?: string[];
-      issues?: string[];
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
-    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
-
-    // Shared where clause builder
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .leftJoin('households', 'persons.household_id', 'households.id')
-        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .leftJoin('companies', 'persons.company_id', 'companies.id')
-        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
-        .where('households.tenant_id', '=', tenantId)
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
-        .$if(!!options.listId, (qb) =>
-          qb.where('persons.id', 'in', (eb: any) =>
-            eb
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('list_id', '=', options.listId ?? '')
-              .where('tenant_id', '=', tenantId),
-          ),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
-          // indexes can serve quick search; normalizeSearch already lowercases,
-          // so the match semantics are identical.
-          return qb.where(
-            sql<boolean>`(
-            persons.first_name ILIKE ${text} OR
-            persons.last_name ILIKE ${text} OR
-            persons.email ILIKE ${text} OR
-            persons.mobile ILIKE ${text} OR
-            households.city ILIKE ${text} OR
-            households.street1 ILIKE ${text} OR
-            companies.name ILIKE ${text} OR
-            tags.name ILIKE ${text}
-          )`,
-          );
-        });
-
-      // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
-      if (filterModel['tags']?.value && filterModel['issues']?.value) {
-        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
-        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
-        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
-        q = q.where((eb) =>
-          eb.or([
-            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
-          ]),
-        );
-      } else if (filterModel['tags']?.value) {
-        q = q.where('tags.type', '=', 'tag');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      } else if (filterModel['issues']?.value) {
-        q = q.where('tags.type', '=', 'issue');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
-      }
-      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
-
-      // Apply advanced query builder filters if present
-      const columnMapping = {
-        first_name: { col: 'persons.first_name' },
-        last_name: { col: 'persons.last_name' },
-        email: { col: 'persons.email' },
-        mobile: { col: 'persons.mobile' },
-        city: { col: 'households.city' },
-        state: { col: 'households.state' },
-        street1: { col: 'households.street1' },
-        street_num: { col: 'households.street_num::text', isCast: true },
-        zip: { col: 'households.zip' },
-        tag: { col: 'tags.name' },
-        tags: { col: 'tags.name' },
-        issues: { col: 'tags.name' },
-        company_name: { col: 'companies.name' },
-      };
-      const advModel =
-        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
-      q = this.applyAdvancedFilters(q, advModel, columnMapping);
-
-      return q;
-    };
-
-    // Count query
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query
-    const rows = await applyFilters(this.getSelect(trx))
-      .select((eb) => [
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'companies.name as company_name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        eb
-          .case()
-          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
-          .then(true)
-          .else(false)
-          .end()
-          .as('household_is_placeholder'),
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
-          'tags',
-        ),
-        sql<
-          string[]
-        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
-      ])
-      .groupBy([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'persons.created_at',
-        'persons.updated_at',
-        'persons.tenant_id',
-        'persons.createdby_id',
-        'persons.updatedby_id',
-        'companies.name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        'tenants.placeholder_household_id',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce((acc, sort) => {
-          let col = sort.colId;
-          if (typeof col === 'string' && !col.includes('.')) {
-            const personsCols = [
-              'id',
-              'first_name',
-              'last_name',
-              'email',
-              'mobile',
-              'notes',
-              'household_id',
-              'company_id',
-              'created_at',
-              'updated_at',
-              'tenant_id',
-              'createdby_id',
-              'updatedby_id',
-            ];
-            if (personsCols.includes(col)) {
-              col = `persons.${col}`;
-            } else {
-              const hhCols = [
-                'country',
-                'zip',
-                'state',
-                'home_phone',
-                'city',
-                'street1',
-                'street2',
-                'street_num',
-                'apt',
-              ];
-              if (hhCols.includes(col)) {
-                col = `households.${col}`;
-              } else if (col === 'company_name') {
-                col = `companies.name`;
-              } else if (col === 'address') {
-                col = `households.street1`;
-              }
-            }
-          }
-          return acc.orderBy(col, sort.sort);
-        }, qb),
-      )
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
-      )
-      .execute();
-
-    return { count, rows };
-  }
-
-  public getByHouseholdId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('household_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public getByCompanyId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
-    return Number(result?.total ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
-  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
-    let q = this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.id', '=', input.id)
-      .where('persons.tenant_id', '=', input.tenant_id);
-    if (input.type) {
-      q = q.where('tags.type', '=', input.type);
-    }
-    return q.select('tags.name').execute();
-  }
-  public async findByEmail(input: { tenant_id: string; email: string }) {
-    return this.getSelect()
-      .select(['id', 'email'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
-      .executeTakeFirst();
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: unknown[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.home_phone',
-        'persons.notes',
-        'persons.company_id',
-        'persons.household_id',
-        'persons.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
-          reason: row.reason,
-          persons: [],
-        });
-      }
-      groupsMap.get(groupKey)?.persons.push({
-        ...row,
-        id: String(row.id),
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source person not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, unknown> = {};
-      const fields = [
-        'first_name',
-        'middle_names',
-        'last_name',
-        'email',
-        'email2',
-        'mobile',
-        'home_phone',
-        'notes',
-        'company_id',
-        'file_id',
-      ] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Transfer tags (map_peoples_tags)
-      const targetTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select('tag_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
-
-      const sourceTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select(['tag_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTags) {
-        const tagIdStr = String(st.tag_id);
-        if (!targetTagIds.has(tagIdStr)) {
-          await trx
-            .insertInto('map_peoples_tags')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              tag_id: st.tag_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_peoples_tags')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 3. Transfer lists (map_lists_persons)
-      const targetLists = await trx
-        .selectFrom('map_lists_persons')
-        .select('list_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
-
-      const sourceLists = await trx
-        .selectFrom('map_lists_persons')
-        .select(['list_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const sl of sourceLists) {
-        if (!targetListIds.has(String(sl.list_id))) {
-          await trx
-            .insertInto('map_lists_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              list_id: sl.list_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_lists_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 4. Transfer teams (map_teams_persons)
-      const targetTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select('team_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
-
-      const sourceTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select(['team_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTeams) {
-        if (!targetTeamIds.has(String(st.team_id))) {
-          await trx
-            .insertInto('map_teams_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              team_id: st.team_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_teams_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 5. Reassign captaincy if source was captain of any team
-      await trx
-        .updateTable('teams')
-        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('team_captain_id', '=', input.source_id)
-        .execute();
-      // 6. Delete source person
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      // 7. Clean up empty household if source's household is now empty
-      const sourceHhId = source.household_id;
-      if (sourceHhId && sourceHhId !== target.household_id) {
-        const remainingHhMembers = await trx
-          .selectFrom('persons')
-          .select('id')
-          .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', '=', sourceHhId)
-          .execute();
-        if (remainingHhMembers.length === 0) {
-          // Clean up orphaned household associations before deletion
-          await trx
-            .deleteFrom('map_households_tags')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('map_lists_households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('id', '=', sourceHhId)
-            .execute();
-        }
-      }
-
-      return { success: true };
-    });
-  }
-}
 ```
 
 ## File: apps/backend/src/app/modules/persons/routes/persons.schema.ts
@@ -21112,388 +19968,383 @@ export const WebFormsRouter = router({
 });
 ```
 
-## File: apps/backend/src/app/modules/workflows/controller.ts
+## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
 
 ```typescript
-import { BaseController } from '../../lib/base.controller';
-import { WorkflowsRepo } from './repositories/workflows.repo';
-import { WorkflowEnrollmentsRepo } from './repositories/workflow-enrollments.repo';
-import type { Transaction, Kysely } from 'kysely';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { TRPCError } from '@trpc/server';
+import type { FastifyPluginCallback } from 'fastify';
+import { z } from 'zod';
+import { ZapierService } from './zapier.service';
+import { PersonsService } from '../persons/services/persons.service';
+import type { IAuthKeyPayload } from '@common';
 import { logger } from '../../logger';
+import { checkRateLimit } from '../../lib/rate-limiter';
+import { TooManyRequestsError } from '../../errors/app-errors';
 
-export class WorkflowsController extends BaseController<'workflows', WorkflowsRepo> {
-  private readonly enrollmentsRepo = new WorkflowEnrollmentsRepo();
+const zapierService = new ZapierService();
+const personsService = new PersonsService();
 
-  constructor() {
-    super(new WorkflowsRepo());
-  }
+// The API key is the sole authenticator for these unauthenticated-by-default write
+// routes, so cap requests per source IP: throttles key brute-forcing and abuse of a
+// leaked key (SECURITY-REVIEW.md 2.4). Generous enough for legitimate Zapier bursts.
+const ZAPIER_RATE_LIMIT = 120;
+const ZAPIER_RATE_WINDOW_MS = 60 * 1000;
 
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const workflow = await super.getOneById(input);
-    if (!workflow) return workflow;
-    return this.resolveCreatorAndUpdater(input.tenant_id, workflow);
-  }
+const upsertPersonSchema = z.object({
+  email: z.string().email('Valid email required for person matching').max(255),
+  first_name: z.string().trim().max(100).optional(),
+  last_name: z.string().trim().max(100).optional(),
+  mobile: z.string().trim().max(30).optional(),
+  home_phone: z.string().trim().max(30).optional(),
+  notes: z.string().trim().max(10000).optional(),
+  linkedin: z.string().trim().max(255).optional(),
+  twitter: z.string().trim().max(255).optional(),
+  facebook: z.string().trim().max(255).optional(),
+  instagram: z.string().trim().max(255).optional(),
+});
 
-  public async getSteps(tenantId: string, workflowId: string, trx?: Transaction<Models>) {
-    const db = trx || this.getRepo().db;
-    const steps = await db
-      .selectFrom('workflow_steps')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('workflow_id', '=', workflowId)
-      .orderBy('step_number', 'asc')
-      .execute();
-    return steps.map((s) => ({
-      ...s,
-      id: String(s.id),
-      workflow_id: String(s.workflow_id),
-    }));
-  }
+const tagActionSchema = z.object({
+  email: z.string().email('Valid email required to identify the person').max(255),
+  tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50),
+});
 
-  public async saveSteps(tenantId: string, workflowId: string, steps: any[], userId: string) {
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        // 1. Verify workflow exists and belongs to tenant
-        const workflow = await trx
-          .selectFrom('workflows')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', workflowId)
-          .executeTakeFirst();
+async function resolveAuth(tenantId: string, db: any): Promise<IAuthKeyPayload | null> {
+  const owner = await db
+    .selectFrom('authusers')
+    .select(['id', 'first_name', 'last_name', 'role'])
+    .where('tenant_id', '=', tenantId)
+    .where('role', 'in', ['owner', 'admin'])
+    .orderBy('id', 'asc')
+    .limit(1)
+    .executeTakeFirst();
 
-        if (!workflow) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Workflow not found.',
-          });
-        }
+  if (!owner) return null;
 
-        // 2. Delete all existing steps
-        await trx
-          .deleteFrom('workflow_steps')
-          .where('tenant_id', '=', tenantId)
-          .where('workflow_id', '=', workflowId)
-          .execute();
+  const name = [owner.first_name, owner.last_name].filter(Boolean).join(' ') || 'Zapier';
 
-        // 3. Insert new steps
-        if (steps.length > 0) {
-          const insertRows = steps.map(
-            (step, idx) =>
-              ({
-                tenant_id: tenantId,
-                workflow_id: workflowId,
-                step_number: idx + 1,
-                delay_days: Number(step.delay_days || 0),
-                delay_unit: step.delay_unit || 'days',
-                subject: step.subject || 'Follow-up Email',
-                preview_text: step.preview_text || null,
-                html_content: step.html_content || null,
-                plain_text_content: step.plain_text_content || null,
-              }) as any,
-          );
+  return {
+    user_id: String(owner.id),
+    tenant_id: tenantId,
+    session_id: 'zapier',
+    name,
+    role: owner.role ?? 'admin',
+    source: 'api',
+  } as IAuthKeyPayload;
+}
 
-          await trx.insertInto('workflow_steps').values(insertRows).execute();
-        }
+async function extractTenantId(req: any): Promise<string | null> {
+  const authHeader = req.headers['authorization'] as string | undefined;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  const apiKey = authHeader.slice(7).trim();
+  if (!apiKey) return null;
+  return zapierService.lookupTenantByApiKey(apiKey);
+}
 
-        // Log update activity
-        await this.userActivity.log(
-          {
-            tenant_id: tenantId,
-            user_id: userId,
-            activity: 'update',
-            entity: 'workflows',
-            entity_id: workflowId,
-            quantity: 1,
-            metadata: { id: workflowId, action: 'save_steps', stepsCount: steps.length },
-          },
-          trx,
-        );
-      });
+const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  // Rate-limit every inbound Zapier route by source IP before the handler runs.
+  fastify.addHook('onRequest', async (req, reply) => {
+    try {
+      checkRateLimit(`zapier:${req.ip}`, ZAPIER_RATE_LIMIT, ZAPIER_RATE_WINDOW_MS);
+    } catch (err) {
+      if (err instanceof TooManyRequestsError) {
+        return reply.code(429).send({ error: err.message });
+      }
+      throw err;
+    }
+  });
 
-    return { success: true };
-  }
+  fastify.post('/persons/upsert', async (req, reply) => {
+    const tenantId = await extractTenantId(req);
+    if (!tenantId) {
+      return reply.code(401).send({ error: 'Invalid or missing API key' });
+    }
 
-  public async getEnrollments(tenantId: string, workflowId: string, options?: any) {
-    return this.enrollmentsRepo.getEnrollmentsWithPersonDetails({
-      tenant_id: tenantId,
-      workflow_id: workflowId,
-      options,
-    });
-  }
+    const parsed = upsertPersonSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
+    }
 
-  public async enrollPerson(
-    tenantId: string,
-    personId: string,
-    workflowId: string,
-    userId: string,
-    trx?: Transaction<Models> | Kysely<Models>,
-  ) {
-    const executeLogic = async (t: Transaction<Models> | Kysely<Models>) => {
-      // 1. Verify person exists
-      const person = await t
+    const { email, ...fields } = parsed.data;
+
+    try {
+      const db =
+        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const auth = await resolveAuth(tenantId, db);
+      if (!auth) {
+        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
+      }
+
+      const existing = await db
         .selectFrom('persons')
-        .select(['id', 'first_name', 'last_name', 'email'])
+        .select(['id', 'email'])
         .where('tenant_id', '=', tenantId)
-        .where('id', '=', personId)
-        .executeTakeFirst();
-
-      if (!person) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Person not found.',
-        });
-      }
-
-      // 2. Verify workflow exists and is active
-      const workflow = await t
-        .selectFrom('workflows')
-        .select(['id', 'status', 'name'])
-        .where('tenant_id', '=', tenantId)
-        .where('id', '=', workflowId)
-        .executeTakeFirst();
-
-      if (!workflow) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Workflow not found.',
-        });
-      }
-
-      // 3. Check if already enrolled in an active state
-      const existing = await t
-        .selectFrom('workflow_enrollments')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where('workflow_id', '=', workflowId)
-        .where('person_id', '=', personId)
-        .where('status', '=', 'active')
+        .where('email', 'ilike', email.trim())
         .executeTakeFirst();
 
       if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This person is already enrolled in this workflow.',
-        });
+        const result = await personsService.updatePerson(String(existing.id), { email, ...fields } as any, auth);
+        return reply.code(200).send({ action: 'updated', person: result });
+      } else {
+        const result = await personsService.addPerson({ email, ...fields } as any, auth);
+        return reply.code(201).send({ action: 'created', person: result });
+      }
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/upsert error');
+      return reply.code(500).send({ error: 'Failed to upsert person' });
+    }
+  });
+
+  fastify.post('/persons/tag', async (req, reply) => {
+    const tenantId = await extractTenantId(req);
+    if (!tenantId) {
+      return reply.code(401).send({ error: 'Invalid or missing API key' });
+    }
+
+    const parsed = tagActionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
+    }
+
+    const { email, tag_name } = parsed.data;
+
+    try {
+      const db =
+        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const auth = await resolveAuth(tenantId, db);
+      if (!auth) {
+        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
       }
 
-      // 4. Find the first step of this workflow
-      const firstStep = await t
-        .selectFrom('workflow_steps')
-        .select(['step_number', 'delay_days', 'delay_unit'])
+      const person = await db
+        .selectFrom('persons')
+        .select(['id'])
         .where('tenant_id', '=', tenantId)
-        .where('workflow_id', '=', workflowId)
-        .orderBy('step_number', 'asc')
+        .where('email', 'ilike', email.trim())
         .executeTakeFirst();
 
-      if (!firstStep) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This workflow does not have any steps yet.',
-        });
+      if (!person) {
+        return reply.code(404).send({ error: 'No person found with that email' });
       }
 
-      // 5. Calculate next run at based on step delay
-      const delayMs =
-        firstStep.delay_unit === 'hours'
-          ? firstStep.delay_days * 60 * 60 * 1000
-          : firstStep.delay_days * 24 * 60 * 60 * 1000;
-      const nextRunAt = new Date(Date.now() + delayMs);
+      await personsService.attachTag(String(person.id), tag_name, 'tag', auth);
+      return reply.code(200).send({ success: true });
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/tag error');
+      return reply.code(500).send({ error: 'Failed to add tag' });
+    }
+  });
 
-      // 6. Insert enrollment
-      const insertRow = {
+  fastify.post('/persons/untag', async (req, reply) => {
+    const tenantId = await extractTenantId(req);
+    if (!tenantId) {
+      return reply.code(401).send({ error: 'Invalid or missing API key' });
+    }
+
+    const parsed = tagActionSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
+    }
+
+    const { email, tag_name } = parsed.data;
+
+    try {
+      const db =
+        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
+      const auth = await resolveAuth(tenantId, db);
+      if (!auth) {
+        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
+      }
+
+      const person = await db
+        .selectFrom('persons')
+        .select(['id'])
+        .where('tenant_id', '=', tenantId)
+        .where('email', 'ilike', email.trim())
+        .executeTakeFirst();
+
+      if (!person) {
+        return reply.code(404).send({ error: 'No person found with that email' });
+      }
+
+      await personsService.detachTag({
         tenant_id: tenantId,
-        workflow_id: workflowId,
-        person_id: personId,
-        status: 'active',
-        current_step_number: firstStep.step_number,
-        next_run_at: nextRunAt,
-      } as OperationDataType<'workflow_enrollments', 'insert'>;
-
-      const result = await t
-        .insertInto('workflow_enrollments')
-        .values(insertRow)
-        .returningAll()
-        .executeTakeFirstOrThrow();
-
-      // Log user activity
-      await this.userActivity.log(
-        {
-          tenant_id: tenantId,
-          user_id: userId,
-          activity: 'assign',
-          entity: 'workflows',
-          entity_id: workflowId,
-          quantity: 1,
-          metadata: {
-            id: workflowId,
-            person_id: personId,
-            person_name: `${person.first_name || ''} ${person.last_name || ''}`.trim(),
-            next_run_at: nextRunAt.toISOString(),
-          },
-        },
-        typeof (t as any).transaction === 'undefined' ? (t as Transaction<Models>) : undefined,
-      );
-
-      return {
-        ...result,
-        id: String(result.id),
-        workflow_id: String(result.workflow_id),
-        person_id: String(result.person_id),
-      };
-    };
-
-    if (trx) {
-      return executeLogic(trx);
-    } else {
-      return this.getRepo()
-        .transaction()
-        .execute(async (t) => executeLogic(t));
-    }
-  }
-
-  public async cancelEnrollment(tenantId: string, enrollmentId: string, userId: string) {
-    return this.getRepo()
-      .transaction()
-      .execute(async (trx) => {
-        const enrollment = await trx
-          .selectFrom('workflow_enrollments')
-          .select(['id', 'workflow_id', 'person_id', 'status'])
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', enrollmentId)
-          .executeTakeFirst();
-
-        if (!enrollment) {
-          throw new TRPCError({
-            code: 'NOT_FOUND',
-            message: 'Enrollment not found.',
-          });
-        }
-
-        if (enrollment.status !== 'active') {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Only active enrollments can be cancelled.',
-          });
-        }
-
-        await trx
-          .updateTable('workflow_enrollments')
-          .set({
-            status: 'cancelled',
-            next_run_at: null,
-            updated_at: new Date(),
-          })
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', enrollmentId)
-          .execute();
-
-        // Look up person's name for log
-        const person = await trx
-          .selectFrom('persons')
-          .select(['first_name', 'last_name'])
-          .where('tenant_id', '=', tenantId)
-          .where('id', '=', enrollment.person_id)
-          .executeTakeFirst();
-
-        // Log activity
-        await this.userActivity.log(
-          {
-            tenant_id: tenantId,
-            user_id: userId,
-            activity: 'unassign',
-            entity: 'workflows',
-            entity_id: String(enrollment.workflow_id),
-            quantity: 1,
-            metadata: {
-              id: String(enrollment.workflow_id),
-              person_id: String(enrollment.person_id),
-              person_name: person ? `${person.first_name || ''} ${person.last_name || ''}`.trim() : 'Unknown Contact',
-            },
-          },
-          trx,
-        );
-
-        return { success: true };
+        person_id: String(person.id),
+        name: tag_name,
+        type: 'tag',
+        user_id: auth.user_id,
+        source: auth.source,
       });
+
+      return reply.code(200).send({ success: true });
+    } catch (err) {
+      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/untag error');
+      return reply.code(500).send({ error: 'Failed to remove tag' });
+    }
+  });
+
+  done();
+};
+
+export default zapierInboundRoute;
+```
+
+## File: apps/backend/src/app/modules/zapier/zapier.service.ts
+
+```typescript
+import crypto from 'crypto';
+import { BaseRepository } from '../../lib/base.repo';
+import { hashToken } from '../../lib/token-hash';
+import { logger } from '../../logger';
+
+export type ZapierEventType =
+  | 'person_created'
+  | 'person_updated'
+  | 'person_deleted'
+  | 'person_tag_added'
+  | 'person_tag_removed';
+
+function pickPersonFields(p: Record<string, unknown>): Record<string, unknown> {
+  if (!p) return {};
+  return {
+    id: p['id'] ? String(p['id']) : null,
+    first_name: p['first_name'] ?? null,
+    last_name: p['last_name'] ?? null,
+    email: p['email'] ?? null,
+    email2: p['email2'] ?? null,
+    mobile: p['mobile'] ?? null,
+    home_phone: p['home_phone'] ?? null,
+    linkedin: p['linkedin'] ?? null,
+    twitter: p['twitter'] ?? null,
+    facebook: p['facebook'] ?? null,
+    instagram: p['instagram'] ?? null,
+    notes: p['notes'] ?? null,
+    created_at: p['created_at'] ?? null,
+    updated_at: p['updated_at'] ?? null,
+  };
+}
+
+export { pickPersonFields };
+
+export async function queueZapierTrigger(
+  db: any,
+  tenant_id: string,
+  event_type: ZapierEventType,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const sub = await db
+    .selectFrom('zapier_subscriptions')
+    .select('id')
+    .where('tenant_id', '=', tenant_id)
+    .where('event_type', '=', event_type)
+    .executeTakeFirst();
+
+  if (!sub) return;
+
+  await db
+    .insertInto('background_jobs')
+    .values({
+      tenant_id,
+      queue: 'default',
+      status: 'pending',
+      payload: JSON.stringify({ type: 'zapier_trigger', tenant_id, event_type, data }),
+      run_at: new Date(),
+      max_attempts: 5,
+    })
+    .execute();
+}
+
+export class ZapierService {
+  private get db() {
+    return BaseRepository.dbInstance;
   }
 
-  public async triggerWorkflow(
-    tenantId: string,
-    personId: string,
-    triggerType: string,
-    triggerEventId: string | null | undefined,
-    trx?: Transaction<Models> | Kysely<Models>,
-  ) {
-    const db = trx || this.getRepo().db;
-    let query = db
-      .selectFrom('workflows')
-      .select(['id', 'name'])
-      .where('tenant_id', '=', tenantId)
-      .where('trigger_type', '=', triggerType)
-      .where('status', '=', 'active');
+  /** Whether the tenant has a Zapier API key configured. The key itself is never
+   * returned after creation — only its hash is stored (SECURITY-REVIEW.md 2.4). */
+  async getApiKeyStatus(tenant_id: string): Promise<{ configured: boolean }> {
+    const row = await this.db
+      .selectFrom('settings')
+      .select('tenant_id')
+      .where('tenant_id', '=', tenant_id)
+      .where('key', '=', 'zapier.api_key')
+      .executeTakeFirst();
+    return { configured: !!row };
+  }
 
-    if (triggerEventId) {
-      query = query.where((eb) =>
-        eb.or([eb('trigger_event_id', 'is', null), eb('trigger_event_id', '=', triggerEventId as any)]),
-      );
-    } else {
-      query = query.where('trigger_event_id', 'is', null);
-    }
+  /** Generate a new key, persist ONLY its hash, and return the plaintext once so the
+   * caller can show it to the user. Any previous key is invalidated. */
+  async regenerateApiKey(tenant_id: string): Promise<string> {
+    const key = 'zap_' + crypto.randomBytes(32).toString('hex');
+    const hashed = JSON.stringify(hashToken(key));
+    await this.db
+      .insertInto('settings')
+      .values({ tenant_id, key: 'zapier.api_key', value: hashed })
+      .onConflict((oc) => oc.columns(['tenant_id', 'key']).doUpdateSet({ value: hashed, updated_at: new Date() }))
+      .execute();
+    return key;
+  }
 
-    const activeWorkflows = await query.execute();
-    if (activeWorkflows.length === 0) return;
+  async getSubscriptions(tenant_id: string) {
+    return this.db
+      .selectFrom('zapier_subscriptions')
+      .select(['id', 'event_type', 'webhook_url', 'created_at', 'updated_at'])
+      .where('tenant_id', '=', tenant_id)
+      .execute();
+  }
 
-    // Look up the default tenant admin actor ID
-    const tenantRow = await db.selectFrom('tenants').select('admin_id').where('id', '=', tenantId).executeTakeFirst();
-    if (!tenantRow?.admin_id) {
-      logger.warn(`triggerWorkflow: skipping automation for tenant ${tenantId} — admin_id not configured.`);
-      return;
-    }
-    const creatorId = String(tenantRow.admin_id);
+  async subscribe(tenant_id: string, event_type: ZapierEventType, webhook_url: string): Promise<void> {
+    await this.db
+      .insertInto('zapier_subscriptions')
+      .values({ tenant_id, event_type, webhook_url })
+      .onConflict((oc) => oc.columns(['tenant_id', 'event_type']).doUpdateSet({ webhook_url, updated_at: new Date() }))
+      .execute();
+  }
 
-    for (const wf of activeWorkflows) {
+  async unsubscribe(tenant_id: string, event_type: ZapierEventType): Promise<void> {
+    await this.db
+      .deleteFrom('zapier_subscriptions')
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', event_type)
+      .execute();
+  }
+
+  async fireTrigger(tenant_id: string, event_type: ZapierEventType, data: Record<string, unknown>): Promise<void> {
+    const subs = await this.db
+      .selectFrom('zapier_subscriptions')
+      .select('webhook_url')
+      .where('tenant_id', '=', tenant_id)
+      .where('event_type', '=', event_type)
+      .execute();
+
+    for (const sub of subs) {
       try {
-        await this.enrollPerson(tenantId, personId, String(wf.id), creatorId, trx as any);
-      } catch (err) {
-        // Safe check in case they're already enrolled
-        if (err instanceof Error && err.message.includes('already enrolled')) {
-          logger.info(`Person ${personId} is already enrolled in workflow ${wf.id}. Skipping.`);
-        } else {
-          logger.error({ err }, `Failed to enroll person ${personId} in workflow ${wf.id}`);
+        const response = await fetch(sub.webhook_url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!response.ok) {
+          logger.error(`[ZapierTrigger] POST to ${sub.webhook_url} failed with status ${response.status}`);
         }
+      } catch (err: unknown) {
+        logger.error(
+          `[ZapierTrigger] POST to ${sub.webhook_url} error: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   }
 
-  public async triggerVolunteerSignup(
-    tenantId: string,
-    personId: string,
-    eventId: string | null | undefined,
-    trx: Transaction<Models>,
-  ) {
-    return this.triggerWorkflow(tenantId, personId, 'volunteer_signup', eventId, trx);
-  }
+  async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
+    // Compare against the stored hash, never the plaintext (SECURITY-REVIEW.md 2.4).
+    // NOTE: unscoped by design — resolving which tenant owns this API key; cross-tenant by design
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const row = await this.db
+      .selectFrom('settings')
+      .select('tenant_id')
+      .where('key', '=', 'zapier.api_key')
+      .where('value', '=', JSON.stringify(hashToken(apiKey)))
+      .executeTakeFirst();
 
-  public async triggerTagAdded(
-    tenantId: string,
-    personId: string,
-    tagId: string,
-    tagName: string,
-    trx?: Transaction<Models> | Kysely<Models>,
-  ) {
-    // 1. General tag_added trigger (filtered by tagId, or any tag if no filter)
-    await this.triggerWorkflow(tenantId, personId, 'tag_added', tagId, trx);
-
-    // 2. Specialized triggers based on tag name
-    const normalized = tagName.trim().toLowerCase();
-    if (normalized === 'subscriber') {
-      await this.triggerWorkflow(tenantId, personId, 'new_subscriber', null, trx);
-    } else if (normalized === 'unsubscribed') {
-      await this.triggerWorkflow(tenantId, personId, 'new_unsubscriber', null, trx);
-    }
+    return row ? String(row.tenant_id) : null;
   }
 }
 ```
@@ -22891,223 +21742,6 @@ export async function processMentions(
 }
 ```
 
-## File: apps/backend/src/app/lib/mail/transactional-mail.service.ts
-
-```typescript
-import type { Kysely, Transaction } from 'kysely';
-import { env } from '../../../env';
-import { InternalError } from '../../errors/app-errors';
-import { logger } from '../../logger';
-import { BaseRepository } from '../base.repo';
-
-export interface SendMailOptions {
-  to: string;
-  subject: string;
-  text: string;
-  html: string;
-  tenant_id?: string | null;
-}
-
-export class TransactionalEmailService {
-  private serverToken = env.postmarkServerToken;
-  private fromEmail = env.postmarkFromEmail;
-
-  private wrapInTemplate(title: string, contentHtml: string): string {
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <style>
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background-color: #f8fafc;
-      color: #1e293b;
-      margin: 0;
-      padding: 0;
-      -webkit-font-smoothing: antialiased;
-    }
-    .wrapper {
-      width: 100%;
-      background-color: #f8fafc;
-      padding: 40px 20px;
-      box-sizing: border-box;
-    }
-    .container {
-      max-width: 580px;
-      margin: 0 auto;
-      background-color: #ffffff;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-      border: 1px solid #e2e8f0;
-    }
-    .header {
-      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-      padding: 32px;
-      text-align: center;
-    }
-    .header h1 {
-      color: #ffffff;
-      font-size: 24px;
-      font-weight: 700;
-      margin: 0;
-      letter-spacing: -0.025em;
-    }
-    .content {
-      padding: 40px 32px;
-      line-height: 1.6;
-      font-size: 16px;
-    }
-    .content h2 {
-      font-size: 20px;
-      font-weight: 600;
-      color: #0f172a;
-      margin-top: 0;
-      margin-bottom: 16px;
-    }
-    .content p {
-      margin-top: 0;
-      margin-bottom: 24px;
-      color: #475569;
-    }
-    .btn-container {
-      margin: 32px 0;
-      text-align: center;
-    }
-    .btn {
-      display: inline-block;
-      background-color: #4f46e5;
-      color: #ffffff !important;
-      text-decoration: none;
-      padding: 12px 28px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 15px;
-    }
-    .otp-container {
-      margin: 32px auto;
-      text-align: center;
-    }
-    .otp-code {
-      display: inline-block;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 32px;
-      font-weight: 700;
-      letter-spacing: 6px;
-      color: #4f46e5;
-      background-color: #f1f5f9;
-      padding: 12px 24px;
-      border-radius: 8px;
-      border: 1px dashed #cbd5e1;
-    }
-    .footer {
-      background-color: #f8fafc;
-      padding: 24px 32px;
-      text-align: center;
-      border-top: 1px solid #e2e8f0;
-      font-size: 13px;
-      color: #64748b;
-    }
-    .footer p {
-      margin: 8px 0;
-      color: #64748b;
-    }
-    .footer a {
-      color: #4f46e5;
-      text-decoration: none;
-    }
-    .warning {
-      font-size: 14px;
-      color: #64748b;
-      background-color: #f8fafc;
-      border-left: 4px solid #cbd5e1;
-      padding: 12px 16px;
-      margin-top: 24px;
-      border-radius: 0 4px 4px 0;
-    }
-  </style>
-</head>
-<body>
-  <div class="wrapper">
-    <div class="container">
-      <div class="header">
-        <h1>PplCRM</h1>
-      </div>
-      <div class="content">
-        ${contentHtml}
-      </div>
-      <div class="footer">
-        <p>This is a transactional message related to your account security. Unlike marketing messages, you cannot unsubscribe from these alerts.</p>
-        <p>&copy; ${new Date().getFullYear()} PplCRM. All rights reserved.</p>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-  }
-
-  public async sendMail(options: SendMailOptions): Promise<void> {
-    const wrappedHtml = this.wrapInTemplate(options.subject, options.html);
-
-    if (!this.serverToken) {
-      logger.info(
-        { from: this.fromEmail, to: options.to, subject: options.subject },
-        '[POSTMARK DEV MOCK] Transactional Email Outbound',
-      );
-      return;
-    }
-
-    try {
-      const response = await fetch('https://api.postmarkapp.com/email', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          'X-Postmark-Server-Token': this.serverToken,
-        },
-        body: JSON.stringify({
-          From: this.fromEmail,
-          To: options.to,
-          Subject: options.subject,
-          TextBody: options.text,
-          HtmlBody: wrappedHtml,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Postmark API responded with status ${response.status}: ${errorText}`);
-      }
-    } catch (error) {
-      throw new InternalError('Failed to send transactional email', undefined, { cause: error });
-    }
-  }
-
-  public async enqueueMail(options: SendMailOptions, trx?: Transaction<any> | Kysely<any>): Promise<void> {
-    const dbClient = (trx || BaseRepository.dbInstance) as any;
-    await dbClient
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: options.tenant_id ? BigInt(options.tenant_id) : null,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-transactional-email',
-          to: options.to,
-          subject: options.subject,
-          text: options.text,
-          html: options.html,
-        }),
-        run_at: new Date(),
-        max_attempts: 5,
-      })
-      .execute();
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/base.controller.ts
 
 ```typescript
@@ -23616,13 +22250,265 @@ export async function authenticateRest(
 }
 ```
 
+## File: apps/backend/src/app/modules/companies/repositories/companies.repo.ts
+
+```typescript
+import type { Selectable, Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { BaseRepository } from '../../../lib/base.repo';
+
+export class CompaniesRepo extends BaseRepository<'companies'> {
+  constructor() {
+    super('companies');
+  }
+
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // Note: tenant ID is taken in the subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: any[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // Note: tenant ID is taken in the subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('companies', 'potential_duplicates.company_id', 'companies.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'companies.id',
+        'companies.name',
+        'companies.description',
+        'companies.website',
+        'companies.email',
+        'companies.phone',
+        'companies.industry',
+        'companies.notes',
+        'companies.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const companyIds = rows.map((r) => String(r.id));
+    if (companyIds.length === 0) {
+      return { groups: [], total };
+    }
+
+    const persons = await this.db
+      .selectFrom('persons')
+      .select(['id', 'first_name', 'last_name', 'email', 'company_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('company_id', 'in', companyIds)
+      .execute();
+
+    const companyToPersons = new Map<string, any[]>();
+    for (const p of persons) {
+      const compId = String(p.company_id);
+      let companyPersons = companyToPersons.get(compId);
+      if (!companyPersons) {
+        companyPersons = [];
+        companyToPersons.set(compId, companyPersons);
+      }
+      companyPersons.push(p);
+    }
+
+    const groupsMap = new Map<string, { reason: string; companies: any[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      let group = groupsMap.get(groupKey);
+      if (!group) {
+        group = {
+          reason: row.reason,
+          companies: [],
+        };
+        groupsMap.set(groupKey, group);
+      }
+      group.companies.push({
+        ...row,
+        id: String(row.id),
+        persons: companyToPersons.get(String(row.id)) || [],
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.companies.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergeCompanies(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['companies']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'companies'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['companies']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source company not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, any> = {};
+      const fields = ['name', 'description', 'website', 'email', 'phone', 'industry', 'notes'] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Reassign people (persons.company_id)
+      await trx
+        .updateTable('persons')
+        .set({ company_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('company_id', '=', input.source_id)
+        .execute();
+
+      // 3. Delete source company
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      return { success: true };
+    });
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()`,
+        updatedby_id: input.user_id,
+      } as unknown as OperationDataType<'companies', 'update'>)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/companies/controller.ts
 
 ```typescript
 import { BaseController } from '../../lib/base.controller';
 import { CompaniesRepo } from './repositories/companies.repo';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { backfillMissingSlugs, uniqueSlug } from '../../lib/slug';
 import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
@@ -23631,6 +22517,32 @@ import { logger } from '../../logger';
 export class CompaniesController extends BaseController<'companies', CompaniesRepo> {
   constructor() {
     super(new CompaniesRepo());
+  }
+
+  /** Record slug for /companies/:slug URLs (spec §1) — shared strategy in lib/slug.ts. */
+  public override async add(row: OperationDataType<'companies', 'insert'>, trx?: Transaction<Models>) {
+    const rowObj = row as Record<string, unknown>;
+    if (rowObj['slug'] == null && rowObj['tenant_id'] != null) {
+      rowObj['slug'] = await uniqueSlug(slugifyRecordName(String(rowObj['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(String(rowObj['tenant_id']), candidate),
+      );
+    }
+    return super.add(row, trx);
+  }
+
+  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'companies', 'update'>;
+  }) {
+    const row = input.row as Record<string, unknown>;
+    if ('name' in row) {
+      row['slug'] = await uniqueSlug(slugifyRecordName(String(row['name'] ?? ''), 'company'), (candidate) =>
+        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+      );
+    }
+    return super.update(input);
   }
 
   public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
@@ -23688,6 +22600,10 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
 
   public async getAllCompanies(auth: IAuthKeyPayload, options?: any) {
     return this.getAllWithCounts(auth.tenant_id, options);
+  }
+
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
   }
 
   private readonly importsRepo = new ImportsRepo();
@@ -23867,6 +22783,13 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
           updated_at: new Date(),
         } as any,
       });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.getRepo().db, 'companies', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill company slugs after import');
     }
 
     return {
@@ -24649,6 +23572,117 @@ export class DonationPledgesRepo extends BaseRepository<'donation_pledges'> {
     return Number(result?.total || 0);
   }
 }
+```
+
+## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import Stripe from 'stripe';
+import { env } from '../../../../env';
+import { BaseRepository } from '../../../lib/base.repo';
+import { hashToken } from '../../../lib/token-hash';
+import { logger } from '../../../logger';
+
+const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.post('/webhook', async (req, reply) => {
+    const query = req.query as { token?: string };
+    const token = query.token;
+    if (!token) {
+      logger.error('Webhook error: Missing token query parameter');
+      return reply.code(400).send({ error: 'Missing token parameter' });
+    }
+
+    let tenantId = 'unknown';
+    try {
+      // Resolve the tenant by the HASH of the token, never the plaintext (SECURITY-REVIEW.md 2.4).
+      // Cross-tenant by design — this decides which tenant owns the token.
+      // eslint-disable-next-line local/no-unscoped-db-query
+      const tokenRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('tenant_id')
+        .where('key', '=', 'donations.webhook_token')
+        .where('value', '=', JSON.stringify(hashToken(token)))
+        .executeTakeFirst();
+
+      if (!tokenRow) {
+        // Do not log the token value — it's a secret. The tenant is unknown at this point.
+        logger.error('Webhook error: Invalid webhook token');
+        return reply.code(400).send({ error: 'Invalid webhook token' });
+      }
+
+      tenantId = String(tokenRow.tenant_id);
+
+      const signature = (req.headers['stripe-signature'] as string) || '';
+      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
+
+      // 1. Look up settings for this tenant ID in Kysely
+      const secretRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('value')
+        .where('tenant_id', '=', tenantId)
+        .where('key', '=', 'donations.stripe_webhook_secret')
+        .executeTakeFirst();
+
+      const webhookSecret = secretRow?.value as string | undefined;
+
+      const keyRow = await BaseRepository.dbInstance
+        .selectFrom('settings')
+        .select('value')
+        .where('tenant_id', '=', tenantId)
+        .where('key', '=', 'donations.stripe_secret_key')
+        .executeTakeFirst();
+
+      const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
+
+      // Mock mode (unsigned payload parsing) requires an EXPLICIT opt-in (ALLOW_MOCK_PAYMENTS=true),
+      // never merely "not production" — an unset NODE_ENV must not fail open and accept an
+      // unauthenticated webhook body an attacker could forge (SECURITY-REVIEW 4.2).
+      const isMock = env.allowMockPayments && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
+
+      let event: Stripe.Event;
+
+      if (isMock) {
+        // Direct parse in mock/local dev mode
+        event = JSON.parse(payload);
+      } else {
+        if (!stripeKey || stripeKey.includes('MockKey')) {
+          throw new Error('Tenant donations stripe secret key not configured.');
+        }
+        if (!webhookSecret) {
+          throw new Error('Tenant donations stripe webhook secret not configured.');
+        }
+        const stripe = new Stripe(stripeKey);
+        event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      }
+
+      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
+
+      // 2. Persist webhook event for background worker processing
+      await BaseRepository.dbInstance
+        .insertInto('webhook_events')
+        .values({
+          tenant_id: tenantId,
+          stripe_event_id: event.id,
+          type: event.type,
+          payload: JSON.stringify(event),
+          status: 'pending',
+        })
+        .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
+        .execute();
+
+      return reply.code(200).send({ received: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
+      return reply.code(400).send({ error: message });
+    }
+  });
+
+  done();
+};
+
+export default donationsWebhookRoute;
 ```
 
 ## File: apps/backend/src/app/modules/donations/controller.ts
@@ -26042,6 +25076,1327 @@ export class EmailsController extends BaseController<'emails', EmailRepo> {
 }
 ```
 
+## File: apps/backend/src/app/modules/events/controller.ts
+
+```typescript
+import { TRPCError } from '@trpc/server';
+import type { Transaction } from 'kysely';
+import { sql } from 'kysely';
+import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { BaseController } from '../../lib/base.controller';
+import { publicOrgName } from '../../lib/public-tenant';
+import { logger } from '../../logger';
+import { WorkflowsController } from '../workflows/controller';
+import { EventsRepo } from './repositories/events.repo';
+
+const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+const ipRsvpTimestamps = new Map<string, number[]>();
+const RSVP_RATE_LIMIT_MAX = 5;
+const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+
+export class EventsController extends BaseController<'events', EventsRepo> {
+  constructor() {
+    super(new EventsRepo());
+  }
+
+  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
+    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
+  }
+
+  public async addEvent(payload: any, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', payload.slug)
+      .executeTakeFirst();
+
+    if (existing) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'This URL slug is already in use. Please choose a different one.',
+      });
+    }
+
+    const row = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      location_address: payload.location_address ?? null,
+      start_time: payload.start_time,
+      end_time: payload.end_time,
+      capacity: payload.capacity ?? null,
+      contact_email: payload.contact_email ?? null,
+      contact_phone: payload.contact_phone ?? null,
+      slug: payload.slug,
+      is_published: payload.is_published ?? false,
+      send_reminder: payload.send_reminder ?? true,
+      send_registration_confirmation: payload.send_registration_confirmation ?? true,
+      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
+      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
+      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
+      // Stringifying it first makes node-postgres send plain text, which Postgres casts
+      // to jsonb correctly.
+      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
+    } as OperationDataType<'events', 'insert'>;
+
+    try {
+      return await this.add(row);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
+   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventBySlug(tenantId: string, slug: string) {
+    return this.getRepo()
+      .db.selectFrom('events')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('slug', '=', slug)
+      .where('is_published', '=', true)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
+   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
+   */
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    const eventId = String(event.id);
+    const [orgName, tickets, regCount] = await Promise.all([
+      publicOrgName(tenantId),
+      this.getTicketTypesByEventId(eventId, tenantId),
+      this.getRegistrationCountForEvent(eventId, tenantId),
+    ]);
+
+    const now = new Date();
+    const isPast = new Date(event.end_time) < now;
+    const isFull = event.capacity !== null && regCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        fields,
+      },
+      tickets: tickets.map((t) => ({
+        name: String(t.name),
+        description: t.description ?? null,
+        price_cents: t.price_cents ?? null,
+        capacity: t.capacity ?? null,
+      })),
+      isPast,
+      isFull,
+      remaining,
+    };
+  }
+
+  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
+    const row = await this.getRepo()
+      .db.selectFrom('event_registrations')
+      .select(({ fn }) => [fn.count('id').as('cnt')])
+      .where('tenant_id', '=', tenantId)
+      .where('event_id', '=', eventId)
+      .where('status', '!=', 'cancelled')
+      .executeTakeFirst();
+    return Number(row?.cnt ?? 0);
+  }
+
+  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
+    return this.getRepo()
+      .db.selectFrom('event_ticket_types')
+      .selectAll()
+      .where('event_id', '=', eventId)
+      .where('tenant_id', '=', tenantId)
+      .orderBy('sort_order', 'asc')
+      .execute();
+  }
+
+  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
+    if (!slug) return { unique: true };
+    let query = this.getRepo()
+      .db.selectFrom('events')
+      .select('id')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const existing = await query.executeTakeFirst();
+    return { unique: !existing };
+  }
+
+  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
+    if (payload.slug) {
+      const existing = await this.getRepo()
+        .db.selectFrom('events')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('slug', '=', payload.slug)
+        .where('id', '!=', id)
+        .executeTakeFirst();
+
+      if (existing) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'This URL slug is already in use. Please choose a different one.',
+        });
+      }
+    }
+
+    const row = {
+      ...payload,
+      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
+      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
+      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
+      updatedby_id: auth.user_id,
+    } as OperationDataType<'events', 'update'>;
+    let result;
+    try {
+      result = await this.update({ tenant_id: auth.tenant_id, id, row });
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
+      }
+      throw err;
+    }
+
+    // Manage pending reminder jobs when the toggle changes
+    if (payload.send_reminder === false) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'eventId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to clean up pending event reminders');
+      }
+    } else if (payload.send_reminder === true) {
+      try {
+        const event = await this.getRepo()
+          .db.selectFrom('events')
+          .select(['start_time'])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('id', '=', id)
+          .executeTakeFirst();
+
+        if (event) {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            const registrations = await this.getRepo()
+              .db.selectFrom('event_registrations')
+              .select(['id', 'person_id'])
+              .where('tenant_id', '=', auth.tenant_id)
+              .where('event_id', '=', id)
+              .where('status', '=', 'registered')
+              .execute();
+
+            for (const reg of registrations) {
+              await this.getRepo()
+                .db.deleteFrom('background_jobs')
+                .where('tenant_id', '=', auth.tenant_id)
+                .where('status', '=', 'pending')
+                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
+                .execute();
+
+              await this.getRepo()
+                .db.insertInto('background_jobs')
+                .values({
+                  tenant_id: auth.tenant_id,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(id),
+                    personId: String(reg.person_id),
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          }
+        }
+      } catch (err) {
+        logger.error({ err }, 'Failed to re-schedule event reminders');
+      }
+    }
+
+    return result;
+  }
+
+  // Ticket types
+
+  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().addTicketType({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      name: payload.name,
+      description: payload.description ?? null,
+      price_cents: payload.price_cents ?? 0,
+      capacity: payload.capacity ?? null,
+      sort_order: payload.sort_order ?? 0,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
+    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
+  }
+
+  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
+  }
+
+  // Registrations
+
+  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
+  }
+
+  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
+    // Capacity check across the whole event
+    const event = await this.getRepo()
+      .db.selectFrom('events')
+      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('id', '=', payload.event_id)
+      .executeTakeFirst();
+
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    if (event.capacity !== null) {
+      const countRow = await this.getRepo()
+        .db.selectFrom('event_registrations')
+        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('event_id', '=', payload.event_id)
+        .where('status', '!=', 'cancelled')
+        .executeTakeFirst();
+      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+      }
+    }
+
+    // Per-ticket-type capacity check
+    if (payload.ticket_type_id) {
+      const ticketType = await this.getRepo()
+        .db.selectFrom('event_ticket_types')
+        .select(['capacity'])
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', '=', payload.ticket_type_id)
+        .executeTakeFirst();
+
+      if (ticketType && ticketType.capacity !== null) {
+        const ticketCountRow = await this.getRepo()
+          .db.selectFrom('event_registrations')
+          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('ticket_type_id', '=', payload.ticket_type_id)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
+        }
+      }
+    }
+
+    const result = await this.getRepo().addRegistration({
+      tenant_id: auth.tenant_id,
+      event_id: payload.event_id,
+      person_id: payload.person_id,
+      ticket_type_id: payload.ticket_type_id ?? null,
+      status: payload.status ?? 'registered',
+      notes: payload.notes ?? null,
+      user_id: auth.user_id,
+    });
+
+    if (result) {
+      // Queue registration confirmation email
+      if (event.send_registration_confirmation !== false) {
+        try {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: auth.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'send-event-registration-confirmation',
+                registrationId: String(result.id),
+                eventId: String(payload.event_id),
+                personId: String(payload.person_id),
+              }),
+              run_at: new Date(),
+            })
+            .execute();
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue registration confirmation');
+        }
+      }
+
+      // Queue 24h reminder
+      if (event.send_reminder !== false) {
+        try {
+          const startMs = new Date(event.start_time).getTime();
+          const nowMs = Date.now();
+          if (startMs > nowMs) {
+            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+            await this.getRepo()
+              .db.insertInto('background_jobs')
+              .values({
+                tenant_id: auth.tenant_id,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-reminder',
+                  registrationId: String(result.id),
+                  eventId: String(payload.event_id),
+                  personId: String(payload.person_id),
+                }),
+                run_at: runAt,
+              })
+              .execute();
+          }
+        } catch (err) {
+          logger.error({ err }, 'Failed to queue event reminder');
+        }
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'assign',
+          entity: 'event_registrations',
+          entity_id: String(result.id),
+          quantity: 1,
+          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async checkIn(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status: 'attended', checked_in_at: new Date() },
+      user_id: auth.user_id,
+    });
+
+    // Cancel pending reminder — they've already arrived
+    try {
+      await this.getRepo()
+        .db.deleteFrom('background_jobs')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('status', '=', 'pending')
+        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+        .where(sql`payload->>'registrationId'`, '=', String(id))
+        .execute();
+    } catch (err) {
+      logger.error({ err }, 'Failed to cancel event reminder on check-in');
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log check-in activity');
+    }
+
+    return result;
+  }
+
+  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().updateRegistration({
+      tenant_id: auth.tenant_id,
+      id,
+      row: payload,
+      user_id: auth.user_id,
+    });
+
+    // Cancel reminder if status moves away from 'registered'
+    if (payload.status && payload.status !== 'registered') {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on status change');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'event_registrations',
+        entity_id: id,
+        quantity: 1,
+        metadata: { id, status: payload.status },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log registration update activity');
+    }
+
+    return result;
+  }
+
+  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
+    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
+
+    if (result) {
+      try {
+        await this.getRepo()
+          .db.deleteFrom('background_jobs')
+          .where('tenant_id', '=', auth.tenant_id)
+          .where('status', '=', 'pending')
+          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
+          .where(sql`payload->>'registrationId'`, '=', String(id))
+          .execute();
+      } catch (err) {
+        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
+      }
+
+      try {
+        await this.userActivity.log({
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          activity: 'delete',
+          entity: 'event_registrations',
+          entity_id: id,
+          quantity: 1,
+          metadata: { id },
+        });
+      } catch (e) {
+        logger.error({ err: e }, 'Failed to log registration delete activity');
+      }
+    }
+
+    return result;
+  }
+
+  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
+  }
+
+  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
+    // Rate limiting
+    const now = Date.now();
+    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
+    }
+    timestamps.push(now);
+    ipRsvpTimestamps.set(clientIp, timestamps);
+
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    // Honeypot
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      return { success: true };
+    }
+
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
+    }
+
+    if (new Date(event.end_time) < new Date()) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
+    }
+
+    const firstName = payload['first_name']?.trim() || null;
+    const lastName = payload['last_name']?.trim() || null;
+    const mobile = payload['mobile']?.trim() || null;
+    const notes = payload['notes']?.trim() || null;
+
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id', 'admin_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        const creatorId = tenantRow?.admin_id;
+
+        if (!householdId || !creatorId) {
+          throw new Error('Tenant configuration is incomplete.');
+        }
+
+        // Check overall capacity
+        if (event.capacity !== null) {
+          const countRow = await trx
+            .selectFrom('event_registrations')
+            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
+            .where('tenant_id', '=', tenantId)
+            .where('event_id', '=', String(event.id))
+            .where('status', '!=', 'cancelled')
+            .executeTakeFirst();
+          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
+          }
+        }
+
+        // Find or create person
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (notes) {
+            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
+          }
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
+              .where('tenant_id', '=', tenantId)
+              .where('id', '=', existing.id)
+              .execute();
+          }
+        } else {
+          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
+          // (there is no "campaign-less" person). `persons` also has no address columns
+          // (street1/city/state/zip/country live on `households`, not `persons`), so those
+          // RSVP fields are intentionally not persisted here.
+          const campaignRow = await trx
+            .selectFrom('campaigns')
+            .select('id')
+            .where('tenant_id', '=', tenantId)
+            .orderBy('created_at', 'asc')
+            .limit(1)
+            .executeTakeFirst();
+
+          if (!campaignRow) {
+            throw new Error('Tenant configuration is incomplete.');
+          }
+          const campaignId = String(campaignRow.id);
+
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: householdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            mobile,
+            notes,
+          };
+
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
+
+          try {
+            const workflowsCtrl = new WorkflowsController();
+            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
+          }
+        }
+
+        // Check duplicate registration
+        const existingReg = await trx
+          .selectFrom('event_registrations')
+          .select('id')
+          .where('tenant_id', '=', tenantId)
+          .where('event_id', '=', String(event.id))
+          .where('person_id', '=', personId)
+          .where('status', '!=', 'cancelled')
+          .executeTakeFirst();
+
+        if (existingReg) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
+        }
+
+        // Insert registration
+        const reg = await trx
+          .insertInto('event_registrations')
+          .values({
+            tenant_id: tenantId,
+            event_id: String(event.id) as any,
+            person_id: personId,
+            ticket_type_id: null,
+            status: 'registered',
+            notes: notes ?? null,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+
+        // Queue confirmation email
+        if ((event as any).send_registration_confirmation !== false) {
+          try {
+            await trx
+              .insertInto('background_jobs')
+              .values({
+                tenant_id: tenantId,
+                queue: 'default',
+                status: 'pending',
+                payload: JSON.stringify({
+                  type: 'send-event-registration-confirmation',
+                  registrationId: String(reg.id),
+                  eventId: String(event.id),
+                  personId,
+                }),
+                run_at: new Date(),
+              })
+              .execute();
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue RSVP confirmation');
+          }
+        }
+
+        // Queue 24h reminder
+        if ((event as any).send_reminder !== false) {
+          try {
+            const startMs = new Date(event.start_time).getTime();
+            const nowMs = Date.now();
+            if (startMs > nowMs) {
+              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
+              await trx
+                .insertInto('background_jobs')
+                .values({
+                  tenant_id: tenantId,
+                  queue: 'default',
+                  status: 'pending',
+                  payload: JSON.stringify({
+                    type: 'send-event-reminder',
+                    registrationId: String(reg.id),
+                    eventId: String(event.id),
+                    personId,
+                  }),
+                  run_at: runAt,
+                })
+                .execute();
+            }
+          } catch (err) {
+            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
+          }
+        }
+      });
+
+    return { success: true };
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/households/controller.ts
+
+```typescript
+import type {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  UpdateHouseholdsType,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+import { sql } from 'kysely';
+
+import type { QueryParams } from '../../lib/base.repo';
+import { BaseRepository } from '../../lib/base.repo';
+import { fingerprintFull, fingerprintStreet, isBlankAddress, isIncompleteAddress } from '../../lib/address-normalize';
+import { uniqueSlug } from '../../lib/slug';
+import { HouseholdRepo } from './repositories/households.repo';
+import { MapHouseholdsTagsRepo } from './repositories/map-households-tags.repo';
+import { TagsRepo } from '../tags/repositories/tags.repo';
+import { matchCoordinatesToDistrict } from '../../lib/gis/geocoding';
+import { BaseController } from '../../lib/base.controller';
+import { SettingsController } from '../settings/controller';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import { logger } from '../../logger';
+
+export class HouseholdsController extends BaseController<'households', HouseholdRepo> {
+  private mapHouseholdsTagRepo = new MapHouseholdsTagsRepo();
+  private settingsController = new SettingsController();
+  private tagsRepo = new TagsRepo();
+
+  constructor() {
+    super(new HouseholdRepo());
+  }
+
+  public async deleteManyForTenant(auth: IAuthKeyPayload, idsToDelete: string[]) {
+    // Filter out any placeholder households — they are permanent and undeletable
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, idsToDelete);
+    const safeIds = idsToDelete.filter((id) => !placeholders.has(id));
+
+    if (safeIds.length === 0) return false;
+    // Members move to the tenant's placeholder household (persons.household_id is
+    // NOT NULL) rather than being cascade-deleted along with the household.
+    return this.getRepo().deleteManyReassigningPersons({
+      tenant_id: auth.tenant_id,
+      ids: safeIds,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async addHousehold(payload: UpdateHouseholdsType, auth: IAuthKeyPayload) {
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
+
+    const fp_street = fingerprintStreet({
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+    });
+    const fp_full = fingerprintFull({
+      apt: payload.apt,
+      street_num: payload.street_num,
+      street1: payload.street1,
+      street2: payload.street2,
+      city: payload.city,
+      state: payload.state,
+      zip: payload.zip,
+      country: payload.country,
+    });
+
+    // Try to dedupe: find existing by fingerprint
+    if (fp_street || fp_full) {
+      const existing = await this.getRepo().findByFingerprint({
+        tenant_id: auth.tenant_id,
+        campaign_id: String(campaign_id),
+        fp_street: fp_street,
+        fp_full: fp_full,
+      });
+      if (existing?.id) return { id: String(existing.id) } as any;
+    }
+
+    // Record slug for /households/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
+    const slug = await uniqueSlug(
+      slugifyRecordName(`${payload.street_num ?? ''} ${payload.street1 ?? ''}`, 'household'),
+      (candidate) => this.getRepo().slugExists(auth.tenant_id, candidate),
+    );
+
+    const row = {
+      ...payload,
+      slug,
+      address_fp_street: fp_street,
+      address_fp_full: fp_full,
+      campaign_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    return this.add(row as OperationDataType<'households', 'insert'>);
+  }
+
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const household = await super.getOneById(input);
+    if (!household) return undefined;
+
+    const tenantRow = await (BaseRepository as any)['_db']
+      .selectFrom('tenants')
+      .select('placeholder_household_id')
+      .where('id', '=', input.tenant_id)
+      .executeTakeFirst();
+
+    const is_placeholder = tenantRow?.placeholder_household_id
+      ? String(tenantRow.placeholder_household_id) === String((household as any).id)
+      : false;
+    return {
+      ...household,
+      is_placeholder,
+    } as any;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'households', 'update'>;
+  }) {
+    const placeholders = await this.getRepo().getPlaceholderIds(input.tenant_id, [input.id]);
+    if (placeholders.has(input.id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'The placeholder household cannot be edited.',
+      });
+    }
+
+    const keys = Object.keys(input.row || {});
+    const affectsAddress = keys.some((k) =>
+      ['apt', 'street_num', 'street1', 'street2', 'city', 'state', 'zip', 'country'].includes(k),
+    );
+
+    // Perform the main update without fingerprint columns first
+    const result = await super.update(input);
+
+    // Attempt fingerprint recompute in a separate, non-fatal step
+    if (affectsAddress) {
+      try {
+        const current = (await this.getOneById({ tenant_id: input.tenant_id, id: input.id })) as any;
+        const merged = { ...current, ...(input.row as any) };
+
+        let geocoding_status = isBlankAddress(merged) || isIncompleteAddress(merged) ? 'failed' : 'pending';
+        let district = null;
+        let precinct = null;
+        let ward = null;
+
+        // If autocomplete coordinates are provided in the update, use them and map boundaries synchronously
+        if (input.row.lat && input.row.lng && Number(input.row.lat) !== 0 && Number(input.row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(input.row.lat), Number(input.row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            logger.error({ err }, 'Failed to map coordinates to district during update');
+          }
+        }
+
+        // Address change is a household "rename" — regenerate the record slug (spec §1).
+        const slug = await uniqueSlug(
+          slugifyRecordName(`${merged.street_num ?? ''} ${merged.street1 ?? ''}`, 'household'),
+          (candidate) => this.getRepo().slugExists(input.tenant_id, candidate, input.id),
+        );
+
+        const fpRow: any = {
+          slug,
+          address_fp_street: fingerprintStreet({
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+          }),
+          address_fp_full: fingerprintFull({
+            apt: merged.apt,
+            street_num: merged.street_num,
+            street1: merged.street1,
+            street2: merged.street2,
+            city: merged.city,
+            state: merged.state,
+            zip: merged.zip,
+            country: merged.country,
+          }),
+          geocoding_status,
+          district,
+          precinct,
+          ward,
+        };
+        await super.update({ ...input, row: fpRow as unknown as OperationDataType<'households', 'update'> });
+
+        // Queue geocoding background job if geocoding status is pending
+        if (geocoding_status === 'pending') {
+          await this.getRepo()
+            .db.insertInto('background_jobs')
+            .values({
+              tenant_id: input.tenant_id,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({
+                type: 'geocode_household',
+                household_id: input.id,
+                tenant_id: input.tenant_id,
+              }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+        // Duplicate maintenance is only calculated nightly
+      } catch (err) {
+        logger.error({ err }, 'Failed to update address fingerprint and queue duplicates maintenance');
+      }
+    }
+
+    return result;
+  }
+
+  public async attachTag(household_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
+    const placeholders = await this.getRepo().getPlaceholderIds(auth.tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot attach tags to the placeholder household.',
+      });
+    }
+
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
+    const row = {
+      name,
+      color: randomHexColor(),
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type,
+    };
+
+    const tag = await this.tagsRepo.addOrGet({
+      row: row as OperationDataType<'tags', 'insert'>,
+      onConflictColumn: 'name',
+    });
+
+    return this.addToMap({
+      tag_id: tag?.id as string | undefined,
+      household_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    });
+  }
+
+  public async detachTag(
+    tenant_id: string,
+    household_id: string,
+    tag_name: string,
+    type: 'tag' | 'issue' = 'tag',
+    userId?: string,
+  ) {
+    const placeholders = await this.getRepo().getPlaceholderIds(tenant_id, [household_id]);
+    if (placeholders.has(household_id)) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Cannot detach tags from the placeholder household.',
+      });
+    }
+
+    const tag = await this.tagsRepo.getIdByName({ tenant_id, name: tag_name, type });
+    if (tag?.id) {
+      await this.mapHouseholdsTagRepo.deleteMapping(tenant_id, household_id, tag.id);
+    }
+
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id,
+          user_id: userId,
+          activity: 'update',
+          entity: 'households',
+          entity_id: household_id,
+          quantity: 1,
+          metadata: { id: household_id, action: `detach_${type}`, name: tag_name },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log detach tag activity');
+    }
+  }
+
+  public getAllWithPeopleCount(auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    const { tags, ...queryParams } = options || {};
+    return this.getRepo().getAllWithPeopleCount({
+      tenant_id: auth.tenant_id,
+      options: queryParams as QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'>,
+      tags,
+    });
+  }
+
+  public getPeopleCount(id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
+  }
+
+  public countDistinctWards(auth: IAuthKeyPayload) {
+    return this.getRepo().countDistinctWards(auth.tenant_id);
+  }
+
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
+  }
+
+  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getDistinctTags(auth.tenant_id, type);
+  }
+
+  public getTags(id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getTags(id, auth.tenant_id, type);
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getAllWithPeopleCount(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'households',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
+      });
+      return response;
+    }
+    return super.exportCsv(input, auth);
+  }
+
+  private async addToMap(row: {
+    tag_id: string | undefined;
+    household_id: string;
+    tenant_id: string;
+    createdby_id: string;
+    updatedby_id: string;
+  }) {
+    if (!row.tag_id) {
+      throw new TRPCError({
+        message: 'Failed to add the tag',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    return await this.mapHouseholdsTagRepo.add({
+      row: row as OperationDataType<'map_households_tags', 'insert'>,
+    });
+  }
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.getRepo().getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async mergeHouseholds(target_id: string, source_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().mergeHouseholds({
+      tenant_id: auth.tenant_id,
+      target_id,
+      source_id,
+      user_id: auth.user_id,
+    });
+  }
+
+  public async getLastFingerprintRecomputation(tenantId: string): Promise<{ lastRunAt: string | null }> {
+    const job = await this.getRepo()
+      .db.selectFrom('background_jobs')
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .orderBy('created_at', 'desc')
+      .executeTakeFirst();
+
+    return { lastRunAt: job?.created_at ? new Date(job.created_at).toISOString() : null };
+  }
+
+  public async recomputeAddressFingerprints(tenantId: string): Promise<void> {
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    const existingJob = await this.getRepo()
+      .db.selectFrom('background_jobs')
+      .select(['created_at'])
+      .where('tenant_id', '=', tenantId)
+      .where(sql`payload->>'type'`, '=', 'recompute_address_fingerprints')
+      .where('created_at', '>', oneMonthAgo)
+      .executeTakeFirst();
+
+    if (existingJob) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Address fingerprints can only be recomputed once a month. A request was already submitted recently.',
+      });
+    }
+
+    await this.getRepo()
+      .db.insertInto('background_jobs')
+      .values({
+        tenant_id: tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'recompute_address_fingerprints',
+          tenant_id: tenantId,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/households/trpc.router.ts
+
+```typescript
+import { UpdateHouseholdsObj, idSchema } from '../../../../../../libs/common/src';
+
+import { z } from 'zod';
+
+import { authProcedure, router } from '../../../trpc';
+import { HouseholdsController } from './controller';
+import { createCrudRouter } from '../../lib/crud-router';
+
+const households = new HouseholdsController();
+
+const crud = createCrudRouter(households, UpdateHouseholdsObj, UpdateHouseholdsObj);
+
+export const HouseholdsRouter = router({
+  ...crud,
+
+  getAll: authProcedure.query(({ ctx }) => households.getAll(ctx.auth.tenant_id)),
+
+  add: authProcedure.input(UpdateHouseholdsObj).mutation(({ input, ctx }) => households.addHousehold(input, ctx.auth)),
+
+  deleteMany: authProcedure
+    .input(z.array(idSchema).min(1, 'At least one ID is required'))
+    .mutation(({ input, ctx }) => households.deleteManyForTenant(ctx.auth, input)),
+
+  attachTag: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => households.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth)),
+
+  detachTag: authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      households.detachTag(ctx.auth.tenant_id, input.id, input.tag_name, input.type ?? 'tag', ctx.auth.user_id),
+    ),
+
+  getTags: authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return households.getTags(id, ctx.auth, type);
+    }),
+
+  getDistinctTags: authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(({ input, ctx }) => households.getDistinctTags(ctx.auth, input)),
+
+  getAllWithPeopleCount: authProcedure
+    .input(z.any().optional())
+    .query(({ input, ctx }) => households.getAllWithPeopleCount(ctx.auth, input)),
+
+  getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
+
+  countDistinctWards: authProcedure.query(({ ctx }) => households.countDistinctWards(ctx.auth)),
+
+  // Tenant-scoped slug resolution for /households/:slug URLs (spec §1).
+  getBySlug: authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => households.getOneBySlug(input, ctx.auth)),
+
+  getPotentialDuplicates: authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => households.getPotentialDuplicates(ctx.auth, input)),
+
+  mergeHouseholds: authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => households.mergeHouseholds(input.target_id, input.source_id, ctx.auth)),
+
+  getLastFingerprintRecomputation: authProcedure.query(({ ctx }) =>
+    households.getLastFingerprintRecomputation(ctx.auth.tenant_id),
+  ),
+
+  recomputeAddressFingerprints: authProcedure.mutation(({ ctx }) =>
+    households.recomputeAddressFingerprints(ctx.auth.tenant_id),
+  ),
+});
+```
+
 ## File: apps/backend/src/app/modules/newsletters/controller.ts
 
 ```typescript
@@ -26484,1175 +26839,519 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
 }
 ```
 
-## File: apps/backend/src/app/modules/persons/services/persons.service.ts
+## File: apps/backend/src/app/modules/persons/controller.ts
 
 ```typescript
-import { env } from '../../../../env';
-import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import type {
+  ExportCsvInputType,
+  ExportCsvResponseType,
+  IAuthKeyPayload,
+  getAllOptionsType,
+} from '../../../../../../libs/common/src';
+import { slugifyRecordName } from '../../../../../../libs/common/src';
+import type { OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { TRPCError } from '@trpc/server';
+import { BaseController } from '../../lib/base.controller';
+import type { QueryParams } from '../../lib/base.repo';
+import { uniqueSlug } from '../../lib/slug';
+import { MapListsPersonsRepo } from '../lists/repositories/map-lists-persons.repo';
+import { MapPersonsTagRepo } from './repositories/map-persons-tags.repo';
+import { PersonsRepo } from './repositories/persons.repo';
+import { MapTeamsPersonsRepo } from '../teams/repositories/map-teams-persons.repo';
+import { queueZapierTrigger } from '../zapier/zapier.service';
+import { logger } from '../../logger';
 
-import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
-import { notificationEnabled } from '../../../lib/profile-preferences';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
-import { SettingsController } from '../../settings/controller';
-import { TagsRepo } from '../../tags/repositories/tags.repo';
-import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
-import { PersonsRepo } from '../repositories/persons.repo';
-import { CompaniesRepo } from '../../companies/repositories/companies.repo';
-import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
-import { TeamsRepo } from '../../teams/repositories/teams.repo';
-import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { ImportsRepo } from '../../imports/repositories/imports.repo';
-import { UserActivityRepo } from '../../../lib/user-activity.repo';
-import { StorageService } from '../../../lib/storage.service';
-import { WorkflowsController } from '../../workflows/controller';
-import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
-import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
-import { logger } from '../../../logger';
-
-export class PersonsService {
+export class PersonsController extends BaseController<'persons', PersonsRepo> {
   private mapPersonsTagRepo = new MapPersonsTagRepo();
-  private settingsController = new SettingsController();
-  private tagsRepo = new TagsRepo();
+  private mapListsPersonsRepo = new MapListsPersonsRepo();
   private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
-  private teamsRepo = new TeamsRepo();
-  private importsRepo = new ImportsRepo();
-  private personsRepo = new PersonsRepo();
-  private userActivity = new UserActivityRepo();
-  private storageService = new StorageService();
-  private householdRepo = new HouseholdRepo();
-  private companiesRepo = new CompaniesRepo();
 
-  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
-    // Enforce email uniqueness within the tenant
-    const emailToCheck = payload.email?.trim();
-    if (emailToCheck) {
-      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
-      if (existing) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A person with the email "${emailToCheck}" already exists.`,
-        });
-      }
-    }
+  constructor() {
+    super(new PersonsRepo());
+  }
 
-    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
-    const households = new HouseholdRepo();
-
-    let household_id = payload.household_id as string | undefined;
-    if (!household_id) {
-      const existingBlank = await households.getBlankHousehold({
-        tenant_id: auth.tenant_id,
-        campaign_id: String(campaign_id),
-      });
-      if (existingBlank?.id) {
-        household_id = String(existingBlank.id);
-      } else {
-        const created = await households.add({
-          row: {
-            tenant_id: auth.tenant_id,
-            campaign_id: String(campaign_id),
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          } as OperationDataType<'households', 'insert'>,
-        });
-        household_id = String(created?.id);
-      }
-    }
-
-    const row = {
-      ...payload,
-      household_id,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-
-    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
-    if (result && typeof result === 'object') {
-      try {
-        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger usage check in addPerson');
-      }
-      try {
-        const workflowsController = new WorkflowsController();
-        await workflowsController.triggerWorkflow(
-          auth.tenant_id,
-          String((result as Record<string, unknown>)['id']),
-          'contact_created',
-          null,
-        );
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
-      }
-
-      if (payload.assigned_to) {
-        try {
-          const assignee = await this.personsRepo.db
-            .selectFrom('authusers')
-            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-            .where('authusers.id', '=', String(payload.assigned_to))
-            .executeTakeFirst();
-          if (assignee && assignee.email) {
-            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-              const createdPerson = result as Record<string, unknown>;
-              const personName =
-                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
-              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
-              const mailService = new TransactionalEmailService();
-              await mailService.sendMail({
-                to: assignee.email,
-                subject: `Contact Assigned to You: ${personName}`,
-                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
-              });
-            }
-          }
-        } catch (mailErr) {
-          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
-        }
-      }
-    }
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'create',
-        entity: 'persons',
-        entity_id: result?.id ? String(result.id) : null,
-        quantity: 1,
-        metadata: {
-          id: result?.id,
-          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
-          ...(auth.source ? { source: auth.source } : {}),
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log create person activity');
-    }
-    try {
-      await queueZapierTrigger(
-        this.personsRepo.db,
-        auth.tenant_id,
-        'person_created',
-        pickPersonFields(result as Record<string, unknown>),
+  /** Rename regenerates the record slug (spec §1) — old numeric-ID URLs still resolve. */
+  public override async update(input: { tenant_id: string; id: string; row: OperationDataType<'persons', 'update'> }) {
+    const row = input.row as Record<string, unknown>;
+    if ('first_name' in row || 'last_name' in row) {
+      const original = (await this.getRepo().getOneById({ id: input.id, tenant_id: input.tenant_id })) as
+        | Record<string, unknown>
+        | undefined;
+      const first = ('first_name' in row ? row['first_name'] : original?.['first_name']) ?? '';
+      const last = ('last_name' in row ? row['last_name'] : original?.['last_name']) ?? '';
+      row['slug'] = await uniqueSlug(slugifyRecordName(`${String(first)} ${String(last)}`, 'person'), (candidate) =>
+        this.getRepo().slugExists(input.tenant_id, candidate, input.id),
       );
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
     }
-    return result;
+    return super.update(input);
   }
 
-  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
-    // Enforce email uniqueness within the tenant (excluding the person being updated)
-    const emailToCheck = data.email?.trim();
-    if (emailToCheck) {
-      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
-      if (existing && String(existing.id) !== String(id)) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `A person with the email "${emailToCheck}" already exists.`,
-        });
-      }
-    }
-
-    let original: Record<string, unknown> | null = null;
-    try {
-      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
-        string,
-        unknown
-      > | null;
-    } catch (err) {
-      logger.error({ err }, 'Failed to fetch original person record for activity log');
-    }
-    const result = await this.personsRepo.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: {
-        ...data,
-        updatedby_id: auth.user_id,
-      } as OperationDataType<'persons', 'update'>,
-    });
-    if (result && typeof result === 'object') {
-      const updatedPerson = result as Record<string, unknown>;
-      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
-        const newAssigneeId = data.assigned_to;
-        if (newAssigneeId) {
-          try {
-            const assignee = await this.personsRepo.db
-              .selectFrom('authusers')
-              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
-              // String conversion ensures precision is maintained down to the database driver level
-              .where('authusers.id', '=', String(newAssigneeId))
-              .executeTakeFirst();
-
-            if (assignee && assignee.email) {
-              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
-                const personName =
-                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
-                  'unnamed contact';
-                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
-                const mailService = new TransactionalEmailService();
-                await mailService.sendMail({
-                  to: assignee.email,
-                  subject: `Contact Assigned to You: ${personName}`,
-                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
-                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
-                });
-              }
-            }
-          } catch (mailErr) {
-            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
-          }
-        }
-      }
-    }
-    try {
-      const changes: Record<string, unknown> = {};
-      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
-      if (original && resultObj) {
-        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
-        for (const key of Object.keys(data)) {
-          if (skipKeys.includes(key)) continue;
-          const oldVal = (original as Record<string, unknown>)[key];
-          const newVal = resultObj[key];
-          if (oldVal !== newVal) {
-            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
-          }
-        }
-      }
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'persons',
-        entity_id: id ? String(id) : null,
-        quantity: 1,
-        metadata: {
-          id,
-          entity_label: resultObj
-            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
-            : 'Person',
-          changes,
-          ...(auth.source ? { source: auth.source } : {}),
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log update person activity');
-    }
-    try {
-      await queueZapierTrigger(
-        this.personsRepo.db,
-        auth.tenant_id,
-        'person_updated',
-        pickPersonFields(result as Record<string, unknown>),
-      );
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
-    }
-    return result;
-  }
-
-  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
-    if (!html) return '';
-    const text = html
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (text.length <= limit) return text;
-    return text.substring(0, limit) + '...';
-  }
-
-  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
-    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
-      string,
-      unknown
-    > | null;
-    if (!person) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Person not found',
-      });
-    }
-
-    const emails: string[] = [];
-    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
-    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
-
-    if (emails.length === 0) {
-      return {
-        emails: [],
-        newsletters: [],
-      };
-    }
-
-    const db = this.personsRepo.db;
-
-    // 1. Fetch email conversations (sent and received)
-    const conversations = await db
-      .selectFrom('emails')
-      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
-      .selectAll('emails')
-      .select('email_bodies.body_html as body_html')
-      .where('emails.tenant_id', '=', auth.tenant_id)
-      // Recipient match goes through email_recipients — the source of truth.
-      // emails.to_email is a display-only cache holding a joined "a, b" string,
-      // so an exact IN match would miss multi-recipient emails (D-10).
-      .where((eb) =>
-        eb.or([
-          eb('emails.from_email', 'in', emails),
-          eb.exists(
-            eb
-              .selectFrom('email_recipients')
-              .select('email_recipients.id')
-              .whereRef('email_recipients.email_id', '=', 'emails.id')
-              .where('email_recipients.tenant_id', '=', auth.tenant_id)
-              .where((inner) => inner(inner.fn<string>('lower', ['email_recipients.email']), 'in', emails)),
-          ),
-        ]),
-      )
-      .orderBy('emails.created_at', 'desc')
-      .limit(50)
-      .execute();
-
-    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
-    const newsletterEvents = await db
-      .selectFrom('newsletter_events')
-      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
-      .select([
-        'newsletter_events.id',
-        'newsletter_events.event_type',
-        'newsletter_events.timestamp',
-        'newsletter_events.url',
-        'newsletters.subject as newsletter_subject',
-        'newsletters.name as newsletter_name',
-      ])
-      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
-      .where('newsletter_events.email', 'in', emails)
-      .orderBy('newsletter_events.timestamp', 'desc')
-      .limit(100)
-      .execute();
-
-    return {
-      emails: conversations.map((mail) => {
-        let snippet = '';
-        if (mail.body_html) {
-          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
-        }
-        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
-          snippet = mail.preview;
-        }
-        return {
-          ...mail,
-          preview: snippet,
-        };
-      }),
-      newsletters: newsletterEvents,
-    };
-  }
-
-  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
-    const randomHexColor = () =>
-      '#' +
-      Math.floor(Math.random() * 0xffffff)
-        .toString(16)
-        .padStart(6, '0');
-    const row = {
-      name,
-      color: randomHexColor(),
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      type,
-    };
-
-    const tag = await this.tagsRepo.addOrGet({
-      row: row as OperationDataType<'tags', 'insert'>,
-      onConflictColumn: 'name',
-    });
-
-    const result = await this.addToMap({
-      tag_id: tag?.id as string | undefined,
-      person_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    });
-
-    if (result && tag?.id) {
-      try {
-        const workflowsController = new WorkflowsController();
-        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
-      } catch (err) {
-        logger.error({ err }, 'Failed to trigger tag_added workflow');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'persons',
-        entity_id: person_id,
-        quantity: 1,
-        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log attach tag activity');
-    }
-    try {
-      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
-        person_id,
-        tag_name: name,
-        tag_type: type,
-      });
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
-    }
-
-    return result;
-  }
-
-  public async detachTag(input: {
-    tenant_id: string;
-    person_id: string;
-    name: string;
-    type?: 'tag' | 'issue';
-    user_id?: string;
-    source?: string;
-  }) {
-    const tag = await this.tagsRepo.getIdByName({
-      tenant_id: input.tenant_id,
-      name: input.name,
-      type: input.type ?? 'tag',
-    });
-
-    if (tag?.id) {
-      await this.mapPersonsTagRepo.deleteMapping({
-        tenant_id: input.tenant_id,
-        person_id: input.person_id,
-        tag_id: tag.id,
-      });
-    }
-
-    try {
-      if (input.user_id) {
-        await this.userActivity.log({
-          tenant_id: input.tenant_id,
-          user_id: input.user_id,
-          activity: 'update',
-          entity: 'persons',
-          entity_id: input.person_id,
-          quantity: 1,
-          metadata: {
-            id: input.person_id,
-            action: `detach_${input.type ?? 'tag'}`,
-            name: input.name,
-            ...(input.source ? { source: input.source } : {}),
-          },
-        });
-      }
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log detach tag activity');
-    }
-    try {
-      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
-        person_id: input.person_id,
-        tag_name: input.name,
-        tag_type: input.type ?? 'tag',
-      });
-    } catch (e) {
-      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
-    }
-
-    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
-    if (!isVolunteerTag) {
-      return { removed_team_ids: [], removed_teams: [] };
-    }
-
-    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
-      tenant_id: input.tenant_id,
-      person_id: input.person_id,
-    });
-
-    if (!teams.length) {
-      return { removed_team_ids: [], removed_teams: [] };
-    }
-
-    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
-
-    for (const team of teams) {
-      if (team.is_captain && team.team_id) {
-        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
-      }
-    }
-
-    const removedTeams = teams
-      .filter((team) => team.team_id)
-      .map((team) => ({
-        id: team.team_id,
-        name: team.team_name ?? '',
-        was_captain: team.is_captain,
-      }));
-
-    return {
-      removed_team_ids: removedTeams.map((team) => team.id),
-      removed_teams: removedTeams,
-    };
-  }
-
-  public async importRows(
-    input: {
-      rows: Array<{
-        first_name?: string;
-        last_name?: string;
-        email?: string;
-        mobile?: string;
-        notes?: string;
-        home_phone?: string;
-        street_num?: string;
-        street1?: string;
-        street2?: string;
-        apt?: string;
-        city?: string;
-        state?: string;
-        zip?: string;
-        country?: string;
-      }>;
-      tags?: string[];
-      skipped?: number;
-      file_name?: string | null;
-    },
+  public getAllWithAddress(
     auth: IAuthKeyPayload,
-  ) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    const now = new Date();
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
-
-    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
-    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
-    const requestedFileName = (input.file_name ?? '').trim();
-    const baseFileName = requestedFileName || `${autoTag}.csv`;
-    const totalRows = input.rows.length + skippedFromClient;
-
-    let hasImportableRow = false;
-    for (const candidate of input.rows) {
-      const sanitized = this.sanitizeRow(candidate);
-      if (sanitized.first_name || sanitized.last_name || sanitized.email || sanitized.mobile || sanitized.notes) {
-        hasImportableRow = true;
-        break;
-      }
-    }
-
-    if (!hasImportableRow) {
-      const totalSkipped = skippedFromClient + input.rows.length;
-      const personsBefore = await this.personsRepo.count(auth.tenant_id);
-      return {
-        inserted: 0,
-        errors: 0,
-        skipped: totalSkipped,
-        tag: null,
-        file_name: requestedFileName || null,
-        import_id: null,
-        tenant_id: auth.tenant_id,
-        campaign_id,
-        persons_total_after: personsBefore,
-        persons_total_before: personsBefore,
-        status: 'completed',
-      };
-    }
-
-    const importRow = {
+    options?: getAllOptionsType,
+  ): Promise<{ rows: { [x: string]: unknown }[]; count: number }> {
+    const { tags, ...queryParams } = options || {};
+    return this.getRepo().getAllWithAddress({
       tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      file_name: baseFileName,
-      source: 'persons',
-      tag_name: autoTag,
-      tag_id: null,
-      row_count: totalRows,
-      inserted_count: 0,
-      error_count: 0,
-      skipped_count: skippedFromClient,
-      households_created: 0,
-      status: 'pending',
-      metadata: null,
-      processed_at: now,
-    } as any;
-
-    const savedImport = await this.importsRepo.add({ row: importRow });
-    if (!savedImport || !savedImport.id) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to create data import record',
-      });
-    }
-
-    const importRecordId = String(savedImport.id);
-    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
-
-    try {
-      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
-      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
-    } catch (err) {
-      logger.error({ err }, 'Failed to upload import payload to storage');
-      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Failed to store import payload on server storage',
-      });
-    }
-
-    await this.importsRepo.update({
-      tenant_id: auth.tenant_id,
-      id: importRecordId,
-      row: {
-        metadata: JSON.stringify({ storage_key: storageKey }),
-      } as any,
+      options: queryParams as QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'>,
+      tags,
     });
-
-    await this.importsRepo.db
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: auth.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          import_id: importRecordId,
-          storage_key: storageKey,
-          tags,
-          skipped: skippedFromClient,
-          campaign_id,
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          file_name: baseFileName,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-
-    return {
-      inserted: 0,
-      errors: 0,
-      skipped: skippedFromClient,
-      tag: autoTag,
-      file_name: baseFileName,
-      import_id: importRecordId,
-      tenant_id: auth.tenant_id,
-      campaign_id,
-      status: 'pending',
-    };
   }
 
-  public async processImportRows(
-    import_id: string,
-    tenant_id: string,
-    user_id: string,
-    campaign_id: string,
-    tags: string[],
-    skipped: number,
-    rows: Record<string, string>[],
-  ) {
-    const households = new HouseholdRepo();
-    const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
-      inserted: 0,
-      errors: 0,
-      households_created: 0,
-      skipped: 0,
-    };
-    const importedPersonIds: string[] = [];
+  public getByHouseholdId(household_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getByHouseholdId({
+      id: household_id,
+      tenant_id: auth.tenant_id,
+      options: options as QueryParams<'persons'>,
+    });
+  }
 
-    const errorMessages: string[] = [];
-    let cachedBlankHouseholdId: string | null = null;
-    let autoTagId: string | null = null;
-    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
+  public getByCompanyId(company_id: string, auth: IAuthKeyPayload, options?: getAllOptionsType) {
+    return this.getRepo().getByCompanyId({
+      id: company_id,
+      tenant_id: auth.tenant_id,
+      options: options as QueryParams<'persons'>,
+    });
+  }
 
-    const chunkSize = 100;
-    for (let i = 0; i < rows.length; i += chunkSize) {
-      const chunk = rows.slice(i, i + chunkSize);
+  public countByCompanyId(company_id: string, auth: IAuthKeyPayload) {
+    return this.getRepo().countByCompanyId({ id: company_id, tenant_id: auth.tenant_id });
+  }
 
-      // 1. Sanitize and classify all valid rows in the chunk upfront
-      type ValidEntry = {
-        sanitized: {
-          first_name?: string;
-          last_name?: string;
-          email?: string;
-          mobile?: string;
-          notes?: string;
-          home_phone?: string;
-          street_num?: string;
-          street1?: string;
-          street2?: string;
-          apt?: string;
-          city?: string;
-          state?: string;
-          zip?: string;
-          country?: string;
-        };
-        isBlankAddress: boolean;
-        fp_street: string | null;
-        fp_full: string | null;
-      };
-      const validEntries: ValidEntry[] = [];
-      for (const raw of chunk) {
-        const sanitized = this.sanitizeRow(raw);
-        if (
-          !sanitized.first_name &&
-          !sanitized.last_name &&
-          !sanitized.email &&
-          !sanitized.mobile &&
-          !sanitized.notes
-        ) {
-          results.skipped += 1;
-          continue;
-        }
-        const isBlankAddress =
-          !sanitized.home_phone &&
-          !sanitized.street_num &&
-          !sanitized.street1 &&
-          !sanitized.street2 &&
-          !sanitized.apt &&
-          !sanitized.city &&
-          !sanitized.state &&
-          !sanitized.zip &&
-          !sanitized.country;
-        validEntries.push({
-          sanitized,
-          isBlankAddress,
-          fp_street: isBlankAddress
-            ? null
-            : fingerprintStreet({
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-              }),
-          fp_full: isBlankAddress
-            ? null
-            : fingerprintFull({
-                apt: sanitized.apt,
-                street_num: sanitized.street_num,
-                street1: sanitized.street1,
-                street2: sanitized.street2,
-                city: sanitized.city,
-                state: sanitized.state,
-                zip: sanitized.zip,
-                country: sanitized.country,
-              }),
-        });
-      }
+  public countWithCompany(auth: IAuthKeyPayload) {
+    return this.getRepo().countWithCompany({ tenant_id: auth.tenant_id });
+  }
 
-      if (validEntries.length === 0) {
-        await this.importsRepo.update({
-          tenant_id: tenant_id,
-          id: import_id,
-          row: {
-            tag_id: autoTagId,
-            inserted_count: results.inserted,
-            error_count: results.errors,
-            skipped_count: skipped + results.skipped,
-            households_created: results.households_created,
-            updatedby_id: user_id,
-            updated_at: new Date(),
-          } as any,
-        });
-        continue;
-      }
+  public getOneBySlug(slug: string, auth: IAuthKeyPayload) {
+    return this.getRepo().getOneBySlug({ tenant_id: auth.tenant_id, slug });
+  }
 
-      try {
-        const outcome = await this.personsRepo.transaction().execute(async (trx) => {
-          let localBlankHouseholdId = cachedBlankHouseholdId;
-          let localAutoTagId = autoTagId;
-          let householdsCreatedDelta = 0;
+  public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getDistinctTags(auth.tenant_id, type);
+  }
 
-          // 2a. Resolve blank household once for the whole chunk
-          if (validEntries.some((e) => e.isBlankAddress)) {
-            if (!localBlankHouseholdId) {
-              const existingBlank = await households.getBlankHousehold({ tenant_id, campaign_id }, trx);
-              if (existingBlank?.id) {
-                localBlankHouseholdId = String(existingBlank.id);
-              } else {
-                const created = await households.add(
-                  {
-                    row: {
-                      tenant_id,
-                      campaign_id,
-                      createdby_id: user_id,
-                      updatedby_id: user_id,
-                      file_id: import_id,
-                    } as OperationDataType<'households', 'insert'>,
-                  },
-                  trx,
-                );
-                localBlankHouseholdId = String(created?.id);
-                householdsCreatedDelta += 1;
-              }
-            }
-          }
+  public getTags(person_id: string, auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
+    return this.getRepo().getTags({ id: person_id, tenant_id: auth.tenant_id, type });
+  }
 
-          // 2b. Batch-resolve addressed households with a single IN query
-          const fpCache = new Map<string, string>(); // fp_full -> household_id
-          const uniqueFps = [
-            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
-          ];
-          if (uniqueFps.length > 0) {
-            const existingHouseholds = await trx
-              .selectFrom('households')
-              .select(['id', 'address_fp_full'])
-              .where('tenant_id', '=', tenant_id)
-              .where('campaign_id', '=', campaign_id)
-              .where('address_fp_full', 'in', uniqueFps)
-              .execute();
-            for (const h of existingHouseholds) {
-              if (h.address_fp_full) fpCache.set(h.address_fp_full, String(h.id));
-            }
-          }
-
-          // 2c. Create only missing households (deduplicated within this chunk)
-          for (const entry of validEntries) {
-            if (entry.isBlankAddress || !entry.fp_full) continue;
-            if (fpCache.has(entry.fp_full)) continue;
-            const { sanitized, fp_street, fp_full } = entry;
-            const hhRow = {
-              tenant_id,
-              campaign_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-              home_phone: sanitized.home_phone ?? null,
-              street_num: sanitized.street_num ?? null,
-              street1: sanitized.street1 ?? null,
-              street2: sanitized.street2 ?? null,
-              apt: sanitized.apt ?? null,
-              city: sanitized.city ?? null,
-              state: sanitized.state ?? null,
-              zip: sanitized.zip ?? null,
-              country: sanitized.country ?? null,
-              address_fp_street: fp_street,
-              address_fp_full: fp_full,
-              notes: null,
-              file_id: import_id,
-            } as OperationDataType<'households', 'insert'>;
-            const household = await households.add({ row: hhRow }, trx);
-            fpCache.set(fp_full, String(household?.id));
-            householdsCreatedDelta += 1;
-          }
-
-          // 3. Batch insert all persons in one statement
-          const personRows = validEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
-            tenant_id,
-            campaign_id,
-            createdby_id: user_id,
-            updatedby_id: user_id,
-            household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
-            first_name: sanitized.first_name ?? null,
-            middle_names: null,
-            last_name: sanitized.last_name ?? null,
-            email: sanitized.email ?? null,
-            email2: null,
-            mobile: sanitized.mobile ?? null,
-            home_phone: null,
-            file_id: import_id,
-            notes: sanitized.notes ?? null,
-          }));
-          const insertedPersons = await trx
-            .insertInto('persons')
-            .values(personRows)
-            .onConflict((oc) => oc.doNothing())
+  public async moveEntireHousehold(oldHouseholdId: string, newHouseholdId: string, tenantId: string) {
+    return this.getRepo()
+      .transaction()
+      .execute(
+        async (trx) =>
+          await trx
+            .updateTable('persons')
+            .set({ household_id: newHouseholdId })
+            .where('household_id', '=', oldHouseholdId)
+            .where('tenant_id', '=', tenantId)
             .returningAll()
-            .execute();
+            .execute(),
+      );
+  }
 
-          // Count rows silently skipped due to duplicate email
-          const duplicatesSkipped = personRows.length - insertedPersons.length;
-          if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
+  public override async deleteMany(tenant_id: string, idsToDelete: string[], force?: boolean): Promise<boolean> {
+    if (!idsToDelete?.length) return false;
 
-          // 4. Upsert each unique tag name exactly once (not once per row)
-          const tagRecords: Array<{ name: string; id: string }> = [];
-          for (const name of tags) {
-            const row = {
-              name,
-              tenant_id,
-              createdby_id: user_id,
-              updatedby_id: user_id,
-            } as OperationDataType<'tags', 'insert'>;
-            const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
-            if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
-            if (tag?.id) tagRecords.push({ name, id: String(tag.id) });
-          }
+    let personSnapshots: Array<{
+      id: unknown;
+      email: string | null;
+      first_name: string | null;
+      last_name: string | null;
+    }> = [];
+    try {
+      personSnapshots = await this.getRepo()
+        .db.selectFrom('persons')
+        .select(['id', 'email', 'first_name', 'last_name'])
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', idsToDelete)
+        .execute();
+    } catch {
+      /* ignore — snapshots are best-effort */
+    }
 
-          // 5. Batch insert all tag-person mappings in one statement
-          if (tagRecords.length > 0 && insertedPersons.length > 0) {
-            const tagMapRows = insertedPersons.flatMap((person) =>
-              tagRecords.map(({ id: tag_id }) => ({
-                tenant_id,
-                person_id: String(person.id),
-                tag_id: tag_id as unknown as string,
-                createdby_id: user_id,
-                updatedby_id: user_id,
-              })),
-            );
-            await (trx as any).insertInto('map_peoples_tags').values(tagMapRows).execute();
-          }
+    const result = await this.getRepo()
+      .transaction()
+      .execute(async (trx) => {
+        // Check if any person is a team captain
+        const captainedTeams = await trx
+          .selectFrom('teams')
+          .select(['id', 'name', 'team_captain_id'])
+          .where('tenant_id', '=', tenant_id)
+          .where('team_captain_id', 'in', idsToDelete)
+          .execute();
 
-          return {
-            insertedPersons,
-            tagRecords,
-            householdsCreatedDelta,
-            blankHouseholdId: localBlankHouseholdId,
-            autoTagId: localAutoTagId,
-          };
-        });
-
-        // 6. Trigger workflows outside the transaction (fire-and-forget per person)
-        const workflowsController = new WorkflowsController();
-        for (const person of outcome.insertedPersons) {
-          const personId = String(person.id);
-          importedPersonIds.push(personId);
-          try {
-            await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
-          }
-          for (const { name, id: tagId } of outcome.tagRecords) {
-            try {
-              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
-            }
-          }
+        if (captainedTeams.length > 0 && !force) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'One or more selected people are team captains. Deleting them will remove them as captain. Do you want to proceed?',
+          });
         }
 
-        results.inserted += outcome.insertedPersons.length;
-        results.households_created += outcome.householdsCreatedDelta;
-        if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
-        if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
-      } catch (err: unknown) {
-        // If the chunk transaction fails, count all valid rows in the chunk as errors
-        results.errors += validEntries.length;
-        const message = err instanceof Error ? err.message : String(err);
-        errorMessages.push(message);
-        logger.error({ err, message }, 'Import chunk failed');
-      }
+        // Unlink captaincy if forced and captained teams exist
+        if (captainedTeams.length > 0) {
+          await trx
+            .updateTable('teams')
+            .set({ team_captain_id: null })
+            .where('tenant_id', '=', tenant_id)
+            .where('team_captain_id', 'in', idsToDelete)
+            .execute();
+        }
 
-      // Update intermediate counts after each chunk
-      await this.importsRepo.update({
-        tenant_id: tenant_id,
-        id: import_id,
-        row: {
-          tag_id: autoTagId,
-          inserted_count: results.inserted,
-          error_count: results.errors,
-          skipped_count: skipped + results.skipped,
-          households_created: results.households_created,
-          updatedby_id: user_id,
-          updated_at: new Date(),
-        } as any,
+        // Delete volunteer shifts
+        await trx
+          .deleteFrom('volunteer_shifts')
+          .where('tenant_id', '=', tenant_id)
+          .where('person_id', 'in', idsToDelete)
+          .execute();
+
+        // Delete team mappings
+        await this.mapTeamsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
+        // Delete tag mappings
+        await this.mapPersonsTagRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
+        // Delete list mappings
+        await this.mapListsPersonsRepo.deleteByPersonIds({ tenant_id, person_ids: idsToDelete }, trx);
+        // Delete persons within the same transaction
+        const result = await this.getRepo().deleteMany({ tenant_id, ids: idsToDelete }, trx);
+
+        return result;
       });
-    }
 
-    // Log the user activity
     try {
-      await this.userActivity.log({
-        tenant_id,
-        user_id,
-        activity: 'import',
-        entity: 'persons',
-        quantity: results.inserted,
-        metadata: {
-          rows_received: rows.length,
-          tags_applied: tags.slice(0, 10),
-          auto_tag: autoTag,
-          households_created: results.households_created,
-          errors: results.errors,
-          skipped: skipped + results.skipped,
-          import_id,
-        },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log import activity');
-    }
-
-    if (importedPersonIds.length > 0) {
-      try {
-        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
-      } catch (err) {
-        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
+      for (const p of personSnapshots) {
+        await queueZapierTrigger(this.getRepo().db, tenant_id, 'person_deleted', {
+          id: String(p.id),
+          email: p.email,
+          first_name: p.first_name,
+          last_name: p.last_name,
+        });
       }
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_deleted trigger(s)');
     }
 
-    return {
-      inserted: results.inserted,
-      errors: results.errors,
-      skipped: skipped + results.skipped,
-      households_created: results.households_created,
-      tag_id: autoTagId,
-      errorMessages,
-    };
-  }
-
-  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
-    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
-    return this.personsRepo.moveToNewHousehold({
-      tenant_id: auth.tenant_id,
-      person_id,
-      user_id: auth.user_id,
-      campaign_id,
-    });
-  }
-
-  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
-    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
-  }
-
-  public async getDuplicateCounts(auth: IAuthKeyPayload) {
-    const [people, households, companies] = await Promise.all([
-      this.personsRepo.getDuplicateCount(auth.tenant_id),
-      this.householdRepo.getDuplicateCount(auth.tenant_id),
-      this.companiesRepo.getDuplicateCount(auth.tenant_id),
-    ]);
-    return { people, households, companies };
-  }
-
-  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
-    const result = await this.personsRepo.mergePersons({
-      tenant_id: auth.tenant_id,
-      target_id: input.target_id,
-      source_id: input.source_id,
-      user_id: auth.user_id,
-    });
-    await this.userActivity.log({
-      tenant_id: auth.tenant_id,
-      user_id: auth.user_id,
-      activity: 'merge',
-      entity: 'persons',
-      quantity: 1,
-      metadata: {
-        target_id: input.target_id,
-        source_id: input.source_id,
-      },
-    });
     return result;
   }
 
-  private async addToMap(row: {
-    tag_id: string | undefined;
-    person_id: string;
-    tenant_id: string;
-    createdby_id: string;
-    updatedby_id: string;
-  }) {
-    if (!row.tag_id) {
-      throw new TRPCError({
-        message: 'Failed to add the tag',
-        code: 'INTERNAL_SERVER_ERROR',
+  public override async delete(
+    tenant_id: string,
+    idToDelete: string,
+    userId?: string,
+    force?: boolean,
+  ): Promise<boolean> {
+    const result = await this.deleteMany(tenant_id, [idToDelete], force);
+    try {
+      if (userId) {
+        await this.userActivity.log({
+          tenant_id: tenant_id,
+          user_id: userId,
+          activity: 'delete',
+          entity: 'persons',
+          entity_id: idToDelete ? String(idToDelete) : null,
+          quantity: 1,
+          metadata: { id: idToDelete },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log delete person activity');
+    }
+    return result;
+  }
+
+  public override async exportCsv(
+    input: ExportCsvInputType & { tenant_id: string },
+    auth?: IAuthKeyPayload,
+  ): Promise<ExportCsvResponseType> {
+    if (auth) {
+      const result = await this.getAllWithAddress(auth, input?.options);
+      const rows = (result?.rows ?? []).map((row) => ({ ...(row as Record<string, unknown>) }));
+      const response = this.buildCsvResponse(rows, input) as {
+        csv: string;
+        fileName: string;
+        columns: string[];
+        rowCount: number;
+      };
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'export',
+        entity: 'persons',
+        quantity: response.rowCount,
+        metadata: {
+          requested_columns: Array.isArray(input.columns) ? input.columns.slice(0, 12) : [],
+          returned_columns: response.columns.slice(0, 12),
+          file_name: response.fileName,
+        },
       });
+      return response;
     }
-
-    return await this.mapPersonsTagRepo.add({
-      row: row as OperationDataType<'map_peoples_tags', 'insert'>,
-    });
-  }
-
-  private sanitizePhone(v?: string) {
-    if (!v) return undefined;
-    const digits = v.replace(/[^0-9+]/g, '');
-    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
-    return digits.replace(/[^0-9]/g, '');
-  }
-
-  private sanitizeRow(row: {
-    first_name?: string;
-    last_name?: string;
-    email?: string;
-    mobile?: string;
-    notes?: string;
-    home_phone?: string;
-    street_num?: string;
-    street1?: string;
-    street2?: string;
-    apt?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-    country?: string;
-  }) {
-    const trim = (v?: string) => (v ? v.trim() : undefined);
-
-    let first_name = trim(row.first_name);
-    const last_name = trim(row.last_name);
-    let email = (trim(row.email) || '').toLowerCase();
-    let mobile = this.sanitizePhone(row.mobile);
-    const home_phone = this.sanitizePhone(row.home_phone);
-    const notes = trim(row.notes);
-
-    if (!email) {
-      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
-    }
-    if (email && !/.+@.+\..+/.test(email)) email = '';
-
-    if (!mobile) {
-      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
-      mobile = this.sanitizePhone(possiblePhone);
-    }
-
-    if (first_name) first_name = this.stripNoise(first_name);
-    if (!first_name && email) first_name = this.nameFromEmail(email);
-
-    return {
-      first_name,
-      last_name,
-      email: email || undefined,
-      mobile,
-      notes,
-      home_phone,
-      street_num: trim(row.street_num),
-      street1: trim(row.street1),
-      street2: trim(row.street2),
-      apt: trim(row.apt),
-      city: trim(row.city),
-      state: trim(row.state),
-      zip: trim(row.zip),
-      country: trim(row.country),
-    };
-  }
-
-  private findEmail(text: string): string | undefined {
-    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-    return m?.[0];
-  }
-
-  private findPhone(text?: string): string | undefined {
-    if (!text) return undefined;
-    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
-    return m?.[0];
-  }
-
-  private stripNoise(text: string): string | undefined {
-    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
-    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
-    const cleaned = noPhone
-      .replace(/[,]+/g, ' ')
-      .replace(/\s{2,}/g, ' ')
-      .trim();
-    return cleaned || undefined;
-  }
-
-  private nameFromEmail(email: string): string | undefined {
-    const local = (email || '').split('@')[0] || '';
-    const token = local.split(/[._+-]/)[0] || '';
-    if (!token) return undefined;
-    return token.charAt(0).toUpperCase() + token.slice(1);
+    return super.exportCsv(input, auth);
   }
 }
+```
+
+## File: apps/backend/src/app/modules/persons/trpc.router.ts
+
+```typescript
+import {
+  UpdatePersonsObj,
+  exportCsvInput,
+  exportCsvResponse,
+  getAllOptions,
+  idSchema,
+} from '../../../../../../libs/common/src';
+import { z } from 'zod';
+import { authProcedure, router } from '../../../trpc';
+import { PersonsController } from './controller';
+import { PersonsService } from './services/persons.service';
+
+const persons = new PersonsController();
+const personsService = new PersonsService();
+
+function add() {
+  return authProcedure.input(UpdatePersonsObj).mutation(({ input, ctx }) => personsService.addPerson(input, ctx.auth));
+}
+
+function attachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) => personsService.attachTag(input.id, input.tag_name, input.type ?? 'tag', ctx.auth));
+}
+
+function count() {
+  return authProcedure.query(({ ctx }) => persons.getCount(ctx.auth.tenant_id));
+}
+
+const deleteOneInput = z.union([
+  idSchema,
+  z.object({
+    id: idSchema,
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteOne() {
+  return authProcedure.input(deleteOneInput).mutation(({ input, ctx }) => {
+    const id = typeof input === 'string' ? input : input.id;
+    const force = typeof input === 'string' ? false : !!input.force;
+    return persons.delete(ctx.auth.tenant_id, id, ctx.auth.user_id, force);
+  });
+}
+
+const deleteManyInput = z.union([
+  z.array(idSchema).min(1, 'At least one ID is required'),
+  z.object({
+    ids: z.array(idSchema).min(1, 'At least one ID is required'),
+    force: z.boolean().optional(),
+  }),
+]);
+
+function deleteMany() {
+  return authProcedure.input(deleteManyInput).mutation(({ input, ctx }) => {
+    const ids = Array.isArray(input) ? input : input.ids;
+    const force = Array.isArray(input) ? false : !!input.force;
+    return persons.deleteMany(ctx.auth.tenant_id, ids, force);
+  });
+}
+
+function detachTag() {
+  return authProcedure
+    .input(
+      z.object({
+        id: idSchema,
+        tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50, 'Tag name too long'),
+        type: z.enum(['tag', 'issue']).default('tag').optional(),
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      personsService.detachTag({
+        tenant_id: ctx.auth.tenant_id,
+        person_id: input.id,
+        name: input.tag_name,
+        type: input.type ?? 'tag',
+        user_id: ctx.auth.user_id,
+      }),
+    );
+}
+
+function getAll() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAll(ctx.auth.tenant_id, input));
+}
+
+function getAllWithAddress() {
+  return authProcedure.input(getAllOptions).query(({ input, ctx }) => persons.getAllWithAddress(ctx.auth, input));
+}
+
+function getByHouseholdId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByHouseholdId(input.id, ctx.auth, input.options));
+}
+
+function getByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema, options: getAllOptions }))
+    .query(({ input, ctx }) => persons.getByCompanyId(input.id, ctx.auth, input.options));
+}
+
+function countByCompanyId() {
+  return authProcedure
+    .input(z.object({ id: idSchema }))
+    .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
+}
+
+function countWithCompany() {
+  return authProcedure.query(({ ctx }) => persons.countWithCompany(ctx.auth));
+}
+
+function getById() {
+  return authProcedure
+    .input(idSchema)
+    .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
+}
+
+/** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
+function getBySlug() {
+  return authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => persons.getOneBySlug(input, ctx.auth));
+}
+
+function getActivity() {
+  return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
+}
+
+// Distinct tags
+function getDistinctTags() {
+  return authProcedure
+    .input(z.enum(['tag', 'issue']).optional())
+    .query(({ input, ctx }) => persons.getDistinctTags(ctx.auth, input));
+}
+
+function exportCsv() {
+  return authProcedure
+    .input(exportCsvInput)
+    .output(exportCsvResponse)
+    .mutation(({ input, ctx }) => persons.exportCsv({ tenant_id: ctx.auth.tenant_id, ...(input ?? {}) }, ctx.auth));
+}
+
+function getTags() {
+  return authProcedure
+    .input(z.union([idSchema, z.object({ id: idSchema, type: z.enum(['tag', 'issue']).optional() })]))
+    .query(({ input, ctx }) => {
+      const id = typeof input === 'string' ? input : input.id;
+      const type = typeof input === 'string' ? undefined : input.type;
+      return persons.getTags(id, ctx.auth, type);
+    });
+}
+
+function update() {
+  return authProcedure
+    .input(z.object({ id: idSchema, data: UpdatePersonsObj }))
+    .mutation(({ input, ctx }) => personsService.updatePerson(input.id, input.data as any, ctx.auth));
+}
+
+function removeHousehold() {
+  return authProcedure.input(idSchema).mutation(({ input, ctx }) => personsService.removeHousehold(input, ctx.auth));
+}
+
+function importMany() {
+  const ImportRow = z.object({
+    first_name: z.string().trim().max(100).optional(),
+    last_name: z.string().trim().max(100).optional(),
+    email: z.string().trim().max(255).optional(),
+    mobile: z.string().trim().max(30).optional(),
+    notes: z.string().trim().max(10000).optional(),
+    home_phone: z.string().trim().max(30).optional(),
+    street_num: z.string().trim().max(30).optional(),
+    street1: z.string().trim().max(150).optional(),
+    street2: z.string().trim().max(150).optional(),
+    apt: z.string().trim().max(30).optional(),
+    city: z.string().trim().max(100).optional(),
+    state: z.string().trim().max(100).optional(),
+    zip: z.string().trim().max(20).optional(),
+    country: z.string().trim().max(100).optional(),
+  });
+
+  const Input = z.object({
+    rows: z.array(ImportRow),
+    tags: z.array(z.string().trim().min(1, 'Tag cannot be empty').max(50, 'Tag too long')).optional(),
+    skipped: z.number().int().nonnegative().optional(),
+    file_name: z.string().trim().min(1).max(255).optional(),
+  });
+
+  return authProcedure.input(Input).mutation(async ({ input, ctx }) => personsService.importRows(input, ctx.auth));
+}
+
+function getPotentialDuplicates() {
+  return authProcedure
+    .input(
+      z
+        .object({
+          page: z.number().int().positive().optional().default(1),
+          pageSize: z.number().int().positive().optional().default(20),
+        })
+        .optional(),
+    )
+    .query(({ input, ctx }) => personsService.getPotentialDuplicates(ctx.auth, input));
+}
+
+function getDuplicateCounts() {
+  return authProcedure.query(({ ctx }) => personsService.getDuplicateCounts(ctx.auth));
+}
+
+function mergePersons() {
+  return authProcedure
+    .input(z.object({ target_id: idSchema, source_id: idSchema }))
+    .mutation(({ input, ctx }) => personsService.mergePersons(input, ctx.auth));
+}
+
+function moveEntireHousehold() {
+  return authProcedure
+    .input(
+      z.object({
+        fromHouseholdId: idSchema,
+        toHouseholdId: idSchema,
+      }),
+    )
+    .mutation(({ input, ctx }) =>
+      persons.moveEntireHousehold(input.fromHouseholdId, input.toHouseholdId, ctx.auth.tenant_id),
+    );
+}
+
+export const PersonsRouter = router({
+  add: add(),
+  count: count(),
+  getAll: getAll(),
+  update: update(),
+  removeHousehold: removeHousehold(),
+  import: importMany(),
+  getTags: getTags(),
+  getById: getById(),
+  getBySlug: getBySlug(),
+  getActivity: getActivity(),
+  attachTag: attachTag(),
+  detachTag: detachTag(),
+  delete: deleteOne(),
+  deleteMany: deleteMany(),
+  getDistinctTags: getDistinctTags(),
+  getByHouseholdId: getByHouseholdId(),
+  getByCompanyId: getByCompanyId(),
+  countByCompanyId: countByCompanyId(),
+  countWithCompany: countWithCompany(),
+  getAllWithAddress: getAllWithAddress(),
+  exportCsv: exportCsv(),
+  getPotentialDuplicates: getPotentialDuplicates(),
+  getDuplicateCounts: getDuplicateCounts(),
+  mergePersons: mergePersons(),
+  moveEntireHousehold: moveEntireHousehold(),
+});
 ```
 
 ## File: apps/backend/src/app/modules/volunteer-events/controller.ts
@@ -28615,496 +28314,2935 @@ export class VolunteerEventsController extends BaseController<'volunteer_events'
 }
 ```
 
-## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
+## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
 
 ```typescript
 import type { FastifyPluginCallback } from 'fastify';
-import { z } from 'zod';
-import { ZapierService } from './zapier.service';
-import { PersonsService } from '../persons/services/persons.service';
-import type { IAuthKeyPayload } from '@common';
-import { logger } from '../../logger';
-import { checkRateLimit } from '../../lib/rate-limiter';
-import { TooManyRequestsError } from '../../errors/app-errors';
+import { TRPCError } from '@trpc/server';
 
-const zapierService = new ZapierService();
-const personsService = new PersonsService();
+import { EventsController } from '../controller';
+import { resolveTenantFromRequest } from '../../../lib/public-tenant';
 
-// The API key is the sole authenticator for these unauthenticated-by-default write
-// routes, so cap requests per source IP: throttles key brute-forcing and abuse of a
-// leaked key (SECURITY-REVIEW.md 2.4). Generous enough for legitimate Zapier bursts.
-const ZAPIER_RATE_LIMIT = 120;
-const ZAPIER_RATE_WINDOW_MS = 60 * 1000;
+const ctrl = new EventsController();
 
-const upsertPersonSchema = z.object({
-  email: z.string().email('Valid email required for person matching').max(255),
-  first_name: z.string().trim().max(100).optional(),
-  last_name: z.string().trim().max(100).optional(),
-  mobile: z.string().trim().max(30).optional(),
-  home_phone: z.string().trim().max(30).optional(),
-  notes: z.string().trim().max(10000).optional(),
-  linkedin: z.string().trim().max(255).optional(),
-  twitter: z.string().trim().max(255).optional(),
-  facebook: z.string().trim().max(255).optional(),
-  instagram: z.string().trim().max(255).optional(),
-});
-
-const tagActionSchema = z.object({
-  email: z.string().email('Valid email required to identify the person').max(255),
-  tag_name: z.string().trim().min(1, 'Tag name cannot be empty').max(50),
-});
-
-async function resolveAuth(tenantId: string, db: any): Promise<IAuthKeyPayload | null> {
-  const owner = await db
-    .selectFrom('authusers')
-    .select(['id', 'first_name', 'last_name', 'role'])
-    .where('tenant_id', '=', tenantId)
-    .where('role', 'in', ['owner', 'admin'])
-    .orderBy('id', 'asc')
-    .limit(1)
-    .executeTakeFirst();
-
-  if (!owner) return null;
-
-  const name = [owner.first_name, owner.last_name].filter(Boolean).join(' ') || 'Zapier';
-
-  return {
-    user_id: String(owner.id),
-    tenant_id: tenantId,
-    session_id: 'zapier',
-    name,
-    role: owner.role ?? 'admin',
-    source: 'api',
-  } as IAuthKeyPayload;
+function getStatusFromError(err: unknown): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      default:
+        return 500;
+    }
+  }
+  const statusCode = (err as { statusCode?: unknown })?.statusCode;
+  return typeof statusCode === 'number' ? statusCode : 500;
 }
 
-async function extractTenantId(req: any): Promise<string | null> {
-  const authHeader = req.headers['authorization'] as string | undefined;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  const apiKey = authHeader.slice(7).trim();
-  if (!apiKey) return null;
-  return zapierService.lookupTenantByApiKey(apiKey);
-}
-
-const zapierInboundRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  // Rate-limit every inbound Zapier route by source IP before the handler runs.
-  fastify.addHook('onRequest', async (req, reply) => {
+/**
+ * JSON API behind the public /e/:slug SPA page (registered outside the app shell, like /f/:slug).
+ * The tenant is identified by its subdomain — the `?t=` param the SPA passes, or the Host header —
+ * and every event lookup is tenant-scoped. The server-rendered HTML pages this file used to carry
+ * are gone; the SPA owns presentation.
+ */
+const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Event config for the SPA page: event details + tickets + live capacity.
+  fastify.get('/e/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
     try {
-      checkRateLimit(`zapier:${req.ip}`, ZAPIER_RATE_LIMIT, ZAPIER_RATE_WINDOW_MS);
-    } catch (err) {
-      if (err instanceof TooManyRequestsError) {
-        return reply.code(429).send({ error: err.message });
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
       }
-      throw err;
+      const result = await ctrl.getPublicEventConfig(tenant.id, String(slug));
+      return reply.status(200).send(result);
+    } catch (err) {
+      const status = getStatusFromError(err);
+      // Never leak internal detail on a public endpoint; NOT_FOUND is the only expected miss.
+      if (status >= 500) fastify.log.error(err, 'Failed to load public event');
+      return reply.status(status === 404 ? 404 : status).send({ error: 'Event not found.' });
     }
   });
 
-  fastify.post('/persons/upsert', async (req, reply) => {
-    const tenantId = await extractTenantId(req);
-    if (!tenantId) {
-      return reply.code(401).send({ error: 'Invalid or missing API key' });
-    }
-
-    const parsed = upsertPersonSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
-    }
-
-    const { email, ...fields } = parsed.data;
+  // RSVP submission from the SPA page (JSON body).
+  fastify.post('/rsvp/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
 
     try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
-      const auth = await resolveAuth(tenantId, db);
-      if (!auth) {
-        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
       }
-
-      const existing = await db
-        .selectFrom('persons')
-        .select(['id', 'email'])
-        .where('tenant_id', '=', tenantId)
-        .where('email', 'ilike', email.trim())
-        .executeTakeFirst();
-
-      if (existing) {
-        const result = await personsService.updatePerson(String(existing.id), { email, ...fields } as any, auth);
-        return reply.code(200).send({ action: 'updated', person: result });
-      } else {
-        const result = await personsService.addPerson({ email, ...fields } as any, auth);
-        return reply.code(201).send({ action: 'created', person: result });
-      }
+      await ctrl.rsvpPublic(tenant.id, String(slug), req.body || {}, clientIp);
+      return reply.status(200).send({ success: true });
     } catch (err) {
-      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/upsert error');
-      return reply.code(500).send({ error: 'Failed to upsert person' });
-    }
-  });
-
-  fastify.post('/persons/tag', async (req, reply) => {
-    const tenantId = await extractTenantId(req);
-    if (!tenantId) {
-      return reply.code(401).send({ error: 'Invalid or missing API key' });
-    }
-
-    const parsed = tagActionSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
-    }
-
-    const { email, tag_name } = parsed.data;
-
-    try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
-      const auth = await resolveAuth(tenantId, db);
-      if (!auth) {
-        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
-      }
-
-      const person = await db
-        .selectFrom('persons')
-        .select(['id'])
-        .where('tenant_id', '=', tenantId)
-        .where('email', 'ilike', email.trim())
-        .executeTakeFirst();
-
-      if (!person) {
-        return reply.code(404).send({ error: 'No person found with that email' });
-      }
-
-      await personsService.attachTag(String(person.id), tag_name, 'tag', auth);
-      return reply.code(200).send({ success: true });
-    } catch (err) {
-      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/tag error');
-      return reply.code(500).send({ error: 'Failed to add tag' });
-    }
-  });
-
-  fastify.post('/persons/untag', async (req, reply) => {
-    const tenantId = await extractTenantId(req);
-    if (!tenantId) {
-      return reply.code(401).send({ error: 'Invalid or missing API key' });
-    }
-
-    const parsed = tagActionSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid input' });
-    }
-
-    const { email, tag_name } = parsed.data;
-
-    try {
-      const db =
-        (personsService as any).personsRepo?.db ?? (await import('../../lib/base.repo')).BaseRepository.dbInstance;
-      const auth = await resolveAuth(tenantId, db);
-      if (!auth) {
-        return reply.code(500).send({ error: 'Tenant has no admin user configured' });
-      }
-
-      const person = await db
-        .selectFrom('persons')
-        .select(['id'])
-        .where('tenant_id', '=', tenantId)
-        .where('email', 'ilike', email.trim())
-        .executeTakeFirst();
-
-      if (!person) {
-        return reply.code(404).send({ error: 'No person found with that email' });
-      }
-
-      await personsService.detachTag({
-        tenant_id: tenantId,
-        person_id: String(person.id),
-        name: tag_name,
-        type: 'tag',
-        user_id: auth.user_id,
-        source: auth.source,
-      });
-
-      return reply.code(200).send({ success: true });
-    } catch (err) {
-      logger.error({ err: err instanceof Error ? err.message : String(err) }, '[Zapier Inbound] /persons/untag error');
-      return reply.code(500).send({ error: 'Failed to remove tag' });
+      fastify.log.error(err);
+      const status = getStatusFromError(err);
+      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
+      const message =
+        status < 500 && err instanceof Error && err.message ? err.message : 'An unexpected error occurred.';
+      return reply.status(status).send({ error: message });
     }
   });
 
   done();
 };
 
-export default zapierInboundRoute;
+export default eventsPublicRoute;
 ```
 
-## File: apps/backend/src/app/modules/zapier/zapier.service.ts
+## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
 
 ```typescript
-import crypto from 'crypto';
-import { BaseRepository } from '../../lib/base.repo';
-import { hashToken } from '../../lib/token-hash';
-import { logger } from '../../logger';
+import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
 
-export type ZapierEventType =
-  | 'person_created'
-  | 'person_updated'
-  | 'person_deleted'
-  | 'person_tag_added'
-  | 'person_tag_removed';
-
-function pickPersonFields(p: Record<string, unknown>): Record<string, unknown> {
-  if (!p) return {};
-  return {
-    id: p['id'] ? String(p['id']) : null,
-    first_name: p['first_name'] ?? null,
-    last_name: p['last_name'] ?? null,
-    email: p['email'] ?? null,
-    email2: p['email2'] ?? null,
-    mobile: p['mobile'] ?? null,
-    home_phone: p['home_phone'] ?? null,
-    linkedin: p['linkedin'] ?? null,
-    twitter: p['twitter'] ?? null,
-    facebook: p['facebook'] ?? null,
-    instagram: p['instagram'] ?? null,
-    notes: p['notes'] ?? null,
-    created_at: p['created_at'] ?? null,
-    updated_at: p['updated_at'] ?? null,
-  };
-}
-
-export { pickPersonFields };
-
-export async function queueZapierTrigger(
-  db: any,
-  tenant_id: string,
-  event_type: ZapierEventType,
-  data: Record<string, unknown>,
-): Promise<void> {
-  const sub = await db
-    .selectFrom('zapier_subscriptions')
-    .select('id')
-    .where('tenant_id', '=', tenant_id)
-    .where('event_type', '=', event_type)
-    .executeTakeFirst();
-
-  if (!sub) return;
-
-  await db
-    .insertInto('background_jobs')
-    .values({
-      tenant_id,
-      queue: 'default',
-      status: 'pending',
-      payload: JSON.stringify({ type: 'zapier_trigger', tenant_id, event_type, data }),
-      run_at: new Date(),
-      max_attempts: 5,
-    })
-    .execute();
-}
-
-export class ZapierService {
-  private get db() {
-    return BaseRepository.dbInstance;
-  }
-
-  /** Whether the tenant has a Zapier API key configured. The key itself is never
-   * returned after creation — only its hash is stored (SECURITY-REVIEW.md 2.4). */
-  async getApiKeyStatus(tenant_id: string): Promise<{ configured: boolean }> {
-    const row = await this.db
-      .selectFrom('settings')
-      .select('tenant_id')
-      .where('tenant_id', '=', tenant_id)
-      .where('key', '=', 'zapier.api_key')
-      .executeTakeFirst();
-    return { configured: !!row };
-  }
-
-  /** Generate a new key, persist ONLY its hash, and return the plaintext once so the
-   * caller can show it to the user. Any previous key is invalidated. */
-  async regenerateApiKey(tenant_id: string): Promise<string> {
-    const key = 'zap_' + crypto.randomBytes(32).toString('hex');
-    const hashed = JSON.stringify(hashToken(key));
-    await this.db
-      .insertInto('settings')
-      .values({ tenant_id, key: 'zapier.api_key', value: hashed })
-      .onConflict((oc) => oc.columns(['tenant_id', 'key']).doUpdateSet({ value: hashed, updated_at: new Date() }))
-      .execute();
-    return key;
-  }
-
-  async getSubscriptions(tenant_id: string) {
-    return this.db
-      .selectFrom('zapier_subscriptions')
-      .select(['id', 'event_type', 'webhook_url', 'created_at', 'updated_at'])
-      .where('tenant_id', '=', tenant_id)
-      .execute();
-  }
-
-  async subscribe(tenant_id: string, event_type: ZapierEventType, webhook_url: string): Promise<void> {
-    await this.db
-      .insertInto('zapier_subscriptions')
-      .values({ tenant_id, event_type, webhook_url })
-      .onConflict((oc) => oc.columns(['tenant_id', 'event_type']).doUpdateSet({ webhook_url, updated_at: new Date() }))
-      .execute();
-  }
-
-  async unsubscribe(tenant_id: string, event_type: ZapierEventType): Promise<void> {
-    await this.db
-      .deleteFrom('zapier_subscriptions')
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', '=', event_type)
-      .execute();
-  }
-
-  async fireTrigger(tenant_id: string, event_type: ZapierEventType, data: Record<string, unknown>): Promise<void> {
-    const subs = await this.db
-      .selectFrom('zapier_subscriptions')
-      .select('webhook_url')
-      .where('tenant_id', '=', tenant_id)
-      .where('event_type', '=', event_type)
-      .execute();
-
-    for (const sub of subs) {
-      try {
-        const response = await fetch(sub.webhook_url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!response.ok) {
-          logger.error(`[ZapierTrigger] POST to ${sub.webhook_url} failed with status ${response.status}`);
-        }
-      } catch (err: unknown) {
-        logger.error(
-          `[ZapierTrigger] POST to ${sub.webhook_url} error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-  }
-
-  async lookupTenantByApiKey(apiKey: string): Promise<string | null> {
-    // Compare against the stored hash, never the plaintext (SECURITY-REVIEW.md 2.4).
-    // NOTE: unscoped by design — resolving which tenant owns this API key; cross-tenant by design
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const row = await this.db
-      .selectFrom('settings')
-      .select('tenant_id')
-      .where('key', '=', 'zapier.api_key')
-      .where('value', '=', JSON.stringify(hashToken(apiKey)))
-      .executeTakeFirst();
-
-    return row ? String(row.tenant_id) : null;
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/donations/routes/donations-webhook.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import Stripe from 'stripe';
-import { env } from '../../../../env';
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
 import { BaseRepository } from '../../../lib/base.repo';
-import { hashToken } from '../../../lib/token-hash';
-import { logger } from '../../../logger';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
 
-const donationsWebhookRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.post('/webhook', async (req, reply) => {
-    const query = req.query as { token?: string };
-    const token = query.token;
-    if (!token) {
-      logger.error('Webhook error: Missing token query parameter');
-      return reply.code(400).send({ error: 'Missing token parameter' });
+export class PersonsRepo extends BaseRepository<'persons'> {
+  constructor() {
+    super('persons');
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()`,
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+
+  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
+    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
+    if (!ids.length) return [];
+
+    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
+
+    let query = this.getSelect(trx)
+      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
+      .where('persons.tenant_id', '=', input.tenant_id)
+      .where('persons.id', 'in', ids);
+
+    if (tags.length > 0) {
+      query = query
+        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .where(sql`LOWER(tags.name)`, 'in', tags)
+        .distinct();
     }
 
-    let tenantId = 'unknown';
-    try {
-      // Resolve the tenant by the HASH of the token, never the plaintext (SECURITY-REVIEW.md 2.4).
-      // Cross-tenant by design — this decides which tenant owns the token.
-      // eslint-disable-next-line local/no-unscoped-db-query
-      const tokenRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('tenant_id')
-        .where('key', '=', 'donations.webhook_token')
-        .where('value', '=', JSON.stringify(hashToken(token)))
-        .executeTakeFirst();
+    const rows = await query.execute();
+    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
+    for (const row of rows) {
+      const id = row.id != null ? String(row.id) : '';
+      if (!id || map.has(id)) continue;
+      map.set(id, {
+        id,
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? null,
+      });
+    }
+    return Array.from(map.values());
+  }
 
-      if (!tokenRow) {
-        // Do not log the token value — it's a secret. The tenant is unknown at this point.
-        logger.error('Webhook error: Invalid webhook token');
-        return reply.code(400).send({ error: 'Invalid webhook token' });
+  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
+    const row = await this.getSelect()
+      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('createdby_id', '=', input.user_id)
+      .executeTakeFirst();
+
+    return {
+      total: Number(row?.total ?? 0),
+      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
+    };
+  }
+
+  public async moveToNewHousehold(input: {
+    tenant_id: string;
+    person_id: string;
+    user_id: string;
+    campaign_id: string;
+  }) {
+    const households = new HouseholdRepo();
+    return this.transaction().execute(async (trx) => {
+      // Reuse existing blank household if available
+      const existingBlank = await households.getBlankHousehold(
+        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
+        trx,
+      );
+      let targetId = existingBlank?.id as string | undefined;
+
+      if (!targetId) {
+        const newHousehold = await households.add(
+          {
+            row: {
+              tenant_id: input.tenant_id,
+              campaign_id: input.campaign_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            } as OperationDataType<'households', 'insert'>,
+          },
+          trx,
+        );
+        targetId = newHousehold?.id as string | undefined;
       }
 
-      tenantId = String(tokenRow.tenant_id);
+      await this.update(
+        {
+          tenant_id: input.tenant_id,
+          id: input.person_id,
+          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
+        },
+        trx,
+      );
 
-      const signature = (req.headers['stripe-signature'] as string) || '';
-      const payload = req.body as string; // Raw string thanks to ContentTypeParser setup
+      return { household_id: targetId };
+    });
+  }
 
-      // 1. Look up settings for this tenant ID in Kysely
-      const secretRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('value')
-        .where('tenant_id', '=', tenantId)
-        .where('key', '=', 'donations.stripe_webhook_secret')
-        .executeTakeFirst();
+  public async getAllWithAddress(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
+      tags?: string[];
+      issues?: string[];
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
 
-      const webhookSecret = secretRow?.value as string | undefined;
+    // Shared where clause builder
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
+        .leftJoin('households', 'persons.household_id', 'households.id')
+        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .leftJoin('companies', 'persons.company_id', 'companies.id')
+        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
+        .where('households.tenant_id', '=', tenantId)
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('persons.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('list_id', '=', options.listId ?? '')
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
+          return qb.where(
+            sql<boolean>`(
+            persons.first_name ILIKE ${text} OR
+            persons.last_name ILIKE ${text} OR
+            persons.email ILIKE ${text} OR
+            persons.mobile ILIKE ${text} OR
+            households.city ILIKE ${text} OR
+            households.street1 ILIKE ${text} OR
+            companies.name ILIKE ${text} OR
+            tags.name ILIKE ${text}
+          )`,
+          );
+        });
 
-      const keyRow = await BaseRepository.dbInstance
-        .selectFrom('settings')
-        .select('value')
-        .where('tenant_id', '=', tenantId)
-        .where('key', '=', 'donations.stripe_secret_key')
-        .executeTakeFirst();
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
+          ]),
+        );
+      } else if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      } else if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
+      }
+      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
 
-      const stripeKey = (keyRow?.value as string | undefined) || env.stripeSecretKey;
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        first_name: { col: 'persons.first_name' },
+        last_name: { col: 'persons.last_name' },
+        email: { col: 'persons.email' },
+        mobile: { col: 'persons.mobile' },
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        tag: { col: 'tags.name' },
+        tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
+        company_name: { col: 'companies.name' },
+      };
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
 
-      // Mock mode (unsigned payload parsing) requires an EXPLICIT opt-in (ALLOW_MOCK_PAYMENTS=true),
-      // never merely "not production" — an unset NODE_ENV must not fail open and accept an
-      // unauthenticated webhook body an attacker could forge (SECURITY-REVIEW 4.2).
-      const isMock = env.allowMockPayments && (!stripeKey || stripeKey.includes('MockKey') || stripeKey === '');
+      return q;
+    };
 
-      let event: Stripe.Event;
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
+      .execute();
 
-      if (isMock) {
-        // Direct parse in mock/local dev mode
-        event = JSON.parse(payload);
-      } else {
-        if (!stripeKey || stripeKey.includes('MockKey')) {
-          throw new Error('Tenant donations stripe secret key not configured.');
-        }
-        if (!webhookSecret) {
-          throw new Error('Tenant donations stripe webhook secret not configured.');
-        }
-        const stripe = new Stripe(stripeKey);
-        event = stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
+      .select((eb) => [
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'companies.name as company_name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('household_is_placeholder'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+      ])
+      .groupBy([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'persons.created_at',
+        'persons.updated_at',
+        'persons.tenant_id',
+        'persons.createdby_id',
+        'persons.updatedby_id',
+        'companies.name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        'tenants.placeholder_household_id',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const personsCols = [
+              'id',
+              'first_name',
+              'last_name',
+              'email',
+              'mobile',
+              'notes',
+              'household_id',
+              'company_id',
+              'created_at',
+              'updated_at',
+              'tenant_id',
+              'createdby_id',
+              'updatedby_id',
+            ];
+            if (personsCols.includes(col)) {
+              col = `persons.${col}`;
+            } else {
+              const hhCols = [
+                'country',
+                'zip',
+                'state',
+                'home_phone',
+                'city',
+                'street1',
+                'street2',
+                'street_num',
+                'apt',
+              ];
+              if (hhCols.includes(col)) {
+                col = `households.${col}`;
+              } else if (col === 'company_name') {
+                col = `companies.name`;
+              } else if (col === 'address') {
+                col = `households.street1`;
+              }
+            }
+          }
+          return acc.orderBy(col, sort.sort);
+        }, qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
+      )
+      .execute();
+
+    return { count, rows };
+  }
+
+  public getByHouseholdId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('household_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  public getByCompanyId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
+  /** People linked to any company — powers the Companies grain sentence ("{n} people in {m} companies"). */
+  public async countWithCompany(input: { tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', 'is not', null)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
+    return this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
+    let q = this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.id', '=', input.id)
+      .where('persons.tenant_id', '=', input.tenant_id);
+    if (input.type) {
+      q = q.where('tags.type', '=', input.type);
+    }
+    return q.select('tags.name').execute();
+  }
+  public async findByEmail(input: { tenant_id: string; email: string }) {
+    return this.getSelect()
+      .select(['id', 'email'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
+      .executeTakeFirst();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: unknown[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.home_phone',
+        'persons.notes',
+        'persons.company_id',
+        'persons.household_id',
+        'persons.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          persons: [],
+        });
+      }
+      groupsMap.get(groupKey)?.persons.push({
+        ...row,
+        id: String(row.id),
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source person not found');
       }
 
-      logger.info(`[DonationsWebhook] Persisting webhook event: ${event.id} (${event.type}) for Tenant: ${tenantId}`);
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, unknown> = {};
+      const fields = [
+        'first_name',
+        'middle_names',
+        'last_name',
+        'email',
+        'email2',
+        'mobile',
+        'home_phone',
+        'notes',
+        'company_id',
+        'file_id',
+      ] as const;
 
-      // 2. Persist webhook event for background worker processing
-      await BaseRepository.dbInstance
-        .insertInto('webhook_events')
-        .values({
-          tenant_id: tenantId,
-          stripe_event_id: event.id,
-          type: event.type,
-          payload: JSON.stringify(event),
-          status: 'pending',
-        })
-        .onConflict((oc: any) => oc.column('stripe_event_id').doNothing())
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_peoples_tags)
+      const targetTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select(['tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
         .execute();
 
-      return reply.code(200).send({ received: true });
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx
+            .insertInto('map_peoples_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_peoples_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_persons)
+      const targetLists = await trx
+        .selectFrom('map_lists_persons')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx
+        .selectFrom('map_lists_persons')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx
+            .insertInto('map_lists_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              list_id: sl.list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_lists_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 4. Transfer teams (map_teams_persons)
+      const targetTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select('team_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
+
+      const sourceTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select(['team_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTeams) {
+        if (!targetTeamIds.has(String(st.team_id))) {
+          await trx
+            .insertInto('map_teams_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              team_id: st.team_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_teams_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 5. Reassign captaincy if source was captain of any team
+      await trx
+        .updateTable('teams')
+        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('team_captain_id', '=', input.source_id)
+        .execute();
+      // 6. Delete source person
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      // 7. Clean up empty household if source's household is now empty
+      const sourceHhId = source.household_id;
+      if (sourceHhId && sourceHhId !== target.household_id) {
+        const remainingHhMembers = await trx
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', '=', sourceHhId)
+          .execute();
+        if (remainingHhMembers.length === 0) {
+          // Clean up orphaned household associations before deletion
+          await trx
+            .deleteFrom('map_households_tags')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('map_lists_households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', sourceHhId)
+            .execute();
+        }
+      }
+
+      return { success: true };
+    });
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/persons/services/persons.service.ts
+
+```typescript
+import { env } from '../../../../env';
+import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
+import { slugifyRecordName } from '../../../../../../../libs/common/src';
+import { TRPCError } from '@trpc/server';
+
+import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
+import { backfillMissingSlugs, uniqueSlug } from '../../../lib/slug';
+import { notificationEnabled } from '../../../lib/profile-preferences';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
+import { SettingsController } from '../../settings/controller';
+import { TagsRepo } from '../../tags/repositories/tags.repo';
+import { MapPersonsTagRepo } from '../repositories/map-persons-tags.repo';
+import { PersonsRepo } from '../repositories/persons.repo';
+import { CompaniesRepo } from '../../companies/repositories/companies.repo';
+import { MapTeamsPersonsRepo } from '../../teams/repositories/map-teams-persons.repo';
+import { TeamsRepo } from '../../teams/repositories/teams.repo';
+import type { OperationDataType } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { ImportsRepo } from '../../imports/repositories/imports.repo';
+import { UserActivityRepo } from '../../../lib/user-activity.repo';
+import { StorageService } from '../../../lib/storage.service';
+import { WorkflowsController } from '../../workflows/controller';
+import { TransactionalEmailService } from '../../../lib/mail/transactional-mail.service';
+import { queueZapierTrigger, pickPersonFields } from '../../zapier/zapier.service';
+import { logger } from '../../../logger';
+
+export class PersonsService {
+  private mapPersonsTagRepo = new MapPersonsTagRepo();
+  private settingsController = new SettingsController();
+  private tagsRepo = new TagsRepo();
+  private mapTeamsPersonsRepo = new MapTeamsPersonsRepo();
+  private teamsRepo = new TeamsRepo();
+  private importsRepo = new ImportsRepo();
+  private personsRepo = new PersonsRepo();
+  private userActivity = new UserActivityRepo();
+  private storageService = new StorageService();
+  private householdRepo = new HouseholdRepo();
+  private companiesRepo = new CompaniesRepo();
+
+  public async addPerson(payload: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant
+    const emailToCheck = payload.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
+
+    const campaign_id = await this.settingsController.getCurrentCampaignId(auth);
+    const households = new HouseholdRepo();
+
+    let household_id = payload.household_id as string | undefined;
+    if (!household_id) {
+      const existingBlank = await households.getBlankHousehold({
+        tenant_id: auth.tenant_id,
+        campaign_id: String(campaign_id),
+      });
+      if (existingBlank?.id) {
+        household_id = String(existingBlank.id);
+      } else {
+        const created = await households.add({
+          row: {
+            tenant_id: auth.tenant_id,
+            campaign_id: String(campaign_id),
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          } as OperationDataType<'households', 'insert'>,
+        });
+        household_id = String(created?.id);
+      }
+    }
+
+    // Record slug for /people/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
+    const slug = await uniqueSlug(
+      slugifyRecordName(`${payload.first_name ?? ''} ${payload.last_name ?? ''}`, 'person'),
+      (candidate) => this.personsRepo.slugExists(auth.tenant_id, candidate),
+    );
+
+    const row = {
+      ...payload,
+      slug,
+      household_id,
+      campaign_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+
+    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    if (result && typeof result === 'object') {
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(auth.tenant_id, this.personsRepo.db);
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger usage check in addPerson');
+      }
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerWorkflow(
+          auth.tenant_id,
+          String((result as Record<string, unknown>)['id']),
+          'contact_created',
+          null,
+        );
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger contact_created workflow in add');
+      }
+
+      if (payload.assigned_to) {
+        try {
+          const assignee = await this.personsRepo.db
+            .selectFrom('authusers')
+            .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+            .where('authusers.id', '=', String(payload.assigned_to))
+            .executeTakeFirst();
+          if (assignee && assignee.email) {
+            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
+              const createdPerson = result as Record<string, unknown>;
+              const personName =
+                `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
+              const link = `${env.appUrl}/persons/${createdPerson['id']}`;
+              const mailService = new TransactionalEmailService();
+              await mailService.sendMail({
+                to: assignee.email,
+                subject: `Contact Assigned to You: ${personName}`,
+                text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${createdPerson['email'] || 'None'}\nPhone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${createdPerson['email'] || 'None'}<br>Phone: ${createdPerson['mobile'] || createdPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+              });
+            }
+          }
+        } catch (mailErr) {
+          logger.error({ err: mailErr }, 'Failed to send contact assignment email in addPerson');
+        }
+      }
+    }
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'create',
+        entity: 'persons',
+        entity_id: result?.id ? String(result.id) : null,
+        quantity: 1,
+        metadata: {
+          id: result?.id,
+          entity_label: `${result?.first_name || ''} ${result?.last_name || ''}`.trim() || 'Person',
+          ...(auth.source ? { source: auth.source } : {}),
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log create person activity');
+    }
+    try {
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_created',
+        pickPersonFields(result as Record<string, unknown>),
+      );
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_created trigger');
+    }
+    return result;
+  }
+
+  public async updatePerson(id: string, data: UpdatePersonsType, auth: IAuthKeyPayload) {
+    // Enforce email uniqueness within the tenant (excluding the person being updated)
+    const emailToCheck = data.email?.trim();
+    if (emailToCheck) {
+      const existing = await this.personsRepo.findByEmail({ tenant_id: auth.tenant_id, email: emailToCheck });
+      if (existing && String(existing.id) !== String(id)) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `A person with the email "${emailToCheck}" already exists.`,
+        });
+      }
+    }
+
+    let original: Record<string, unknown> | null = null;
+    try {
+      original = ((await this.personsRepo.getOneBy('id', { value: id, tenant_id: auth.tenant_id })) ?? null) as Record<
+        string,
+        unknown
+      > | null;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      logger.error({ err: message }, `Donations Webhook error for Tenant ${tenantId}`);
-      return reply.code(400).send({ error: message });
+      logger.error({ err }, 'Failed to fetch original person record for activity log');
+    }
+    const result = await this.personsRepo.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: {
+        ...data,
+        updatedby_id: auth.user_id,
+      } as OperationDataType<'persons', 'update'>,
+    });
+    if (result && typeof result === 'object') {
+      const updatedPerson = result as Record<string, unknown>;
+      if (data.assigned_to !== undefined && original && String(data.assigned_to) !== String(original['assigned_to'])) {
+        const newAssigneeId = data.assigned_to;
+        if (newAssigneeId) {
+          try {
+            const assignee = await this.personsRepo.db
+              .selectFrom('authusers')
+              .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
+              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
+              // String conversion ensures precision is maintained down to the database driver level
+              .where('authusers.id', '=', String(newAssigneeId))
+              .executeTakeFirst();
+
+            if (assignee && assignee.email) {
+              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
+                const personName =
+                  `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
+                  'unnamed contact';
+                const link = `${env.appUrl}/persons/${updatedPerson['id']}`;
+                const mailService = new TransactionalEmailService();
+                await mailService.sendMail({
+                  to: assignee.email,
+                  subject: `Contact Assigned to You: ${personName}`,
+                  text: `Hi ${assignee.first_name},\n\nYou have been assigned ownership of the contact: ${personName} by ${auth.name}.\n\nContact Details:\nEmail: ${updatedPerson['email'] || 'None'}\nPhone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}\n\nView details: ${link}`,
+                  html: `<p>Hi ${assignee.first_name},</p><p>You have been assigned ownership of the contact: <strong>${personName}</strong> by ${auth.name}.</p><p><strong>Contact Details:</strong><br>Email: ${updatedPerson['email'] || 'None'}<br>Phone: ${updatedPerson['mobile'] || updatedPerson['home_phone'] || 'None'}</p><p><a href="${link}">View Contact Card</a></p>`,
+                });
+              }
+            }
+          } catch (mailErr) {
+            logger.error({ err: mailErr }, 'Failed to send contact assignment email in updatePerson');
+          }
+        }
+      }
+    }
+    try {
+      const changes: Record<string, unknown> = {};
+      const resultObj = result && typeof result === 'object' ? (result as Record<string, unknown>) : null;
+      if (original && resultObj) {
+        const skipKeys = ['id', 'tenant_id', 'createdby_id', 'updatedby_id', 'created_at', 'updated_at'];
+        for (const key of Object.keys(data)) {
+          if (skipKeys.includes(key)) continue;
+          const oldVal = (original as Record<string, unknown>)[key];
+          const newVal = resultObj[key];
+          if (oldVal !== newVal) {
+            changes[key] = { from: oldVal ?? null, to: newVal ?? null };
+          }
+        }
+      }
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: id ? String(id) : null,
+        quantity: 1,
+        metadata: {
+          id,
+          entity_label: resultObj
+            ? `${resultObj['first_name'] || ''} ${resultObj['last_name'] || ''}`.trim() || 'Person'
+            : 'Person',
+          changes,
+          ...(auth.source ? { source: auth.source } : {}),
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log update person activity');
+    }
+    try {
+      await queueZapierTrigger(
+        this.personsRepo.db,
+        auth.tenant_id,
+        'person_updated',
+        pickPersonFields(result as Record<string, unknown>),
+      );
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_updated trigger');
+    }
+    return result;
+  }
+
+  private stripHtmlAndTruncate(html: string | null | undefined, limit = 160): string {
+    if (!html) return '';
+    const text = html
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (text.length <= limit) return text;
+    return text.substring(0, limit) + '...';
+  }
+
+  public async getPersonActivity(person_id: string, auth: IAuthKeyPayload) {
+    const person = (await this.personsRepo.getOneBy('id', { value: person_id, tenant_id: auth.tenant_id })) as Record<
+      string,
+      unknown
+    > | null;
+    if (!person) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Person not found',
+      });
+    }
+
+    const emails: string[] = [];
+    if (person['email']) emails.push((person['email'] as string).trim().toLowerCase());
+    if (person['email2']) emails.push((person['email2'] as string).trim().toLowerCase());
+
+    if (emails.length === 0) {
+      return {
+        emails: [],
+        newsletters: [],
+      };
+    }
+
+    const db = this.personsRepo.db;
+
+    // 1. Fetch email conversations (sent and received)
+    const conversations = await db
+      .selectFrom('emails')
+      .leftJoin('email_bodies', 'email_bodies.email_id', 'emails.id')
+      .selectAll('emails')
+      .select('email_bodies.body_html as body_html')
+      .where('emails.tenant_id', '=', auth.tenant_id)
+      // Recipient match goes through email_recipients — the source of truth.
+      // emails.to_email is a display-only cache holding a joined "a, b" string,
+      // so an exact IN match would miss multi-recipient emails (D-10).
+      .where((eb) =>
+        eb.or([
+          eb('emails.from_email', 'in', emails),
+          eb.exists(
+            eb
+              .selectFrom('email_recipients')
+              .select('email_recipients.id')
+              .whereRef('email_recipients.email_id', '=', 'emails.id')
+              .where('email_recipients.tenant_id', '=', auth.tenant_id)
+              .where((inner) => inner(inner.fn<string>('lower', ['email_recipients.email']), 'in', emails)),
+          ),
+        ]),
+      )
+      .orderBy('emails.created_at', 'desc')
+      .limit(50)
+      .execute();
+
+    // 2. Fetch newsletter events (received, opened, clicked links, etc.)
+    const newsletterEvents = await db
+      .selectFrom('newsletter_events')
+      .innerJoin('newsletters', 'newsletters.id', 'newsletter_events.newsletter_id')
+      .select([
+        'newsletter_events.id',
+        'newsletter_events.event_type',
+        'newsletter_events.timestamp',
+        'newsletter_events.url',
+        'newsletters.subject as newsletter_subject',
+        'newsletters.name as newsletter_name',
+      ])
+      .where('newsletter_events.tenant_id', '=', auth.tenant_id)
+      .where('newsletter_events.email', 'in', emails)
+      .orderBy('newsletter_events.timestamp', 'desc')
+      .limit(100)
+      .execute();
+
+    return {
+      emails: conversations.map((mail) => {
+        let snippet = '';
+        if (mail.body_html) {
+          snippet = this.stripHtmlAndTruncate(mail.body_html, 160);
+        }
+        if (!snippet && mail.preview && !/^(ms|google):/i.test(mail.preview)) {
+          snippet = mail.preview;
+        }
+        return {
+          ...mail,
+          preview: snippet,
+        };
+      }),
+      newsletters: newsletterEvents,
+    };
+  }
+
+  public async attachTag(person_id: string, name: string, type: 'tag' | 'issue' = 'tag', auth: IAuthKeyPayload) {
+    const randomHexColor = () =>
+      '#' +
+      Math.floor(Math.random() * 0xffffff)
+        .toString(16)
+        .padStart(6, '0');
+    const row = {
+      name,
+      color: randomHexColor(),
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      type,
+    };
+
+    const tag = await this.tagsRepo.addOrGet({
+      row: row as OperationDataType<'tags', 'insert'>,
+      onConflictColumn: 'name',
+    });
+
+    const result = await this.addToMap({
+      tag_id: tag?.id as string | undefined,
+      person_id,
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    });
+
+    if (result && tag?.id) {
+      try {
+        const workflowsController = new WorkflowsController();
+        await workflowsController.triggerTagAdded(auth.tenant_id, person_id, String(tag.id), name);
+      } catch (err) {
+        logger.error({ err }, 'Failed to trigger tag_added workflow');
+      }
+    }
+
+    try {
+      await this.userActivity.log({
+        tenant_id: auth.tenant_id,
+        user_id: auth.user_id,
+        activity: 'update',
+        entity: 'persons',
+        entity_id: person_id,
+        quantity: 1,
+        metadata: { id: person_id, action: `attach_${type}`, name, ...(auth.source ? { source: auth.source } : {}) },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log attach tag activity');
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, auth.tenant_id, 'person_tag_added', {
+        person_id,
+        tag_name: name,
+        tag_type: type,
+      });
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_added trigger');
+    }
+
+    return result;
+  }
+
+  public async detachTag(input: {
+    tenant_id: string;
+    person_id: string;
+    name: string;
+    type?: 'tag' | 'issue';
+    user_id?: string;
+    source?: string;
+  }) {
+    const tag = await this.tagsRepo.getIdByName({
+      tenant_id: input.tenant_id,
+      name: input.name,
+      type: input.type ?? 'tag',
+    });
+
+    if (tag?.id) {
+      await this.mapPersonsTagRepo.deleteMapping({
+        tenant_id: input.tenant_id,
+        person_id: input.person_id,
+        tag_id: tag.id,
+      });
+    }
+
+    try {
+      if (input.user_id) {
+        await this.userActivity.log({
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          activity: 'update',
+          entity: 'persons',
+          entity_id: input.person_id,
+          quantity: 1,
+          metadata: {
+            id: input.person_id,
+            action: `detach_${input.type ?? 'tag'}`,
+            name: input.name,
+            ...(input.source ? { source: input.source } : {}),
+          },
+        });
+      }
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log detach tag activity');
+    }
+    try {
+      await queueZapierTrigger(this.personsRepo.db, input.tenant_id, 'person_tag_removed', {
+        person_id: input.person_id,
+        tag_name: input.name,
+        tag_type: input.type ?? 'tag',
+      });
+    } catch (e) {
+      logger.error({ err: e }, '[Zapier] Failed to queue person_tag_removed trigger');
+    }
+
+    const isVolunteerTag = input.name.trim().toLowerCase() === 'volunteer';
+    if (!isVolunteerTag) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    const teams = await this.mapTeamsPersonsRepo.getTeamsForPerson({
+      tenant_id: input.tenant_id,
+      person_id: input.person_id,
+    });
+
+    if (!teams.length) {
+      return { removed_team_ids: [], removed_teams: [] };
+    }
+
+    await this.mapTeamsPersonsRepo.deleteByPerson({ tenant_id: input.tenant_id, person_id: input.person_id });
+
+    for (const team of teams) {
+      if (team.is_captain && team.team_id) {
+        await this.teamsRepo.clearCaptain({ tenant_id: input.tenant_id, team_id: team.team_id });
+      }
+    }
+
+    const removedTeams = teams
+      .filter((team) => team.team_id)
+      .map((team) => ({
+        id: team.team_id,
+        name: team.team_name ?? '',
+        was_captain: team.is_captain,
+      }));
+
+    return {
+      removed_team_ids: removedTeams.map((team) => team.id),
+      removed_teams: removedTeams,
+    };
+  }
+
+  public async importRows(
+    input: {
+      rows: Array<{
+        first_name?: string;
+        last_name?: string;
+        email?: string;
+        mobile?: string;
+        notes?: string;
+        home_phone?: string;
+        street_num?: string;
+        street1?: string;
+        street2?: string;
+        apt?: string;
+        city?: string;
+        state?: string;
+        zip?: string;
+        country?: string;
+      }>;
+      tags?: string[];
+      skipped?: number;
+      file_name?: string | null;
+    },
+    auth: IAuthKeyPayload,
+  ) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    const now = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const autoTag = `Imported-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+    const tags = [...(input.tags ?? []), autoTag].filter((t) => !!t && t.trim().length > 0);
+    const skippedFromClient = Math.max(0, Math.floor(input.skipped ?? 0));
+    const requestedFileName = (input.file_name ?? '').trim();
+    const baseFileName = requestedFileName || `${autoTag}.csv`;
+    const totalRows = input.rows.length + skippedFromClient;
+
+    let hasImportableRow = false;
+    for (const candidate of input.rows) {
+      const sanitized = this.sanitizeRow(candidate);
+      if (sanitized.first_name || sanitized.last_name || sanitized.email || sanitized.mobile || sanitized.notes) {
+        hasImportableRow = true;
+        break;
+      }
+    }
+
+    if (!hasImportableRow) {
+      const totalSkipped = skippedFromClient + input.rows.length;
+      const personsBefore = await this.personsRepo.count(auth.tenant_id);
+      return {
+        inserted: 0,
+        errors: 0,
+        skipped: totalSkipped,
+        tag: null,
+        file_name: requestedFileName || null,
+        import_id: null,
+        tenant_id: auth.tenant_id,
+        campaign_id,
+        persons_total_after: personsBefore,
+        persons_total_before: personsBefore,
+        status: 'completed',
+      };
+    }
+
+    const importRow = {
+      tenant_id: auth.tenant_id,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+      file_name: baseFileName,
+      source: 'persons',
+      tag_name: autoTag,
+      tag_id: null,
+      row_count: totalRows,
+      inserted_count: 0,
+      error_count: 0,
+      skipped_count: skippedFromClient,
+      households_created: 0,
+      status: 'pending',
+      metadata: null,
+      processed_at: now,
+    } as any;
+
+    const savedImport = await this.importsRepo.add({ row: importRow });
+    if (!savedImport || !savedImport.id) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to create data import record',
+      });
+    }
+
+    const importRecordId = String(savedImport.id);
+    const storageKey = `imports/payloads/${auth.tenant_id}/${importRecordId}.json`;
+
+    try {
+      const payloadBuffer = Buffer.from(JSON.stringify(input.rows), 'utf8');
+      await this.storageService.upload(storageKey, payloadBuffer, 'application/json');
+    } catch (err) {
+      logger.error({ err }, 'Failed to upload import payload to storage');
+      await this.importsRepo.delete({ tenant_id: auth.tenant_id, id: importRecordId });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Failed to store import payload on server storage',
+      });
+    }
+
+    await this.importsRepo.update({
+      tenant_id: auth.tenant_id,
+      id: importRecordId,
+      row: {
+        metadata: JSON.stringify({ storage_key: storageKey }),
+      } as any,
+    });
+
+    await this.importsRepo.db
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          import_id: importRecordId,
+          storage_key: storageKey,
+          tags,
+          skipped: skippedFromClient,
+          campaign_id,
+          tenant_id: auth.tenant_id,
+          user_id: auth.user_id,
+          file_name: baseFileName,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+
+    return {
+      inserted: 0,
+      errors: 0,
+      skipped: skippedFromClient,
+      tag: autoTag,
+      file_name: baseFileName,
+      import_id: importRecordId,
+      tenant_id: auth.tenant_id,
+      campaign_id,
+      status: 'pending',
+    };
+  }
+
+  public async processImportRows(
+    import_id: string,
+    tenant_id: string,
+    user_id: string,
+    campaign_id: string,
+    tags: string[],
+    skipped: number,
+    rows: Record<string, string>[],
+  ) {
+    const households = new HouseholdRepo();
+    const results: { inserted: number; errors: number; households_created: number; skipped: number } = {
+      inserted: 0,
+      errors: 0,
+      households_created: 0,
+      skipped: 0,
+    };
+    const importedPersonIds: string[] = [];
+
+    const errorMessages: string[] = [];
+    let cachedBlankHouseholdId: string | null = null;
+    let autoTagId: string | null = null;
+    const autoTag = tags.find((t) => t.startsWith('Imported-')) || tags[0];
+
+    const chunkSize = 100;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+
+      // 1. Sanitize and classify all valid rows in the chunk upfront
+      type ValidEntry = {
+        sanitized: {
+          first_name?: string;
+          last_name?: string;
+          email?: string;
+          mobile?: string;
+          notes?: string;
+          home_phone?: string;
+          street_num?: string;
+          street1?: string;
+          street2?: string;
+          apt?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+          country?: string;
+        };
+        isBlankAddress: boolean;
+        fp_street: string | null;
+        fp_full: string | null;
+      };
+      const validEntries: ValidEntry[] = [];
+      for (const raw of chunk) {
+        const sanitized = this.sanitizeRow(raw);
+        if (
+          !sanitized.first_name &&
+          !sanitized.last_name &&
+          !sanitized.email &&
+          !sanitized.mobile &&
+          !sanitized.notes
+        ) {
+          results.skipped += 1;
+          continue;
+        }
+        const isBlankAddress =
+          !sanitized.home_phone &&
+          !sanitized.street_num &&
+          !sanitized.street1 &&
+          !sanitized.street2 &&
+          !sanitized.apt &&
+          !sanitized.city &&
+          !sanitized.state &&
+          !sanitized.zip &&
+          !sanitized.country;
+        validEntries.push({
+          sanitized,
+          isBlankAddress,
+          fp_street: isBlankAddress
+            ? null
+            : fingerprintStreet({
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+              }),
+          fp_full: isBlankAddress
+            ? null
+            : fingerprintFull({
+                apt: sanitized.apt,
+                street_num: sanitized.street_num,
+                street1: sanitized.street1,
+                street2: sanitized.street2,
+                city: sanitized.city,
+                state: sanitized.state,
+                zip: sanitized.zip,
+                country: sanitized.country,
+              }),
+        });
+      }
+
+      if (validEntries.length === 0) {
+        await this.importsRepo.update({
+          tenant_id: tenant_id,
+          id: import_id,
+          row: {
+            tag_id: autoTagId,
+            inserted_count: results.inserted,
+            error_count: results.errors,
+            skipped_count: skipped + results.skipped,
+            households_created: results.households_created,
+            updatedby_id: user_id,
+            updated_at: new Date(),
+          } as any,
+        });
+        continue;
+      }
+
+      try {
+        const outcome = await this.personsRepo.transaction().execute(async (trx) => {
+          let localBlankHouseholdId = cachedBlankHouseholdId;
+          let localAutoTagId = autoTagId;
+          let householdsCreatedDelta = 0;
+
+          // 2a. Resolve blank household once for the whole chunk
+          if (validEntries.some((e) => e.isBlankAddress)) {
+            if (!localBlankHouseholdId) {
+              const existingBlank = await households.getBlankHousehold({ tenant_id, campaign_id }, trx);
+              if (existingBlank?.id) {
+                localBlankHouseholdId = String(existingBlank.id);
+              } else {
+                const created = await households.add(
+                  {
+                    row: {
+                      tenant_id,
+                      campaign_id,
+                      createdby_id: user_id,
+                      updatedby_id: user_id,
+                      file_id: import_id,
+                    } as OperationDataType<'households', 'insert'>,
+                  },
+                  trx,
+                );
+                localBlankHouseholdId = String(created?.id);
+                householdsCreatedDelta += 1;
+              }
+            }
+          }
+
+          // 2b. Batch-resolve addressed households with a single IN query
+          const fpCache = new Map<string, string>(); // fp_full -> household_id
+          const uniqueFps = [
+            ...new Set(validEntries.filter((e) => !e.isBlankAddress && e.fp_full).map((e) => e.fp_full as string)),
+          ];
+          if (uniqueFps.length > 0) {
+            const existingHouseholds = await trx
+              .selectFrom('households')
+              .select(['id', 'address_fp_full'])
+              .where('tenant_id', '=', tenant_id)
+              .where('campaign_id', '=', campaign_id)
+              .where('address_fp_full', 'in', uniqueFps)
+              .execute();
+            for (const h of existingHouseholds) {
+              if (h.address_fp_full) fpCache.set(h.address_fp_full, String(h.id));
+            }
+          }
+
+          // 2c. Create only missing households (deduplicated within this chunk)
+          for (const entry of validEntries) {
+            if (entry.isBlankAddress || !entry.fp_full) continue;
+            if (fpCache.has(entry.fp_full)) continue;
+            const { sanitized, fp_street, fp_full } = entry;
+            const hhRow = {
+              tenant_id,
+              campaign_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+              home_phone: sanitized.home_phone ?? null,
+              street_num: sanitized.street_num ?? null,
+              street1: sanitized.street1 ?? null,
+              street2: sanitized.street2 ?? null,
+              apt: sanitized.apt ?? null,
+              city: sanitized.city ?? null,
+              state: sanitized.state ?? null,
+              zip: sanitized.zip ?? null,
+              country: sanitized.country ?? null,
+              address_fp_street: fp_street,
+              address_fp_full: fp_full,
+              notes: null,
+              file_id: import_id,
+            } as OperationDataType<'households', 'insert'>;
+            const household = await households.add({ row: hhRow }, trx);
+            fpCache.set(fp_full, String(household?.id));
+            householdsCreatedDelta += 1;
+          }
+
+          // 3. Batch insert all persons in one statement
+          const personRows = validEntries.map(({ sanitized, isBlankAddress, fp_full }) => ({
+            tenant_id,
+            campaign_id,
+            createdby_id: user_id,
+            updatedby_id: user_id,
+            household_id: isBlankAddress ? (localBlankHouseholdId ?? '') : (fpCache.get(fp_full ?? '') ?? ''),
+            first_name: sanitized.first_name ?? null,
+            middle_names: null,
+            last_name: sanitized.last_name ?? null,
+            email: sanitized.email ?? null,
+            email2: null,
+            mobile: sanitized.mobile ?? null,
+            home_phone: null,
+            file_id: import_id,
+            notes: sanitized.notes ?? null,
+          }));
+          const insertedPersons = await trx
+            .insertInto('persons')
+            .values(personRows)
+            .onConflict((oc) => oc.doNothing())
+            .returningAll()
+            .execute();
+
+          // Count rows silently skipped due to duplicate email
+          const duplicatesSkipped = personRows.length - insertedPersons.length;
+          if (duplicatesSkipped > 0) results.skipped += duplicatesSkipped;
+
+          // 4. Upsert each unique tag name exactly once (not once per row)
+          const tagRecords: Array<{ name: string; id: string }> = [];
+          for (const name of tags) {
+            const row = {
+              name,
+              tenant_id,
+              createdby_id: user_id,
+              updatedby_id: user_id,
+            } as OperationDataType<'tags', 'insert'>;
+            const tag = await this.tagsRepo.addOrGet({ row, onConflictColumn: 'name' }, trx);
+            if (name === autoTag && tag?.id != null && !localAutoTagId) localAutoTagId = String(tag.id);
+            if (tag?.id) tagRecords.push({ name, id: String(tag.id) });
+          }
+
+          // 5. Batch insert all tag-person mappings in one statement
+          if (tagRecords.length > 0 && insertedPersons.length > 0) {
+            const tagMapRows = insertedPersons.flatMap((person) =>
+              tagRecords.map(({ id: tag_id }) => ({
+                tenant_id,
+                person_id: String(person.id),
+                tag_id: tag_id as unknown as string,
+                createdby_id: user_id,
+                updatedby_id: user_id,
+              })),
+            );
+            await (trx as any).insertInto('map_peoples_tags').values(tagMapRows).execute();
+          }
+
+          return {
+            insertedPersons,
+            tagRecords,
+            householdsCreatedDelta,
+            blankHouseholdId: localBlankHouseholdId,
+            autoTagId: localAutoTagId,
+          };
+        });
+
+        // 6. Trigger workflows outside the transaction (fire-and-forget per person)
+        const workflowsController = new WorkflowsController();
+        for (const person of outcome.insertedPersons) {
+          const personId = String(person.id);
+          importedPersonIds.push(personId);
+          try {
+            await workflowsController.triggerWorkflow(tenant_id, personId, 'contact_created', null);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in CSV import');
+          }
+          for (const { name, id: tagId } of outcome.tagRecords) {
+            try {
+              await workflowsController.triggerTagAdded(tenant_id, personId, tagId, name);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in CSV import');
+            }
+          }
+        }
+
+        results.inserted += outcome.insertedPersons.length;
+        results.households_created += outcome.householdsCreatedDelta;
+        if (outcome.blankHouseholdId) cachedBlankHouseholdId = outcome.blankHouseholdId;
+        if (!autoTagId && outcome.autoTagId) autoTagId = outcome.autoTagId;
+      } catch (err: unknown) {
+        // If the chunk transaction fails, count all valid rows in the chunk as errors
+        results.errors += validEntries.length;
+        const message = err instanceof Error ? err.message : String(err);
+        errorMessages.push(message);
+        logger.error({ err, message }, 'Import chunk failed');
+      }
+
+      // Update intermediate counts after each chunk
+      await this.importsRepo.update({
+        tenant_id: tenant_id,
+        id: import_id,
+        row: {
+          tag_id: autoTagId,
+          inserted_count: results.inserted,
+          error_count: results.errors,
+          skipped_count: skipped + results.skipped,
+          households_created: results.households_created,
+          updatedby_id: user_id,
+          updated_at: new Date(),
+        } as any,
+      });
+    }
+
+    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    try {
+      await backfillMissingSlugs(this.personsRepo.db, 'persons', tenant_id);
+      await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
+    } catch (err) {
+      logger.error({ err }, 'Failed to backfill record slugs after import');
+    }
+
+    // Log the user activity
+    try {
+      await this.userActivity.log({
+        tenant_id,
+        user_id,
+        activity: 'import',
+        entity: 'persons',
+        quantity: results.inserted,
+        metadata: {
+          rows_received: rows.length,
+          tags_applied: tags.slice(0, 10),
+          auto_tag: autoTag,
+          households_created: results.households_created,
+          errors: results.errors,
+          skipped: skipped + results.skipped,
+          import_id,
+        },
+      });
+    } catch (e) {
+      logger.error({ err: e }, 'Failed to log import activity');
+    }
+
+    if (importedPersonIds.length > 0) {
+      try {
+        const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+        await queueUsageLimitCheck(tenant_id, this.personsRepo.db);
+      } catch (err) {
+        logger.error({ err }, 'Failed to queue duplicate maintenance job or usage check for imported persons');
+      }
+    }
+
+    return {
+      inserted: results.inserted,
+      errors: results.errors,
+      skipped: skipped + results.skipped,
+      households_created: results.households_created,
+      tag_id: autoTagId,
+      errorMessages,
+    };
+  }
+
+  public async removeHousehold(person_id: string, auth: IAuthKeyPayload) {
+    const campaign_id = (await this.settingsController.getCurrentCampaignId(auth)) as string;
+    return this.personsRepo.moveToNewHousehold({
+      tenant_id: auth.tenant_id,
+      person_id,
+      user_id: auth.user_id,
+      campaign_id,
+    });
+  }
+
+  public async getPotentialDuplicates(auth: IAuthKeyPayload, options?: { page?: number; pageSize?: number }) {
+    return this.personsRepo.getPotentialDuplicates(auth.tenant_id, options);
+  }
+
+  public async getDuplicateCounts(auth: IAuthKeyPayload) {
+    const [people, households, companies] = await Promise.all([
+      this.personsRepo.getDuplicateCount(auth.tenant_id),
+      this.householdRepo.getDuplicateCount(auth.tenant_id),
+      this.companiesRepo.getDuplicateCount(auth.tenant_id),
+    ]);
+    return { people, households, companies };
+  }
+
+  public async mergePersons(input: { target_id: string; source_id: string }, auth: IAuthKeyPayload) {
+    const result = await this.personsRepo.mergePersons({
+      tenant_id: auth.tenant_id,
+      target_id: input.target_id,
+      source_id: input.source_id,
+      user_id: auth.user_id,
+    });
+    await this.userActivity.log({
+      tenant_id: auth.tenant_id,
+      user_id: auth.user_id,
+      activity: 'merge',
+      entity: 'persons',
+      quantity: 1,
+      metadata: {
+        target_id: input.target_id,
+        source_id: input.source_id,
+      },
+    });
+    return result;
+  }
+
+  private async addToMap(row: {
+    tag_id: string | undefined;
+    person_id: string;
+    tenant_id: string;
+    createdby_id: string;
+    updatedby_id: string;
+  }) {
+    if (!row.tag_id) {
+      throw new TRPCError({
+        message: 'Failed to add the tag',
+        code: 'INTERNAL_SERVER_ERROR',
+      });
+    }
+
+    return await this.mapPersonsTagRepo.add({
+      row: row as OperationDataType<'map_peoples_tags', 'insert'>,
+    });
+  }
+
+  private sanitizePhone(v?: string) {
+    if (!v) return undefined;
+    const digits = v.replace(/[^0-9+]/g, '');
+    if (digits.startsWith('+')) return '+' + digits.slice(1).replace(/[^0-9]/g, '');
+    return digits.replace(/[^0-9]/g, '');
+  }
+
+  private sanitizeRow(row: {
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    mobile?: string;
+    notes?: string;
+    home_phone?: string;
+    street_num?: string;
+    street1?: string;
+    street2?: string;
+    apt?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+  }) {
+    const trim = (v?: string) => (v ? v.trim() : undefined);
+
+    let first_name = trim(row.first_name);
+    const last_name = trim(row.last_name);
+    let email = (trim(row.email) || '').toLowerCase();
+    let mobile = this.sanitizePhone(row.mobile);
+    const home_phone = this.sanitizePhone(row.home_phone);
+    const notes = trim(row.notes);
+
+    if (!email) {
+      email = (this.findEmail(first_name || '') || this.findEmail(last_name || '') || '').toLowerCase();
+    }
+    if (email && !/.+@.+\..+/.test(email)) email = '';
+
+    if (!mobile) {
+      const possiblePhone = this.findPhone(first_name) || this.findPhone(last_name);
+      mobile = this.sanitizePhone(possiblePhone);
+    }
+
+    if (first_name) first_name = this.stripNoise(first_name);
+    if (!first_name && email) first_name = this.nameFromEmail(email);
+
+    return {
+      first_name,
+      last_name,
+      email: email || undefined,
+      mobile,
+      notes,
+      home_phone,
+      street_num: trim(row.street_num),
+      street1: trim(row.street1),
+      street2: trim(row.street2),
+      apt: trim(row.apt),
+      city: trim(row.city),
+      state: trim(row.state),
+      zip: trim(row.zip),
+      country: trim(row.country),
+    };
+  }
+
+  private findEmail(text: string): string | undefined {
+    const m = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+    return m?.[0];
+  }
+
+  private findPhone(text?: string): string | undefined {
+    if (!text) return undefined;
+    const m = text.match(/\+?\d[\d\s-]{7,}\d/);
+    return m?.[0];
+  }
+
+  private stripNoise(text: string): string | undefined {
+    const noEmail = text.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, ' ');
+    const noPhone = noEmail.replace(/\+?\d[\d\s-]{7,}\d/g, ' ');
+    const cleaned = noPhone
+      .replace(/[,]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return cleaned || undefined;
+  }
+
+  private nameFromEmail(email: string): string | undefined {
+    const local = (email || '').split('@')[0] || '';
+    const token = local.split(/[._+-]/)[0] || '';
+    if (!token) return undefined;
+    return token.charAt(0).toUpperCase() + token.slice(1);
+  }
+}
+```
+
+## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { TRPCError } from '@trpc/server';
+
+import { VolunteerEventsController } from '../controller';
+import { resolveTenantFromRequest } from '../../../lib/public-tenant';
+
+const ctrl = new VolunteerEventsController();
+
+function getStatusFromError(err: unknown): number {
+  if (err instanceof TRPCError) {
+    switch (err.code) {
+      case 'BAD_REQUEST':
+        return 400;
+      case 'NOT_FOUND':
+        return 404;
+      case 'CONFLICT':
+        return 409;
+      case 'TOO_MANY_REQUESTS':
+        return 429;
+      default:
+        return 500;
+    }
+  }
+  const statusCode = (err as { statusCode?: unknown })?.statusCode;
+  return typeof statusCode === 'number' ? statusCode : 500;
+}
+
+/**
+ * JSON API behind the public volunteer pages — the /volunteer listing and /v/:slug signup SPA
+ * routes (registered outside the app shell, like /f/:slug). The tenant is identified by its
+ * subdomain — the `?t=` param the SPA passes, or the Host header — and every lookup is
+ * tenant-scoped. This replaces the server-rendered HTML pages and the HMAC-derived org slug.
+ */
+const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Upcoming public volunteer events for the tenant's /volunteer listing page.
+  fastify.get('/org', async (req: any, reply) => {
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Organization not found.' });
+      }
+      const result = await ctrl.getPublicEventListing(tenant.id);
+      return reply.status(200).send(result);
+    } catch (err) {
+      fastify.log.error(err, 'Failed to load public volunteer events');
+      return reply.status(getStatusFromError(err)).send({ error: 'Failed to load volunteer events.' });
+    }
+  });
+
+  // Volunteer-event config for the /v/:slug SPA page: event details + live signup count.
+  fastify.get('/v/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
+      }
+      const result = await ctrl.getPublicEventConfig(tenant.id, String(slug));
+      return reply.status(200).send(result);
+    } catch (err) {
+      const status = getStatusFromError(err);
+      if (status >= 500) fastify.log.error(err, 'Failed to load public volunteer event');
+      return reply.status(status).send({ error: 'Event not found.' });
+    }
+  });
+
+  // Volunteer signup from the SPA page (JSON body).
+  fastify.post('/signup/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
+    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
+    // read the raw header, which a client can spoof to defeat rate limiting.
+    const clientIp = req.ip;
+
+    try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        return reply.status(404).send({ error: 'Event not found.' });
+      }
+      await ctrl.signupVolunteerPublic(tenant.id, String(slug), req.body || {}, clientIp);
+      return reply.status(200).send({ success: true });
+    } catch (err) {
+      fastify.log.error(err);
+      const status = getStatusFromError(err);
+      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
+      const message =
+        status < 500 && err instanceof Error && err.message
+          ? err.message
+          : 'An unexpected error occurred during signup.';
+      return reply.status(status).send({ error: message });
     }
   });
 
   done();
 };
 
-export default donationsWebhookRoute;
+export default volunteerEventsPublicRoute;
+```
+
+## File: apps/backend/vite.config.ts
+
+```typescript
+/// <reference types='vitest' />
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { defineConfig } from 'vite';
+
+// Local/dev DB credentials come from a gitignored `.env.test` file at the repo root
+// (DB_USER, DB_NAME, DB_PASSWORD, DB_PORT, DB_HOST, DB_SSL, JWT_SECRET, SHARED_SECRET —
+// see apps/backend/src/env.ts for the full schema). CI/production set these as real
+// env vars instead, so loading the file is best-effort only.
+const envTestPath = resolve(__dirname, '../../.env.test');
+if (existsSync(envTestPath)) {
+  process.loadEnvFile(envTestPath);
+}
+
+export default defineConfig(() => ({
+  root: __dirname,
+  cacheDir: '../../node_modules/.vite/apps/backend',
+  resolve: {
+    tsconfigPaths: true,
+  },
+  plugins: [],
+  test: {
+    name: 'backend',
+    watch: false,
+    globals: true,
+    passWithNoTests: true,
+    environment: 'node',
+    // Runs once before any worker: guardrails the target DB, migrates it to
+    // latest, and truncates it to a clean slate. Keeps the whole suite on the
+    // disposable pplcrm_test database so specs can never touch real data.
+    globalSetup: ['./src/test-setup/global-setup.ts'],
+    env: {
+      DB_USER: process.env['DB_USER'] ?? '',
+      DB_NAME: process.env['DB_NAME'] ?? '',
+      DB_PASSWORD: process.env['DB_PASSWORD'] ?? '',
+      JWT_SECRET: process.env['JWT_SECRET'] ?? '',
+      SHARED_SECRET: process.env['SHARED_SECRET'] ?? '',
+      DB_PORT: process.env['DB_PORT'] ?? '5432',
+      DB_HOST: process.env['DB_HOST'] ?? 'localhost',
+      DB_SSL: process.env['DB_SSL'] ?? 'false',
+    },
+    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    reporters: ['default'],
+    coverage: {
+      reportsDirectory: '../../coverage/apps/backend',
+      provider: 'v8' as const,
+      // Coverage ratchet: set just under the measured baseline (2026-07-04:
+      // 46.85% stmts / 33.24% branch / 55.24% funcs / 48% lines). These may
+      // only ever be raised, never lowered — if your change drops coverage
+      // below them, add tests rather than editing the thresholds.
+      thresholds: {
+        statements: 45,
+        branches: 32,
+        functions: 54,
+        lines: 46,
+      },
+    },
+  },
+}));
+```
+
+## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+
+```typescript
+import { Client } from '@microsoft/microsoft-graph-client';
+import crypto from 'crypto';
+import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
+import type { FastifyPluginCallback } from 'fastify';
+import { env } from '../../../../env';
+import { authenticateRest } from '../../../lib/rest-auth';
+import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
+import { BaseRepository } from '../../../lib/base.repo';
+import { attachmentDisposition } from '../../../lib/download-headers';
+import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
+import { StorageService } from '../../../lib/storage.service';
+import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
+import { GoogleSyncService } from '../../google-sync/google-sync.service';
+import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
+import { MsSyncService } from '../../ms-sync/ms-sync.service';
+
+function buildRawMime(options: {
+  fromName: string;
+  fromEmail: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  html: string;
+  attachments: { filename: string; content: Buffer; contentType: string }[];
+}): Buffer {
+  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+  const headers: string[] = [];
+
+  const safeFromName = options.fromName.replace(/"/g, '\\"');
+  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
+  headers.push(`To: ${options.to.join(', ')}`);
+  if (options.cc.length > 0) {
+    headers.push(`Cc: ${options.cc.join(', ')}`);
+  }
+  if (options.bcc.length > 0) {
+    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+  }
+
+  const base64Subject = Buffer.from(options.subject).toString('base64');
+  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
+
+  headers.push(`MIME-Version: 1.0`);
+  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  headers.push('');
+
+  const bodyParts: string[] = [];
+
+  bodyParts.push(`--${boundary}`);
+  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
+  bodyParts.push(`Content-Transfer-Encoding: base64`);
+  bodyParts.push('');
+  bodyParts.push(Buffer.from(options.html).toString('base64'));
+  bodyParts.push('');
+
+  for (const att of options.attachments) {
+    bodyParts.push(`--${boundary}`);
+    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
+    bodyParts.push(`Content-Transfer-Encoding: base64`);
+    bodyParts.push('');
+    bodyParts.push(att.content.toString('base64'));
+    bodyParts.push('');
+  }
+
+  bodyParts.push(`--${boundary}--`);
+
+  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
+  return Buffer.from(rawMimeString, 'utf-8');
+}
+
+const storageService = new StorageService();
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService(db: any) {
+  if (!_oauthSvc) {
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+export async function saveLocalEmail(
+  db: any,
+  tenantId: string,
+  userId: string,
+  fromEmail: string,
+  fromName: string,
+  toList: string[],
+  ccList: string[],
+  bccList: string[],
+  subject: string,
+  html: string,
+  uploadedFiles: any[],
+  previewKey: string,
+) {
+  return db.transaction().execute(async (trx: any) => {
+    // 1. Insert into emails table (Outbox)
+    const createdEmail = await trx
+      .insertInto('emails')
+      .values({
+        tenant_id: tenantId,
+        folder_id: ALL_FOLDERS.OUTBOX,
+        from_email: fromEmail,
+        to_email: toList.join(', '),
+        subject: subject,
+        preview: previewKey,
+        assigned_to: userId,
+        is_favourite: false,
+        deleted_at: null,
+        status: 'open',
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .returningAll()
+      .executeTakeFirstOrThrow();
+
+    const emailId = String(createdEmail.id);
+
+    // 2. Insert html into email_bodies
+    await trx
+      .insertInto('email_bodies')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        body_html: html,
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 3. Insert files and email_attachments metadata
+    for (let i = 0; i < uploadedFiles.length; i++) {
+      const uFile = uploadedFiles[i];
+      let fileId: string;
+
+      // Persist (or reuse, via sha256 dedup) the file row, then link the
+      // attachment to it so downloads can resolve the stored blob.
+      const existingFile = await trx
+        .selectFrom('files')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .where('sha256_hex', '=', uFile.sha256_hex)
+        .executeTakeFirst();
+
+      if (existingFile) {
+        fileId = String(existingFile.id);
+      } else {
+        const fileResult = await trx
+          .insertInto('files')
+          .values({
+            tenant_id: tenantId,
+            filename: uFile.filename,
+            mime_type: uFile.content_type,
+            size_bytes: uFile.size_bytes,
+            storage_key: uFile.storage_key,
+            sha256_hex: uFile.sha256_hex,
+            uploaded_by: userId,
+          })
+          .returning('id')
+          .executeTakeFirstOrThrow();
+        fileId = String(fileResult.id);
+      }
+
+      await trx
+        .insertInto('email_attachments')
+        .values({
+          tenant_id: tenantId,
+          email_id: emailId,
+          filename: uFile.filename,
+          content_type: uFile.content_type,
+          size_bytes: uFile.size_bytes,
+          cid: uFile.cid,
+          is_inline: uFile.is_inline,
+          pos: i + 1,
+          file_id: fileId,
+          createdby_id: userId,
+          updatedby_id: userId,
+        })
+        .execute();
+    }
+
+    // 4. Insert headers
+    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
+    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+
+    await trx
+      .insertInto('email_headers')
+      .values({
+        tenant_id: tenantId,
+        email_id: emailId,
+        headers_json: JSON.stringify({ internetMessageId }),
+        raw_headers: rawHeaders,
+        date_sent: new Date(),
+        createdby_id: userId,
+        updatedby_id: userId,
+      })
+      .execute();
+
+    // 5. Insert recipients
+    const recipientRows: any[] = [];
+    toList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'to',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    ccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'cc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+    bccList.forEach((emailAddr: string, idx: number) => {
+      recipientRows.push({
+        tenant_id: tenantId,
+        email_id: emailId,
+        kind: 'bcc',
+        name: null,
+        email: emailAddr,
+        pos: idx,
+        createdby_id: userId,
+        updatedby_id: userId,
+      });
+    });
+
+    if (recipientRows.length > 0) {
+      await trx.insertInto('email_recipients').values(recipientRows).execute();
+    }
+
+    return createdEmail;
+  });
+}
+
+const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
+  // Send composed email
+  fastify.post('/send', async (req: any, reply) => {
+    // Mutating endpoint: enforce session revocation and block read-only viewers.
+    const authResult = await authenticateRest(req, { requireWrite: true });
+    if (!authResult.ok) {
+      return reply.status(authResult.status).send({ error: authResult.error });
+    }
+
+    const tenantId = authResult.auth.tenant_id;
+    const userId = authResult.auth.user_id;
+    const db = (BaseRepository as any)['_db'];
+
+    // Retrieve sender user details
+    const user = await db
+      .selectFrom('authusers')
+      .select(['email', 'first_name', 'last_name'])
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', userId)
+      .executeTakeFirst();
+
+    if (!user) {
+      return reply.status(401).send({ error: 'Unauthorized: User not found' });
+    }
+
+    const fromEmail = user.email;
+    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
+
+    // Parse multipart request parts
+    const parts = req.parts();
+    const fields: any = {};
+    const files: any[] = [];
+
+    for await (const part of parts) {
+      if (part.file) {
+        const buffer = await part.toBuffer();
+        files.push({
+          filename: part.filename,
+          fieldname: part.fieldname,
+          mimetype: part.mimetype,
+          buffer,
+        });
+      } else {
+        fields[part.fieldname] = part.value;
+      }
+    }
+
+    // Parse recipient lists and content fields
+    const toList = fields.to ? JSON.parse(fields.to) : [];
+    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
+    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
+    const subject = fields.subject || '';
+    const html = sanitizeHtml(fields.html || '');
+
+    // Upload attachment files to storage outside transaction
+    const uploadedFiles: Array<{
+      filename: string;
+      content_type: string;
+      size_bytes: number;
+      storage_key: string;
+      sha256_hex: string;
+      cid: string | null;
+      is_inline: boolean;
+    }> = [];
+
+    for (const file of files) {
+      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
+      const fileUUID = crypto.randomUUID();
+      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
+
+      await storageService.upload(storage_key, file.buffer, file.mimetype);
+
+      uploadedFiles.push({
+        filename: file.filename,
+        content_type: file.mimetype,
+        size_bytes: file.buffer.length,
+        storage_key,
+        sha256_hex,
+        cid: null,
+        is_inline: false,
+      });
+    }
+
+    // Check if user has connected Microsoft and/or Google accounts
+    const msToken = await db
+      .selectFrom('ms_oauth_tokens')
+      .select(['user_id', 'ms_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const googleToken = await db
+      .selectFrom('google_oauth_tokens')
+      .select(['user_id', 'google_email'])
+      .where('tenant_id', '=', tenantId)
+      .where('user_id', '=', userId)
+      .executeTakeFirst();
+
+    const hasMsConnected = !!msToken;
+    const hasGoogleConnected = !!googleToken;
+
+    // Fail immediately if no send method is configured
+    if (!hasMsConnected && !hasGoogleConnected) {
+      return reply.status(400).send({
+        status: 'error',
+        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
+      });
+    }
+
+    // Save outbound email to database under Outbox folder '10' initially
+    const fallbackPreview =
+      html
+        .replace(/<[^>]*>/g, '')
+        .substring(0, 100)
+        .trim() || '';
+    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
+    try {
+      emailRow = await saveLocalEmail(
+        db,
+        tenantId,
+        userId,
+        fromEmail,
+        fromName,
+        toList,
+        ccList,
+        bccList,
+        subject,
+        html,
+        uploadedFiles,
+        fallbackPreview,
+      );
+    } catch (err) {
+      fastify.log.error(err, 'Failed to save outbound email to database');
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
+    }
+
+    // Determine send method prioritizing matching address
+    let sendMethod: 'ms' | 'google' = 'ms';
+    if (hasMsConnected && hasGoogleConnected) {
+      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
+        sendMethod = 'google';
+      } else {
+        sendMethod = 'ms';
+      }
+    } else if (hasMsConnected) {
+      sendMethod = 'ms';
+    } else if (hasGoogleConnected) {
+      sendMethod = 'google';
+    }
+
+    // Dispatch the email synchronously
+    try {
+      if (sendMethod === 'ms') {
+        const oauthSvc = getOAuthService(db);
+        let msDraftId: string | null = null;
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+          const client = Client.init({
+            authProvider: (done) => done(null, accessToken),
+          });
+
+          const msDraftMessage: any = {
+            subject: subject,
+            body: {
+              contentType: 'html',
+              content: html,
+            },
+            toRecipients: toList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            ccRecipients: ccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+            bccRecipients: bccList.map((emailAddr: string) => ({
+              emailAddress: { address: emailAddr },
+            })),
+          };
+
+          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
+          msDraftId = createdDraft.id;
+          const graphInternetMessageId = createdDraft.internetMessageId;
+
+          // Update local email preview/dedupe key to `ms:${msDraftId}`
+          await db
+            .updateTable('emails')
+            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          if (graphInternetMessageId) {
+            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
+            await db
+              .updateTable('email_headers')
+              .set({
+                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
+                raw_headers: rawHeaders,
+                updated_at: new Date(),
+              })
+              .where('tenant_id', '=', tenantId)
+              .where('email_id', '=', String(emailRow.id))
+              .execute();
+          }
+
+          // Upload attachments
+          for (const file of files) {
+            await client.api(`/me/messages/${msDraftId}/attachments`).post({
+              '@odata.type': '#microsoft.graph.fileAttachment',
+              name: file.filename,
+              contentType: file.mimetype,
+              contentBytes: file.buffer.toString('base64'),
+            });
+          }
+
+          // Send draft
+          await client.api(`/me/messages/${msDraftId}/send`).post({});
+
+          // Move local email to Sent on success
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          // Trigger background sync to get folders/Sent items synchronized
+          const syncSvc = new MsSyncService(db, oauthSvc);
+          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
+          // Clean up local email
+          await db
+            .deleteFrom('emails')
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
+            400,
+          );
+        }
+      } else if (sendMethod === 'google') {
+        const oauthSvc = new GoogleOAuthService(db, {
+          clientId: env.googleClientId ?? '',
+          clientSecret: env.googleClientSecret ?? '',
+          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+        });
+
+        try {
+          const accessToken = await oauthSvc.getValidToken(userId);
+
+          const rawMessageBuffer = buildRawMime({
+            fromName,
+            fromEmail,
+            to: toList,
+            cc: ccList,
+            bcc: bccList,
+            subject,
+            html,
+            attachments: files.map((file) => ({
+              filename: file.filename,
+              content: file.buffer,
+              contentType: file.mimetype,
+            })),
+          });
+
+          const rawBase64Url = rawMessageBuffer
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/, '');
+
+          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              raw: rawBase64Url,
+            }),
+          });
+
+          if (!gmailRes.ok) {
+            const errText = await gmailRes.text();
+            throw new Error(`Gmail API send failed: ${errText}`);
+          }
+
+          const gmailData: any = await gmailRes.json();
+          const googleMsgId = gmailData.id;
+
+          await db
+            .updateTable('emails')
+            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          const finalEmail = await db
+            .updateTable('emails')
+            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .returningAll()
+            .executeTakeFirstOrThrow();
+
+          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
+          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
+            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
+          });
+
+          try {
+            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
+            await queueUsageLimitCheck(tenantId, db);
+          } catch (_err) {
+            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
+          }
+
+          return reply.jsendSuccess(finalEmail);
+        } catch (err) {
+          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
+          await db
+            .updateTable('emails')
+            .set({
+              // Revert to Drafts so the user can retry (was '4' = Spam, a bug)
+              folder_id: ALL_FOLDERS.DRAFTS,
+              updated_at: new Date(),
+            })
+            .where('tenant_id', '=', tenantId)
+            .where('id', '=', String(emailRow.id))
+            .execute();
+
+          return reply.jsendError(
+            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
+            400,
+          );
+        }
+      }
+    } catch (err) {
+      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
+      // Clean up local email
+      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
+      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
+    }
+  });
+
+  // Download attachment by ID
+  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
+    const { id, attachmentId } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (embeddable link, no
+    // session JWT in the URL) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachmentId)
+      .where('email_id', '=', id)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      reply.header('Content-Disposition', attachmentDisposition(file.filename));
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to download attachment' });
+    }
+  });
+
+  // Serve inline attachment by CID
+  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
+    const { id, cid } = req.params;
+
+    // Auth: a short-lived token scoped to this one email (for inline <img> in the
+    // rendered body) or the app's Authorization header (session-gated).
+    let tenantId: string;
+    if (req.query.st) {
+      try {
+        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
+      } catch (_err) {
+        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
+      }
+    } else {
+      const authResult = await authenticateRest(req);
+      if (!authResult.ok) {
+        return reply.status(authResult.status).send({ error: authResult.error });
+      }
+      tenantId = authResult.auth.tenant_id;
+    }
+    const db = (BaseRepository as any)['_db'];
+
+    const attachment = await db
+      .selectFrom('email_attachments')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('email_id', '=', id)
+      .where('cid', '=', cid)
+      .where('is_inline', '=', true)
+      .executeTakeFirst();
+
+    if (!attachment || !attachment.file_id) {
+      return reply.status(404).send({ error: 'Inline attachment not found' });
+    }
+
+    const file = await db
+      .selectFrom('files')
+      .selectAll()
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', attachment.file_id)
+      .executeTakeFirst();
+
+    if (!file) {
+      return reply.status(404).send({ error: 'File not found' });
+    }
+
+    try {
+      const buffer = await storageService.download(file.storage_key);
+      reply.type(file.mime_type || 'application/octet-stream');
+      // Private: inline attachments are tenant-scoped and token-gated.
+      reply.header('Cache-Control', 'private, max-age=31536000');
+      return reply.send(buffer);
+    } catch (_err) {
+      fastify.log.error(_err);
+      return reply.status(500).send({ error: 'Failed to load inline image' });
+    }
+  });
+
+  done();
+};
+
+export default emailsApiRoute;
 ```
 
 ## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
@@ -29568,6 +31706,36 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .execute();
   }
 
+  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
+  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
+    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
+    if (excludeId) {
+      query = query.where('id', '!=', excludeId);
+    }
+    const row = await query.limit(1).executeTakeFirst();
+    return !!row;
+  }
+
+  /** Tenant-scoped slug resolution for /households/:slug URLs (spec §1). */
+  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+    return this.getSelect()
+      .selectAll()
+      .where('tenant_id', '=', input.tenant_id)
+      .where('slug', '=', input.slug)
+      .executeTakeFirst();
+  }
+
+  /** Distinct geocoded wards — powers the Households grain sentence ("{n} households across {m} wards"). */
+  public async countDistinctWards(tenant_id: string): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>(sql`DISTINCT ward`).as('count')])
+      .where('tenant_id', '=', tenant_id)
+      .where('ward', 'is not', null)
+      .where('ward', '!=', '')
+      .executeTakeFirst();
+    return Number(result?.count ?? 0);
+  }
+
   public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
     let q = this.getSelect()
       .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
@@ -29860,1044 +32028,6 @@ export class HouseholdRepo extends BaseRepository<'households'> {
     });
   }
 }
-```
-
-## File: apps/backend/vite.config.ts
-
-```typescript
-/// <reference types='vitest' />
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
-
-// Local/dev DB credentials come from a gitignored `.env.test` file at the repo root
-// (DB_USER, DB_NAME, DB_PASSWORD, DB_PORT, DB_HOST, DB_SSL, JWT_SECRET, SHARED_SECRET —
-// see apps/backend/src/env.ts for the full schema). CI/production set these as real
-// env vars instead, so loading the file is best-effort only.
-const envTestPath = resolve(__dirname, '../../.env.test');
-if (existsSync(envTestPath)) {
-  process.loadEnvFile(envTestPath);
-}
-
-export default defineConfig(() => ({
-  root: __dirname,
-  cacheDir: '../../node_modules/.vite/apps/backend',
-  resolve: {
-    tsconfigPaths: true,
-  },
-  plugins: [],
-  test: {
-    name: 'backend',
-    watch: false,
-    globals: true,
-    passWithNoTests: true,
-    environment: 'node',
-    // Runs once before any worker: guardrails the target DB, migrates it to
-    // latest, and truncates it to a clean slate. Keeps the whole suite on the
-    // disposable pplcrm_test database so specs can never touch real data.
-    globalSetup: ['./src/test-setup/global-setup.ts'],
-    env: {
-      DB_USER: process.env['DB_USER'] ?? '',
-      DB_NAME: process.env['DB_NAME'] ?? '',
-      DB_PASSWORD: process.env['DB_PASSWORD'] ?? '',
-      JWT_SECRET: process.env['JWT_SECRET'] ?? '',
-      SHARED_SECRET: process.env['SHARED_SECRET'] ?? '',
-      DB_PORT: process.env['DB_PORT'] ?? '5432',
-      DB_HOST: process.env['DB_HOST'] ?? 'localhost',
-      DB_SSL: process.env['DB_SSL'] ?? 'false',
-    },
-    include: ['{src,tests}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    reporters: ['default'],
-    coverage: {
-      reportsDirectory: '../../coverage/apps/backend',
-      provider: 'v8' as const,
-      // Coverage ratchet: set just under the measured baseline (2026-07-04:
-      // 46.85% stmts / 33.24% branch / 55.24% funcs / 48% lines). These may
-      // only ever be raised, never lowered — if your change drops coverage
-      // below them, add tests rather than editing the thresholds.
-      thresholds: {
-        statements: 45,
-        branches: 32,
-        functions: 54,
-        lines: 46,
-      },
-    },
-  },
-}));
-```
-
-## File: apps/backend/src/app/modules/events/routes/events-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { TRPCError } from '@trpc/server';
-
-import { EventsController } from '../controller';
-import { resolveTenantFromRequest } from '../../../lib/public-tenant';
-
-const ctrl = new EventsController();
-
-function getStatusFromError(err: unknown): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      case 'TOO_MANY_REQUESTS':
-        return 429;
-      default:
-        return 500;
-    }
-  }
-  const statusCode = (err as { statusCode?: unknown })?.statusCode;
-  return typeof statusCode === 'number' ? statusCode : 500;
-}
-
-/**
- * JSON API behind the public /e/:slug SPA page (registered outside the app shell, like /f/:slug).
- * The tenant is identified by its subdomain — the `?t=` param the SPA passes, or the Host header —
- * and every event lookup is tenant-scoped. The server-rendered HTML pages this file used to carry
- * are gone; the SPA owns presentation.
- */
-const eventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Event config for the SPA page: event details + tickets + live capacity.
-  fastify.get('/e/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
-      }
-      const result = await ctrl.getPublicEventConfig(tenant.id, String(slug));
-      return reply.status(200).send(result);
-    } catch (err) {
-      const status = getStatusFromError(err);
-      // Never leak internal detail on a public endpoint; NOT_FOUND is the only expected miss.
-      if (status >= 500) fastify.log.error(err, 'Failed to load public event');
-      return reply.status(status === 404 ? 404 : status).send({ error: 'Event not found.' });
-    }
-  });
-
-  // RSVP submission from the SPA page (JSON body).
-  fastify.post('/rsvp/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
-    // read the raw header, which a client can spoof to defeat rate limiting.
-    const clientIp = req.ip;
-
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
-      }
-      await ctrl.rsvpPublic(tenant.id, String(slug), req.body || {}, clientIp);
-      return reply.status(200).send({ success: true });
-    } catch (err) {
-      fastify.log.error(err);
-      const status = getStatusFromError(err);
-      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
-      const message =
-        status < 500 && err instanceof Error && err.message ? err.message : 'An unexpected error occurred.';
-      return reply.status(status).send({ error: message });
-    }
-  });
-
-  done();
-};
-
-export default eventsPublicRoute;
-```
-
-## File: apps/backend/src/app/modules/events/controller.ts
-
-```typescript
-import { TRPCError } from '@trpc/server';
-import type { Transaction } from 'kysely';
-import { sql } from 'kysely';
-import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
-import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
-import { BaseController } from '../../lib/base.controller';
-import { publicOrgName } from '../../lib/public-tenant';
-import { logger } from '../../logger';
-import { WorkflowsController } from '../workflows/controller';
-import { EventsRepo } from './repositories/events.repo';
-
-const DEFAULT_FIELDS = ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-const ipRsvpTimestamps = new Map<string, number[]>();
-const RSVP_RATE_LIMIT_MAX = 5;
-const RSVP_RATE_LIMIT_WINDOW_MS = 60 * 1000;
-
-export class EventsController extends BaseController<'events', EventsRepo> {
-  constructor() {
-    super(new EventsRepo());
-  }
-
-  public async getAllEvents(auth: IAuthKeyPayload, options?: any) {
-    return this.getRepo().getAllEventsWithCount({ tenant_id: auth.tenant_id, options });
-  }
-
-  public async addEvent(payload: any, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', payload.slug)
-      .executeTakeFirst();
-
-    if (existing) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'This URL slug is already in use. Please choose a different one.',
-      });
-    }
-
-    const row = {
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      location_address: payload.location_address ?? null,
-      start_time: payload.start_time,
-      end_time: payload.end_time,
-      capacity: payload.capacity ?? null,
-      contact_email: payload.contact_email ?? null,
-      contact_phone: payload.contact_phone ?? null,
-      slug: payload.slug,
-      is_published: payload.is_published ?? false,
-      send_reminder: payload.send_reminder ?? true,
-      send_registration_confirmation: payload.send_registration_confirmation ?? true,
-      // `fields` is a jsonb column but the generated Kysely model types it as `string[]`.
-      // node-postgres serializes a raw JS array parameter as a Postgres ARRAY literal
-      // (e.g. `{a,b,c}`), which Postgres then rejects as invalid JSON for a jsonb column.
-      // Stringifying it first makes node-postgres send plain text, which Postgres casts
-      // to jsonb correctly.
-      fields: JSON.stringify(payload.fields ?? DEFAULT_FIELDS) as unknown as string[],
-    } as OperationDataType<'events', 'insert'>;
-
-    try {
-      return await this.add(row);
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
-   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
-   */
-  public async getEventBySlug(tenantId: string, slug: string) {
-    return this.getRepo()
-      .db.selectFrom('events')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('slug', '=', slug)
-      .where('is_published', '=', true)
-      .executeTakeFirst();
-  }
-
-  /**
-   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
-   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
-   */
-  public async getPublicEventConfig(tenantId: string, slug: string) {
-    const event = await this.getEventBySlug(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    const eventId = String(event.id);
-    const [orgName, tickets, regCount] = await Promise.all([
-      publicOrgName(tenantId),
-      this.getTicketTypesByEventId(eventId, tenantId),
-      this.getRegistrationCountForEvent(eventId, tenantId),
-    ]);
-
-    const now = new Date();
-    const isPast = new Date(event.end_time) < now;
-    const isFull = event.capacity !== null && regCount >= event.capacity;
-    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
-
-    const fields: string[] = Array.isArray(event.fields)
-      ? event.fields
-      : typeof event.fields === 'string'
-        ? JSON.parse(event.fields)
-        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-
-    return {
-      orgName,
-      event: {
-        name: String(event.name),
-        description: event.description ?? null,
-        location_address: event.location_address ?? null,
-        start_time: event.start_time,
-        end_time: event.end_time,
-        capacity: event.capacity ?? null,
-        contact_email: event.contact_email ?? null,
-        contact_phone: event.contact_phone ?? null,
-        fields,
-      },
-      tickets: tickets.map((t) => ({
-        name: String(t.name),
-        description: t.description ?? null,
-        price_cents: t.price_cents ?? null,
-        capacity: t.capacity ?? null,
-      })),
-      isPast,
-      isFull,
-      remaining,
-    };
-  }
-
-  public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
-    const row = await this.getRepo()
-      .db.selectFrom('event_registrations')
-      .select(({ fn }) => [fn.count('id').as('cnt')])
-      .where('tenant_id', '=', tenantId)
-      .where('event_id', '=', eventId)
-      .where('status', '!=', 'cancelled')
-      .executeTakeFirst();
-    return Number(row?.cnt ?? 0);
-  }
-
-  public async getTicketTypesByEventId(eventId: string, tenantId: string) {
-    return this.getRepo()
-      .db.selectFrom('event_ticket_types')
-      .selectAll()
-      .where('event_id', '=', eventId)
-      .where('tenant_id', '=', tenantId)
-      .orderBy('sort_order', 'asc')
-      .execute();
-  }
-
-  public async checkSlugUnique(slug: string, excludeId: string | null, auth: IAuthKeyPayload) {
-    if (!slug) return { unique: true };
-    let query = this.getRepo()
-      .db.selectFrom('events')
-      .select('id')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const existing = await query.executeTakeFirst();
-    return { unique: !existing };
-  }
-
-  public async updateEvent(id: string, payload: any, auth: IAuthKeyPayload) {
-    if (payload.slug) {
-      const existing = await this.getRepo()
-        .db.selectFrom('events')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('slug', '=', payload.slug)
-        .where('id', '!=', id)
-        .executeTakeFirst();
-
-      if (existing) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'This URL slug is already in use. Please choose a different one.',
-        });
-      }
-    }
-
-    const row = {
-      ...payload,
-      // See addEvent() above: `fields` is jsonb but modeled as `string[]`; stringify so
-      // node-postgres sends valid JSON text instead of a Postgres ARRAY literal.
-      ...(payload.fields !== undefined ? { fields: JSON.stringify(payload.fields) as unknown as string[] } : {}),
-      updatedby_id: auth.user_id,
-    } as OperationDataType<'events', 'update'>;
-    let result;
-    try {
-      result = await this.update({ tenant_id: auth.tenant_id, id, row });
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('events_end_after_start_check')) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'End date & time must be after the start date & time.' });
-      }
-      throw err;
-    }
-
-    // Manage pending reminder jobs when the toggle changes
-    if (payload.send_reminder === false) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'eventId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to clean up pending event reminders');
-      }
-    } else if (payload.send_reminder === true) {
-      try {
-        const event = await this.getRepo()
-          .db.selectFrom('events')
-          .select(['start_time'])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('id', '=', id)
-          .executeTakeFirst();
-
-        if (event) {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            const registrations = await this.getRepo()
-              .db.selectFrom('event_registrations')
-              .select(['id', 'person_id'])
-              .where('tenant_id', '=', auth.tenant_id)
-              .where('event_id', '=', id)
-              .where('status', '=', 'registered')
-              .execute();
-
-            for (const reg of registrations) {
-              await this.getRepo()
-                .db.deleteFrom('background_jobs')
-                .where('tenant_id', '=', auth.tenant_id)
-                .where('status', '=', 'pending')
-                .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-                .where(sql`payload->>'registrationId'`, '=', String(reg.id))
-                .execute();
-
-              await this.getRepo()
-                .db.insertInto('background_jobs')
-                .values({
-                  tenant_id: auth.tenant_id,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(id),
-                    personId: String(reg.person_id),
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          }
-        }
-      } catch (err) {
-        logger.error({ err }, 'Failed to re-schedule event reminders');
-      }
-    }
-
-    return result;
-  }
-
-  // Ticket types
-
-  public async getTicketTypesForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getTicketTypesForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addTicketType(payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().addTicketType({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      name: payload.name,
-      description: payload.description ?? null,
-      price_cents: payload.price_cents ?? 0,
-      capacity: payload.capacity ?? null,
-      sort_order: payload.sort_order ?? 0,
-      user_id: auth.user_id,
-    });
-  }
-
-  public async updateTicketType(id: string, payload: any, auth: IAuthKeyPayload) {
-    return this.getRepo().updateTicketType({ tenant_id: auth.tenant_id, id, row: payload, user_id: auth.user_id });
-  }
-
-  public async deleteTicketType(id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().deleteTicketType({ tenant_id: auth.tenant_id, id });
-  }
-
-  // Registrations
-
-  public async getRegistrationsForEvent(event_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getRegistrationsForEvent({ tenant_id: auth.tenant_id, event_id });
-  }
-
-  public async addRegistration(payload: any, auth: IAuthKeyPayload) {
-    // Capacity check across the whole event
-    const event = await this.getRepo()
-      .db.selectFrom('events')
-      .select(['capacity', 'send_reminder', 'send_registration_confirmation', 'start_time', 'name'])
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('id', '=', payload.event_id)
-      .executeTakeFirst();
-
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    if (event.capacity !== null) {
-      const countRow = await this.getRepo()
-        .db.selectFrom('event_registrations')
-        .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('event_id', '=', payload.event_id)
-        .where('status', '!=', 'cancelled')
-        .executeTakeFirst();
-      if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-      }
-    }
-
-    // Per-ticket-type capacity check
-    if (payload.ticket_type_id) {
-      const ticketType = await this.getRepo()
-        .db.selectFrom('event_ticket_types')
-        .select(['capacity'])
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', '=', payload.ticket_type_id)
-        .executeTakeFirst();
-
-      if (ticketType && ticketType.capacity !== null) {
-        const ticketCountRow = await this.getRepo()
-          .db.selectFrom('event_registrations')
-          .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('ticket_type_id', '=', payload.ticket_type_id)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-        if (Number((ticketCountRow as any)?.cnt || 0) >= ticketType.capacity) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'This ticket type is sold out.' });
-        }
-      }
-    }
-
-    const result = await this.getRepo().addRegistration({
-      tenant_id: auth.tenant_id,
-      event_id: payload.event_id,
-      person_id: payload.person_id,
-      ticket_type_id: payload.ticket_type_id ?? null,
-      status: payload.status ?? 'registered',
-      notes: payload.notes ?? null,
-      user_id: auth.user_id,
-    });
-
-    if (result) {
-      // Queue registration confirmation email
-      if (event.send_registration_confirmation !== false) {
-        try {
-          await this.getRepo()
-            .db.insertInto('background_jobs')
-            .values({
-              tenant_id: auth.tenant_id,
-              queue: 'default',
-              status: 'pending',
-              payload: JSON.stringify({
-                type: 'send-event-registration-confirmation',
-                registrationId: String(result.id),
-                eventId: String(payload.event_id),
-                personId: String(payload.person_id),
-              }),
-              run_at: new Date(),
-            })
-            .execute();
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue registration confirmation');
-        }
-      }
-
-      // Queue 24h reminder
-      if (event.send_reminder !== false) {
-        try {
-          const startMs = new Date(event.start_time).getTime();
-          const nowMs = Date.now();
-          if (startMs > nowMs) {
-            const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-            await this.getRepo()
-              .db.insertInto('background_jobs')
-              .values({
-                tenant_id: auth.tenant_id,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-reminder',
-                  registrationId: String(result.id),
-                  eventId: String(payload.event_id),
-                  personId: String(payload.person_id),
-                }),
-                run_at: runAt,
-              })
-              .execute();
-          }
-        } catch (err) {
-          logger.error({ err }, 'Failed to queue event reminder');
-        }
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'assign',
-          entity: 'event_registrations',
-          entity_id: String(result.id),
-          quantity: 1,
-          metadata: { id: result.id, event_id: payload.event_id, person_id: payload.person_id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async checkIn(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status: 'attended', checked_in_at: new Date() },
-      user_id: auth.user_id,
-    });
-
-    // Cancel pending reminder — they've already arrived
-    try {
-      await this.getRepo()
-        .db.deleteFrom('background_jobs')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('status', '=', 'pending')
-        .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-        .where(sql`payload->>'registrationId'`, '=', String(id))
-        .execute();
-    } catch (err) {
-      logger.error({ err }, 'Failed to cancel event reminder on check-in');
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: 'attended', checked_in_at: new Date().toISOString() },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log check-in activity');
-    }
-
-    return result;
-  }
-
-  public async updateRegistration(id: string, payload: any, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().updateRegistration({
-      tenant_id: auth.tenant_id,
-      id,
-      row: payload,
-      user_id: auth.user_id,
-    });
-
-    // Cancel reminder if status moves away from 'registered'
-    if (payload.status && payload.status !== 'registered') {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on status change');
-      }
-    }
-
-    try {
-      await this.userActivity.log({
-        tenant_id: auth.tenant_id,
-        user_id: auth.user_id,
-        activity: 'update',
-        entity: 'event_registrations',
-        entity_id: id,
-        quantity: 1,
-        metadata: { id, status: payload.status },
-      });
-    } catch (e) {
-      logger.error({ err: e }, 'Failed to log registration update activity');
-    }
-
-    return result;
-  }
-
-  public async deleteRegistration(id: string, auth: IAuthKeyPayload) {
-    const result = await this.getRepo().deleteRegistration({ tenant_id: auth.tenant_id, id });
-
-    if (result) {
-      try {
-        await this.getRepo()
-          .db.deleteFrom('background_jobs')
-          .where('tenant_id', '=', auth.tenant_id)
-          .where('status', '=', 'pending')
-          .where(sql`payload->>'type'`, '=', 'send-event-reminder')
-          .where(sql`payload->>'registrationId'`, '=', String(id))
-          .execute();
-      } catch (err) {
-        logger.error({ err }, 'Failed to cancel event reminder on registration delete');
-      }
-
-      try {
-        await this.userActivity.log({
-          tenant_id: auth.tenant_id,
-          user_id: auth.user_id,
-          activity: 'delete',
-          entity: 'event_registrations',
-          entity_id: id,
-          quantity: 1,
-          metadata: { id },
-        });
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to log registration delete activity');
-      }
-    }
-
-    return result;
-  }
-
-  public async getHistoryForPerson(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getHistoryForPerson({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async getEventStats(person_id: string, auth: IAuthKeyPayload) {
-    return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
-  }
-
-  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
-    // Rate limiting
-    const now = Date.now();
-    let timestamps = ipRsvpTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RSVP_RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RSVP_RATE_LIMIT_MAX) {
-      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please try again in a minute.' });
-    }
-    timestamps.push(now);
-    ipRsvpTimestamps.set(clientIp, timestamps);
-
-    const event = await this.getEventBySlug(tenantId, slug);
-    if (!event) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
-    }
-
-    // Honeypot
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      return { success: true };
-    }
-
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Email address is required.' });
-    }
-
-    if (new Date(event.end_time) < new Date()) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
-    }
-
-    const firstName = payload['first_name']?.trim() || null;
-    const lastName = payload['last_name']?.trim() || null;
-    const mobile = payload['mobile']?.trim() || null;
-    const notes = payload['notes']?.trim() || null;
-
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id', 'admin_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        const creatorId = tenantRow?.admin_id;
-
-        if (!householdId || !creatorId) {
-          throw new Error('Tenant configuration is incomplete.');
-        }
-
-        // Check overall capacity
-        if (event.capacity !== null) {
-          const countRow = await trx
-            .selectFrom('event_registrations')
-            .select(({ fn }) => [fn.count<number>('id').as('cnt')])
-            .where('tenant_id', '=', tenantId)
-            .where('event_id', '=', String(event.id))
-            .where('status', '!=', 'cancelled')
-            .executeTakeFirst();
-          if (Number((countRow as any)?.cnt || 0) >= event.capacity) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event is at full capacity.' });
-          }
-        }
-
-        // Find or create person
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = { updatedby_id: creatorId, updated_at: sql`now()` };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (notes) {
-            updateRow.notes = existing.notes ? `${existing.notes}\n\nEvent RSVP notes: ${notes}` : notes;
-          }
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          // `persons.campaign_id` is NOT NULL, so a campaign must be resolved before insert
-          // (there is no "campaign-less" person). `persons` also has no address columns
-          // (street1/city/state/zip/country live on `households`, not `persons`), so those
-          // RSVP fields are intentionally not persisted here.
-          const campaignRow = await trx
-            .selectFrom('campaigns')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .orderBy('created_at', 'asc')
-            .limit(1)
-            .executeTakeFirst();
-
-          if (!campaignRow) {
-            throw new Error('Tenant configuration is incomplete.');
-          }
-          const campaignId = String(campaignRow.id);
-
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: householdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email,
-            mobile,
-            notes,
-          };
-
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          try {
-            const workflowsCtrl = new WorkflowsController();
-            await workflowsCtrl.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in rsvpPublic');
-          }
-        }
-
-        // Check duplicate registration
-        const existingReg = await trx
-          .selectFrom('event_registrations')
-          .select('id')
-          .where('tenant_id', '=', tenantId)
-          .where('event_id', '=', String(event.id))
-          .where('person_id', '=', personId)
-          .where('status', '!=', 'cancelled')
-          .executeTakeFirst();
-
-        if (existingReg) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'You are already registered for this event.' });
-        }
-
-        // Insert registration
-        const reg = await trx
-          .insertInto('event_registrations')
-          .values({
-            tenant_id: tenantId,
-            event_id: String(event.id) as any,
-            person_id: personId,
-            ticket_type_id: null,
-            status: 'registered',
-            notes: notes ?? null,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-
-        // Queue confirmation email
-        if ((event as any).send_registration_confirmation !== false) {
-          try {
-            await trx
-              .insertInto('background_jobs')
-              .values({
-                tenant_id: tenantId,
-                queue: 'default',
-                status: 'pending',
-                payload: JSON.stringify({
-                  type: 'send-event-registration-confirmation',
-                  registrationId: String(reg.id),
-                  eventId: String(event.id),
-                  personId,
-                }),
-                run_at: new Date(),
-              })
-              .execute();
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue RSVP confirmation');
-          }
-        }
-
-        // Queue 24h reminder
-        if ((event as any).send_reminder !== false) {
-          try {
-            const startMs = new Date(event.start_time).getTime();
-            const nowMs = Date.now();
-            if (startMs > nowMs) {
-              const runAt = new Date(Math.max(nowMs, startMs - 24 * 60 * 60 * 1000));
-              await trx
-                .insertInto('background_jobs')
-                .values({
-                  tenant_id: tenantId,
-                  queue: 'default',
-                  status: 'pending',
-                  payload: JSON.stringify({
-                    type: 'send-event-reminder',
-                    registrationId: String(reg.id),
-                    eventId: String(event.id),
-                    personId,
-                  }),
-                  run_at: runAt,
-                })
-                .execute();
-            }
-          } catch (err) {
-            logger.error({ err }, 'Failed to queue event reminder in rsvpPublic');
-          }
-        }
-      });
-
-    return { success: true };
-  }
-}
-```
-
-## File: apps/backend/src/app/modules/volunteer-events/routes/volunteer-events-public.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { TRPCError } from '@trpc/server';
-
-import { VolunteerEventsController } from '../controller';
-import { resolveTenantFromRequest } from '../../../lib/public-tenant';
-
-const ctrl = new VolunteerEventsController();
-
-function getStatusFromError(err: unknown): number {
-  if (err instanceof TRPCError) {
-    switch (err.code) {
-      case 'BAD_REQUEST':
-        return 400;
-      case 'NOT_FOUND':
-        return 404;
-      case 'CONFLICT':
-        return 409;
-      case 'TOO_MANY_REQUESTS':
-        return 429;
-      default:
-        return 500;
-    }
-  }
-  const statusCode = (err as { statusCode?: unknown })?.statusCode;
-  return typeof statusCode === 'number' ? statusCode : 500;
-}
-
-/**
- * JSON API behind the public volunteer pages — the /volunteer listing and /v/:slug signup SPA
- * routes (registered outside the app shell, like /f/:slug). The tenant is identified by its
- * subdomain — the `?t=` param the SPA passes, or the Host header — and every lookup is
- * tenant-scoped. This replaces the server-rendered HTML pages and the HMAC-derived org slug.
- */
-const volunteerEventsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Upcoming public volunteer events for the tenant's /volunteer listing page.
-  fastify.get('/org', async (req: any, reply) => {
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Organization not found.' });
-      }
-      const result = await ctrl.getPublicEventListing(tenant.id);
-      return reply.status(200).send(result);
-    } catch (err) {
-      fastify.log.error(err, 'Failed to load public volunteer events');
-      return reply.status(getStatusFromError(err)).send({ error: 'Failed to load volunteer events.' });
-    }
-  });
-
-  // Volunteer-event config for the /v/:slug SPA page: event details + live signup count.
-  fastify.get('/v/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
-      }
-      const result = await ctrl.getPublicEventConfig(tenant.id, String(slug));
-      return reply.status(200).send(result);
-    } catch (err) {
-      const status = getStatusFromError(err);
-      if (status >= 500) fastify.log.error(err, 'Failed to load public volunteer event');
-      return reply.status(status).send({ error: 'Event not found.' });
-    }
-  });
-
-  // Volunteer signup from the SPA page (JSON body).
-  fastify.post('/signup/:slug', async (req: any, reply) => {
-    const { slug } = req.params;
-    // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
-    // read the raw header, which a client can spoof to defeat rate limiting.
-    const clientIp = req.ip;
-
-    try {
-      const tenant = await resolveTenantFromRequest(req);
-      if (!tenant) {
-        return reply.status(404).send({ error: 'Event not found.' });
-      }
-      await ctrl.signupVolunteerPublic(tenant.id, String(slug), req.body || {}, clientIp);
-      return reply.status(200).send({ success: true });
-    } catch (err) {
-      fastify.log.error(err);
-      const status = getStatusFromError(err);
-      // Client errors carry user-actionable copy; 5xx detail must not leak to the public.
-      const message =
-        status < 500 && err instanceof Error && err.message
-          ? err.message
-          : 'An unexpected error occurred during signup.';
-      return reply.status(status).send({ error: message });
-    }
-  });
-
-  done();
-};
-
-export default volunteerEventsPublicRoute;
 ```
 
 ## File: apps/backend/src/app/modules/web-forms/repositories/web-forms.repo.ts
@@ -39508,1136 +40638,6 @@ ALTER DEFAULT PRIVILEGES FOR ROLE pplcrm_owner IN SCHEMA public GRANT SELECT,INS
 \unrestrict PdhMgW15yoOGkfvhi9OHOzvlFqivKLBZmLPSF587hGo1WywFij4P80p3lhhB6hn
 ```
 
-## File: apps/backend/src/app/modules/web-forms/controller.ts
-
-```typescript
-import type {
-  AddWebFormType,
-  CreateFormType,
-  FormField,
-  IAuthKeyPayload,
-  UpdateFormType,
-  UpdateWebFormType,
-} from '../../../../../../libs/common/src';
-import { FORM_TEMPLATES, fieldsForTemplate, normForm } from '../../../../../../libs/common/src';
-import { BaseController } from '../../lib/base.controller';
-import { WebFormsRepo } from './repositories/web-forms.repo';
-import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
-import { type Transaction, sql } from 'kysely';
-import { TRPCError } from '@trpc/server';
-import { env } from '../../../env';
-import { createSigner, createVerifier } from 'fast-jwt';
-import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
-import type { PublicTenant } from '../../lib/public-tenant';
-import { HouseholdRepo } from '../households/repositories/households.repo';
-
-import { WorkflowsController } from '../workflows/controller';
-import { DonationsController } from '../donations/controller';
-import { logger } from '../../logger';
-
-// Sliding window memory for rate-limiting
-const ipSubmissionTimestamps = new Map<string, number[]>();
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
-
-export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
-  constructor() {
-    super(new WebFormsRepo());
-  }
-
-  public override async getOneById(input: { tenant_id: string; id: string }) {
-    const form = await super.getOneById(input);
-    if (!form) return form;
-    return this.resolveCreatorAndUpdater(input.tenant_id, form);
-  }
-
-  /**
-   * Tenant-scoped lookup for the server-rendered public donation page (/api/forms/d/:slug).
-   * Only donation-type forms resolve here — standard forms live on the /f/:slug SPA page.
-   */
-  public async getDonationFormPublic(tenantId: string, slug: string) {
-    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
-    if (!form || (form.form_type !== 'donation' && form.form_type !== 'recurring_donation')) {
-      return undefined;
-    }
-    return form;
-  }
-
-  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
-    const row = {
-      tenant_id: auth.tenant_id,
-      slug: await this.uniqueSlug(auth.tenant_id, payload.name),
-      name: payload.name,
-      description: payload.description ?? null,
-      redirect_url: payload.redirect_url ?? null,
-      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
-      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
-      fields: payload.fields ? JSON.stringify(payload.fields) : null,
-      status: this.mapLegacyStatus(payload.status),
-      send_confirmation: payload.send_confirmation ?? true,
-      send_alert: payload.send_alert ?? true,
-      form_type: payload.form_type ?? 'standard',
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    const created = await this.add(row as any);
-    const createdId = (created as Record<string, unknown> | undefined)?.['id'];
-    if (createdId != null && payload.target_lists?.length) {
-      await this.syncTargetLists(auth, String(createdId), payload.target_lists);
-    }
-    return created;
-  }
-
-  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
-    if (!existing) {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found.',
-      });
-    }
-
-    const row: any = {
-      updatedby_id: auth.user_id,
-      updated_at: new Date(),
-    };
-    if (payload.name !== undefined) row.name = payload.name;
-    if (payload.description !== undefined) row.description = payload.description;
-    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
-    if (payload.target_tags !== undefined)
-      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
-    if (payload.target_lists !== undefined)
-      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
-    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
-    if (payload.status !== undefined) row.status = this.mapLegacyStatus(payload.status);
-    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
-    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
-
-    const rawPayload = payload as any;
-    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Form type cannot be changed after the form has been created.',
-      });
-    }
-
-    const updated = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row,
-    });
-    if (payload.target_lists !== undefined) {
-      await this.syncTargetLists(auth, id, payload.target_lists ?? []);
-    }
-    return updated;
-  }
-
-  public async submitFormPublic(tenant: PublicTenant, slug: string, payload: Record<string, string>, clientIp: string) {
-    // 1. Rate limiting check
-    const now = Date.now();
-    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
-    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
-    if (timestamps.length >= RATE_LIMIT_MAX) {
-      throw new TRPCError({
-        code: 'TOO_MANY_REQUESTS',
-        message: 'Rate limit exceeded. Please try again in a minute.',
-      });
-    }
-    timestamps.push(now);
-    // Prune empty keys to prevent unbounded Map growth
-    if (timestamps.length > 0) {
-      ipSubmissionTimestamps.set(clientIp, timestamps);
-    } else {
-      ipSubmissionTimestamps.delete(clientIp);
-    }
-
-    // 2. Fetch the form — tenant-scoped by slug; the tenant was resolved from the subdomain
-    const tenantId = tenant.id;
-    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
-    if (!form || form.status !== 'published') {
-      throw new TRPCError({
-        code: 'NOT_FOUND',
-        message: 'Web form not found or inactive.',
-      });
-    }
-    const formId = String(form.id);
-
-    // 3. Honeypot check
-    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
-      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
-      return { redirect_url: form.redirect_url || null };
-    }
-
-    // 4. Validate email
-    const email = payload['email']?.trim();
-    if (!email) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Email address is required.',
-      });
-    }
-
-    // Parse configured fields. Supports both the legacy string[] shape ("mobile:required") used by
-    // donation/older forms and the new-model FormField[] objects ({ key, on, required, label }).
-    const rawFields: unknown = form.fields
-      ? Array.isArray(form.fields)
-        ? form.fields
-        : JSON.parse(String(form.fields))
-      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
-    const fieldArray: unknown[] = Array.isArray(rawFields) ? rawFields : [];
-
-    // Map payload key aliases helper
-    const getPayloadValue = (key: string): string => {
-      let value = '';
-      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
-      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
-      else if (key === 'full_name' || key === 'name') value = payload['full_name'] || payload['name'] || '';
-      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
-      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
-      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
-      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
-      else value = payload[key] || '';
-      return String(value).trim();
-    };
-
-    // Validate user-configured required fields for standard forms
-    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-      const fieldLabels: Record<string, string> = {
-        first_name: 'First Name',
-        last_name: 'Last Name',
-        full_name: 'Full name',
-        mobile: 'Mobile / Phone',
-        notes: 'Notes / Message',
-        street1: 'Street Address',
-        city: 'City',
-        state: 'State / Province',
-        zip: 'Zip / Postal Code',
-        country: 'Country',
-      };
-
-      const requiredFields: { name: string; label: string }[] = [];
-      for (const raw of fieldArray) {
-        if (typeof raw === 'string') {
-          if (raw.endsWith(':required')) {
-            const name = raw.replace(':required', '');
-            requiredFields.push({ name, label: fieldLabels[name] ?? name });
-          }
-        } else if (raw && typeof raw === 'object') {
-          const obj = raw as { key?: string; on?: boolean; required?: boolean; label?: string };
-          // Email is validated separately above; skip it here.
-          if (obj.key && obj.key !== 'email' && obj.on && obj.required) {
-            requiredFields.push({ name: obj.key, label: obj.label ?? fieldLabels[obj.key] ?? obj.key });
-          }
-        }
-      }
-
-      for (const field of requiredFields) {
-        if (!getPayloadValue(field.name)) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: `${field.label} is required.` });
-        }
-      }
-    }
-
-    // Parse and validate donation fields if form is a donation or recurring_donation form
-    let amountCents = 0;
-    let monthlyAmountCents = 0;
-    let country = '';
-    let state = '';
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
-      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
-      if (!firstName || !lastName) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'First name and last name are required for donations.',
-        });
-      }
-
-      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-      const city = (payload['city'] || '').trim();
-      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-      country = (payload['country'] || payload['residency_country'] || '').trim();
-      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-      if (!street1 || !city || !zip || !country || !state) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message:
-            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
-        });
-      }
-
-      // Check if email already exists to run eligibility checks
-      const existing = await this.getRepo()
-        .db.selectFrom('persons')
-        .select('id')
-        .where('tenant_id', '=', tenantId)
-        .where(sql`lower(email)`, '=', email.toLowerCase())
-        .executeTakeFirst();
-
-      const donationsController = new DonationsController();
-
-      if (form.form_type === 'donation') {
-        const amountStr = payload['amount'] || payload['donation_amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
-        }
-        amountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          amountCents,
-          { country, state },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
-      } else {
-        // recurring_donation
-        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
-        const amountDollars = parseFloat(amountStr);
-        if (isNaN(amountDollars) || amountDollars <= 0) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
-        }
-        monthlyAmountCents = Math.round(amountDollars * 100);
-
-        const check = await donationsController.checkEligibility(
-          tenantId,
-          existing ? String(existing.id) : '0',
-          monthlyAmountCents,
-          { country, state },
-          { isRecurring: true },
-        );
-        if (!check.eligible) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
-        }
-      }
-    }
-
-    // 5. Gather submission fields. New-model forms collect a single `full_name`; split it on the
-    // last space so the person record still gets a first/last name.
-    let firstName = payload['first_name'] || payload['firstName'] || null;
-    let lastName = payload['last_name'] || payload['lastName'] || null;
-    if (!firstName && !lastName) {
-      const fullName = (payload['full_name'] || payload['name'] || '').trim();
-      if (fullName) {
-        const lastSpace = fullName.lastIndexOf(' ');
-        if (lastSpace === -1) {
-          firstName = fullName;
-        } else {
-          firstName = fullName.slice(0, lastSpace).trim();
-          lastName = fullName.slice(lastSpace + 1).trim();
-        }
-      }
-    }
-    const mobile = payload['mobile'] || payload['phone'] || null;
-    const notes = payload['notes'] || payload['message'] || null;
-
-    let resolvedPersonId = '';
-    let resolvedCreatorId = '1';
-
-    // 6. Find or Create person & apply merges/tags
-    await this.getRepo()
-      .transaction()
-      .execute(async (trx: Transaction<Models>) => {
-        const tenantRow = await trx
-          .selectFrom('tenants')
-          .select(['placeholder_household_id'])
-          .where('id', '=', tenantId)
-          .executeTakeFirst();
-
-        const householdId = tenantRow?.placeholder_household_id;
-        // Use the form's creator as the actor — they are the person who
-        // configured this form, which is the most correct attribution for
-        // contacts and data created via public submissions.
-        const creatorId = String(form.createdby_id);
-
-        resolvedCreatorId = creatorId;
-
-        if (!householdId) {
-          throw new Error('Tenant placeholder household is not configured.');
-        }
-
-        const campaignId = await this.getCampaignId(tenantId, trx);
-
-        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
-        // counted once they confirm via the emailed link (see confirm-subscription route).
-        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
-
-        let finalHouseholdId = householdId;
-
-        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
-        const city = (payload['city'] || '').trim();
-        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
-        const country = (payload['country'] || payload['residency_country'] || '').trim();
-        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
-
-        const hasAddress = !!(street1 || city || zip || country || state);
-
-        if (hasAddress) {
-          const fp_street = fingerprintStreet({ street1 });
-          const fp_full = fingerprintFull({
-            street1,
-            city,
-            state,
-            zip,
-            country,
-          });
-
-          const householdRepo = new HouseholdRepo();
-          const existingHh = await trx
-            .selectFrom('households')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('campaign_id', '=', campaignId)
-            .where('address_fp_full', '=', fp_full)
-            .executeTakeFirst();
-
-          if (existingHh) {
-            finalHouseholdId = String(existingHh.id);
-          } else {
-            const createdHhs = await householdRepo.addMany(
-              {
-                rows: [
-                  {
-                    tenant_id: tenantId,
-                    campaign_id: campaignId,
-                    createdby_id: creatorId,
-                    updatedby_id: creatorId,
-                    street1,
-                    city,
-                    state,
-                    zip,
-                    country,
-                    address_fp_street: fp_street,
-                    address_fp_full: fp_full,
-                  } as any,
-                ],
-              },
-              trx,
-            );
-            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
-              finalHouseholdId = String(createdHhs[0].id);
-            }
-          }
-        }
-
-        // Check if email already exists
-        const existing = await trx
-          .selectFrom('persons')
-          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
-          .where('tenant_id', '=', tenantId)
-          .where(sql`lower(email)`, '=', email.toLowerCase())
-          .executeTakeFirst();
-
-        let personId: string;
-
-        if (existing) {
-          personId = String(existing.id);
-          const updateRow: any = {
-            updatedby_id: creatorId,
-            updated_at: sql`now()`,
-          };
-          if (!existing.first_name && firstName) updateRow.first_name = firstName;
-          if (!existing.last_name && lastName) updateRow.last_name = lastName;
-          if (!existing.mobile && mobile) updateRow.mobile = mobile;
-          if (form.form_type === 'donation' || hasAddress) {
-            updateRow.household_id = finalHouseholdId;
-          }
-          if (!existing.notes && notes) {
-            updateRow.notes = notes;
-          } else if (existing.notes && notes) {
-            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
-          }
-
-          if (Object.keys(updateRow).length > 2) {
-            await trx
-              .updateTable('persons')
-              .set(updateRow)
-              .where('tenant_id', '=', tenantId)
-              .where('id', '=', existing.id)
-              .execute();
-          }
-        } else {
-          const insertRow = {
-            tenant_id: tenantId,
-            campaign_id: campaignId,
-            household_id: finalHouseholdId,
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-            first_name: firstName,
-            last_name: lastName,
-            email: email,
-            mobile: mobile,
-            notes: notes,
-            opt_in_status: doubleOptIn ? 'pending' : null,
-          };
-          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
-          personId = String(insertRes.id);
-
-          // Trigger contact created workflow
-          try {
-            const workflowsController = new WorkflowsController();
-            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
-          } catch (err) {
-            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
-          }
-
-          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
-          if (doubleOptIn) {
-            await this.enqueueSubscriptionConfirmation(trx, {
-              tenantId,
-              personId,
-              email,
-              firstName,
-            });
-          }
-        }
-
-        resolvedPersonId = personId;
-
-        const workflowsController = new WorkflowsController();
-
-        // Add target custom tags & read-only system tag
-        const targetTags: string[] = Array.isArray(form.target_tags)
-          ? form.target_tags
-          : JSON.parse((form.target_tags as any) || '[]');
-        const systemTagName = `source: ${form.name}`;
-        const allTagsToApply = [...targetTags, systemTagName];
-        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-          allTagsToApply.push('donor');
-        }
-
-        for (const tagName of allTagsToApply) {
-          const normalizedTagName = tagName.trim().toLowerCase();
-          if (!normalizedTagName) continue;
-
-          let tag = await trx
-            .selectFrom('tags')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('name', '=', normalizedTagName)
-            .where('type', '=', 'tag')
-            .executeTakeFirst();
-
-          if (!tag) {
-            const insertTagRes = await trx
-              .insertInto('tags')
-              .values({
-                tenant_id: tenantId,
-                name: normalizedTagName,
-                type: 'tag',
-                deletable: true,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .returning('id')
-              .executeTakeFirstOrThrow();
-            tag = { id: insertTagRes.id };
-          }
-
-          const mapExists = await trx
-            .selectFrom('map_peoples_tags')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('tag_id', '=', tag.id)
-            .executeTakeFirst();
-
-          if (!mapExists) {
-            await trx
-              .insertInto('map_peoples_tags')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                tag_id: tag.id,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger tag_added and specialized subscriber workflows
-            try {
-              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Add target lists. map_web_forms_lists is the source of truth — its
-        // FKs guarantee every row points at a live list (no dangling-id skip
-        // needed, unlike the legacy JSONB target_lists document).
-        const targetListRows = await trx
-          .selectFrom('map_web_forms_lists')
-          .select('list_id')
-          .where('tenant_id', '=', tenantId)
-          .where('web_form_id', '=', formId)
-          .execute();
-        for (const { list_id: listId } of targetListRows) {
-          const inList = await trx
-            .selectFrom('map_lists_persons')
-            .select('person_id')
-            .where('tenant_id', '=', tenantId)
-            .where('person_id', '=', personId)
-            .where('list_id', '=', listId)
-            .executeTakeFirst();
-
-          if (!inList) {
-            await trx
-              .insertInto('map_lists_persons')
-              .values({
-                tenant_id: tenantId,
-                person_id: personId,
-                list_id: listId,
-                createdby_id: creatorId,
-                updatedby_id: creatorId,
-              })
-              .execute();
-
-            // Trigger list joined workflows
-            try {
-              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
-            } catch (err) {
-              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
-            }
-          }
-        }
-
-        // Trigger web form submitted workflows
-        try {
-          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
-        } catch (err) {
-          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
-        }
-
-        // Log user activity
-        await trx
-          .insertInto('user_activity')
-          .values({
-            tenant_id: tenantId,
-            user_id: creatorId,
-            activity: 'submission',
-            entity: 'web_forms',
-            entity_id: formId,
-            quantity: 1,
-            metadata: JSON.stringify({ person_id: personId, email }),
-            createdby_id: creatorId,
-            updatedby_id: creatorId,
-          })
-          .execute();
-
-        // Persist a durable response record (answers snapshot + person FK) for the Responses tab.
-        // Donation forms are a separate flow (Stripe/webhook) and are not part of this model.
-        if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
-          const answers: Record<string, unknown> = {};
-          for (const [key, value] of Object.entries(payload)) {
-            if (key === '_hp') continue;
-            answers[key] = value;
-          }
-          await trx
-            .insertInto('form_submissions')
-            .values({
-              tenant_id: tenantId,
-              form_id: String(form.id),
-              person_id: personId,
-              answers: JSON.stringify(answers),
-            })
-            .execute();
-        }
-
-        // Queue email notification job in background
-        await trx
-          .insertInto('background_jobs')
-          .values({
-            tenant_id: tenantId,
-            queue: 'default',
-            status: 'pending',
-            payload: JSON.stringify({
-              type: 'send-webform-notifications',
-              formId: String(form.id),
-              tenantId,
-              email,
-              firstName,
-              lastName,
-              mobile,
-              notes,
-            }),
-            run_at: new Date(),
-          })
-          .execute();
-      });
-
-    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
-    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      const donationsController = new DonationsController();
-      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent(tenant.slug)}&checkout_cancel=true`;
-
-      if (form.form_type === 'donation') {
-        const checkoutSession = await donationsController.createCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          amountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      } else {
-        const checkoutSession = await donationsController.createRecurringCheckoutSession(
-          { tenant_id: tenantId, user_id: resolvedCreatorId },
-          resolvedPersonId,
-          monthlyAmountCents,
-          { country, state },
-          { successUrl, cancelUrl },
-        );
-        return { redirect_url: checkoutSession.url };
-      }
-    }
-
-    return { redirect_url: form.redirect_url || null };
-  }
-
-  /**
-   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
-   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
-   */
-  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      throw new TRPCError({
-        code: 'INTERNAL_SERVER_ERROR',
-        message: 'Server misconfiguration: SHARED_SECRET is missing.',
-      });
-    }
-
-    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
-
-    let payload: any;
-    try {
-      payload = await verifier(token);
-    } catch {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
-    }
-
-    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
-    }
-
-    await this.getRepo()
-      .db.updateTable('persons')
-      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
-      .where('tenant_id', '=', String(payload.tenant_id))
-      .where('id', '=', String(payload.person_id))
-      .execute();
-
-    return { success: true };
-  }
-
-  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'communications.double_opt_in')
-      .executeTakeFirst();
-
-    return row?.value === true || row?.value === 'true';
-  }
-
-  /**
-   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
-   * runs only if the surrounding submission transaction commits, keeping the pending person and the
-   * confirmation email consistent.
-   */
-  private async enqueueSubscriptionConfirmation(
-    trx: Transaction<Models>,
-    args: { tenantId: string; personId: string; email: string; firstName: string | null },
-  ): Promise<void> {
-    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
-    if (!key) {
-      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
-      return;
-    }
-
-    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
-    const token = signer({
-      tenant_id: args.tenantId,
-      person_id: args.personId,
-      email: args.email.toLowerCase().trim(),
-      purpose: 'confirm-subscription',
-    });
-    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
-
-    await trx
-      .insertInto('background_jobs')
-      .values({
-        tenant_id: args.tenantId,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'send-subscription-confirmation',
-          tenantId: args.tenantId,
-          email: args.email,
-          firstName: args.firstName,
-          confirmUrl,
-        }),
-        run_at: new Date(),
-      })
-      .execute();
-  }
-
-  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
-    const row = await trx
-      .selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'current_campaign')
-      .executeTakeFirst();
-
-    if (row) {
-      const value = row.value;
-      if (typeof value === 'number' || typeof value === 'string') {
-        return String(value);
-      }
-      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
-        const id = (value as Record<string, unknown>)['id'];
-        if (typeof id === 'number' || typeof id === 'string') {
-          return String(id);
-        }
-      }
-    }
-
-    const campaignRow = await trx
-      .selectFrom('campaigns')
-      .select('id')
-      .where('tenant_id', '=', tenantId)
-      .limit(1)
-      .executeTakeFirst();
-
-    if (campaignRow) {
-      return String(campaignRow.id);
-    }
-
-    throw new Error('No campaign found for this tenant.');
-  }
-
-  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
-    return this.getRepo().countSubmissions(tenantId, formId);
-  }
-
-  // ---------------------------------------------------------------------------
-  // North Star "living funnel" lifecycle (new Forms experience).
-  // ---------------------------------------------------------------------------
-
-  /** All non-donation forms as cards for the browse page, fields normalized for the preview. */
-  public async listForms(tenantId: string) {
-    const rows = await this.getRepo().listForms(tenantId);
-    return rows.map((row) => this.normalizeForm(row));
-  }
-
-  /**
-   * Public config for the unauthenticated /f/:slug page. Returns only what the public page renders,
-   * plus the org name; closed (unpublished/archived) forms return a status the page shows as a
-   * "closed" card. Throws NOT_FOUND when the slug doesn't exist at all.
-   */
-  public async getPublicFormBySlug(slug: string, tenantId: string) {
-    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
-    // Donation forms have slugs too (every form does) but render on the separate server-rendered
-    // /api/forms/d/:slug page with the amount field — never on the /f/:slug SPA page.
-    if (!form || form.form_type === 'donation' || form.form_type === 'recurring_donation') {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const orgName = await this.getOrgName(String(form.tenant_id));
-    if (form.status !== 'published') {
-      return { status: 'closed' as const, orgName, name: String(form.name) };
-    }
-    const normalized = this.normalizeForm(form) as {
-      id: string;
-      name: string;
-      description: string | null;
-      submit_label: string | null;
-      thanks_title: string | null;
-      thanks_body: string | null;
-      redirect_url: string | null;
-      fields: FormField[];
-    };
-    return {
-      status: 'open' as const,
-      orgName,
-      form: {
-        id: normalized.id,
-        name: normalized.name,
-        description: normalized.description,
-        submit_label: normalized.submit_label,
-        thanks_title: normalized.thanks_title,
-        thanks_body: normalized.thanks_body,
-        redirect_url: normalized.redirect_url,
-        fields: normalized.fields.filter((f) => f.on),
-      },
-    };
-  }
-
-  private async getOrgName(tenantId: string): Promise<string> {
-    const row = await this.getRepo()
-      .db.selectFrom('settings')
-      .select('value')
-      .where('tenant_id', '=', tenantId)
-      .where('key', '=', 'organization.name')
-      .executeTakeFirst();
-    const value = row?.value;
-    return typeof value === 'string' && value.trim() ? value : 'Our organization';
-  }
-
-  /** Single form, fields normalized — used by the editor + preview. */
-  public async getFormForEdit(id: string, tenantId: string) {
-    const form = await this.getRepo().getOneById({ id, tenant_id: tenantId });
-    if (!form) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    return this.normalizeForm(form);
-  }
-
-  /** Create a draft from a template. Lands the user in edit mode (frontend). */
-  public async createForm(payload: CreateFormType, auth: IAuthKeyPayload) {
-    const template = FORM_TEMPLATES[payload.type];
-    const slug = await this.uniqueSlug(auth.tenant_id, payload.name);
-    const fields = fieldsForTemplate(payload.type);
-    const row = {
-      tenant_id: auth.tenant_id,
-      name: payload.name,
-      description: template.description,
-      redirect_url: null,
-      target_tags: JSON.stringify([]),
-      target_lists: JSON.stringify([]),
-      fields: JSON.stringify(fields),
-      status: 'draft',
-      type: payload.type,
-      form_type: 'standard',
-      slug,
-      submit_label: template.submitLabel,
-      thanks_title: 'Thank you!',
-      thanks_body: 'Your response has been recorded — thanks for reaching out.',
-      confirm_subject: `Thanks for your ${payload.type}`,
-      confirm_body: 'Hi [First name],\n\nThanks for your submission — we’ve received it and will be in touch soon.',
-      send_confirmation: true,
-      send_alert: false,
-      notify_team_on: false,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-    const created = await this.add(row as any);
-    return this.normalizeForm(created);
-  }
-
-  /** Live-edit patch. `normForm` guarantees the email identity-key invariant server-side. */
-  public async updateFormLive(id: string, patch: UpdateFormType, auth: IAuthKeyPayload) {
-    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-
-    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
-    // Slug intentionally stays stable across renames — a published link must never break.
-    if (patch.name !== undefined) row['name'] = patch.name;
-    if (patch.description !== undefined) row['description'] = patch.description;
-    if (patch.redirect_url !== undefined) row['redirect_url'] = patch.redirect_url;
-    if (patch.submit_label !== undefined) row['submit_label'] = patch.submit_label;
-    if (patch.thanks_title !== undefined) row['thanks_title'] = patch.thanks_title;
-    if (patch.thanks_body !== undefined) row['thanks_body'] = patch.thanks_body;
-    if (patch.confirm_email_on !== undefined) row['send_confirmation'] = patch.confirm_email_on;
-    if (patch.confirm_subject !== undefined) row['confirm_subject'] = patch.confirm_subject;
-    if (patch.confirm_body !== undefined) row['confirm_body'] = patch.confirm_body;
-    if (patch.notify_team_on !== undefined) row['notify_team_on'] = patch.notify_team_on;
-    if (patch.target_tags !== undefined) row['target_tags'] = JSON.stringify(patch.target_tags);
-    if (patch.target_lists !== undefined) row['target_lists'] = JSON.stringify(patch.target_lists);
-    if (patch.fields !== undefined) {
-      row['fields'] = JSON.stringify(normForm(patch.fields));
-    }
-
-    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
-    if (patch.target_lists !== undefined) {
-      await this.syncTargetLists(auth, id, patch.target_lists ?? []);
-    }
-    return this.normalizeForm(updated);
-  }
-
-  /**
-   * Replace the form's map_web_forms_lists rows (the source of truth for list
-   * targeting — the JSONB target_lists column is still dual-written during
-   * the transition, but nothing reads it for behavior anymore). Ids that
-   * don't resolve to a live list in the tenant are dropped.
-   */
-  private async syncTargetLists(auth: IAuthKeyPayload, formId: string, listIds: string[]): Promise<void> {
-    const db = this.getRepo().db;
-    const candidates = [...new Set(listIds.map((id) => String(id)))].filter((id) => /^\d+$/.test(id));
-    let liveIds: string[] = [];
-    if (candidates.length > 0) {
-      const rows = await db
-        .selectFrom('lists')
-        .select('id')
-        .where('tenant_id', '=', auth.tenant_id)
-        .where('id', 'in', candidates)
-        .execute();
-      liveIds = rows.map((r) => String(r.id));
-    }
-
-    await db
-      .deleteFrom('map_web_forms_lists')
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('web_form_id', '=', formId)
-      .execute();
-
-    if (liveIds.length > 0) {
-      await db
-        .insertInto('map_web_forms_lists')
-        .values(
-          liveIds.map((list_id) => ({
-            tenant_id: auth.tenant_id,
-            web_form_id: formId,
-            list_id,
-            createdby_id: auth.user_id,
-            updatedby_id: auth.user_id,
-          })),
-        )
-        .execute();
-    }
-  }
-
-  public publishForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'published', null);
-  }
-
-  public unpublishForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'draft', null);
-  }
-
-  public archiveForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'archived', new Date());
-  }
-
-  /** Restore always lands in draft — reopening a public link is a deliberate act. */
-  public restoreForm(id: string, auth: IAuthKeyPayload) {
-    return this.setStatus(id, auth, 'draft', null);
-  }
-
-  /** Hard delete is only allowed for a zero-response draft; everything else must be archived. */
-  public async deleteForm(id: string, auth: IAuthKeyPayload) {
-    const existing = (await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id })) as
-      | { status?: string }
-      | undefined;
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const count = await this.getRepo().countSubmissions(auth.tenant_id, id);
-    if (existing.status !== 'draft' || count > 0) {
-      throw new TRPCError({
-        code: 'BAD_REQUEST',
-        message: 'Only a draft with no responses can be deleted. Archive it instead — archiving is reversible.',
-      });
-    }
-    return this.delete(auth.tenant_id, id, auth.user_id);
-  }
-
-  public async getFormSubmissions(id: string, tenantId: string, cursor?: number) {
-    const limit = 25;
-    const offset = cursor ?? 0;
-    const rows = await this.getRepo().getFormSubmissions(tenantId, id, limit + 1, offset);
-    const total = await this.getRepo().countSubmissions(tenantId, id);
-    const hasMore = rows.length > limit;
-    const items = rows.slice(0, limit).map((row) => {
-      const answersRaw = row['answers'];
-      const answers =
-        typeof answersRaw === 'string'
-          ? this.safeJson(answersRaw, {})
-          : ((answersRaw as Record<string, unknown>) ?? {});
-      const name = `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim();
-      return {
-        id: String(row['id']),
-        person_id: String(row['person_id']),
-        person_name: name || null,
-        answers,
-        created_at: row['created_at'] as Date | string,
-      };
-    });
-    return { items, total, nextCursor: hasMore ? offset + limit : null };
-  }
-
-  private async setStatus(
-    id: string,
-    auth: IAuthKeyPayload,
-    status: 'draft' | 'published' | 'archived',
-    archivedAt: Date | null,
-  ) {
-    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
-    if (!existing) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
-    }
-    const updated = await this.update({
-      tenant_id: auth.tenant_id,
-      id,
-      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() } as any,
-    });
-    return this.normalizeForm(updated);
-  }
-
-  private async uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
-    const base =
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '') || 'form';
-    let slug = base;
-    let n = 2;
-    while (await this.getRepo().slugExists(tenantId, slug, excludeId)) {
-      slug = `${base}-${n++}`;
-    }
-    return slug;
-  }
-
-  /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */
-  private mapLegacyStatus(status: string | undefined): 'draft' | 'published' | 'archived' {
-    if (status === 'archived') return 'archived';
-    if (status === 'draft') return 'draft';
-    return 'published';
-  }
-
-  private safeJson<T>(value: string, fallback: T): T {
-    try {
-      return JSON.parse(value) as T;
-    } catch {
-      return fallback;
-    }
-  }
-
-  private normalizeForm(record: unknown) {
-    if (!record || typeof record !== 'object') return record;
-    const row = record as Record<string, unknown>;
-    const toArray = (value: unknown): string[] => {
-      if (Array.isArray(value)) return value as string[];
-      if (typeof value === 'string') return this.safeJson<string[]>(value, []);
-      return [];
-    };
-    const rawFields = Array.isArray(row['fields'])
-      ? row['fields']
-      : typeof row['fields'] === 'string'
-        ? this.safeJson<unknown[]>(row['fields'] as string, [])
-        : [];
-    return {
-      ...row,
-      id: row['id'] != null ? String(row['id']) : row['id'],
-      tenant_id: row['tenant_id'] != null ? String(row['tenant_id']) : row['tenant_id'],
-      target_tags: toArray(row['target_tags']),
-      target_lists: toArray(row['target_lists']),
-      fields: normForm(rawFields),
-      submission_count: row['submission_count'] != null ? Number(row['submission_count']) : 0,
-    };
-  }
-}
-```
-
 ## File: apps/backend/src/app/lib/base.repo.ts
 
 ```typescript
@@ -43330,736 +43330,1129 @@ const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_2FA_ATTEMPTS = 5; // wrong OTP guesses before the code is invalidated
 ```
 
-## File: apps/backend/src/app/modules/emails/routes/emails-api.route.ts
+## File: apps/backend/src/app/modules/web-forms/controller.ts
 
 ```typescript
-import { Client } from '@microsoft/microsoft-graph-client';
-import crypto from 'crypto';
-import { ALL_FOLDERS } from '../../../../../../../libs/common/src/lib/emails';
-import type { FastifyPluginCallback } from 'fastify';
-import { env } from '../../../../env';
-import { authenticateRest } from '../../../lib/rest-auth';
-import { verifyEmailAttachmentToken } from '../../../lib/signed-download';
-import { BaseRepository } from '../../../lib/base.repo';
-import { attachmentDisposition } from '../../../lib/download-headers';
-import { sanitizeHtml } from '../../../lib/mail/sanitize-util';
-import { StorageService } from '../../../lib/storage.service';
-import { GoogleOAuthService } from '../../google-sync/google-oauth.service';
-import { GoogleSyncService } from '../../google-sync/google-sync.service';
-import { MsOAuthService } from '../../ms-sync/ms-oauth.service';
-import { MsSyncService } from '../../ms-sync/ms-sync.service';
+import type {
+  AddWebFormType,
+  CreateFormType,
+  FormField,
+  IAuthKeyPayload,
+  UpdateFormType,
+  UpdateWebFormType,
+} from '../../../../../../libs/common/src';
+import { FORM_TEMPLATES, fieldsForTemplate, normForm, slugifyRecordName } from '../../../../../../libs/common/src';
+import { BaseController } from '../../lib/base.controller';
+import { uniqueSlug } from '../../lib/slug';
+import { WebFormsRepo } from './repositories/web-forms.repo';
+import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { type Transaction, sql } from 'kysely';
+import { TRPCError } from '@trpc/server';
+import { env } from '../../../env';
+import { createSigner, createVerifier } from 'fast-jwt';
+import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import type { PublicTenant } from '../../lib/public-tenant';
+import { HouseholdRepo } from '../households/repositories/households.repo';
 
-function buildRawMime(options: {
-  fromName: string;
-  fromEmail: string;
-  to: string[];
-  cc: string[];
-  bcc: string[];
-  subject: string;
-  html: string;
-  attachments: { filename: string; content: Buffer; contentType: string }[];
-}): Buffer {
-  const boundary = `----=_Part_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
-  const headers: string[] = [];
+import { WorkflowsController } from '../workflows/controller';
+import { DonationsController } from '../donations/controller';
+import { logger } from '../../logger';
 
-  const safeFromName = options.fromName.replace(/"/g, '\\"');
-  headers.push(`From: "${safeFromName}" <${options.fromEmail}>`);
-  headers.push(`To: ${options.to.join(', ')}`);
-  if (options.cc.length > 0) {
-    headers.push(`Cc: ${options.cc.join(', ')}`);
-  }
-  if (options.bcc.length > 0) {
-    headers.push(`Bcc: ${options.bcc.join(', ')}`);
+// Sliding window memory for rate-limiting
+const ipSubmissionTimestamps = new Map<string, number[]>();
+const RATE_LIMIT_MAX = 5;
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+
+export class WebFormsController extends BaseController<'web_forms', WebFormsRepo> {
+  constructor() {
+    super(new WebFormsRepo());
   }
 
-  const base64Subject = Buffer.from(options.subject).toString('base64');
-  headers.push(`Subject: =?utf-8?B?${base64Subject}?=`);
-
-  headers.push(`MIME-Version: 1.0`);
-  headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
-  headers.push('');
-
-  const bodyParts: string[] = [];
-
-  bodyParts.push(`--${boundary}`);
-  bodyParts.push(`Content-Type: text/html; charset="UTF-8"`);
-  bodyParts.push(`Content-Transfer-Encoding: base64`);
-  bodyParts.push('');
-  bodyParts.push(Buffer.from(options.html).toString('base64'));
-  bodyParts.push('');
-
-  for (const att of options.attachments) {
-    bodyParts.push(`--${boundary}`);
-    bodyParts.push(`Content-Type: ${att.contentType}; name="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Disposition: attachment; filename="${att.filename.replace(/"/g, '\\"')}"`);
-    bodyParts.push(`Content-Transfer-Encoding: base64`);
-    bodyParts.push('');
-    bodyParts.push(att.content.toString('base64'));
-    bodyParts.push('');
+  public override async getOneById(input: { tenant_id: string; id: string }) {
+    const form = await super.getOneById(input);
+    if (!form) return form;
+    return this.resolveCreatorAndUpdater(input.tenant_id, form);
   }
 
-  bodyParts.push(`--${boundary}--`);
+  /**
+   * Tenant-scoped lookup for the server-rendered public donation page (/api/forms/d/:slug).
+   * Only donation-type forms resolve here — standard forms live on the /f/:slug SPA page.
+   */
+  public async getDonationFormPublic(tenantId: string, slug: string) {
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+    if (!form || (form.form_type !== 'donation' && form.form_type !== 'recurring_donation')) {
+      return undefined;
+    }
+    return form;
+  }
 
-  const rawMimeString = headers.join('\r\n') + '\r\n' + bodyParts.join('\r\n');
-  return Buffer.from(rawMimeString, 'utf-8');
-}
+  public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
+    const row = {
+      tenant_id: auth.tenant_id,
+      slug: await this.uniqueSlug(auth.tenant_id, payload.name),
+      name: payload.name,
+      description: payload.description ?? null,
+      redirect_url: payload.redirect_url ?? null,
+      target_tags: payload.target_tags ? JSON.stringify(payload.target_tags) : null,
+      target_lists: payload.target_lists ? JSON.stringify(payload.target_lists) : null,
+      fields: payload.fields ? JSON.stringify(payload.fields) : null,
+      status: this.mapLegacyStatus(payload.status),
+      send_confirmation: payload.send_confirmation ?? true,
+      send_alert: payload.send_alert ?? true,
+      form_type: payload.form_type ?? 'standard',
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    const created = await this.add(row as any);
+    const createdId = (created as Record<string, unknown> | undefined)?.['id'];
+    if (createdId != null && payload.target_lists?.length) {
+      await this.syncTargetLists(auth, String(createdId), payload.target_lists);
+    }
+    return created;
+  }
 
-const storageService = new StorageService();
+  public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getOneById({ tenant_id: auth.tenant_id, id });
+    if (!existing) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found.',
+      });
+    }
 
-let _oauthSvc: MsOAuthService | null = null;
+    const row: any = {
+      updatedby_id: auth.user_id,
+      updated_at: new Date(),
+    };
+    if (payload.name !== undefined) row.name = payload.name;
+    if (payload.description !== undefined) row.description = payload.description;
+    if (payload.redirect_url !== undefined) row.redirect_url = payload.redirect_url;
+    if (payload.target_tags !== undefined)
+      row.target_tags = payload.target_tags ? JSON.stringify(payload.target_tags) : null;
+    if (payload.target_lists !== undefined)
+      row.target_lists = payload.target_lists ? JSON.stringify(payload.target_lists) : null;
+    if (payload.fields !== undefined) row.fields = payload.fields ? JSON.stringify(payload.fields) : null;
+    if (payload.status !== undefined) row.status = this.mapLegacyStatus(payload.status);
+    if (payload.send_confirmation !== undefined) row.send_confirmation = payload.send_confirmation;
+    if (payload.send_alert !== undefined) row.send_alert = payload.send_alert;
 
-function getOAuthService(db: any) {
-  if (!_oauthSvc) {
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    const rawPayload = payload as any;
+    if (rawPayload.form_type !== undefined && rawPayload.form_type !== existing.form_type) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Form type cannot be changed after the form has been created.',
+      });
+    }
+
+    const updated = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row,
     });
+    if (payload.target_lists !== undefined) {
+      await this.syncTargetLists(auth, id, payload.target_lists ?? []);
+    }
+    return updated;
   }
-  return _oauthSvc;
-}
 
-export async function saveLocalEmail(
-  db: any,
-  tenantId: string,
-  userId: string,
-  fromEmail: string,
-  fromName: string,
-  toList: string[],
-  ccList: string[],
-  bccList: string[],
-  subject: string,
-  html: string,
-  uploadedFiles: any[],
-  previewKey: string,
-) {
-  return db.transaction().execute(async (trx: any) => {
-    // 1. Insert into emails table (Outbox)
-    const createdEmail = await trx
-      .insertInto('emails')
-      .values({
-        tenant_id: tenantId,
-        folder_id: ALL_FOLDERS.OUTBOX,
-        from_email: fromEmail,
-        to_email: toList.join(', '),
-        subject: subject,
-        preview: previewKey,
-        assigned_to: userId,
-        is_favourite: false,
-        deleted_at: null,
-        status: 'open',
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .returningAll()
-      .executeTakeFirstOrThrow();
+  public async submitFormPublic(tenant: PublicTenant, slug: string, payload: Record<string, string>, clientIp: string) {
+    // 1. Rate limiting check
+    const now = Date.now();
+    let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
+    timestamps = timestamps.filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+    if (timestamps.length >= RATE_LIMIT_MAX) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Rate limit exceeded. Please try again in a minute.',
+      });
+    }
+    timestamps.push(now);
+    // Prune empty keys to prevent unbounded Map growth
+    if (timestamps.length > 0) {
+      ipSubmissionTimestamps.set(clientIp, timestamps);
+    } else {
+      ipSubmissionTimestamps.delete(clientIp);
+    }
 
-    const emailId = String(createdEmail.id);
+    // 2. Fetch the form — tenant-scoped by slug; the tenant was resolved from the subdomain
+    const tenantId = tenant.id;
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+    if (!form || form.status !== 'published') {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'Web form not found or inactive.',
+      });
+    }
+    const formId = String(form.id);
 
-    // 2. Insert html into email_bodies
-    await trx
-      .insertInto('email_bodies')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        body_html: html,
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
+    // 3. Honeypot check
+    if (payload['_hp'] && payload['_hp'].trim().length > 0) {
+      logger.warn(`Spam bot detected from IP ${clientIp} for form ${formId}`);
+      return { redirect_url: form.redirect_url || null };
+    }
 
-    // 3. Insert files and email_attachments metadata
-    for (let i = 0; i < uploadedFiles.length; i++) {
-      const uFile = uploadedFiles[i];
-      let fileId: string;
+    // 4. Validate email
+    const email = payload['email']?.trim();
+    if (!email) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Email address is required.',
+      });
+    }
 
-      // Persist (or reuse, via sha256 dedup) the file row, then link the
-      // attachment to it so downloads can resolve the stored blob.
-      const existingFile = await trx
-        .selectFrom('files')
+    // Parse configured fields. Supports both the legacy string[] shape ("mobile:required") used by
+    // donation/older forms and the new-model FormField[] objects ({ key, on, required, label }).
+    const rawFields: unknown = form.fields
+      ? Array.isArray(form.fields)
+        ? form.fields
+        : JSON.parse(String(form.fields))
+      : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+    const fieldArray: unknown[] = Array.isArray(rawFields) ? rawFields : [];
+
+    // Map payload key aliases helper
+    const getPayloadValue = (key: string): string => {
+      let value = '';
+      if (key === 'first_name') value = payload['first_name'] || payload['firstName'] || '';
+      else if (key === 'last_name') value = payload['last_name'] || payload['lastName'] || '';
+      else if (key === 'full_name' || key === 'name') value = payload['full_name'] || payload['name'] || '';
+      else if (key === 'street1') value = payload['street1'] || payload['street_address'] || '';
+      else if (key === 'zip') value = payload['zip'] || payload['postal_code'] || '';
+      else if (key === 'country') value = payload['country'] || payload['residency_country'] || '';
+      else if (key === 'state') value = payload['state'] || payload['province'] || payload['residency_province'] || '';
+      else value = payload[key] || '';
+      return String(value).trim();
+    };
+
+    // Validate user-configured required fields for standard forms
+    if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+      const fieldLabels: Record<string, string> = {
+        first_name: 'First Name',
+        last_name: 'Last Name',
+        full_name: 'Full name',
+        mobile: 'Mobile / Phone',
+        notes: 'Notes / Message',
+        street1: 'Street Address',
+        city: 'City',
+        state: 'State / Province',
+        zip: 'Zip / Postal Code',
+        country: 'Country',
+      };
+
+      const requiredFields: { name: string; label: string }[] = [];
+      for (const raw of fieldArray) {
+        if (typeof raw === 'string') {
+          if (raw.endsWith(':required')) {
+            const name = raw.replace(':required', '');
+            requiredFields.push({ name, label: fieldLabels[name] ?? name });
+          }
+        } else if (raw && typeof raw === 'object') {
+          const obj = raw as { key?: string; on?: boolean; required?: boolean; label?: string };
+          // Email is validated separately above; skip it here.
+          if (obj.key && obj.key !== 'email' && obj.on && obj.required) {
+            requiredFields.push({ name: obj.key, label: obj.label ?? fieldLabels[obj.key] ?? obj.key });
+          }
+        }
+      }
+
+      for (const field of requiredFields) {
+        if (!getPayloadValue(field.name)) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: `${field.label} is required.` });
+        }
+      }
+    }
+
+    // Parse and validate donation fields if form is a donation or recurring_donation form
+    let amountCents = 0;
+    let monthlyAmountCents = 0;
+    let country = '';
+    let state = '';
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const firstName = (payload['first_name'] || payload['firstName'] || '').trim();
+      const lastName = (payload['last_name'] || payload['lastName'] || '').trim();
+      if (!firstName || !lastName) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'First name and last name are required for donations.',
+        });
+      }
+
+      const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+      const city = (payload['city'] || '').trim();
+      const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+      country = (payload['country'] || payload['residency_country'] || '').trim();
+      state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+      if (!street1 || !city || !zip || !country || !state) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message:
+            'Street address, city, state/province, zip/postal code, and country of residence are required for donations.',
+        });
+      }
+
+      // Check if email already exists to run eligibility checks
+      const existing = await this.getRepo()
+        .db.selectFrom('persons')
         .select('id')
         .where('tenant_id', '=', tenantId)
-        .where('sha256_hex', '=', uFile.sha256_hex)
+        .where(sql`lower(email)`, '=', email.toLowerCase())
         .executeTakeFirst();
 
-      if (existingFile) {
-        fileId = String(existingFile.id);
+      const donationsController = new DonationsController();
+
+      if (form.form_type === 'donation') {
+        const amountStr = payload['amount'] || payload['donation_amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid donation amount is required.' });
+        }
+        amountCents = Math.round(amountDollars * 100);
+
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          amountCents,
+          { country, state },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
       } else {
-        const fileResult = await trx
-          .insertInto('files')
-          .values({
-            tenant_id: tenantId,
-            filename: uFile.filename,
-            mime_type: uFile.content_type,
-            size_bytes: uFile.size_bytes,
-            storage_key: uFile.storage_key,
-            sha256_hex: uFile.sha256_hex,
-            uploaded_by: userId,
-          })
-          .returning('id')
-          .executeTakeFirstOrThrow();
-        fileId = String(fileResult.id);
-      }
+        // recurring_donation
+        const amountStr = payload['monthly_amount'] || payload['amount'] || '';
+        const amountDollars = parseFloat(amountStr);
+        if (isNaN(amountDollars) || amountDollars <= 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'A valid monthly donation amount is required.' });
+        }
+        monthlyAmountCents = Math.round(amountDollars * 100);
 
-      await trx
-        .insertInto('email_attachments')
-        .values({
-          tenant_id: tenantId,
-          email_id: emailId,
-          filename: uFile.filename,
-          content_type: uFile.content_type,
-          size_bytes: uFile.size_bytes,
-          cid: uFile.cid,
-          is_inline: uFile.is_inline,
-          pos: i + 1,
-          file_id: fileId,
-          createdby_id: userId,
-          updatedby_id: userId,
-        })
-        .execute();
-    }
-
-    // 4. Insert headers
-    const internetMessageId = `<${crypto.randomUUID()}@pplcrm.local>`;
-    const rawHeaders = `Message-ID: ${internetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-
-    await trx
-      .insertInto('email_headers')
-      .values({
-        tenant_id: tenantId,
-        email_id: emailId,
-        headers_json: JSON.stringify({ internetMessageId }),
-        raw_headers: rawHeaders,
-        date_sent: new Date(),
-        createdby_id: userId,
-        updatedby_id: userId,
-      })
-      .execute();
-
-    // 5. Insert recipients
-    const recipientRows: any[] = [];
-    toList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'to',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    ccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'cc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-    bccList.forEach((emailAddr: string, idx: number) => {
-      recipientRows.push({
-        tenant_id: tenantId,
-        email_id: emailId,
-        kind: 'bcc',
-        name: null,
-        email: emailAddr,
-        pos: idx,
-        createdby_id: userId,
-        updatedby_id: userId,
-      });
-    });
-
-    if (recipientRows.length > 0) {
-      await trx.insertInto('email_recipients').values(recipientRows).execute();
-    }
-
-    return createdEmail;
-  });
-}
-
-const emailsApiRoute: FastifyPluginCallback = (fastify, _, done) => {
-  // Send composed email
-  fastify.post('/send', async (req: any, reply) => {
-    // Mutating endpoint: enforce session revocation and block read-only viewers.
-    const authResult = await authenticateRest(req, { requireWrite: true });
-    if (!authResult.ok) {
-      return reply.status(authResult.status).send({ error: authResult.error });
-    }
-
-    const tenantId = authResult.auth.tenant_id;
-    const userId = authResult.auth.user_id;
-    const db = (BaseRepository as any)['_db'];
-
-    // Retrieve sender user details
-    const user = await db
-      .selectFrom('authusers')
-      .select(['email', 'first_name', 'last_name'])
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', userId)
-      .executeTakeFirst();
-
-    if (!user) {
-      return reply.status(401).send({ error: 'Unauthorized: User not found' });
-    }
-
-    const fromEmail = user.email;
-    const fromName = `${user.first_name} ${user.last_name || ''}`.trim();
-
-    // Parse multipart request parts
-    const parts = req.parts();
-    const fields: any = {};
-    const files: any[] = [];
-
-    for await (const part of parts) {
-      if (part.file) {
-        const buffer = await part.toBuffer();
-        files.push({
-          filename: part.filename,
-          fieldname: part.fieldname,
-          mimetype: part.mimetype,
-          buffer,
-        });
-      } else {
-        fields[part.fieldname] = part.value;
+        const check = await donationsController.checkEligibility(
+          tenantId,
+          existing ? String(existing.id) : '0',
+          monthlyAmountCents,
+          { country, state },
+          { isRecurring: true },
+        );
+        if (!check.eligible) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: check.reason });
+        }
       }
     }
 
-    // Parse recipient lists and content fields
-    const toList = fields.to ? JSON.parse(fields.to) : [];
-    const ccList = fields.cc ? JSON.parse(fields.cc) : [];
-    const bccList = fields.bcc ? JSON.parse(fields.bcc) : [];
-    const subject = fields.subject || '';
-    const html = sanitizeHtml(fields.html || '');
-
-    // Upload attachment files to storage outside transaction
-    const uploadedFiles: Array<{
-      filename: string;
-      content_type: string;
-      size_bytes: number;
-      storage_key: string;
-      sha256_hex: string;
-      cid: string | null;
-      is_inline: boolean;
-    }> = [];
-
-    for (const file of files) {
-      const sha256_hex = crypto.createHash('sha256').update(file.buffer).digest('hex');
-      const fileUUID = crypto.randomUUID();
-      const storage_key = `emails/attachments/${fileUUID}_${file.filename}`;
-
-      await storageService.upload(storage_key, file.buffer, file.mimetype);
-
-      uploadedFiles.push({
-        filename: file.filename,
-        content_type: file.mimetype,
-        size_bytes: file.buffer.length,
-        storage_key,
-        sha256_hex,
-        cid: null,
-        is_inline: false,
-      });
-    }
-
-    // Check if user has connected Microsoft and/or Google accounts
-    const msToken = await db
-      .selectFrom('ms_oauth_tokens')
-      .select(['user_id', 'ms_email'])
-      .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const googleToken = await db
-      .selectFrom('google_oauth_tokens')
-      .select(['user_id', 'google_email'])
-      .where('tenant_id', '=', tenantId)
-      .where('user_id', '=', userId)
-      .executeTakeFirst();
-
-    const hasMsConnected = !!msToken;
-    const hasGoogleConnected = !!googleToken;
-
-    // Fail immediately if no send method is configured
-    if (!hasMsConnected && !hasGoogleConnected) {
-      return reply.status(400).send({
-        status: 'error',
-        message: 'No email dispatch method configured. Please connect a Microsoft or Google account.',
-      });
-    }
-
-    // Save outbound email to database under Outbox folder '10' initially
-    const fallbackPreview =
-      html
-        .replace(/<[^>]*>/g, '')
-        .substring(0, 100)
-        .trim() || '';
-    let emailRow: Awaited<ReturnType<typeof saveLocalEmail>>;
-    try {
-      emailRow = await saveLocalEmail(
-        db,
-        tenantId,
-        userId,
-        fromEmail,
-        fromName,
-        toList,
-        ccList,
-        bccList,
-        subject,
-        html,
-        uploadedFiles,
-        fallbackPreview,
-      );
-    } catch (err) {
-      fastify.log.error(err, 'Failed to save outbound email to database');
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Failed to save email', 500);
-    }
-
-    // Determine send method prioritizing matching address
-    let sendMethod: 'ms' | 'google' = 'ms';
-    if (hasMsConnected && hasGoogleConnected) {
-      if (googleToken?.google_email?.toLowerCase() === fromEmail.toLowerCase()) {
-        sendMethod = 'google';
-      } else {
-        sendMethod = 'ms';
+    // 5. Gather submission fields. New-model forms collect a single `full_name`; split it on the
+    // last space so the person record still gets a first/last name.
+    let firstName = payload['first_name'] || payload['firstName'] || null;
+    let lastName = payload['last_name'] || payload['lastName'] || null;
+    if (!firstName && !lastName) {
+      const fullName = (payload['full_name'] || payload['name'] || '').trim();
+      if (fullName) {
+        const lastSpace = fullName.lastIndexOf(' ');
+        if (lastSpace === -1) {
+          firstName = fullName;
+        } else {
+          firstName = fullName.slice(0, lastSpace).trim();
+          lastName = fullName.slice(lastSpace + 1).trim();
+        }
       }
-    } else if (hasMsConnected) {
-      sendMethod = 'ms';
-    } else if (hasGoogleConnected) {
-      sendMethod = 'google';
     }
+    const mobile = payload['mobile'] || payload['phone'] || null;
+    const notes = payload['notes'] || payload['message'] || null;
 
-    // Dispatch the email synchronously
-    try {
-      if (sendMethod === 'ms') {
-        const oauthSvc = getOAuthService(db);
-        let msDraftId: string | null = null;
-        try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-          const client = Client.init({
-            authProvider: (done) => done(null, accessToken),
+    let resolvedPersonId = '';
+    let resolvedCreatorId = '1';
+
+    // 6. Find or Create person & apply merges/tags
+    await this.getRepo()
+      .transaction()
+      .execute(async (trx: Transaction<Models>) => {
+        const tenantRow = await trx
+          .selectFrom('tenants')
+          .select(['placeholder_household_id'])
+          .where('id', '=', tenantId)
+          .executeTakeFirst();
+
+        const householdId = tenantRow?.placeholder_household_id;
+        // Use the form's creator as the actor — they are the person who
+        // configured this form, which is the most correct attribution for
+        // contacts and data created via public submissions.
+        const creatorId = String(form.createdby_id);
+
+        resolvedCreatorId = creatorId;
+
+        if (!householdId) {
+          throw new Error('Tenant placeholder household is not configured.');
+        }
+
+        const campaignId = await this.getCampaignId(tenantId, trx);
+
+        // When the tenant requires double opt-in, new subscribers are created as 'pending' and only
+        // counted once they confirm via the emailed link (see confirm-subscription route).
+        const doubleOptIn = await this.isDoubleOptInEnabled(tenantId, trx);
+
+        let finalHouseholdId = householdId;
+
+        const street1 = (payload['street1'] || payload['street_address'] || '').trim();
+        const city = (payload['city'] || '').trim();
+        const zip = (payload['zip'] || payload['postal_code'] || '').trim();
+        const country = (payload['country'] || payload['residency_country'] || '').trim();
+        const state = (payload['state'] || payload['province'] || payload['residency_province'] || '').trim();
+
+        const hasAddress = !!(street1 || city || zip || country || state);
+
+        if (hasAddress) {
+          const fp_street = fingerprintStreet({ street1 });
+          const fp_full = fingerprintFull({
+            street1,
+            city,
+            state,
+            zip,
+            country,
           });
 
-          const msDraftMessage: any = {
-            subject: subject,
-            body: {
-              contentType: 'html',
-              content: html,
-            },
-            toRecipients: toList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            ccRecipients: ccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-            bccRecipients: bccList.map((emailAddr: string) => ({
-              emailAddress: { address: emailAddr },
-            })),
-          };
-
-          const createdDraft = await client.api('/me/messages').post(msDraftMessage);
-          msDraftId = createdDraft.id;
-          const graphInternetMessageId = createdDraft.internetMessageId;
-
-          // Update local email preview/dedupe key to `ms:${msDraftId}`
-          await db
-            .updateTable('emails')
-            .set({ preview: `ms:${msDraftId}`, updated_at: new Date() })
+          const householdRepo = new HouseholdRepo();
+          const existingHh = await trx
+            .selectFrom('households')
+            .select('id')
             .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
+            .where('campaign_id', '=', campaignId)
+            .where('address_fp_full', '=', fp_full)
+            .executeTakeFirst();
 
-          if (graphInternetMessageId) {
-            const rawHeaders = `Message-ID: ${graphInternetMessageId}\r\nSubject: ${subject}\r\nFrom: "${fromName}" <${fromEmail}>\r\nTo: ${toList.join(', ')}\r\nDate: ${new Date().toUTCString()}\r\n`;
-            await db
-              .updateTable('email_headers')
-              .set({
-                headers_json: JSON.stringify({ internetMessageId: graphInternetMessageId }),
-                raw_headers: rawHeaders,
-                updated_at: new Date(),
-              })
+          if (existingHh) {
+            finalHouseholdId = String(existingHh.id);
+          } else {
+            const createdHhs = await householdRepo.addMany(
+              {
+                rows: [
+                  {
+                    tenant_id: tenantId,
+                    campaign_id: campaignId,
+                    createdby_id: creatorId,
+                    updatedby_id: creatorId,
+                    street1,
+                    city,
+                    state,
+                    zip,
+                    country,
+                    address_fp_street: fp_street,
+                    address_fp_full: fp_full,
+                  } as any,
+                ],
+              },
+              trx,
+            );
+            if (createdHhs && createdHhs[0] && createdHhs[0].id) {
+              finalHouseholdId = String(createdHhs[0].id);
+            }
+          }
+        }
+
+        // Check if email already exists
+        const existing = await trx
+          .selectFrom('persons')
+          .select(['id', 'first_name', 'last_name', 'mobile', 'notes'])
+          .where('tenant_id', '=', tenantId)
+          .where(sql`lower(email)`, '=', email.toLowerCase())
+          .executeTakeFirst();
+
+        let personId: string;
+
+        if (existing) {
+          personId = String(existing.id);
+          const updateRow: any = {
+            updatedby_id: creatorId,
+            updated_at: sql`now()`,
+          };
+          if (!existing.first_name && firstName) updateRow.first_name = firstName;
+          if (!existing.last_name && lastName) updateRow.last_name = lastName;
+          if (!existing.mobile && mobile) updateRow.mobile = mobile;
+          if (form.form_type === 'donation' || hasAddress) {
+            updateRow.household_id = finalHouseholdId;
+          }
+          if (!existing.notes && notes) {
+            updateRow.notes = notes;
+          } else if (existing.notes && notes) {
+            updateRow.notes = `${existing.notes}\n\nSubmission notes: ${notes}`;
+          }
+
+          if (Object.keys(updateRow).length > 2) {
+            await trx
+              .updateTable('persons')
+              .set(updateRow)
               .where('tenant_id', '=', tenantId)
-              .where('email_id', '=', String(emailRow.id))
+              .where('id', '=', existing.id)
               .execute();
           }
+        } else {
+          const insertRow = {
+            tenant_id: tenantId,
+            campaign_id: campaignId,
+            household_id: finalHouseholdId,
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+            first_name: firstName,
+            last_name: lastName,
+            email: email,
+            mobile: mobile,
+            notes: notes,
+            opt_in_status: doubleOptIn ? 'pending' : null,
+          };
+          const insertRes = await trx.insertInto('persons').values(insertRow).returning('id').executeTakeFirstOrThrow();
+          personId = String(insertRes.id);
 
-          // Upload attachments
-          for (const file of files) {
-            await client.api(`/me/messages/${msDraftId}/attachments`).post({
-              '@odata.type': '#microsoft.graph.fileAttachment',
-              name: file.filename,
-              contentType: file.mimetype,
-              contentBytes: file.buffer.toString('base64'),
+          // Trigger contact created workflow
+          try {
+            const workflowsController = new WorkflowsController();
+            await workflowsController.triggerWorkflow(tenantId, personId, 'contact_created', null, trx);
+          } catch (err) {
+            logger.error({ err }, 'Failed to trigger contact_created workflow in WebFormsController');
+          }
+
+          // Queue the double opt-in confirmation email (transactional outbox) for brand-new subscribers.
+          if (doubleOptIn) {
+            await this.enqueueSubscriptionConfirmation(trx, {
+              tenantId,
+              personId,
+              email,
+              firstName,
             });
           }
+        }
 
-          // Send draft
-          await client.api(`/me/messages/${msDraftId}/send`).post({});
+        resolvedPersonId = personId;
 
-          // Move local email to Sent on success
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
+        const workflowsController = new WorkflowsController();
+
+        // Add target custom tags & read-only system tag
+        const targetTags: string[] = Array.isArray(form.target_tags)
+          ? form.target_tags
+          : JSON.parse((form.target_tags as any) || '[]');
+        const systemTagName = `source: ${form.name}`;
+        const allTagsToApply = [...targetTags, systemTagName];
+        if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+          allTagsToApply.push('donor');
+        }
+
+        for (const tagName of allTagsToApply) {
+          const normalizedTagName = tagName.trim().toLowerCase();
+          if (!normalizedTagName) continue;
+
+          let tag = await trx
+            .selectFrom('tags')
+            .select('id')
             .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
+            .where('name', '=', normalizedTagName)
+            .where('type', '=', 'tag')
+            .executeTakeFirst();
 
-          // Trigger background sync to get folders/Sent items synchronized
-          const syncSvc = new MsSyncService(db, oauthSvc);
-          syncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending MS email ${emailRow.id}`);
+          if (!tag) {
+            const insertTagRes = await trx
+              .insertInto('tags')
+              .values({
+                tenant_id: tenantId,
+                name: normalizedTagName,
+                type: 'tag',
+                deletable: true,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .returning('id')
+              .executeTakeFirstOrThrow();
+            tag = { id: insertTagRes.id };
           }
 
-          return reply.jsendSuccess(finalEmail);
-        } catch (err) {
-          fastify.log.error(err, `Failed to send email via Microsoft Graph for email ${emailRow.id}`);
-          // Clean up local email
-          await db
-            .deleteFrom('emails')
+          const mapExists = await trx
+            .selectFrom('map_peoples_tags')
+            .select('person_id')
             .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Microsoft Graph',
-            400,
-          );
-        }
-      } else if (sendMethod === 'google') {
-        const oauthSvc = new GoogleOAuthService(db, {
-          clientId: env.googleClientId ?? '',
-          clientSecret: env.googleClientSecret ?? '',
-          redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-        });
+            .where('person_id', '=', personId)
+            .where('tag_id', '=', tag.id)
+            .executeTakeFirst();
 
+          if (!mapExists) {
+            await trx
+              .insertInto('map_peoples_tags')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                tag_id: tag.id,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger tag_added and specialized subscriber workflows
+            try {
+              await workflowsController.triggerTagAdded(tenantId, personId, String(tag.id), normalizedTagName, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger tag_added workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Add target lists. map_web_forms_lists is the source of truth — its
+        // FKs guarantee every row points at a live list (no dangling-id skip
+        // needed, unlike the legacy JSONB target_lists document).
+        const targetListRows = await trx
+          .selectFrom('map_web_forms_lists')
+          .select('list_id')
+          .where('tenant_id', '=', tenantId)
+          .where('web_form_id', '=', formId)
+          .execute();
+        for (const { list_id: listId } of targetListRows) {
+          const inList = await trx
+            .selectFrom('map_lists_persons')
+            .select('person_id')
+            .where('tenant_id', '=', tenantId)
+            .where('person_id', '=', personId)
+            .where('list_id', '=', listId)
+            .executeTakeFirst();
+
+          if (!inList) {
+            await trx
+              .insertInto('map_lists_persons')
+              .values({
+                tenant_id: tenantId,
+                person_id: personId,
+                list_id: listId,
+                createdby_id: creatorId,
+                updatedby_id: creatorId,
+              })
+              .execute();
+
+            // Trigger list joined workflows
+            try {
+              await workflowsController.triggerWorkflow(tenantId, personId, 'list_joined', listId, trx);
+            } catch (err) {
+              logger.error({ err }, 'Failed to trigger list_joined workflow in WebFormsController');
+            }
+          }
+        }
+
+        // Trigger web form submitted workflows
         try {
-          const accessToken = await oauthSvc.getValidToken(userId);
-
-          const rawMessageBuffer = buildRawMime({
-            fromName,
-            fromEmail,
-            to: toList,
-            cc: ccList,
-            bcc: bccList,
-            subject,
-            html,
-            attachments: files.map((file) => ({
-              filename: file.filename,
-              content: file.buffer,
-              contentType: file.mimetype,
-            })),
-          });
-
-          const rawBase64Url = rawMessageBuffer
-            .toString('base64')
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=+$/, '');
-
-          const gmailRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              raw: rawBase64Url,
-            }),
-          });
-
-          if (!gmailRes.ok) {
-            const errText = await gmailRes.text();
-            throw new Error(`Gmail API send failed: ${errText}`);
-          }
-
-          const gmailData: any = await gmailRes.json();
-          const googleMsgId = gmailData.id;
-
-          await db
-            .updateTable('emails')
-            .set({ preview: `google:${googleMsgId}`, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
-
-          const finalEmail = await db
-            .updateTable('emails')
-            .set({ folder_id: ALL_FOLDERS.SENT, updated_at: new Date() })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .returningAll()
-            .executeTakeFirstOrThrow();
-
-          const googleSyncSvc = new GoogleSyncService(db, oauthSvc);
-          googleSyncSvc.syncTenant(tenantId, userId).catch((err: any) => {
-            fastify.log.error(err, `Failed to trigger background sync after sending Google email ${emailRow.id}`);
-          });
-
-          try {
-            const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
-            await queueUsageLimitCheck(tenantId, db);
-          } catch (_err) {
-            fastify.log.error(_err, `Failed to trigger usage check after sending Google email ${emailRow.id}`);
-          }
-
-          return reply.jsendSuccess(finalEmail);
+          await workflowsController.triggerWorkflow(tenantId, personId, 'web_form_submitted', formId, trx);
         } catch (err) {
-          fastify.log.error(err, `Failed to send email via Google for email ${emailRow.id}`);
-          await db
-            .updateTable('emails')
-            .set({
-              // Revert to Drafts so the user can retry (was '4' = Spam, a bug)
-              folder_id: ALL_FOLDERS.DRAFTS,
-              updated_at: new Date(),
-            })
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', String(emailRow.id))
-            .execute();
+          logger.error({ err }, 'Failed to trigger web_form_submitted workflow in WebFormsController');
+        }
 
-          return reply.jsendError(
-            err instanceof Error && err.message ? err.message : 'Failed to send email via Google. Saved to Drafts.',
-            400,
-          );
+        // Log user activity
+        await trx
+          .insertInto('user_activity')
+          .values({
+            tenant_id: tenantId,
+            user_id: creatorId,
+            activity: 'submission',
+            entity: 'web_forms',
+            entity_id: formId,
+            quantity: 1,
+            metadata: JSON.stringify({ person_id: personId, email }),
+            createdby_id: creatorId,
+            updatedby_id: creatorId,
+          })
+          .execute();
+
+        // Persist a durable response record (answers snapshot + person FK) for the Responses tab.
+        // Donation forms are a separate flow (Stripe/webhook) and are not part of this model.
+        if (form.form_type !== 'donation' && form.form_type !== 'recurring_donation') {
+          const answers: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(payload)) {
+            if (key === '_hp') continue;
+            answers[key] = value;
+          }
+          await trx
+            .insertInto('form_submissions')
+            .values({
+              tenant_id: tenantId,
+              form_id: String(form.id),
+              person_id: personId,
+              answers: JSON.stringify(answers),
+            })
+            .execute();
+        }
+
+        // Queue email notification job in background
+        await trx
+          .insertInto('background_jobs')
+          .values({
+            tenant_id: tenantId,
+            queue: 'default',
+            status: 'pending',
+            payload: JSON.stringify({
+              type: 'send-webform-notifications',
+              formId: String(form.id),
+              tenantId,
+              email,
+              firstName,
+              lastName,
+              mobile,
+              notes,
+            }),
+            run_at: new Date(),
+          })
+          .execute();
+      });
+
+    // 7. If donation/recurring form, initialize checkout session after transactional writes commit
+    if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      const donationsController = new DonationsController();
+      const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
+      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent(tenant.slug)}&checkout_cancel=true`;
+
+      if (form.form_type === 'donation') {
+        const checkoutSession = await donationsController.createCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          amountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      } else {
+        const checkoutSession = await donationsController.createRecurringCheckoutSession(
+          { tenant_id: tenantId, user_id: resolvedCreatorId },
+          resolvedPersonId,
+          monthlyAmountCents,
+          { country, state },
+          { successUrl, cancelUrl },
+        );
+        return { redirect_url: checkoutSession.url };
+      }
+    }
+
+    return { redirect_url: form.redirect_url || null };
+  }
+
+  /**
+   * Confirms a pending double opt-in subscription from a signed link. Public (unauthenticated) — the
+   * token carries the tenant and person identity. Idempotent: an already-confirmed person stays confirmed.
+   */
+  public async confirmSubscription(token: string): Promise<{ success: boolean }> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Server misconfiguration: SHARED_SECRET is missing.',
+      });
+    }
+
+    const verifier = createVerifier({ algorithms: ['HS256'], key, ignoreExpiration: false });
+
+    let payload: any;
+    try {
+      payload = await verifier(token);
+    } catch {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'This confirmation link is invalid or has expired.' });
+    }
+
+    if (!payload || payload.purpose !== 'confirm-subscription' || !payload.tenant_id || !payload.person_id) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid confirmation token.' });
+    }
+
+    await this.getRepo()
+      .db.updateTable('persons')
+      .set({ opt_in_status: 'confirmed', opt_in_confirmed_at: sql`now()` })
+      .where('tenant_id', '=', String(payload.tenant_id))
+      .where('id', '=', String(payload.person_id))
+      .execute();
+
+    return { success: true };
+  }
+
+  private async isDoubleOptInEnabled(tenantId: string, trx: Transaction<Models>): Promise<boolean> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'communications.double_opt_in')
+      .executeTakeFirst();
+
+    return row?.value === true || row?.value === 'true';
+  }
+
+  /**
+   * Inserts a transactional-outbox job that emails a new subscriber a signed confirmation link. The job
+   * runs only if the surrounding submission transaction commits, keeping the pending person and the
+   * confirmation email consistent.
+   */
+  private async enqueueSubscriptionConfirmation(
+    trx: Transaction<Models>,
+    args: { tenantId: string; personId: string; email: string; firstName: string | null },
+  ): Promise<void> {
+    const key = process.env['SHARED_SECRET'] || env.sharedSecret;
+    if (!key) {
+      logger.error('Cannot send subscription confirmation: SHARED_SECRET is missing.');
+      return;
+    }
+
+    const signer = createSigner({ algorithm: 'HS256', key, expiresIn: '7d' });
+    const token = signer({
+      tenant_id: args.tenantId,
+      person_id: args.personId,
+      email: args.email.toLowerCase().trim(),
+      purpose: 'confirm-subscription',
+    });
+    const confirmUrl = `${env.appUrl}/confirm-subscription?token=${token}`;
+
+    await trx
+      .insertInto('background_jobs')
+      .values({
+        tenant_id: args.tenantId,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'send-subscription-confirmation',
+          tenantId: args.tenantId,
+          email: args.email,
+          firstName: args.firstName,
+          confirmUrl,
+        }),
+        run_at: new Date(),
+      })
+      .execute();
+  }
+
+  private async getCampaignId(tenantId: string, trx: Transaction<Models>): Promise<string> {
+    const row = await trx
+      .selectFrom('settings')
+      .select('value')
+      .where('tenant_id', '=', tenantId)
+      .where('key', '=', 'current_campaign')
+      .executeTakeFirst();
+
+    if (row) {
+      const value = row.value;
+      if (typeof value === 'number' || typeof value === 'string') {
+        return String(value);
+      }
+      if (value && typeof value === 'object' && 'id' in (value as Record<string, unknown>)) {
+        const id = (value as Record<string, unknown>)['id'];
+        if (typeof id === 'number' || typeof id === 'string') {
+          return String(id);
         }
       }
-    } catch (err) {
-      fastify.log.error(err, `Unexpected error in send task for email ${emailRow.id}`);
-      // Clean up local email
-      await db.deleteFrom('emails').where('tenant_id', '=', tenantId).where('id', '=', String(emailRow.id)).execute();
-      return reply.jsendError(err instanceof Error && err.message ? err.message : 'Unexpected error in send task', 500);
     }
-  });
 
-  // Download attachment by ID
-  fastify.get('/:id/attachments/:attachmentId', async (req: any, reply) => {
-    const { id, attachmentId } = req.params;
-
-    // Auth: a short-lived token scoped to this one email (embeddable link, no
-    // session JWT in the URL) or the app's Authorization header (session-gated).
-    let tenantId: string;
-    if (req.query.st) {
-      try {
-        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
-      } catch (_err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-      }
-    } else {
-      const authResult = await authenticateRest(req);
-      if (!authResult.ok) {
-        return reply.status(authResult.status).send({ error: authResult.error });
-      }
-      tenantId = authResult.auth.tenant_id;
-    }
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
+    const campaignRow = await trx
+      .selectFrom('campaigns')
+      .select('id')
       .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachmentId)
-      .where('email_id', '=', id)
+      .limit(1)
       .executeTakeFirst();
 
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Attachment not found' });
+    if (campaignRow) {
+      return String(campaignRow.id);
     }
 
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
+    throw new Error('No campaign found for this tenant.');
+  }
+
+  public async getSubmissionsCount(formId: string, tenantId: string): Promise<number> {
+    return this.getRepo().countSubmissions(tenantId, formId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // North Star "living funnel" lifecycle (new Forms experience).
+  // ---------------------------------------------------------------------------
+
+  /** All non-donation forms as cards for the browse page, fields normalized for the preview. */
+  public async listForms(tenantId: string) {
+    const rows = await this.getRepo().listForms(tenantId);
+    return rows.map((row) => this.normalizeForm(row));
+  }
+
+  /**
+   * Public config for the unauthenticated /f/:slug page. Returns only what the public page renders,
+   * plus the org name; closed (unpublished/archived) forms return a status the page shows as a
+   * "closed" card. Throws NOT_FOUND when the slug doesn't exist at all.
+   */
+  public async getPublicFormBySlug(slug: string, tenantId: string) {
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+    // Donation forms have slugs too (every form does) but render on the separate server-rendered
+    // /api/forms/d/:slug page with the amount field — never on the /f/:slug SPA page.
+    if (!form || form.form_type === 'donation' || form.form_type === 'recurring_donation') {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const orgName = await this.getOrgName(String(form.tenant_id));
+    if (form.status !== 'published') {
+      return { status: 'closed' as const, orgName, name: String(form.name) };
+    }
+    const normalized = this.normalizeForm(form) as {
+      id: string;
+      name: string;
+      description: string | null;
+      submit_label: string | null;
+      thanks_title: string | null;
+      thanks_body: string | null;
+      redirect_url: string | null;
+      fields: FormField[];
+    };
+    return {
+      status: 'open' as const,
+      orgName,
+      form: {
+        id: normalized.id,
+        name: normalized.name,
+        description: normalized.description,
+        submit_label: normalized.submit_label,
+        thanks_title: normalized.thanks_title,
+        thanks_body: normalized.thanks_body,
+        redirect_url: normalized.redirect_url,
+        fields: normalized.fields.filter((f) => f.on),
+      },
+    };
+  }
+
+  private async getOrgName(tenantId: string): Promise<string> {
+    const row = await this.getRepo()
+      .db.selectFrom('settings')
+      .select('value')
       .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
+      .where('key', '=', 'organization.name')
       .executeTakeFirst();
+    const value = row?.value;
+    return typeof value === 'string' && value.trim() ? value : 'Our organization';
+  }
 
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
+  /** Single form, fields normalized — used by the editor + preview. */
+  public async getFormForEdit(id: string, tenantId: string) {
+    const form = await this.getRepo().getOneById({ id, tenant_id: tenantId });
+    if (!form) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    return this.normalizeForm(form);
+  }
+
+  /** Create a draft from a template. Lands the user in edit mode (frontend). */
+  public async createForm(payload: CreateFormType, auth: IAuthKeyPayload) {
+    const template = FORM_TEMPLATES[payload.type];
+    const slug = await this.uniqueSlug(auth.tenant_id, payload.name);
+    const fields = fieldsForTemplate(payload.type);
+    const row = {
+      tenant_id: auth.tenant_id,
+      name: payload.name,
+      description: template.description,
+      redirect_url: null,
+      target_tags: JSON.stringify([]),
+      target_lists: JSON.stringify([]),
+      fields: JSON.stringify(fields),
+      status: 'draft',
+      type: payload.type,
+      form_type: 'standard',
+      slug,
+      submit_label: template.submitLabel,
+      thanks_title: 'Thank you!',
+      thanks_body: 'Your response has been recorded — thanks for reaching out.',
+      confirm_subject: `Thanks for your ${payload.type}`,
+      confirm_body: 'Hi [First name],\n\nThanks for your submission — we’ve received it and will be in touch soon.',
+      send_confirmation: true,
+      send_alert: false,
+      notify_team_on: false,
+      createdby_id: auth.user_id,
+      updatedby_id: auth.user_id,
+    };
+    const created = await this.add(row as any);
+    return this.normalizeForm(created);
+  }
+
+  /** Live-edit patch. `normForm` guarantees the email identity-key invariant server-side. */
+  public async updateFormLive(id: string, patch: UpdateFormType, auth: IAuthKeyPayload) {
+    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
     }
 
+    const row: Record<string, unknown> = { updatedby_id: auth.user_id, updated_at: new Date() };
+    // Slug intentionally stays stable across renames — a published link must never break.
+    if (patch.name !== undefined) row['name'] = patch.name;
+    if (patch.description !== undefined) row['description'] = patch.description;
+    if (patch.redirect_url !== undefined) row['redirect_url'] = patch.redirect_url;
+    if (patch.submit_label !== undefined) row['submit_label'] = patch.submit_label;
+    if (patch.thanks_title !== undefined) row['thanks_title'] = patch.thanks_title;
+    if (patch.thanks_body !== undefined) row['thanks_body'] = patch.thanks_body;
+    if (patch.confirm_email_on !== undefined) row['send_confirmation'] = patch.confirm_email_on;
+    if (patch.confirm_subject !== undefined) row['confirm_subject'] = patch.confirm_subject;
+    if (patch.confirm_body !== undefined) row['confirm_body'] = patch.confirm_body;
+    if (patch.notify_team_on !== undefined) row['notify_team_on'] = patch.notify_team_on;
+    if (patch.target_tags !== undefined) row['target_tags'] = JSON.stringify(patch.target_tags);
+    if (patch.target_lists !== undefined) row['target_lists'] = JSON.stringify(patch.target_lists);
+    if (patch.fields !== undefined) {
+      row['fields'] = JSON.stringify(normForm(patch.fields));
+    }
+
+    const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
+    if (patch.target_lists !== undefined) {
+      await this.syncTargetLists(auth, id, patch.target_lists ?? []);
+    }
+    return this.normalizeForm(updated);
+  }
+
+  /**
+   * Replace the form's map_web_forms_lists rows (the source of truth for list
+   * targeting — the JSONB target_lists column is still dual-written during
+   * the transition, but nothing reads it for behavior anymore). Ids that
+   * don't resolve to a live list in the tenant are dropped.
+   */
+  private async syncTargetLists(auth: IAuthKeyPayload, formId: string, listIds: string[]): Promise<void> {
+    const db = this.getRepo().db;
+    const candidates = [...new Set(listIds.map((id) => String(id)))].filter((id) => /^\d+$/.test(id));
+    let liveIds: string[] = [];
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = rows.map((r) => String(r.id));
+    }
+
+    await db
+      .deleteFrom('map_web_forms_lists')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('web_form_id', '=', formId)
+      .execute();
+
+    if (liveIds.length > 0) {
+      await db
+        .insertInto('map_web_forms_lists')
+        .values(
+          liveIds.map((list_id) => ({
+            tenant_id: auth.tenant_id,
+            web_form_id: formId,
+            list_id,
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          })),
+        )
+        .execute();
+    }
+  }
+
+  public publishForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'published', null);
+  }
+
+  public unpublishForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'draft', null);
+  }
+
+  public archiveForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'archived', new Date());
+  }
+
+  /** Restore always lands in draft — reopening a public link is a deliberate act. */
+  public restoreForm(id: string, auth: IAuthKeyPayload) {
+    return this.setStatus(id, auth, 'draft', null);
+  }
+
+  /** Hard delete is only allowed for a zero-response draft; everything else must be archived. */
+  public async deleteForm(id: string, auth: IAuthKeyPayload) {
+    const existing = (await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id })) as
+      | { status?: string }
+      | undefined;
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const count = await this.getRepo().countSubmissions(auth.tenant_id, id);
+    if (existing.status !== 'draft' || count > 0) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: 'Only a draft with no responses can be deleted. Archive it instead — archiving is reversible.',
+      });
+    }
+    return this.delete(auth.tenant_id, id, auth.user_id);
+  }
+
+  public async getFormSubmissions(id: string, tenantId: string, cursor?: number) {
+    const limit = 25;
+    const offset = cursor ?? 0;
+    const rows = await this.getRepo().getFormSubmissions(tenantId, id, limit + 1, offset);
+    const total = await this.getRepo().countSubmissions(tenantId, id);
+    const hasMore = rows.length > limit;
+    const items = rows.slice(0, limit).map((row) => {
+      const answersRaw = row['answers'];
+      const answers =
+        typeof answersRaw === 'string'
+          ? this.safeJson(answersRaw, {})
+          : ((answersRaw as Record<string, unknown>) ?? {});
+      const name = `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim();
+      return {
+        id: String(row['id']),
+        person_id: String(row['person_id']),
+        person_name: name || null,
+        answers,
+        created_at: row['created_at'] as Date | string,
+      };
+    });
+    return { items, total, nextCursor: hasMore ? offset + limit : null };
+  }
+
+  private async setStatus(
+    id: string,
+    auth: IAuthKeyPayload,
+    status: 'draft' | 'published' | 'archived',
+    archivedAt: Date | null,
+  ) {
+    const existing = await this.getRepo().getOneById({ id, tenant_id: auth.tenant_id });
+    if (!existing) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
+    }
+    const updated = await this.update({
+      tenant_id: auth.tenant_id,
+      id,
+      row: { status, archived_at: archivedAt, updatedby_id: auth.user_id, updated_at: new Date() } as any,
+    });
+    return this.normalizeForm(updated);
+  }
+
+  private uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
+    // Shared slug strategy (lib/slug.ts) — same base + collision suffixes as
+    // persons/households/companies record slugs.
+    return uniqueSlug(slugifyRecordName(name, 'form'), (candidate) =>
+      this.getRepo().slugExists(tenantId, candidate, excludeId),
+    );
+  }
+
+  /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */
+  private mapLegacyStatus(status: string | undefined): 'draft' | 'published' | 'archived' {
+    if (status === 'archived') return 'archived';
+    if (status === 'draft') return 'draft';
+    return 'published';
+  }
+
+  private safeJson<T>(value: string, fallback: T): T {
     try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      reply.header('Content-Disposition', attachmentDisposition(file.filename));
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to download attachment' });
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
     }
-  });
+  }
 
-  // Serve inline attachment by CID
-  fastify.get('/:id/attachments/cid/:cid', async (req: any, reply) => {
-    const { id, cid } = req.params;
-
-    // Auth: a short-lived token scoped to this one email (for inline <img> in the
-    // rendered body) or the app's Authorization header (session-gated).
-    let tenantId: string;
-    if (req.query.st) {
-      try {
-        tenantId = verifyEmailAttachmentToken(req.query.st, String(id)).tenant_id;
-      } catch (_err) {
-        return reply.status(401).send({ error: 'Unauthorized: Invalid token' });
-      }
-    } else {
-      const authResult = await authenticateRest(req);
-      if (!authResult.ok) {
-        return reply.status(authResult.status).send({ error: authResult.error });
-      }
-      tenantId = authResult.auth.tenant_id;
-    }
-    const db = (BaseRepository as any)['_db'];
-
-    const attachment = await db
-      .selectFrom('email_attachments')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('email_id', '=', id)
-      .where('cid', '=', cid)
-      .where('is_inline', '=', true)
-      .executeTakeFirst();
-
-    if (!attachment || !attachment.file_id) {
-      return reply.status(404).send({ error: 'Inline attachment not found' });
-    }
-
-    const file = await db
-      .selectFrom('files')
-      .selectAll()
-      .where('tenant_id', '=', tenantId)
-      .where('id', '=', attachment.file_id)
-      .executeTakeFirst();
-
-    if (!file) {
-      return reply.status(404).send({ error: 'File not found' });
-    }
-
-    try {
-      const buffer = await storageService.download(file.storage_key);
-      reply.type(file.mime_type || 'application/octet-stream');
-      // Private: inline attachments are tenant-scoped and token-gated.
-      reply.header('Cache-Control', 'private, max-age=31536000');
-      return reply.send(buffer);
-    } catch (_err) {
-      fastify.log.error(_err);
-      return reply.status(500).send({ error: 'Failed to load inline image' });
-    }
-  });
-
-  done();
-};
-
-export default emailsApiRoute;
+  private normalizeForm(record: unknown) {
+    if (!record || typeof record !== 'object') return record;
+    const row = record as Record<string, unknown>;
+    const toArray = (value: unknown): string[] => {
+      if (Array.isArray(value)) return value as string[];
+      if (typeof value === 'string') return this.safeJson<string[]>(value, []);
+      return [];
+    };
+    const rawFields = Array.isArray(row['fields'])
+      ? row['fields']
+      : typeof row['fields'] === 'string'
+        ? this.safeJson<unknown[]>(row['fields'] as string, [])
+        : [];
+    return {
+      ...row,
+      id: row['id'] != null ? String(row['id']) : row['id'],
+      tenant_id: row['tenant_id'] != null ? String(row['tenant_id']) : row['tenant_id'],
+      target_tags: toArray(row['target_tags']),
+      target_lists: toArray(row['target_lists']),
+      fields: normForm(rawFields),
+      submission_count: row['submission_count'] != null ? Number(row['submission_count']) : 0,
+    };
+  }
+}
 ```
 
 ## File: apps/backend/src/env.ts

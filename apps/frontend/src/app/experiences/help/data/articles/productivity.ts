@@ -18,7 +18,7 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           '[Tasks](/tasks) — the grid view: filter, sort into your own order, edit inline, work in bulk.',
-          '[Task board](/board) — the kanban view: one column per status. Drag a card to a new column and its status updates instantly.',
+          '[Task board](/board) — the kanban view: one column per status. Drag a card to a new column and its status updates instantly. Jump there anytime with `g` then `b`.',
         ],
       },
       {
@@ -30,7 +30,7 @@ export const PRODUCTIVITY_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           'Assigning a task notifies the assignee; due-today and overdue reminders follow automatically. Everyone tunes their own notifications on their [Profile](/profile).',
-          'If your workspace sets a task SLA, open tasks count against it and the [Dashboard](/summary) shows the rollup — see [The dashboard and SLA health](/help/dashboard).',
+          'If your workspace sets a task SLA, open tasks count against it and the [Dashboard](/dashboard) shows the rollup — see [The dashboard and SLA health](/help/dashboard).',
         ],
       },
       {

@@ -6,8 +6,9 @@ import type {
   UpdateFormType,
   UpdateWebFormType,
 } from '../../../../../../libs/common/src';
-import { FORM_TEMPLATES, fieldsForTemplate, normForm } from '../../../../../../libs/common/src';
+import { FORM_TEMPLATES, fieldsForTemplate, normForm, slugifyRecordName } from '../../../../../../libs/common/src';
 import { BaseController } from '../../lib/base.controller';
+import { uniqueSlug } from '../../lib/slug';
 import { WebFormsRepo } from './repositories/web-forms.repo';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
 import { type Transaction, sql } from 'kysely';
@@ -1070,18 +1071,12 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     return this.normalizeForm(updated);
   }
 
-  private async uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
-    const base =
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '') || 'form';
-    let slug = base;
-    let n = 2;
-    while (await this.getRepo().slugExists(tenantId, slug, excludeId)) {
-      slug = `${base}-${n++}`;
-    }
-    return slug;
+  private uniqueSlug(tenantId: string, name: string, excludeId?: string): Promise<string> {
+    // Shared slug strategy (lib/slug.ts) — same base + collision suffixes as
+    // persons/households/companies record slugs.
+    return uniqueSlug(slugifyRecordName(name, 'form'), (candidate) =>
+      this.getRepo().slugExists(tenantId, candidate, excludeId),
+    );
   }
 
   /** Legacy add/update path accepts 'active'; the DB only knows the lifecycle statuses. */

@@ -239,7 +239,7 @@ describe('WorkflowFormComponent', () => {
       expect(mockWorkflowsSvc.delete).toHaveBeenCalledWith('wf-1');
       expect(mockWorkflowsSvc.triggerRefresh).toHaveBeenCalled();
       expect(mockAlertSvc.showSuccess).toHaveBeenCalledWith('Workflow deleted');
-      expect(mockRouter.navigate).toHaveBeenCalledWith(['/workflows']);
+      expect(mockRouter.navigate).toHaveBeenCalledWith(['/automations']);
     });
 
     it('should not delete the workflow when confirmation is declined', async () => {

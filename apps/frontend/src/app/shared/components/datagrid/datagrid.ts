@@ -592,6 +592,13 @@ export class DataGrid<T extends keyof Models, U> implements OnInit, AfterViewIni
   public description = input<string | null>(null);
   public showDescription = input<boolean>(false);
 
+  /**
+   * Grain-specific total sentence rendered under the title (spec §5), e.g.
+   * "5,012 people total" / "1,890 households across 8 wards" / "611 people in 214 companies".
+   * When filters are active the header prefixes it: "43 match your filters · {sentence}".
+   */
+  public totalSentence = input<string | null>(null);
+
   protected readonly dgTagOptionsSvc = inject(TagOptionsService);
 
   // ── Tag / Issue filter — delegated to GridTagFilterService ───────────────
