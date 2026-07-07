@@ -28,6 +28,11 @@ export class HouseholdsService extends AbstractAPIService<'households', never> {
     return this.api.households.count.query();
   }
 
+  /** Distinct geocoded wards — powers the "{n} households across {m} wards" grain sentence. */
+  public countDistinctWards(): Promise<number> {
+    return this.api.households.countDistinctWards.query();
+  }
+
   public detachTag(id: string, tag_name: string, type?: 'tag' | 'issue') {
     return this.api.households.detachTag.mutate({ id: id, tag_name, type });
   }

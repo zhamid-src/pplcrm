@@ -111,6 +111,10 @@ function countByCompanyId() {
     .query(({ input, ctx }) => persons.countByCompanyId(input.id, ctx.auth));
 }
 
+function countWithCompany() {
+  return authProcedure.query(({ ctx }) => persons.countWithCompany(ctx.auth));
+}
+
 function getById() {
   return authProcedure
     .input(idSchema)
@@ -237,6 +241,7 @@ export const PersonsRouter = router({
   getByHouseholdId: getByHouseholdId(),
   getByCompanyId: getByCompanyId(),
   countByCompanyId: countByCompanyId(),
+  countWithCompany: countWithCompany(),
   getAllWithAddress: getAllWithAddress(),
   exportCsv: exportCsv(),
   getPotentialDuplicates: getPotentialDuplicates(),

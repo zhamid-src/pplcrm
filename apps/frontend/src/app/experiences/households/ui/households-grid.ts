@@ -1,6 +1,7 @@
 import { Component, inject, input, OnInit, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DataGrid } from '@frontend/shared/components/datagrid/datagrid';
+import { GrainTabs } from '@frontend/shared/components/grain-tabs/grain-tabs';
 import type { CellParams, ColumnDef as ColDef } from '@frontend/shared/components/datagrid/grid-defaults';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
 import { DataGridUtilsService } from '@frontend/shared/components/datagrid/services/utils.service';
@@ -17,7 +18,7 @@ import { HouseholdsService } from '../services/households-service';
 
 @Component({
   selector: 'pc-households-grid',
-  imports: [DataGrid, CsvImportComponent, FormsModule],
+  imports: [DataGrid, GrainTabs, CsvImportComponent, FormsModule],
   template: `
     <div class="flex flex-col gap-6">
       <pc-datagrid
@@ -35,12 +36,19 @@ import { HouseholdsService } from '../services/households-service';
         [disableImport]="false"
         [confirmDeleteOverride]="onConfirmDeleteBind"
         [rowCanSelect]="rowCanSelectFn"
+        [totalSentence]="totalSentence()"
         (importCSV)="openImportDialog()"
         addRoute="add"
         i18n-addRoute
         plusIcon="add-home"
         i18n-plusIcon
-      ></pc-datagrid>
+      >
+        <div pcGridBelowHeader>
+          @if (!inline()) {
+            <pc-grain-tabs />
+          }
+        </div>
+      </pc-datagrid>
     </div>
 
     <!-- Reusable CSV Importer for Households -->
@@ -221,6 +229,9 @@ export class HouseholdsGrid implements OnInit {
   protected importerOpen = signal(false);
   protected tagsInput = '';
 
+  /** Grain total sentence for the header (spec §5): "{n} households across {m} wards". */
+  protected readonly totalSentence = signal<string | null>(null);
+
   public ngOnInit(): void {
     void this.loadOnInit();
   }
@@ -228,6 +239,26 @@ export class HouseholdsGrid implements OnInit {
   private async loadOnInit(): Promise<void> {
     await this.loadTagOptions();
     await this.loadIssueOptions();
+    void this.loadGrainSentence();
+  }
+
+  private async loadGrainSentence(): Promise<void> {
+    try {
+      const [total, wards] = await Promise.all([
+        this.householdsService.count(),
+        this.householdsService.countDistinctWards(),
+      ]);
+      const fmt = new Intl.NumberFormat();
+      const households = total === 1 ? '1 household' : `${fmt.format(total)} households`;
+      // Ward data comes from geocoding; until any exists, fall back to a plain total.
+      this.totalSentence.set(
+        wards > 0
+          ? `${households} across ${fmt.format(wards)} ${wards === 1 ? 'ward' : 'wards'}`
+          : `${households} total`,
+      );
+    } catch (err) {
+      console.error('Failed to load household grain counts', err);
+    }
   }
 
   private async loadTagOptions() {

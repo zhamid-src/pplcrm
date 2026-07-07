@@ -55,6 +55,10 @@ export class PersonsController extends BaseController<'persons', PersonsRepo> {
     return this.getRepo().countByCompanyId({ id: company_id, tenant_id: auth.tenant_id });
   }
 
+  public countWithCompany(auth: IAuthKeyPayload) {
+    return this.getRepo().countWithCompany({ tenant_id: auth.tenant_id });
+  }
+
   public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
     return this.getRepo().getDistinctTags(auth.tenant_id, type);
   }

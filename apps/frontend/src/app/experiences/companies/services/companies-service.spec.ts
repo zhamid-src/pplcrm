@@ -23,6 +23,7 @@ describe('CompaniesService', () => {
         update: { mutate: vi.fn() },
         getAll: { query: vi.fn() },
         getById: { query: vi.fn() },
+        count: { query: vi.fn() },
         delete: { mutate: vi.fn() },
         import: { mutate: vi.fn() },
         exportCsv: { mutate: vi.fn() },
@@ -175,8 +176,11 @@ describe('CompaniesService', () => {
   });
 
   describe('Placeholder endpoints', () => {
-    it('should resolve count with 0 (not yet implemented)', async () => {
-      await expect(service.count()).resolves.toBe(0);
+    it('should query the tenant-scoped company count', async () => {
+      mockApi.companies.count.query.mockResolvedValue(214);
+
+      await expect(service.count()).resolves.toBe(214);
+      expect(mockApi.companies.count.query).toHaveBeenCalled();
     });
 
     it('should resolve getTags with an empty array', async () => {

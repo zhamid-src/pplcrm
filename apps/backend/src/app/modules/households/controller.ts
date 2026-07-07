@@ -287,6 +287,10 @@ export class HouseholdsController extends BaseController<'households', Household
     return this.getRepo().getPeopleCount({ tenant_id: auth.tenant_id, id });
   }
 
+  public countDistinctWards(auth: IAuthKeyPayload) {
+    return this.getRepo().countDistinctWards(auth.tenant_id);
+  }
+
   public getDistinctTags(auth: IAuthKeyPayload, type?: 'tag' | 'issue') {
     return this.getRepo().getDistinctTags(auth.tenant_id, type);
   }

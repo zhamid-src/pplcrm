@@ -61,6 +61,8 @@ export const HouseholdsRouter = router({
 
   getPeopleCount: authProcedure.input(idSchema).query(({ input, ctx }) => households.getPeopleCount(input, ctx.auth)),
 
+  countDistinctWards: authProcedure.query(({ ctx }) => households.countDistinctWards(ctx.auth)),
+
   getPotentialDuplicates: authProcedure
     .input(
       z
