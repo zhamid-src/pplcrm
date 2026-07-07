@@ -19,7 +19,7 @@ Migrations are plain Kysely SQL files run by Kysely's `Migrator` + `FileMigratio
 
 Files live in `apps/backend/src/app/_migrations/`. Kysely runs them in **lexicographic filename order**, so the name is load-bearing:
 
-- Regular migrations: `YYYY-MM-DD-short-description.ts` — e.g. `2026-08-14-add-campaign-budget.ts`. (There are none in the tree right now — the 2026-07-07 squash removed them all; the next schema change adds the first one back.)
+- Regular migrations: `YYYY-MM-DD-short-description.ts` — e.g. `2026-08-14-add-campaign-budget.ts`. (First one on top of the squashed baseline: `2026-07-07-record-slugs.ts` — a good worked example of an add-column + backfill + per-tenant-unique-index migration.)
 - The baseline is `0001_baseline.ts` — the `0001_` numeric prefix sorts before every dated file so it always runs first.
 - **Same-day tie-break:** when two migrations share a date, disambiguate order with a letter segment: `2026-07-01-a-schema-improvements`, `2026-07-01-b-security-ops-improvements`. Use this if you add a second migration on a day that already has one.
 

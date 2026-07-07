@@ -107,7 +107,11 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
       {
         kind: 'steps',
         items: [
-          { title: 'Open [Households](/households)', detail: 'The grid lists every household with its members.' },
+          {
+            title: 'Open [Households](/households)',
+            detail:
+              'From [People](/people), click the **Households** tab under the header — People, Households, and Companies are three views of the same contacts. The grid lists every household with its members.',
+          },
           { title: 'Click the + button', detail: 'Name the household and give it an address.' },
           { title: 'Add members', detail: 'Assign people from their profiles, or from the household page itself.' },
         ],
@@ -143,7 +147,8 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         items: [
           {
             title: 'Open [Companies](/companies)',
-            detail: 'Browse or search existing companies first to avoid creating a twin.',
+            detail:
+              'From [People](/people), click the **Companies** tab under the header. Browse or search existing companies first to avoid creating a twin.',
           },
           { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
           { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
