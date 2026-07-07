@@ -124,6 +124,10 @@ Real example: the `people` and `tags` blocks in `dashboard.routes.ts`. (Top-leve
 `app.routes.ts` only lazy-loads the dashboard shell and auth pages — experiences live in
 `dashboard.routes.ts`.)
 
+If the entity's URLs should carry record slugs instead of numeric ids (spec §1 — persons,
+households, and companies already do), follow the checklist in `docs/RECORD-SLUGS.md`
+(migration + `slugExists`/`getOneBySlug` repo methods + `record-slug.resolver.ts` entry).
+
 ### 10. Breadcrumbs (in the detail view component)
 
 Expose a `computed<PcBreadcrumb[]>` and bind it to `[crumbs]` on `<pc-detail-layout>`. Real example:

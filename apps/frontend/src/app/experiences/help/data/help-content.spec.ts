@@ -15,11 +15,11 @@ import type { HelpArticle, HelpBlock } from './help-types';
 
 /** Routes that exist in dashboard.routes.ts and may be linked from articles. */
 const KNOWN_APP_ROUTES = new Set([
-  '/summary',
+  '/dashboard',
   '/inbox',
   '/newsletters',
   '/lists',
-  '/workflows',
+  '/automations',
   '/people',
   '/households',
   '/companies',
@@ -35,7 +35,7 @@ const KNOWN_APP_ROUTES = new Set([
   '/files',
   '/imports',
   '/exports',
-  '/activities',
+  '/activity',
   '/tags',
   '/issues',
   '/users',

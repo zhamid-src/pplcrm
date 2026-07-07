@@ -79,7 +79,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
       {
         kind: 'list',
         items: [
-          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/summary) rolls breaches up into a status.',
+          'Answer oldest first — each open conversation shows an **SLA pill** with the time left to reply (it turns amber as the deadline nears, red once it’s overdue), and the [Dashboard](/dashboard) rolls breaches up into a status.',
           'Scan the list by status — each row carries a chip: **Unassigned** (needs an owner), **Assigned**, or **Closed**.',
           '**Sync now** pulls new mail and reports what changed; the line beneath it shows when the inbox last synced.',
           'While replies are sending, the top bar shows a sending indicator with a count; you can navigate away freely.',
@@ -111,7 +111,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Automations (under [Automations](/workflows) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after an event, the reminder before a shift.',
+        text: 'Automations (under [Automations](/automations) in the sidebar) do the repetitive follow-through for you: the welcome sequence for new subscribers, the thank-you after an event, the reminder before a shift.',
       },
       { kind: 'h2', id: 'anatomy', text: 'Anatomy of a workflow' },
       {
@@ -127,7 +127,7 @@ export const OUTREACH_ARTICLES: HelpArticle[] = [
         kind: 'steps',
         items: [
           {
-            title: 'Open [Automations](/workflows) and click +',
+            title: 'Open [Automations](/automations) and click +',
             detail: 'Give it a name that says what it does — “Event signup thank-you”.',
           },
           { title: 'Pick the trigger', detail: 'Choose the event that should start it.' },

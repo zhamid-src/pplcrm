@@ -64,11 +64,37 @@ export const SidebarItems: ISidebarItem[] = [
         // TODO(badge): show SLA-breach count (spec §4). Needs a tenant-scoped
         // `tasks.countSlaBreaches` query; no such endpoint yet.
       },
+      // Hidden: the board lives behind the Tasks page (swap button is Wave 1B),
+      // but the `g b` chord, the pin button and the help overlay keep working.
+      {
+        name: `Task board`,
+        route: '/board',
+        icon: 'view-kanban',
+        shortcut: 'b',
+        hidden: true,
+      },
       {
         name: `People`,
         route: '/people',
         icon: 'identification',
         shortcut: 'p',
+      },
+      // Hidden: Households and Companies are grains of the People grid (spec §5)
+      // reached via the grain tabs; kept here so the `g u` / `g c` chords, the
+      // pin button and the help overlay keep working.
+      {
+        name: `Households`,
+        route: '/households',
+        icon: 'house-modern',
+        shortcut: 'u',
+        hidden: true,
+      },
+      {
+        name: `Companies`,
+        route: '/companies',
+        icon: 'briefcase',
+        shortcut: 'c',
+        hidden: true,
       },
     ],
   },
