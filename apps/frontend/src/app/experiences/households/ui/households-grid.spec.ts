@@ -4,6 +4,7 @@ import { HouseholdsGrid } from './households-grid';
 import { AbstractAPIService } from '../../../services/api/abstract-api.service';
 import { HouseholdsService } from '../services/households-service';
 import { PersonsService } from '../../persons/services/persons-service';
+import { CompaniesService } from '../../companies/services/companies-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
 import { DATA_GRID_CONFIG } from '@frontend/shared/components/datagrid/datagrid.tokens';
@@ -15,6 +16,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 class MockHouseholdsService {
   deleteMany = vi.fn().mockResolvedValue(true);
   getAll = vi.fn().mockResolvedValue({ rows: [], count: 0 });
+  count = vi.fn().mockResolvedValue(0);
+  countDistinctWards = vi.fn().mockResolvedValue(0);
   abort = vi.fn();
   refreshCount = signal(0);
 }
@@ -34,6 +37,8 @@ describe('HouseholdsGrid', () => {
       getByHouseholdId: vi.fn().mockResolvedValue([{ id: 'person1' }, { id: 'person2' }]),
       removeHousehold: vi.fn().mockResolvedValue(true),
       deleteMany: vi.fn().mockResolvedValue(true),
+      // pc-grain-tabs calls count() on all three grain services
+      count: vi.fn().mockResolvedValue(0),
     };
 
     mockDialogSvc = {
@@ -59,6 +64,10 @@ describe('HouseholdsGrid', () => {
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
         { provide: AlertService, useValue: mockAlertSvc },
         { provide: HouseholdsService, useValue: mockHouseholdsSvc },
+        {
+          provide: CompaniesService,
+          useValue: { count: () => Promise.resolve(0), countWithCompany: () => Promise.resolve(0) },
+        },
         {
           provide: DATA_GRID_CONFIG,
           useValue: { messages: { loadFailed: 'Failed to load', noDeletePermission: 'No permission' } },
