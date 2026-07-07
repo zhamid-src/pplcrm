@@ -312,7 +312,17 @@ export interface Persons extends Omit<RecordType, 'createdby_id'> {
   opt_in_status: string | null;
   opt_in_confirmed_at: Timestamp | null;
   preferred_contact: string | null;
-  /** URL slug, unique per tenant (spec §1: /people/amira-hassan). Generated app-side — see lib/slug.ts. */
+  /**
+   * Opaque public identifier — 8 Crockford Base32 chars (40 CSPRNG bits),
+   * unique per tenant, the canonical person lookup key (spec §1). Generated
+   * app-side and NEVER changes — see lib/person-public-id.ts.
+   */
+  public_id: string | null;
+  /**
+   * URL display slug `{name}-{xxxx}-{xxxx}` (spec §1: /people/joseph-4t9k-2xpm).
+   * The name is decorative; resolution is by public_id. Regenerated on rename,
+   * app-side — see lib/person-public-id.ts.
+   */
   slug: string | null;
 }
 

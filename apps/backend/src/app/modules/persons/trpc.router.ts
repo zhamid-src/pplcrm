@@ -121,11 +121,11 @@ function getById() {
     .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
-/** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
-function getBySlug() {
+/** Tenant-scoped resolution by opaque public_id for /people/:slug URLs (spec §1). */
+function getByPublicId() {
   return authProcedure
     .input(z.string().trim().min(1).max(200))
-    .query(({ input, ctx }) => persons.getOneBySlug(input, ctx.auth));
+    .query(({ input, ctx }) => persons.getByPublicId(input, ctx.auth));
 }
 
 function getActivity() {
@@ -268,7 +268,7 @@ export const PersonsRouter = router({
   import: importMany(),
   getTags: getTags(),
   getById: getById(),
-  getBySlug: getBySlug(),
+  getByPublicId: getByPublicId(),
   getActivity: getActivity(),
   attachTag: attachTag(),
   detachTag: detachTag(),
