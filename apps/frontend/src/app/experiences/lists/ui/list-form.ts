@@ -8,6 +8,7 @@ import { AddListType, UpdateListType } from '../../../../../../../libs/common/sr
 import { HouseholdsService } from '@experiences/households/services/households-service';
 import { ListsService } from '@experiences/lists/services/lists-service';
 import { ListsRefreshService } from '@experiences/lists/services/lists-refresh.service';
+import { buildDeleteConfirmMessage } from '@experiences/lists/services/list-consumers';
 import { PersonsService } from '@experiences/persons/services/persons-service';
 import { TagsService } from '@experiences/tags/services/tags-service';
 import { Icon } from '@icons/icon';
@@ -247,6 +248,39 @@ export class ListForm implements OnInit {
     return !isDynamic && count > 0 ? `SAVE (${count} selected)` : 'SAVE';
   });
 
+  /** "1,284 people" / "1 household" — noun agrees with count and object (§8). */
+  protected readonly matchNoun = computed<string>(() => {
+    const n = this.matchCount() ?? 0;
+    const people = n === 1 ? 'person' : 'people';
+    const households = n === 1 ? 'household' : 'households';
+    return this.listType() === 'people' ? people : households;
+  });
+
+  private formatCount(value: number | null): string {
+    return new Intl.NumberFormat().format(value ?? 0);
+  }
+
+  /** Live preview headline — the count does its math in public (§8). */
+  protected readonly matchSentence = computed<string>(() => {
+    if (this.counting()) return 'Counting matches…';
+    const n = this.matchCount();
+    if (n == null) return '';
+    return `Matches ${this.formatCount(n)} ${this.matchNoun()} right now`;
+  });
+
+  /** Verbatim §8 mode note beneath the live count — differs by list type. */
+  protected readonly modeNote = computed<string>(() =>
+    this.isDynamic()
+      ? 'this count keeps changing on its own — the rules re-run automatically as records change.'
+      : "the rules run once when you create the list. Today's matches are saved as fixed members — new matching people are NOT added later.",
+  );
+
+  /** Verbatim §8 create-button label — carries the scale it will act on. */
+  protected readonly createLabel = computed<string>(() => {
+    const n = this.formatCount(this.matchCount());
+    return this.isDynamic() ? `Create smart list — ${n} now` : `Create static list — snapshot ${n}`;
+  });
+
   protected readonly rulesRoot = signal<QueryBuilderGroupNode>({
     kind: 'group',
     id: 'root',
@@ -484,11 +518,20 @@ export class ListForm implements OnInit {
   protected async deleteList() {
     const id = this.id();
     if (this.isNew() || !id) return;
+    let consumers: unknown = null;
+    try {
+      consumers = await this.listsSvc.getConsumers(id);
+    } catch {
+      // Fall back to the generic body if consumers can't be loaded.
+    }
+    const listName = this.form.get('name')?.value ?? '';
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete List',
-      message: 'Are you sure you want to delete this list? This action cannot be undone.',
+      title: 'Delete list',
+      message: buildDeleteConfirmMessage(listName, consumers),
       variant: 'danger',
-      confirmText: 'Delete',
+      confirmText: 'Delete list',
+      // Safe action styled primary (§8): "Keep list" is the reassuring default.
+      cancelText: 'Keep list',
     });
     if (!confirmed) return;
 

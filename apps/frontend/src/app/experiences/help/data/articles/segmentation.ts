@@ -44,25 +44,36 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
   {
     id: 'lists',
     category: 'segmentation',
-    title: 'Static and dynamic lists',
+    title: 'Smart and static lists',
     summary:
-      'Lists are reusable audiences — fixed rosters you curate by hand, or living queries that keep themselves current.',
-    keywords: ['list', 'audience', 'segment', 'static list', 'dynamic list', 'smart list', 'membership', 'query'],
+      'Lists are reusable audiences — smart lists that refresh themselves from a rule, or static snapshots you curate by hand.',
+    keywords: [
+      'list',
+      'audience',
+      'segment',
+      'static list',
+      'smart list',
+      'dynamic list',
+      'snapshot',
+      'membership',
+      'rule',
+      'query',
+    ],
     related: ['tags-issues', 'filters', 'newsletters'],
     blocks: [
       {
         kind: 'p',
-        text: 'A list is a saved group of people you can reuse anywhere — as a grid filter, a newsletter audience, or a team’s call sheet. Lists come in two flavors, and choosing the right one saves hours later.',
+        text: 'A list is a saved group of people or households you can reuse anywhere — as a grid filter, a newsletter audience, a canvassing universe, or a form’s follow-up. Lists come in two types, and choosing the right one saves hours later.',
       },
-      { kind: 'h2', id: 'static', text: 'Static lists: a roster you control' },
+      { kind: 'h2', id: 'smart', text: 'Smart lists: a rule that refreshes itself' },
       {
         kind: 'p',
-        text: 'A static list is a fixed set of members — it changes only when someone adds or removes people. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
+        text: 'A smart list is defined by rules in the query builder — “everyone tagged volunteer in Springfield”. Membership updates itself automatically as people and households change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale. Its count keeps changing on its own.',
       },
-      { kind: 'h2', id: 'dynamic', text: 'Dynamic lists: a query that stays fresh' },
+      { kind: 'h2', id: 'static', text: 'Static lists: a snapshot you control' },
       {
         kind: 'p',
-        text: 'A dynamic list is defined by conditions in the query builder — “everyone tagged volunteer in Springfield”. Membership updates itself as records change: new matches join, non-matches drop out. Nobody maintains it, and it is never stale.',
+        text: 'A static list runs its rules once, at creation, and saves the result as a fixed snapshot — today’s matches become the members and stay put. New matching people are not added later; membership changes only when you edit it by hand. Use one for a curated invite list, a board roster, or the attendees of a specific event.',
       },
       { kind: 'h2', id: 'create', text: 'Create a list' },
       {
@@ -72,19 +83,51 @@ export const SEGMENTATION_ARTICLES: HelpArticle[] = [
             title: 'Open [Lists](/lists) and click +',
             detail: 'Name the list something your teammates will recognize in a dropdown.',
           },
-          { title: 'Pick static or dynamic', detail: 'Ask: should this group maintain itself? If yes, go dynamic.' },
           {
-            title: 'Build it',
+            title: 'Pick Smart or Static',
             detail:
-              'Static: add members. Dynamic: compose conditions in the query builder and check the matching count before saving.',
+              'Ask: should this group maintain itself? If yes, choose Smart; if it should stay frozen, choose Static.',
+          },
+          {
+            title: 'Choose People or Households',
+            detail: 'A list targets one or the other — pick what you are grouping.',
+          },
+          {
+            title: 'Build the rule',
+            detail:
+              'Compose conditions in the query builder — match all or any, with nested groups. The live preview does the math in public: “Matches 1,284 people right now”, with a note reminding you whether that count will keep moving (Smart) or freeze on save (Static).',
+          },
+          {
+            title: 'Create it',
+            detail:
+              'The button carries the scale it will act on — “Create smart list — 1,284 now” or “Create static list — snapshot 1,284”.',
           },
         ],
+      },
+      { kind: 'h2', id: 'table', text: 'Read the Lists table' },
+      {
+        kind: 'list',
+        items: [
+          '**List** — the name is a door: click it to open People or Households with that list applied as a removable filter chip.',
+          '**Type** — a Smart or Static chip.',
+          '**Of** — People or Households.',
+          '**Definition** — the rule written as a plain sentence.',
+          '**Members** — how many records are in the list right now.',
+          '**Last used in** — the most recent newsletter, form, or turf that used this list.',
+          '**Updated** — when the list last changed.',
+        ],
+      },
+      {
+        kind: 'callout',
+        tone: 'warning',
+        title: 'Deleting a list names what it will affect',
+        text: 'If a list is in use, the delete confirmation names its consumers — the newsletters, forms, and turfs that reference it — so you never break an audience by surprise. The people and households themselves are never touched; only the list is removed.',
       },
       {
         kind: 'callout',
         tone: 'tip',
         title: 'Lists are how good newsletters start',
-        text: 'A newsletter audience built on a dynamic list is accurate on send day by definition — see [Create and send a newsletter](/help/newsletters).',
+        text: 'A newsletter audience built on a smart list is accurate on send day by definition — see [Create and send a newsletter](/help/newsletters).',
       },
     ],
   },
