@@ -15,9 +15,16 @@
     viewRoute="/people"
     [disableView]="false"
     [narrowTypeOptions]="narrowTypeOptions()"
+    [totalSentence]="totalSentence()"
     (importCSV)="openImportDialog()"
     [plusIcon]="getPlusIcon()"
-  ></pc-datagrid>
+  >
+    <div pcGridBelowHeader>
+      @if (!inline()) {
+      <pc-grain-tabs />
+      }
+    </div>
+  </pc-datagrid>
 </div>
 
 <dialog id="confirmAddressEdit" class="modal">

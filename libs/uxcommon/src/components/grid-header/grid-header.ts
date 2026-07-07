@@ -49,6 +49,13 @@ export class GridHeaderComponent {
   /** Whether any user-applied filter is narrowing the results. */
   public readonly filtered = input<boolean>(false);
 
+  /**
+   * Optional caller-provided sentence for the unfiltered total, e.g. "5,012 people total"
+   * or "1,890 households across 8 wards". When filters are active it is appended after the
+   * matched count: "43 match your filters · 5,012 people total".
+   */
+  public readonly totalSentence = input<string | null>(null);
+
   private readonly descToggled = signal<boolean | null>(null);
   protected readonly descriptionOpen = computed(() => this.descToggled() ?? this.open());
 
@@ -56,10 +63,14 @@ export class GridHeaderComponent {
 
   protected readonly countText = computed<string | null>(() => {
     const count = this.totalCount();
-    if (count === null) return null;
-    if (this.filtered()) {
-      return count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
+    const sentence = this.totalSentence();
+    if (count !== null && this.filtered()) {
+      const matched =
+        count === 1 ? '1 matches your filters' : `${this.countFormatter.format(count)} match your filters`;
+      return sentence ? `${matched} · ${sentence}` : matched;
     }
+    if (sentence) return sentence;
+    if (count === null) return null;
     return count === 1 ? '1 total' : `${this.countFormatter.format(count)} total`;
   });
 

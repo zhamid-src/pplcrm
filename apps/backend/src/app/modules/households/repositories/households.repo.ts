@@ -456,6 +456,17 @@ export class HouseholdRepo extends BaseRepository<'households'> {
       .execute();
   }
 
+  /** Distinct geocoded wards — powers the Households grain sentence ("{n} households across {m} wards"). */
+  public async countDistinctWards(tenant_id: string): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>(sql`DISTINCT ward`).as('count')])
+      .where('tenant_id', '=', tenant_id)
+      .where('ward', 'is not', null)
+      .where('ward', '!=', '')
+      .executeTakeFirst();
+    return Number(result?.count ?? 0);
+  }
+
   public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
     let q = this.getSelect()
       .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')

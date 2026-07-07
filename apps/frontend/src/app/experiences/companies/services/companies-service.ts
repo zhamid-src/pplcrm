@@ -20,7 +20,7 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
   }
 
   public count(): Promise<number> {
-    return Promise.resolve(0);
+    return this.api.companies.count.query();
   }
 
   public detachTag(_id: string, _tag_name: string) {

@@ -1,9 +1,9 @@
 import { appRoutes } from './app.routes';
 
 describe('appRoutes', () => {
-  it('redirects the empty path to summary', () => {
+  it('redirects the empty path to the dashboard', () => {
     const root = appRoutes.find((r) => r.path === '' && 'redirectTo' in r);
-    expect(root).toMatchObject({ redirectTo: 'summary', pathMatch: 'full' });
+    expect(root).toMatchObject({ redirectTo: 'dashboard', pathMatch: 'full' });
   });
 
   it('exposes every public auth route exactly once', () => {
