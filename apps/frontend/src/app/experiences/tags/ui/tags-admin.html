@@ -1,0 +1,123 @@
+<div class="flex flex-col gap-4 p-4 sm:p-6">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-[22px] font-bold text-base-content">Tags</h1>
+      @if (!loading()) {
+      <p class="text-sm text-base-content/60 tabular-nums">{{ sentence() }}</p>
+      }
+    </div>
+    <a routerLink="add" class="btn btn-primary btn-sm gap-2">
+      <pc-icon name="add-label" [size]="4"></pc-icon>
+      New tag
+    </a>
+  </div>
+
+  @if (!loading() && unusedRows().length > 0) {
+  <div class="alert bg-base-200 border border-base-300 flex items-center justify-between gap-4 py-3">
+    <div class="flex items-center gap-3">
+      <pc-icon name="exclamation-circle" class="text-warning shrink-0" [size]="5"></pc-icon>
+      <span class="text-sm text-base-content/80">
+        {{ calloutNames() }}{{ unusedRows().length > 2 ? ' and others' : '' }} haven't been applied in 90 days — merge
+        or delete {{ unusedRows().length === 1 ? 'it' : 'them' }} to keep the vocabulary sharp.
+      </span>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm shrink-0" (click)="showUnusedOnly.set(!showUnusedOnly())">
+      {{ showUnusedOnly() ? 'Show all tags' : 'Show the ' + unusedRows().length + ' unused' }}
+    </button>
+  </div>
+  }
+
+  <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+    <table class="table">
+      <thead>
+        <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
+          <th>Tag</th>
+          <th>People</th>
+          <th>Last applied</th>
+          <th>Created by</th>
+          <th class="w-10"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @if (loading()) { @for (i of skeletonRows; track i) {
+        <tr>
+          <td colspan="5"><div class="skeleton h-6 w-full"></div></td>
+        </tr>
+        } } @else if (visibleRows().length === 0) {
+        <tr>
+          <td colspan="5" class="py-12 text-center">
+            <div class="flex flex-col items-center gap-2">
+              <pc-icon name="label" class="text-base-content/30" [size]="8"></pc-icon>
+              <p class="text-sm text-base-content/60">
+                {{ showUnusedOnly() ? 'No unused tags — nice and tidy.' : 'No tags yet.' }}
+              </p>
+              @if (showUnusedOnly()) {
+              <button type="button" class="btn btn-sm btn-outline" (click)="showUnusedOnly.set(false)">
+                Show all tags
+              </button>
+              } @else {
+              <a routerLink="add" class="btn btn-sm btn-primary">New tag</a>
+              }
+            </div>
+          </td>
+        </tr>
+        } @else { @for (row of visibleRows(); track row.id) {
+        <tr>
+          <td>
+            <div class="flex items-center gap-2">
+              <span class="badge badge-secondary badge-sm font-medium">{{ row.name }}</span>
+              @if (isUnused(row)) {
+              <span class="badge badge-ghost badge-sm text-base-content/50">Unused 90d</span>
+              }
+            </div>
+          </td>
+          <td class="tabular-nums">
+            <a
+              [routerLink]="'/people'"
+              [queryParams]="{ tag: row.name }"
+              class="link link-hover text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+            >
+              {{ row.use_count_people.toLocaleString() }}
+            </a>
+            @if (row.use_count_households > 0) {
+            <span class="text-xs text-base-content/50">
+              · {{ row.use_count_households.toLocaleString() }} household{{ row.use_count_households === 1 ? '' : 's' }}
+            </span>
+            }
+          </td>
+          <td class="text-sm text-base-content/70">{{ relativeLastApplied(row) }}</td>
+          <td class="text-sm text-base-content/70">{{ row.created_by_name ?? '—' }}</td>
+          <td>
+            <div class="dropdown dropdown-end dropdown-bottom">
+              <label tabindex="0" class="btn btn-ghost btn-xs px-1" aria-label="Tag actions">
+                <pc-icon name="ellipsis-vertical" [size]="4"></pc-icon>
+              </label>
+              <ul
+                tabindex="0"
+                class="dropdown-content menu p-1 shadow bg-base-100 rounded-box w-48 z-30 border border-base-300"
+              >
+                <li>
+                  <a (click)="rename(row)"><pc-icon name="pencil-square" [size]="4"></pc-icon> Rename tag</a>
+                </li>
+                <li>
+                  <a (click)="merge(row)"><pc-icon name="merge" [size]="4"></pc-icon> Merge into another tag</a>
+                </li>
+                <li><hr class="my-1 border-base-300" /></li>
+                <li>
+                  <a (click)="delete(row)" class="text-error">
+                    <pc-icon name="trash-forever" [size]="4"></pc-icon> Delete tag
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </td>
+        </tr>
+        } }
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-base-content/50 px-1">
+    Renames and merges apply everywhere a tag is referenced — people, lists, automations and forms — in one pass.
+  </p>
+</div>
