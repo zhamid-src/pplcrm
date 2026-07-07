@@ -65,24 +65,29 @@ describe('ListsGridComponent', () => {
   it('should create and initialize columns', () => {
     expect(component).toBeTruthy();
     expect(component['col']).toBeDefined();
-    expect(component['col'].length).toBe(9);
+    // §8 table: List · Description · Type · Of · Definition · Members ·
+    // Last used in · Refresh · Last refreshed · Updated · Created by.
+    expect(component['col'].length).toBe(11);
   });
 
-  it('should format list_size correctly for dynamic vs static lists', () => {
-    const listSizeCol = component['col'].find((c) => c.field === 'list_size');
-    const formatter = listSizeCol?.valueFormatter as (params: any) => any;
+  it('renders the Type chip as Smart / Static', () => {
+    const typeCol = component['col'].find((c) => c.field === 'is_dynamic');
+    const renderer = typeCol?.cellRenderer as (params: any) => string;
+    expect(renderer).toBeDefined();
+    expect(renderer({ data: { is_dynamic: true }, value: true })).toContain('Smart');
+    expect(renderer({ data: { is_dynamic: false }, value: false })).toContain('Static');
+  });
 
+  it('shows the Members count as a number for both smart and static lists', () => {
+    const membersCol = component['col'].find((c) => c.field === 'list_size');
+    const formatter = membersCol?.valueFormatter as (params: any) => any;
     expect(formatter).toBeDefined();
 
-    // Dynamic list
-    expect(formatter({ data: { is_dynamic: true }, value: 10 })).toBe('N/A');
-    expect(formatter({ data: { is_dynamic: 'true' }, value: 5 })).toBe('N/A');
-    expect(formatter({ data: { is_dynamic: 1 }, value: 0 })).toBe('N/A');
-
+    // Smart lists persist members after refresh — show the real count, not N/A.
+    expect(formatter({ data: { is_dynamic: true }, value: 10 })).toBe('10');
     // Static list
-    expect(formatter({ data: { is_dynamic: false }, value: 42 })).toBe(42);
-    expect(formatter({ data: { is_dynamic: 0 }, value: 15 })).toBe(15);
-    expect(formatter({ data: {}, value: null })).toBe(0);
+    expect(formatter({ data: { is_dynamic: false }, value: 42 })).toBe('42');
+    expect(formatter({ data: {}, value: null })).toBe('0');
   });
 
   it('should call refresh when refreshCount signal increments', async () => {
