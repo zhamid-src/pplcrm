@@ -49,6 +49,11 @@ const envSchema = z.object({
   // claimers (each uses `SELECT … FOR UPDATE SKIP LOCKED`, so concurrent claiming is safe). Keep
   // this comfortably below the Postgres pool size. Default 4.
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+  // Max connections in the shared pg pool. The API server, the job worker (up to
+  // WORKER_CONCURRENCY concurrent claimers), the webhook worker, and LISTEN/NOTIFY
+  // listeners all draw from this pool, so keep it comfortably above WORKER_CONCURRENCY
+  // and well under Postgres max_connections. Default 20 (pg's own default is 10).
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(20),
   // Money-touching mock paths (unsigned donation-webhook parsing, mock donation writer) require an
   // EXPLICIT opt-in, never merely "NODE_ENV !== production" — an unset NODE_ENV must not silently
   // accept forged payment data (SECURITY-REVIEW 4.2). Only ever set this in local dev.
@@ -85,6 +90,7 @@ export const env = {
   publicFormsBaseDomain: parsedEnv.PUBLIC_FORMS_BASE_DOMAIN,
   trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
   workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
+  dbPoolMax: parsedEnv.DB_POOL_MAX,
   allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,

@@ -8,6 +8,7 @@ import { handleExportCsv } from './handlers/export.handlers';
 import { handleImportJob } from './handlers/import.handlers';
 import {
   handleCleanupActivities,
+  handlePruneRetention,
   handleEnrichCompanyGoogle,
   handleGeocodeHousehold,
   handleRecomputeAddressFingerprints,
@@ -66,6 +67,9 @@ export async function executeJob(payload: unknown, db: Kysely<Models>, jobId?: s
       break;
     case 'cleanup_activities':
       await handleCleanupActivities(db);
+      break;
+    case 'prune_retention':
+      await handlePruneRetention(db);
       break;
     case 'recompute_all_duplicates':
       await handleRecomputeAllDuplicates(db);
