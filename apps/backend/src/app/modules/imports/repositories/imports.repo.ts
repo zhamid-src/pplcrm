@@ -16,7 +16,12 @@ export type DataImportWithStats = {
   inserted_count: number;
   error_count: number;
   skipped_count: number;
+  merged_count: number;
+  tags_applied: string[];
   households_created: number;
+  source_file_key: string | null;
+  source_file_size: number | null;
+  skip_reasons: Array<{ row: number; email?: string; reason: string }>;
   processed_at: Date;
   created_at: Date;
   updated_at: Date;
@@ -123,7 +128,12 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
         'data_imports.inserted_count',
         'data_imports.error_count',
         'data_imports.skipped_count',
+        'data_imports.merged_count',
+        'data_imports.tags_applied',
         'data_imports.households_created',
+        'data_imports.source_file_key',
+        'data_imports.source_file_size',
+        'data_imports.skip_reasons',
         'data_imports.processed_at',
         'data_imports.created_at',
         'data_imports.updated_at',
@@ -168,7 +178,14 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
       inserted_count: toNumber(row['inserted_count']),
       error_count: toNumber(row['error_count']),
       skipped_count: toNumber(row['skipped_count']),
+      merged_count: toNumber(row['merged_count']),
+      tags_applied: Array.isArray(row['tags_applied']) ? (row['tags_applied'] as string[]) : [],
       households_created: toNumber(row['households_created']),
+      source_file_key: cast(row['source_file_key']),
+      source_file_size: row['source_file_size'] == null ? null : toNumber(row['source_file_size']),
+      skip_reasons: Array.isArray(row['skip_reasons'])
+        ? (row['skip_reasons'] as Array<{ row: number; email?: string; reason: string }>)
+        : [],
       processed_at: this.coerceDate(row['processed_at']),
       created_at: this.coerceDate(row['created_at']),
       updated_at: this.coerceDate(row['updated_at']),
