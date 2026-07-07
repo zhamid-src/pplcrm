@@ -75,15 +75,16 @@ export const GRIDS_ARTICLES: HelpArticle[] = [
     blocks: [
       {
         kind: 'p',
-        text: 'Filters narrow a grid to the rows you care about — and PeopleCRM never hides what it is doing: every active filter appears as a chip above the grid, with a count of how many rows match. Remove one chip, or **Clear all** at once.',
+        text: 'Filters narrow a grid to the rows you care about — and PeopleCRM never hides what it is doing: a small funnel marks the filter row above the grid, every active filter appears as a chip there with a count of how many rows match, and dashed entry pills sit inline. Remove one chip, or **Clear all** at once.',
       },
-      { kind: 'h2', id: 'quick-filters', text: 'Quick filters: tags, issues, lists' },
+      { kind: 'h2', id: 'quick-filters', text: 'Quick filters: the dashed pills' },
       {
         kind: 'list',
         items: [
+          '**+ Add filter** — pick a field, an operator, and a value; the condition lands as one removable chip.',
           '**Tags** — check one or more tags; checked tags combine with OR (match any) and land as a single removable chip.',
           '**Issues** — same mechanics as tags, for issue interests.',
-          '**List** — show only the members of one [list](/help/lists).',
+          '**Lists** — show only the members of one [list](/help/lists).',
         ],
       },
       { kind: 'h2', id: 'advanced', text: 'Per-column filters' },
