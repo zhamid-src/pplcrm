@@ -3,12 +3,14 @@ import { roleGuard } from './auth/role-guard';
 import { unsavedChangesGuard } from './services/unsaved-changes-guard';
 
 export const dashboardRoutes: Routes = [
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 
   {
-    path: 'summary',
+    path: 'dashboard',
     loadComponent: () => import('./experiences/summary/summary').then((m) => m.Summary),
   },
+  // Back-compat: old /summary links (bookmarks, pins, deep links) redirect to /dashboard.
+  { path: 'summary', redirectTo: 'dashboard', pathMatch: 'full' },
 
   {
     path: 'people',
@@ -164,7 +166,7 @@ export const dashboardRoutes: Routes = [
   },
 
   {
-    path: 'workflows',
+    path: 'automations',
     children: [
       {
         path: '',
@@ -182,6 +184,8 @@ export const dashboardRoutes: Routes = [
       },
     ],
   },
+  // Back-compat: old /workflows links redirect to /automations (prefix keeps :id/add).
+  { path: 'workflows', redirectTo: 'automations', pathMatch: 'prefix' },
 
   {
     path: 'events',
@@ -443,9 +447,11 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/files/ui/files-grid').then((m) => m.FilesGrid),
   },
   {
-    path: 'activities',
+    path: 'activity',
     loadComponent: () => import('./experiences/activity/ui/activity-feed').then((m) => m.ActivityFeed),
   },
+  // Back-compat: old /activities links redirect to /activity.
+  { path: 'activities', redirectTo: 'activity', pathMatch: 'full' },
   {
     path: 'help',
     children: [

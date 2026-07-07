@@ -40,12 +40,12 @@ describe('LoginGuard', () => {
 
     TestBed.runInInjectionContext(() => {
       void loginGuard({} as any, {} as any);
-      expect(mockRouter.navigateByUrl).toHaveBeenCalledWith('/summary');
+      expect(mockRouter.navigateByUrl).toHaveBeenCalledWith('/dashboard');
     });
   });
 
   it('should NOT redirect an unverified user, so they can see the verification-pending state on /signin', () => {
-    // Regression guard: redirecting an unverified user to /summary bounces off authGuard
+    // Regression guard: redirecting an unverified user to /dashboard bounces off authGuard
     // (which sends unverified users back to /signin) into an infinite redirect loop.
     mockAuthSvc.getUser.mockReturnValue({ id: 'user-123', email: 'a@b.com', email_verified: false });
 

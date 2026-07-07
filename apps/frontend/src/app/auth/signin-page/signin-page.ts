@@ -68,7 +68,7 @@ export class SignInPage implements OnInit, OnDestroy {
   constructor() {
     effect(() => {
       const user = this.authService.getUserSignal();
-      if (user() && !this.suppressNavigation()) void this.router.navigate(['summary']);
+      if (user() && !this.suppressNavigation()) void this.router.navigate(['dashboard']);
     });
   }
 

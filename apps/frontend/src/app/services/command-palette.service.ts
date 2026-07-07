@@ -36,7 +36,7 @@ export class CommandPaletteService {
       label: 'Go to Dashboard',
       icon: 'presentation-chart-line',
       keywords: 'home summary',
-      run: () => this.go('/summary'),
+      run: () => this.go('/dashboard'),
     },
     {
       id: 'goto-people',

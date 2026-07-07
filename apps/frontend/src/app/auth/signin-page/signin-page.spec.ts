@@ -69,7 +69,7 @@ describe('SignInPage', () => {
     const fixture2 = TestBed.createComponent(SignInPage);
     fixture2.detectChanges();
 
-    expect(mockRouter.navigate).toHaveBeenCalledWith(['summary']);
+    expect(mockRouter.navigate).toHaveBeenCalledWith(['dashboard']);
   });
 
   it('should toggle token persistence', () => {

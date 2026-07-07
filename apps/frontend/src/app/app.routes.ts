@@ -4,8 +4,8 @@ import { authGuard } from './auth/auth-guard';
 import { loginGuard } from './auth/login/login-guard';
 
 export const appRoutes = [
-  // Default redirect to summary inside the dashboard shell
-  { path: '', redirectTo: 'summary', pathMatch: 'full' },
+  // Default redirect to the dashboard inside the app shell
+  { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
 
   // Auth pages
   {
