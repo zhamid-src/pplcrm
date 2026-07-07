@@ -70,6 +70,44 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
     return company;
   }
 
+  /**
+   * Queue a Google Places enrichment lookup for one company (§7 "Enrich" /
+   * "Re-check Google" button). Transactional-outbox: verify the company is in
+   * the tenant, then insert the background job. `force` re-runs even if the
+   * company was already enriched.
+   */
+  public async queueEnrichment(id: string, auth: IAuthKeyPayload, force = false): Promise<{ queued: boolean }> {
+    const company = await this.getRepo()
+      .db.selectFrom('companies')
+      .select('id')
+      .where('id', '=', id)
+      .where('tenant_id', '=', auth.tenant_id)
+      .executeTakeFirst();
+
+    if (!company) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Company not found' });
+    }
+
+    await this.getRepo()
+      .db.insertInto('background_jobs')
+      .values({
+        tenant_id: auth.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'enrich_company_google',
+          company_id: String(id),
+          tenant_id: String(auth.tenant_id),
+          force,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      })
+      .execute();
+
+    return { queued: true };
+  }
+
   public addCompany(payload: any, auth: IAuthKeyPayload) {
     const row = {
       name: payload.name,

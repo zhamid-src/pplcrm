@@ -7,7 +7,7 @@ import { logger } from '../../../logger';
 export class CompaniesEnrichmentService {
   constructor(private readonly db: Kysely<Models>) {}
 
-  public async enrichCompany(companyId: string, tenantId: string): Promise<void> {
+  public async enrichCompany(companyId: string, tenantId: string, force = false): Promise<void> {
     const company = await this.db
       .selectFrom('companies')
       .selectAll()
@@ -20,12 +20,13 @@ export class CompaniesEnrichmentService {
       return;
     }
 
-    // Check if already enriched
+    // Check if already enriched. A user-triggered "Re-check Google" (force)
+    // re-runs the lookup; the first-load auto-queue does not.
     let currentEnrichment: any = {};
     if (company.enrichment) {
       currentEnrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
     }
-    if (currentEnrichment?.google_enriched) {
+    if (!force && currentEnrichment?.google_enriched) {
       logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
       return;
     }
