@@ -1,6 +1,7 @@
 import { Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ListsService } from '@experiences/lists/services/lists-service';
+import { buildDeleteConfirmMessage } from '@experiences/lists/services/list-consumers';
 import { ListsType } from '../../../../../../../libs/common/src';
 import { FormActions } from '@uxcommon/components/form-actions/form-actions';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
@@ -127,12 +128,22 @@ export class ListView implements OnDestroy {
   }
 
   protected async deleteList() {
-    if (!this.id()) return;
+    const id = this.id();
+    if (!id) return;
+    let consumers: unknown = null;
+    try {
+      consumers = await this.lists.getConsumers(id);
+    } catch {
+      // Fall back to the generic body if consumers can't be loaded.
+    }
+    const listName = this.listData()?.name ?? '';
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete List',
-      message: 'Are you sure you want to delete this list? This action cannot be undone.',
+      title: 'Delete list',
+      message: buildDeleteConfirmMessage(listName, consumers),
       variant: 'danger',
-      confirmText: 'Delete',
+      confirmText: 'Delete list',
+      // Safe action styled primary (§8): "Keep list" is the reassuring default.
+      cancelText: 'Keep list',
     });
     if (!confirmed) return;
     this.loading.set(true);
