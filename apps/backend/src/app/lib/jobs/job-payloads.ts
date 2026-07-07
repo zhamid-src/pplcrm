@@ -181,6 +181,12 @@ export const legacyImportJobSchema = z.object({
   campaign_id: idSchema.nullish(),
   tags: z.array(z.string()).nullish(),
   file_name: z.string().nullish(),
+  // §17 CSV import wizard — see PersonsService.importRows/processImportRows.
+  duplicate_decision: z.enum(['merge', 'skip', 'import_new']).nullish(),
+  list_name: z.string().nullish(),
+  client_skip_reasons: z
+    .array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() }))
+    .nullish(),
 });
 
 export type LegacyImportJobPayload = z.infer<typeof legacyImportJobSchema>;

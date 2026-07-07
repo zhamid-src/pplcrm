@@ -58,6 +58,8 @@ export const ImportListItemObj = z.object({
   insertedCount: z.number().int().nonnegative(),
   errorCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
+  mergedCount: z.number().int().nonnegative(),
+  tagsApplied: z.array(z.string()),
   rowCount: z.number().int().nonnegative(),
   householdsCreated: z.number().int().nonnegative(),
   contactCount: z.number().int().nonnegative(),
@@ -67,4 +69,8 @@ export const ImportListItemObj = z.object({
   status: z.string(),
   errorMessage: z.string().nullable().optional(),
   canDeleteContacts: z.boolean(),
+  /** File size in bytes, when the original upload is still retained (90 days, spec §17). */
+  sourceFileSize: z.number().int().nonnegative().nullable(),
+  canDownloadSource: z.boolean(),
+  canDownloadSkipped: z.boolean(),
 });

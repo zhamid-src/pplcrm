@@ -444,6 +444,25 @@ export class PersonsRepo extends BaseRepository<'persons'> {
       .executeTakeFirst();
   }
 
+  /**
+   * Batched email-identity lookup for the CSV import wizard's Review step
+   * (spec §17) — given a set of candidate emails, return the existing person
+   * each one matches (if any), so the wizard can show "3 rows match people
+   * you already have" with a door to each matched person.
+   */
+  public async findManyByEmails(input: { tenant_id: string; emails: string[] }) {
+    const normalized = Array.from(
+      new Set(input.emails.map((email) => email.trim().toLowerCase()).filter((email) => email.length > 0)),
+    );
+    if (normalized.length === 0) return [];
+
+    return this.getSelect()
+      .select(['id', 'first_name', 'last_name', 'email', 'slug'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, 'in', normalized)
+      .execute();
+  }
+
   public async getDuplicateCount(tenant_id: string): Promise<number> {
     // NOTE: unscoped by design — tenant_id filtered inside subquery
     // eslint-disable-next-line local/no-unscoped-db-query

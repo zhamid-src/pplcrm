@@ -639,6 +639,15 @@ interface DataImports extends RecordType {
   processed_at: Timestamp;
   status: Generated<string>;
   error_message: string | null;
+  /** Rows folded into an existing person via the "Merge into existing" duplicate decision (spec §17). */
+  merged_count: Generated<number>;
+  /** All tags applied by this import (the wizard allows several comma-separated tags, not just the auto tag). */
+  tags_applied: Generated<Json>;
+  /** Storage key for the retained original upload — kept 90 days so History can offer a re-download. */
+  source_file_key: string | null;
+  source_file_size: number | null;
+  /** Per-row reasons for skipped rows, so History can offer a "download skipped rows" CSV. */
+  skip_reasons: Generated<Json>;
 }
 
 export interface DataExports {

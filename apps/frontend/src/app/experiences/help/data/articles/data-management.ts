@@ -4,40 +4,47 @@ export const DATA_ARTICLES: HelpArticle[] = [
   {
     id: 'import',
     category: 'data',
-    title: 'Import data from CSV',
+    title: 'Import people from CSV',
     summary:
-      'Bring existing spreadsheets into PeopleCRM, watch progress live, and clean up afterwards with the duplicates finder.',
-    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel'],
+      'The guided import wizard walks you from a raw spreadsheet to matched, tagged, deduplicated people in four steps.',
+    keywords: ['import', 'csv', 'spreadsheet', 'upload data', 'migrate', 'bulk add', 'excel', 'wizard'],
     related: ['duplicates', 'export', 'tags-issues', 'add-people'],
     blocks: [
       {
         kind: 'p',
-        text: 'Any grid that supports it has **Import CSV** in its toolbar — [People](/people), [Companies](/companies), and more. The [Imports](/imports) page is mission control: every import you have run, its status, and its results.',
+        text: '**Import / export** in the DATA section of the sidebar is history for both directions. Click **Import CSV** there — or in the People grid toolbar — to open the wizard at [/imports/new](/imports/new): Upload → Map columns → Review → Import. Nothing is written to your database until the last step.',
       },
       { kind: 'h2', id: 'prepare', text: 'Prepare the file' },
       {
         kind: 'list',
         items: [
-          'Use a CSV with a header row — column names like “First name” or “Email” map naturally.',
-          'One entity per file: import people into the People grid, companies into Companies.',
-          'A quick pass in your spreadsheet first (split names, tidy emails) beats fixing records one by one after.',
+          'Use a CSV with a header row — column names like “First name” or “Email” map automatically.',
+          'One file, one grain: this wizard imports people. Companies and tasks still use their own grid-toolbar importer.',
+          'Both UTF-8 and Excel-exported CSVs work as-is.',
         ],
       },
-      { kind: 'h2', id: 'run', text: 'Run the import' },
+      { kind: 'h2', id: 'steps', text: 'The four steps' },
       {
         kind: 'steps',
         items: [
           {
-            title: 'Click **Import CSV** in the grid toolbar',
-            detail: 'Pick your file and follow the prompts to match your columns to fields.',
+            title: 'Upload',
+            detail: 'Drop the file or browse to it. You’ll see the row and column counts before anything else happens.',
           },
           {
-            title: 'Let it run in the background',
-            detail: 'Big files process server-side — keep working; the [Imports](/imports) page shows live progress.',
+            title: 'Map columns',
+            detail:
+              'Each column gets a best-guess field match — review and correct it. Anything left unmapped shows a “Skipped” chip and is left out.',
           },
           {
-            title: 'Read the summary',
-            detail: 'When it finishes you get an import summary notification with the results.',
+            title: 'Review',
+            detail:
+              'Duplicates are matched by email — the same identity rule used everywhere in PeopleCRM. Rows that match an existing person let you **merge** (fills blank fields, never overwrites), **skip**, or **import as new anyway**. Rows with a broken email address get their own choice: skip them or import without an email. Add a comma-separated tag list and/or a list here too.',
+          },
+          {
+            title: 'Import',
+            detail:
+              'Confirm the recap and click **Import N people**. The write happens in one pass and lands in the Activity log; the done screen offers **View imported people**, **Import another file**, or **Back to import history**.',
           },
         ],
       },
@@ -46,15 +53,15 @@ export const DATA_ARTICLES: HelpArticle[] = [
         kind: 'list',
         items: [
           'Spot-check a few records against the source file.',
-          'Run the [Duplicates](/duplicates) finder — overlap with existing records is normal, and merging is painless. See [Find and merge duplicates](/help/duplicates).',
-          'Tag the cohort if you have not already, so “everyone from the spring petition” stays one filter away.',
+          'If you chose "import as new anyway" for any matched duplicates, run the [Duplicates](/duplicates) finder to reconcile them when convenient.',
+          'The import history row keeps the original file downloadable for 90 days, and any skipped rows are downloadable with the reason each was skipped.',
         ],
       },
       {
         kind: 'callout',
         tone: 'tip',
-        title: 'Test with ten rows first',
-        text: 'Import a ten-row slice before the full file. If the mapping is off you fix ten records, not ten thousand.',
+        title: 'Test with a small file first',
+        text: 'Run a ten-row slice through the wizard before the full file. If the column mapping is off you fix ten records, not ten thousand.',
       },
     ],
   },
@@ -70,10 +77,10 @@ export const DATA_ARTICLES: HelpArticle[] = [
         kind: 'p',
         text: 'Your data is yours. Every grid has **Export CSV** in its toolbar, and the file reflects the grid as you see it — filters applied. For a subset, select rows first and use **Export** in the bulk action bar: exactly those rows, nothing more.',
       },
-      { kind: 'h2', id: 'exports-page', text: 'The Exports page' },
+      { kind: 'h2', id: 'exports-page', text: 'The Exports tab' },
       {
         kind: 'p',
-        text: 'Large exports are prepared in the background. The [Exports](/exports) page lists every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around.',
+        text: 'Large exports are prepared in the background. **Import / export** in the sidebar has an **Exports** tab listing every export with its status and a download link when ready — and the export-ready notification tells you the moment it is done, so there is no need to wait around. Clicking **New export** there is a signpost, not a wizard: it points you back to the People grid or Donations, because that’s where the filters live.',
       },
       {
         kind: 'callout',

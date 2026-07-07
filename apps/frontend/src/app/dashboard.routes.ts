@@ -426,12 +426,19 @@ export const dashboardRoutes: Routes = [
     loadComponent: () => import('./experiences/profile/profile-page').then((m) => m.ProfilePage),
   },
   {
+    path: 'imports/new',
+    loadComponent: () => import('./experiences/imports/ui/import-wizard').then((m) => m.ImportWizard),
+  },
+  {
     path: 'imports',
     loadComponent: () => import('./experiences/imports/ui/imports-page').then((m) => m.ImportsPage),
   },
   {
+    // Wave 1E (spec §17): Exports folded into the Import/export History page's
+    // Exports tab — redirect the old standalone route rather than 404 stale links.
     path: 'exports',
-    loadComponent: () => import('./experiences/exports/ui/exports-page').then((m) => m.ExportsPage),
+    redirectTo: '/imports',
+    pathMatch: 'full',
   },
   {
     path: 'companies',

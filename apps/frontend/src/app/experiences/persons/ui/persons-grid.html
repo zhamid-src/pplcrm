@@ -46,20 +46,3 @@
     </form>
   </div>
 </dialog>
-
-<!-- Reusable CSV Importer with Persons-specific extras (tags) -->
-<pc-csv-importer
-  [open]="importerOpen()"
-  [title]="'Import People from CSV'"
-  [mappableFields]="mappableFields"
-  [autoMapHeader]="autoMapHeader"
-  [summary]="importSummary()"
-  (submit)="onImportSubmit($event)"
-  (close)="importerOpen.set(false); importSummary.set(null)"
-  (closeSummary)="importSummary.set(null)"
->
-  <div pc-import-extras class="grid gap-2">
-    <label class="font-semibold">3) Add tags to all imported rows (optional)</label>
-    <input class="input input-bordered" placeholder="Comma separated e.g. donor, volunteer" [(ngModel)]="tagsInput" />
-  </div>
-</pc-csv-importer>

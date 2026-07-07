@@ -5,6 +5,7 @@ import msSyncCallbackRoute from './modules/ms-sync/ms-callback.route';
 import googleSyncCallbackRoute from './modules/google-sync/google-callback.route';
 import filesRoute from './modules/files/routes/files.route';
 import exportsDownloadRoute from './modules/exports/routes/exports-download.route';
+import importsDownloadRoute from './modules/imports/routes/imports-download.route';
 import webFormsPublicRoute from './modules/web-forms/routes/web-forms-public.route';
 import volunteerEventsPublicRoute from './modules/volunteer-events/routes/volunteer-events-public.route';
 import eventsPublicRoute from './modules/events/routes/events-public.route';
@@ -45,6 +46,9 @@ export const routes: FastifyPluginCallback = (fastify, _opts, done) => {
 
   // Register exports download REST route (auth handled inside route via query token)
   fastify.register(exportsDownloadRoute, { prefix: '/api/exports' });
+
+  // Register imports download REST routes — retained source file + skipped-rows CSV (spec §17)
+  fastify.register(importsDownloadRoute, { prefix: '/api/imports' });
 
   // Register email attachments REST routes (auth handled inside route via token/query token)
   fastify.register(emailsApiRoute, { prefix: '/api/emails' });
