@@ -17,6 +17,7 @@ import { SidebarService } from 'apps/frontend/src/app/layout/sidebar/sidebar-ser
 import { AuthService } from 'apps/frontend/src/app/auth/auth-service';
 import { ISidebarItem } from './sidebar-items';
 import { AnimateIfDirective } from '@uxcommon/directives/animate-if.directive';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
 
 @Component({
   selector: 'pc-sidebar',
@@ -35,6 +36,11 @@ export class Sidebar {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly tasksSvc = inject(TasksService);
+
+  /** Live SLA-breach count for the Tasks sidebar badge (spec §4). Loads once per session;
+   *  a failed fetch just leaves the badge unset rather than showing a stale/fake number. */
+  protected readonly taskSlaBreaches = signal<number | null>(null);
 
   // Tracks whether the viewport is >= lg (1024px) — updated via matchMedia, no RxJS
   private readonly _mql = typeof window !== 'undefined' ? window.matchMedia('(min-width: 1024px)') : null;
@@ -58,8 +64,9 @@ export class Sidebar {
   protected readonly items = computed(() => {
     const role = this.auth.getUser()?.role;
     const allItems = this.sidebarSvc.getItems()();
+    const withBadges = this.applyBadges(allItems);
     if (role === 'user') {
-      return allItems.map((item) => {
+      return withBadges.map((item) => {
         if (item.children) {
           return {
             ...item,
@@ -69,7 +76,7 @@ export class Sidebar {
         return item;
       });
     }
-    return allItems;
+    return withBadges;
   });
 
   constructor() {
@@ -91,6 +98,28 @@ export class Sidebar {
           this.visibilitySignals.set(key, signal(visible));
         }
       }
+    });
+
+    void this.loadTaskSlaBreaches();
+  }
+
+  private async loadTaskSlaBreaches(): Promise<void> {
+    try {
+      this.taskSlaBreaches.set(await this.tasksSvc.countSlaBreaches());
+    } catch {
+      // Badge just stays unset — never show a stale or fabricated count.
+    }
+  }
+
+  /** Stamps the live `badgeCount` onto the Tasks entry only — every other item is untouched. */
+  private applyBadges(items: ISidebarItem[]): ISidebarItem[] {
+    const breaches = this.taskSlaBreaches();
+    return items.map((item) => {
+      const children = item.children ? this.applyBadges(item.children) : undefined;
+      if (item.route === '/tasks') {
+        return { ...item, ...(children ? { children } : {}), badgeCount: breaches };
+      }
+      return children ? { ...item, children } : item;
     });
   }
 
