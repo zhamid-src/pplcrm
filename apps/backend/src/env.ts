@@ -61,6 +61,13 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((val) => val === 'true'),
+  // S-4 (schema review 2026-07-06): key material for encrypting OAuth mailbox
+  // tokens at rest (ms/google_oauth_tokens.access_token/refresh_token). Any
+  // high-entropy string — a 32-byte AES key is derived from it via SHA-256. When
+  // unset, tokens are stored as plaintext (the pre-encryption behavior), so this
+  // MUST be set in any environment that connects real mailboxes. Rotating it
+  // invalidates existing encrypted tokens (users just re-consent).
+  OAUTH_TOKEN_ENC_KEY: z.string().optional(),
 });
 
 /** Coerce TRUST_PROXY into the shape Fastify's `trustProxy` option accepts. */
@@ -92,6 +99,7 @@ export const env = {
   workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
   dbPoolMax: parsedEnv.DB_POOL_MAX,
   allowMockPayments: parsedEnv.ALLOW_MOCK_PAYMENTS,
+  oauthTokenEncKey: parsedEnv.OAUTH_TOKEN_ENC_KEY,
   sharedSecret: parsedEnv.SHARED_SECRET,
   msClientId: parsedEnv.MS_CLIENT_ID,
   msClientSecret: parsedEnv.MS_CLIENT_SECRET,

@@ -1,5 +1,6 @@
 import type { Kysely } from 'kysely';
 import type { Models } from '../../../../../../libs/common/src/lib/kysely.models';
+import { decryptSecret, encryptSecret } from '../../lib/secret-crypto';
 
 export const NEEDS_FULL_SYNC = JSON.stringify({ _needs_full_sync: true });
 
@@ -87,7 +88,9 @@ export class GoogleOAuthService {
         .select('refresh_token')
         .where('tenant_id', '=', tenantId)
         .executeTakeFirst();
-      insertObj.refresh_token = existing?.refresh_token ?? '';
+      // Reuse the stored refresh token; decrypt it to plaintext so it is
+      // re-encrypted uniformly below (avoids double-encryption).
+      insertObj.refresh_token = existing?.refresh_token ? decryptSecret(existing.refresh_token) : '';
     } else {
       insertObj.refresh_token = refreshToken;
     }
@@ -95,6 +98,11 @@ export class GoogleOAuthService {
     if (!insertObj.refresh_token) {
       throw new Error('Consent required to obtain refresh token. Please disconnect and reconnect.');
     }
+
+    // Encrypt the mailbox tokens at the DB write boundary (both the insert values
+    // and the onConflict update below read these fields).
+    insertObj.access_token = encryptSecret(insertObj.access_token);
+    insertObj.refresh_token = encryptSecret(insertObj.refresh_token);
 
     // Wrap the token upsert and initial sync job in a transaction (transactional outbox pattern)
     await this.db.transaction().execute(async (trx) => {
@@ -142,6 +150,10 @@ export class GoogleOAuthService {
       throw new Error('No Google account connected for this tenant');
     }
 
+    // Decrypt at the DB read boundary so the rest of this method works in plaintext.
+    row.access_token = decryptSecret(row.access_token);
+    row.refresh_token = decryptSecret(row.refresh_token);
+
     const isExpired = new Date(row.expires_at) < new Date(Date.now() + 60_000); // refresh 1 min early
     if (!isExpired) {
       return row.access_token;
@@ -173,8 +185,8 @@ export class GoogleOAuthService {
     await this.db
       .updateTable('google_oauth_tokens')
       .set({
-        access_token: newAccessToken,
-        refresh_token: newRefreshToken,
+        access_token: encryptSecret(newAccessToken),
+        refresh_token: encryptSecret(newRefreshToken),
         expires_at: newExpiry,
         updated_at: new Date(),
       })
