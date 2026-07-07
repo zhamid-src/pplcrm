@@ -12,6 +12,7 @@ import { DetailHeader as PcDetailHeader } from '@uxcommon/components/detail-head
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-overview/entity-overview';
 import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
+import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
@@ -31,6 +32,7 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
     PcDetailHeader,
     PcEntityOverview,
     PcAddressFormGroup,
+    GeocodeChip,
   ],
   templateUrl: './household-form.html',
 })

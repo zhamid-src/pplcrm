@@ -41,6 +41,9 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     type: z.literal('enrich_company_google'),
     company_id: idSchema,
     tenant_id: idSchema,
+    // A user-triggered "Re-check Google" re-runs the lookup even when the
+    // company was already enriched; the auto-queue on first load does not.
+    force: z.boolean().optional(),
   }),
   z.object({
     type: z.literal('refresh_companies_google'),
