@@ -83,7 +83,7 @@
                     class="badge badge-sm font-medium uppercase tracking-wider px-2 py-2"
                     [class]="getStatusBadgeClass(t.status)"
                   >
-                    {{ toTitleCase(t.status) }}
+                    {{ statusLabel(t.status) }}
                   </span>
                   @if (t.priority) {
                   <span
@@ -386,7 +386,7 @@
                 (change)="onStatusChange($event)"
               >
                 @for (s of statuses; track s) {
-                <option [value]="s">{{ toTitleCase(s) }}</option>
+                <option [value]="s">{{ statusLabels[s] }}</option>
                 }
               </select>
             </div>

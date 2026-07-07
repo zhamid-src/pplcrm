@@ -373,7 +373,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
         'authusers.first_name',
         'profiles.preferences as profile_preferences',
       ])
-      .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
+      .where('tasks.status', 'not in', ['done', 'archived'])
       .where('tasks.due_at', '<=', now)
       .orderBy('tasks.due_at', 'asc')
       .execute();

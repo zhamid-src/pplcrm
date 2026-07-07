@@ -201,7 +201,7 @@ describe('TeamViewComponent', () => {
     expect(component['leadName']()).toBe('—');
   });
 
-  it('should count active tasks excluding done and canceled ones', async () => {
+  it('should count active tasks excluding done and archived ones', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
@@ -243,8 +243,8 @@ describe('TeamViewComponent', () => {
   it('should map task status to a status-badge type', () => {
     expect(component['getStatusType']('done')).toBe('success');
     expect(component['getStatusType']('in_progress')).toBe('info');
-    expect(component['getStatusType']('blocked')).toBe('error');
-    expect(component['getStatusType']('canceled')).toBe('neutral');
+    expect(component['getStatusType']('waiting')).toBe('error');
+    expect(component['getStatusType']('archived')).toBe('neutral');
     expect(component['getStatusType']('todo')).toBe('ghost');
   });
 
