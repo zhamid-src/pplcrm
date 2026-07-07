@@ -385,22 +385,16 @@ export class PersonsRepo extends BaseRepository<'persons'> {
     return Number(result?.total ?? 0);
   }
 
-  /** Same shape as web-forms slugExists — used by the shared uniqueSlug helper (lib/slug.ts). */
-  public async slugExists(tenant_id: string, slug: string, excludeId?: string): Promise<boolean> {
-    let query = this.getSelect().select('id').where('tenant_id', '=', tenant_id).where('slug', '=', slug);
-    if (excludeId) {
-      query = query.where('id', '!=', excludeId);
-    }
-    const row = await query.limit(1).executeTakeFirst();
-    return !!row;
-  }
-
-  /** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
-  public getOneBySlug(input: { tenant_id: string; slug: string }) {
+  /**
+   * Tenant-scoped resolution by opaque public_id for /people/:slug URLs
+   * (spec §1). `public_id` is the canonical person key — the decorative name in
+   * the URL is ignored — so a stale name in an old link still resolves.
+   */
+  public getByPublicId(input: { tenant_id: string; public_id: string }) {
     return this.getSelect()
       .selectAll()
       .where('tenant_id', '=', input.tenant_id)
-      .where('slug', '=', input.slug)
+      .where('public_id', '=', input.public_id)
       .executeTakeFirst();
   }
 

@@ -1,11 +1,11 @@
 import { env } from '../../../../env';
 import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../libs/common/src';
-import { slugifyRecordName } from '../../../../../../../libs/common/src';
 import { TRPCError } from '@trpc/server';
 import { sql } from 'kysely';
 
 import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
-import { backfillMissingSlugs, uniqueSlug } from '../../../lib/slug';
+import { backfillMissingSlugs } from '../../../lib/slug';
+import { backfillPersonPublicIds, insertPersonWithPublicId } from '../../../lib/person-public-id';
 import { notificationEnabled } from '../../../lib/profile-preferences';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
 import { SettingsController } from '../../settings/controller';
@@ -78,23 +78,23 @@ export class PersonsService {
       }
     }
 
-    // Record slug for /people/:slug URLs (spec §1) — shared strategy in lib/slug.ts.
-    const slug = await uniqueSlug(
-      slugifyRecordName(`${payload.first_name ?? ''} ${payload.last_name ?? ''}`, 'person'),
-      (candidate) => this.personsRepo.slugExists(auth.tenant_id, candidate),
-    );
-
-    const row = {
-      ...payload,
-      slug,
-      household_id,
-      campaign_id,
-      tenant_id: auth.tenant_id,
-      createdby_id: auth.user_id,
-      updatedby_id: auth.user_id,
-    };
-
-    const result = await this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    // Persons are keyed by an opaque public_id, not a name slug (spec §1):
+    // generate a Crockford id → insert → retry on the per-tenant unique
+    // violation. The display slug `{name}-xxxx-xxxx` is derived from the same
+    // public_id in one write. (Households/companies still use name slugs.)
+    const result = await insertPersonWithPublicId(payload.first_name, payload.last_name, (public_id, slug) => {
+      const row = {
+        ...payload,
+        public_id,
+        slug,
+        household_id,
+        campaign_id,
+        tenant_id: auth.tenant_id,
+        createdby_id: auth.user_id,
+        updatedby_id: auth.user_id,
+      };
+      return this.personsRepo.add({ row: row as OperationDataType<'persons', 'insert'> });
+    });
     if (result && typeof result === 'object') {
       try {
         const { queueUsageLimitCheck } = await import('../../billing/usage-limits');
@@ -1150,12 +1150,13 @@ export class PersonsService {
       }
     }
 
-    // Bulk-inserted rows get their record slugs in one set-based pass (spec §1).
+    // Bulk-inserted rows get their identifiers in one set-based pass (spec §1):
+    // persons get an opaque public_id + display slug, households a name slug.
     try {
-      await backfillMissingSlugs(this.personsRepo.db, 'persons', tenant_id);
+      await backfillPersonPublicIds(this.personsRepo.db, tenant_id);
       await backfillMissingSlugs(this.personsRepo.db, 'households', tenant_id);
     } catch (err) {
-      logger.error({ err }, 'Failed to backfill record slugs after import');
+      logger.error({ err }, 'Failed to backfill record identifiers after import');
     }
 
     // Final History-page facts: every tag actually applied, and the reason
