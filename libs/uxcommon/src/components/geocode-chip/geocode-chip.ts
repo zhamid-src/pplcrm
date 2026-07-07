@@ -20,7 +20,7 @@ interface GeocodeChipSpec {
  *  - `pending` / `null`   → **Locating…** (info — in progress)
  *  - `failed`             → **Address problem** (warning — needs attention)
  */
-export function geocodeChipSpec(status: PcGeocodeStatus): GeocodeChipSpec {
+export function geocodeChipSpec(status: PcGeocodeStatus | string): GeocodeChipSpec {
   switch (status) {
     case 'success':
       return { label: 'Located', type: 'success' };
@@ -37,7 +37,7 @@ export function geocodeChipSpec(status: PcGeocodeStatus): GeocodeChipSpec {
   template: ` <pc-status-badge [type]="spec().type" [size]="size()">{{ spec().label }}</pc-status-badge> `,
 })
 export class GeocodeChip {
-  public readonly status = input<PcGeocodeStatus>(null);
+  public readonly status = input<PcGeocodeStatus | string>(null);
   public readonly size = input<'sm' | 'md' | 'lg'>('sm');
 
   protected readonly spec = computed(() => geocodeChipSpec(this.status()));
