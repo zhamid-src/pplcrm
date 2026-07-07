@@ -79,6 +79,8 @@ apps/
           2026-07-26-s1-row-level-security.ts
           2026-07-27-d10-email-domain-dedup.ts
           2026-07-27-i5-trigram-index-audit.ts
+          2026-07-28-a-untyped-json-columns.ts
+          2026-07-28-b-target-lists-join-tables.ts
           schema.sql
         config/
           email-folders.config.ts
@@ -126,6 +128,7 @@ apps/
           hibp.ts
           oauth-state.ts
           password-hash.ts
+          profile-preferences.ts
           rate-limiter.ts
           rest-auth.ts
           secret-crypto.ts
@@ -749,60 +752,328 @@ export async function down(db: Kysely<any>): Promise<void> {
 }
 ```
 
-## File: apps/backend/src/app/\_migrations/2026-07-27-i5-trigram-index-audit.ts
+## File: apps/backend/src/app/\_migrations/2026-07-28-a-untyped-json-columns.ts
 
 ```typescript
 import type { Kysely } from 'kysely';
 import { sql } from 'kysely';
 
 /**
- * I-5: Drop unused/unusable GIN trigram indexes (schema review 2026-07-06, §4;
- * the audit deferred by the I-2/I-6 migration).
+ * Schema review 2026-07-06 §3 — the untyped grab-bag `json` column that six
+ * tables carried (persons, households, campaigns, companies, tenants,
+ * profiles). A code audit found exactly two of them are real features:
  *
- * Trigram GINs are the most expensive indexes per write in the schema, and they
- * only pay off for columns reachable by a grid "contains" filter (ILIKE '%…%' on
- * the bare column) on a table large enough that the planner would ever prefer
- * them over the tenant btree. Audited against the grid column definitions and
- * each repo's filterModel/columnMapping wiring:
+ *   - profiles.json   → notification preferences ({ notifications: {...} }),
+ *                       read by every mail/notification opt-out check.
+ *   - companies.json  → Google Places enrichment payload
+ *                       ({ google_enriched: true, ... }), queried in SQL by
+ *                       the enrichment backfill job.
  *
- * Dropped —
- * - idx_households_trgm_state: the dominant query is a 2-letter code; a '%tx%'
- *   pattern extracts zero trigrams, so pg_trgm physically cannot use the index.
- * - idx_companies_trgm_email / _industry: unreachable. The companies repo wires
- *   no searchStr/filterModel handling, so no ILIKE ever targets these columns.
- * - idx_lists_trgm_name / _description, idx_tags_trgm_name,
- *   idx_volunteer_events_trgm_name / _location: reachable, but these tables are
- *   dozens-to-hundreds of rows per tenant — the planner always prefers the
- *   tenant btree + filter at that cardinality. Revisit if any of them
- *   realistically grows past ~10k rows.
+ * Those two are renamed to what they actually are (`preferences`,
+ * `enrichment`) and get Zod contracts in libs/common. The other four
+ * (persons, households, campaigns, tenants) are written as NULL or never
+ * touched at all — they are dropped, with any non-NULL values copied to
+ * `dropped_json_archive` first so no tenant data is silently destroyed.
  *
- * Kept (persons first_name/last_name/email/mobile; households street1/city/zip;
- * companies name) — mapped grid filters on voter-file-scale tables, plus the
- * persons-grid Company filter that reaches companies.name through the join.
+ * The archive table is only created if at least one row actually needs
+ * archiving, and it gets the same FORCE-RLS tenant_isolation policy as every
+ * other tenant_id-bearing table (the S-1 migration loop only covered tables
+ * that existed when it ran).
  */
+
+const TENANT_POLICY_EXPR = `NULLIF(current_setting('app.tenant_id', true), '') IS NULL
+  OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::bigint`;
+
 export async function up(db: Kysely<any>): Promise<void> {
+  // 1. Archive any real data hiding in the four dead columns before dropping.
+  //    tenants has no tenant_id column — its own id is the tenant.
   await sql`
-    DROP INDEX IF EXISTS public.idx_households_trgm_state;
-    DROP INDEX IF EXISTS public.idx_companies_trgm_email;
-    DROP INDEX IF EXISTS public.idx_companies_trgm_industry;
-    DROP INDEX IF EXISTS public.idx_lists_trgm_name;
-    DROP INDEX IF EXISTS public.idx_lists_trgm_description;
-    DROP INDEX IF EXISTS public.idx_tags_trgm_name;
-    DROP INDEX IF EXISTS public.idx_volunteer_events_trgm_name;
-    DROP INDEX IF EXISTS public.idx_volunteer_events_trgm_location;
+    DO $$
+    DECLARE
+      n bigint;
+    BEGIN
+      SELECT (SELECT count(*) FROM public.persons    WHERE "json" IS NOT NULL)
+           + (SELECT count(*) FROM public.households WHERE "json" IS NOT NULL)
+           + (SELECT count(*) FROM public.campaigns  WHERE "json" IS NOT NULL)
+           + (SELECT count(*) FROM public.tenants    WHERE "json" IS NOT NULL)
+        INTO n;
+
+      IF n > 0 THEN
+        CREATE TABLE IF NOT EXISTS public.dropped_json_archive (
+          table_name  text        NOT NULL,
+          row_id      text        NOT NULL,
+          tenant_id   bigint,
+          json        jsonb       NOT NULL,
+          archived_at timestamptz NOT NULL DEFAULT now()
+        );
+        ALTER TABLE public.dropped_json_archive ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE public.dropped_json_archive FORCE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS tenant_isolation ON public.dropped_json_archive;
+        CREATE POLICY tenant_isolation ON public.dropped_json_archive
+          FOR ALL
+          USING (${sql.raw(TENANT_POLICY_EXPR)})
+          WITH CHECK (${sql.raw(TENANT_POLICY_EXPR)});
+
+        INSERT INTO public.dropped_json_archive (table_name, row_id, tenant_id, json)
+          SELECT 'persons', id::text, tenant_id, "json" FROM public.persons WHERE "json" IS NOT NULL;
+        INSERT INTO public.dropped_json_archive (table_name, row_id, tenant_id, json)
+          SELECT 'households', id::text, tenant_id, "json" FROM public.households WHERE "json" IS NOT NULL;
+        INSERT INTO public.dropped_json_archive (table_name, row_id, tenant_id, json)
+          SELECT 'campaigns', id::text, tenant_id, "json" FROM public.campaigns WHERE "json" IS NOT NULL;
+        INSERT INTO public.dropped_json_archive (table_name, row_id, tenant_id, json)
+          SELECT 'tenants', id::text, id, "json" FROM public.tenants WHERE "json" IS NOT NULL;
+      END IF;
+    END $$;
+  `.execute(db);
+
+  // 2. Drop the dead grab-bags.
+  await sql`
+    ALTER TABLE public.persons    DROP COLUMN IF EXISTS "json";
+    ALTER TABLE public.households DROP COLUMN IF EXISTS "json";
+    ALTER TABLE public.campaigns  DROP COLUMN IF EXISTS "json";
+    ALTER TABLE public.tenants    DROP COLUMN IF EXISTS "json";
+  `.execute(db);
+
+  // 3. Rename the two live ones to what they hold.
+  await sql`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'json') THEN
+        ALTER TABLE public.profiles RENAME COLUMN "json" TO preferences;
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'companies' AND column_name = 'json') THEN
+        ALTER TABLE public.companies RENAME COLUMN "json" TO enrichment;
+      END IF;
+    END $$;
   `.execute(db);
 }
 
 export async function down(db: Kysely<any>): Promise<void> {
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_households_trgm_state ON public.households USING gin (state public.gin_trgm_ops);
-    CREATE INDEX IF NOT EXISTS idx_companies_trgm_email ON public.companies USING gin (email public.gin_trgm_ops);
-    CREATE INDEX IF NOT EXISTS idx_companies_trgm_industry ON public.companies USING gin (industry public.gin_trgm_ops);
-    CREATE INDEX IF NOT EXISTS idx_lists_trgm_name ON public.lists USING gin (name public.gin_trgm_ops);
-    CREATE INDEX IF NOT EXISTS idx_lists_trgm_description ON public.lists USING gin (description public.gin_trgm_ops);
-    CREATE INDEX IF NOT EXISTS idx_tags_trgm_name ON public.tags USING gin (name public.gin_trgm_ops);
-    CREATE INDEX IF NOT EXISTS idx_volunteer_events_trgm_name ON public.volunteer_events USING gin (name public.gin_trgm_ops);
-    CREATE INDEX IF NOT EXISTS idx_volunteer_events_trgm_location ON public.volunteer_events USING gin (location_address public.gin_trgm_ops);
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'preferences') THEN
+        ALTER TABLE public.profiles RENAME COLUMN preferences TO "json";
+      END IF;
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'companies' AND column_name = 'enrichment') THEN
+        ALTER TABLE public.companies RENAME COLUMN enrichment TO "json";
+      END IF;
+    END $$;
+  `.execute(db);
+
+  // Columns come back empty; data (if any) stays in dropped_json_archive for
+  // manual restoration — a blind restore could clobber rows written since.
+  await sql`
+    ALTER TABLE public.persons    ADD COLUMN IF NOT EXISTS "json" jsonb;
+    ALTER TABLE public.households ADD COLUMN IF NOT EXISTS "json" jsonb;
+    ALTER TABLE public.campaigns  ADD COLUMN IF NOT EXISTS "json" jsonb;
+    ALTER TABLE public.tenants    ADD COLUMN IF NOT EXISTS "json" jsonb;
+  `.execute(db);
+}
+```
+
+## File: apps/backend/src/app/\_migrations/2026-07-28-b-target-lists-join-tables.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * Schema review 2026-07-06 §3 — newsletters.target_lists and
+ * web_forms.target_lists stored arrays of list ids as JSONB documents with no
+ * referential integrity: deleting a list left dangling ids behind, which the
+ * code paths then had to skip silently (a published form claiming "adds
+ * signups to List X" would quietly do nothing forever), and answering "which
+ * newsletters targeted this list" meant fetching every sent newsletter and
+ * filtering in JS.
+ *
+ * This normalizes both into join tables following the existing map_* idiom:
+ *
+ *   - map_newsletters_lists (mode 'include' | 'exclude' — newsletters target
+ *     an {include, exclude} pair of list sets)
+ *   - map_web_forms_lists
+ *
+ * Unlike the older map_* tables, list_id and the parent id here carry
+ * ON DELETE CASCADE — nothing in app code cleans these up when a list or
+ * parent dies, the FK itself is the referential-integrity backstop this
+ * migration exists to add.
+ *
+ * The backfill parses every legacy shape the readers tolerated ({include,
+ * exclude} object, bare array, JSON-string, CSV-string), drops ids that don't
+ * resolve to a live list in the same tenant (they are behavioral no-ops
+ * today), and leaves the JSONB columns in place — writers dual-write during
+ * the transition and a later migration drops the columns once verified.
+ *
+ * Tag targeting (web_forms.target_tags, newsletters.segments) intentionally
+ * stays JSONB: those hold tag *names* with get-or-create semantics, not ids —
+ * there is no reference to protect.
+ *
+ * Both tables get the S-1 FORCE-RLS tenant_isolation policy (the S-1 loop
+ * only covered tables that existed when it ran).
+ */
+
+const TENANT_POLICY_EXPR = `NULLIF(current_setting('app.tenant_id', true), '') IS NULL
+  OR tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::bigint`;
+
+interface TargetListSets {
+  include: string[];
+  exclude: string[];
+}
+
+/** Mirrors the three-way tolerant parse the newsletter/web-form readers used. */
+function parseTargetLists(value: unknown): TargetListSets {
+  let parsed: unknown = value;
+  if (typeof parsed === 'string') {
+    const raw = parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      // legacy CSV string
+      return { include: raw.split(',').map((s) => s.trim()), exclude: [] };
+    }
+  }
+  if (Array.isArray(parsed)) {
+    return { include: parsed.map((v) => String(v)), exclude: [] };
+  }
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+    const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+    return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
+  }
+  return { include: [], exclude: [] };
+}
+
+/** Keep only well-formed bigint ids that resolve to a live list in the tenant. */
+function validListIds(ids: string[], tenantId: string, liveLists: Set<string>): string[] {
+  return [...new Set(ids)].filter((id) => /^\d+$/.test(id) && liveLists.has(`${tenantId}|${id}`));
+}
+
+const INSERT_CHUNK = 500;
+
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    CREATE TABLE public.map_newsletters_lists (
+      tenant_id     bigint NOT NULL,
+      newsletter_id bigint NOT NULL,
+      list_id       bigint NOT NULL,
+      mode          text   NOT NULL DEFAULT 'include',
+      createdby_id  bigint NOT NULL,
+      updatedby_id  bigint NOT NULL,
+      created_at    timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at    timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT map_newsletters_lists_pk PRIMARY KEY (tenant_id, newsletter_id, list_id, mode),
+      CONSTRAINT chk_map_newsletters_lists_mode CHECK (mode IN ('include', 'exclude')),
+      CONSTRAINT fk_map_newsletters_lists_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+      CONSTRAINT fk_map_newsletters_lists_newsletter FOREIGN KEY (newsletter_id)
+        REFERENCES public.newsletters(id) ON DELETE CASCADE,
+      CONSTRAINT fk_map_newsletters_lists_list FOREIGN KEY (list_id)
+        REFERENCES public.lists(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_map_newsletters_lists_list ON public.map_newsletters_lists (tenant_id, list_id);
+
+    CREATE TABLE public.map_web_forms_lists (
+      tenant_id    bigint NOT NULL,
+      web_form_id  uuid   NOT NULL,
+      list_id      bigint NOT NULL,
+      createdby_id bigint NOT NULL,
+      updatedby_id bigint NOT NULL,
+      created_at   timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at   timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT map_web_forms_lists_pk PRIMARY KEY (tenant_id, web_form_id, list_id),
+      CONSTRAINT fk_map_web_forms_lists_tenant FOREIGN KEY (tenant_id) REFERENCES public.tenants(id),
+      CONSTRAINT fk_map_web_forms_lists_form FOREIGN KEY (web_form_id)
+        REFERENCES public.web_forms(id) ON DELETE CASCADE,
+      CONSTRAINT fk_map_web_forms_lists_list FOREIGN KEY (list_id)
+        REFERENCES public.lists(id) ON DELETE CASCADE
+    );
+    CREATE INDEX idx_map_web_forms_lists_list ON public.map_web_forms_lists (tenant_id, list_id);
+  `.execute(db);
+
+  for (const table of ['map_newsletters_lists', 'map_web_forms_lists']) {
+    await sql`
+      ALTER TABLE public.${sql.raw(table)} ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE public.${sql.raw(table)} FORCE ROW LEVEL SECURITY;
+      CREATE POLICY tenant_isolation ON public.${sql.raw(table)}
+        FOR ALL
+        USING (${sql.raw(TENANT_POLICY_EXPR)})
+        WITH CHECK (${sql.raw(TENANT_POLICY_EXPR)});
+    `.execute(db);
+  }
+
+  // ---- Backfill ----
+  const lists = await db.selectFrom('lists').select(['id', 'tenant_id']).execute();
+  const liveLists = new Set<string>(lists.map((l: any) => `${l.tenant_id}|${l.id}`));
+
+  const newsletters = await db
+    .selectFrom('newsletters')
+    .select(['id', 'tenant_id', 'createdby_id', 'target_lists'])
+    .where('target_lists', 'is not', null)
+    .execute();
+
+  const newsletterRows: Record<string, unknown>[] = [];
+  for (const n of newsletters as any[]) {
+    const tenantId = String(n.tenant_id);
+    const { include, exclude } = parseTargetLists(n.target_lists);
+    for (const [mode, ids] of [
+      ['include', include],
+      ['exclude', exclude],
+    ] as const) {
+      for (const listId of validListIds(ids, tenantId, liveLists)) {
+        newsletterRows.push({
+          tenant_id: n.tenant_id,
+          newsletter_id: n.id,
+          list_id: listId,
+          mode,
+          createdby_id: n.createdby_id,
+          updatedby_id: n.createdby_id,
+        });
+      }
+    }
+  }
+  for (let i = 0; i < newsletterRows.length; i += INSERT_CHUNK) {
+    await db
+      .insertInto('map_newsletters_lists')
+      .values(newsletterRows.slice(i, i + INSERT_CHUNK))
+      .execute();
+  }
+
+  const webForms = await db
+    .selectFrom('web_forms')
+    .select(['id', 'tenant_id', 'createdby_id', 'target_lists'])
+    .where('target_lists', 'is not', null)
+    .execute();
+
+  const webFormRows: Record<string, unknown>[] = [];
+  for (const f of webForms as any[]) {
+    const tenantId = String(f.tenant_id);
+    const { include } = parseTargetLists(f.target_lists);
+    for (const listId of validListIds(include, tenantId, liveLists)) {
+      webFormRows.push({
+        tenant_id: f.tenant_id,
+        web_form_id: f.id,
+        list_id: listId,
+        createdby_id: f.createdby_id,
+        updatedby_id: f.createdby_id,
+      });
+    }
+  }
+  for (let i = 0; i < webFormRows.length; i += INSERT_CHUNK) {
+    await db
+      .insertInto('map_web_forms_lists')
+      .values(webFormRows.slice(i, i + INSERT_CHUNK))
+      .execute();
+  }
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  // The JSONB columns were never dropped, so no reverse backfill is needed.
+  await sql`
+    DROP TABLE IF EXISTS public.map_newsletters_lists;
+    DROP TABLE IF EXISTS public.map_web_forms_lists;
   `.execute(db);
 }
 ```
@@ -1671,6 +1942,51 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 ```
 
+## File: apps/backend/src/app/lib/profile-preferences.ts
+
+```typescript
+import { ProfilePreferencesObj } from '../../../../../libs/common/src';
+import type { ProfilePreferencesType } from '../../../../../libs/common/src';
+
+import { logger } from '../logger';
+
+export type NotificationPreferenceKey = keyof NonNullable<ProfilePreferencesType['notifications']>;
+
+/**
+ * Parse a profiles.preferences value into its typed shape. The column is
+ * jsonb (arrives pre-parsed from Kysely), but legacy writers stored JSON
+ * strings — both are accepted. Returns null (and logs) on malformed data so
+ * callers fall back to default behavior instead of crashing a mail path.
+ */
+export function parseProfilePreferences(value: unknown): ProfilePreferencesType | null {
+  if (value == null) return null;
+  let candidate: unknown = value;
+  if (typeof candidate === 'string') {
+    try {
+      candidate = JSON.parse(candidate);
+    } catch (err) {
+      logger.error({ err }, 'Failed to parse profile preferences JSON string');
+      return null;
+    }
+  }
+  const result = ProfilePreferencesObj.safeParse(candidate);
+  if (!result.success) {
+    logger.error({ err: result.error }, 'Profile preferences failed schema validation');
+    return null;
+  }
+  return result.data;
+}
+
+/**
+ * True unless the user explicitly turned the given notification off.
+ * Missing preferences, missing keys, and malformed data all mean "enabled" —
+ * notifications are opt-out.
+ */
+export function notificationEnabled(preferences: unknown, key: NotificationPreferenceKey): boolean {
+  return parseProfilePreferences(preferences)?.notifications?.[key] !== false;
+}
+```
+
 ## File: apps/backend/src/app/lib/storage.service.ts
 
 ```typescript
@@ -2475,11 +2791,11 @@ export class CompaniesEnrichmentService {
     }
 
     // Check if already enriched
-    let currentJson: any = {};
-    if (company.json) {
-      currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
+    let currentEnrichment: any = {};
+    if (company.enrichment) {
+      currentEnrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
     }
-    if (currentJson?.google_enriched) {
+    if (currentEnrichment?.google_enriched) {
       logger.info(`Company ${companyId} is already enriched from Google. Skipping.`);
       return;
     }
@@ -2547,14 +2863,14 @@ export class CompaniesEnrichmentService {
       logger.info(`Mock Google enrichment completed for company ${companyId}`);
     }
 
-    const updatedJson = {
-      ...currentJson,
+    const updatedEnrichment = {
+      ...currentEnrichment,
       google_enriched: true,
       place_details: rawResult,
     };
 
     const updatePayload: any = {
-      json: JSON.stringify(updatedJson),
+      enrichment: JSON.stringify(updatedEnrichment),
       updated_at: new Date(),
     };
 
@@ -2583,7 +2899,7 @@ export class CompaniesEnrichmentService {
     let query = this.db
       .selectFrom('companies')
       .select(['id', 'tenant_id'])
-      .where((eb) => eb.or([eb('json', 'is', null), sql<boolean>`json->>'google_enriched' is null`]));
+      .where((eb) => eb.or([eb('enrichment', 'is', null), sql<boolean>`enrichment->>'google_enriched' is null`]));
 
     if (tenantId) {
       query = query.where('tenant_id', '=', tenantId);
@@ -4993,6 +5309,78 @@ export const FilesRouter = router({
 });
 ```
 
+## File: apps/backend/src/app/modules/google-sync/google-callback.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { GoogleOAuthService } from './google-oauth.service';
+import { env } from '../../../env';
+import { BaseRepository } from '../../lib/base.repo';
+import { decodeOAuthState } from '../../lib/oauth-state';
+
+let _oauthSvc: GoogleOAuthService | null = null;
+
+function getOAuthService() {
+  if (!_oauthSvc) {
+    const db = (BaseRepository as any)['_db'];
+    _oauthSvc = new GoogleOAuthService(db, {
+      clientId: env.googleClientId ?? '',
+      clientSecret: env.googleClientSecret ?? '',
+      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.get('/callback', async (req: any, reply) => {
+    const { code, state, error, error_description } = req.query as Record<string, string>;
+
+    const frontendBase = env.apiUrl.replace(':3000', ':4200'); // dev: frontend is on 4200
+
+    // Verify the HMAC-signed state; a forged/expired state yields null and is
+    // rejected so an attacker cannot bind this mailbox to an arbitrary account.
+    const parsedState = decodeOAuthState(state);
+
+    // Only allow a relative path that doesn't start with // (prevents open redirect)
+    const safeReturnTo = parsedState?.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
+    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
+    const sep = (base: string) => (base.includes('?') ? '&' : '?');
+
+    if (error) {
+      return reply.redirect(
+        `${returnBase}${sep(returnBase)}google_error=${encodeURIComponent(error_description ?? error)}`,
+      );
+    }
+
+    if (!code || !state) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=missing_code`);
+    }
+
+    if (!parsedState) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=invalid_state`);
+    }
+
+    const { userId, tenantId } = parsedState;
+
+    try {
+      const oauthSvc = getOAuthService();
+      await oauthSvc.handleCallback(code, userId, tenantId);
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_connected=1`);
+    } catch (err) {
+      // Log the real cause server-side; never reflect internal error text back
+      // into a user-facing redirect URL.
+      fastify.log.error(err, 'Google OAuth callback failed');
+      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=connection_failed`);
+    }
+  });
+
+  done();
+};
+
+export default googleSyncCallbackRoute;
+```
+
 ## File: apps/backend/src/app/modules/google-sync/google-sync.service.ts
 
 ```typescript
@@ -5527,7 +5915,6 @@ const HouseholdsType = {
   state: { type: 'string' },
   zip: { type: 'string' },
   country: { type: 'string' },
-  json: { type: 'string' },
   created_at: { type: 'string' },
   updated_at: { type: 'string' },
 };
@@ -6884,43 +7271,19 @@ export class ListsController extends BaseController<'lists', ListsRepo> {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'List not found' });
     }
 
-    // Fetch all newsletters that are sent
-    const newsletters = await this.getRepo()
+    // Sent newsletters that targeted this list — an indexed join on
+    // map_newsletters_lists (FK-backed), instead of the old fetch-everything
+    // JS filter over the legacy JSONB target_lists document.
+    const targetedNewsletters = await this.getRepo()
       .db.selectFrom('newsletters')
-      .selectAll()
-      .where('tenant_id', '=', auth.tenant_id)
-      .where('status', '=', 'sent')
+      .innerJoin('map_newsletters_lists', 'map_newsletters_lists.newsletter_id', 'newsletters.id')
+      .selectAll('newsletters')
+      .where('newsletters.tenant_id', '=', auth.tenant_id)
+      .where('newsletters.status', '=', 'sent')
+      .where('map_newsletters_lists.tenant_id', '=', auth.tenant_id)
+      .where('map_newsletters_lists.list_id', '=', id)
+      .where('map_newsletters_lists.mode', '=', 'include')
       .execute();
-
-    // Filter newsletters in JS where their target_lists matches this list
-    const targetedNewsletters = newsletters.filter((n) => {
-      if (!n.target_lists) return false;
-      // After migration 2026-07-01-a-schema-improvements, target_lists is a jsonb column returned as a parsed object.
-      // Support legacy string values too (pre-migration rows or test data).
-      let parsed: unknown = n.target_lists;
-      if (typeof parsed === 'string') {
-        try {
-          parsed = JSON.parse(parsed);
-        } catch {
-          /* fall through */
-        }
-      }
-      if (Array.isArray(parsed)) {
-        return parsed.includes(id);
-      }
-      if (parsed && typeof parsed === 'object') {
-        const obj = parsed as Record<string, unknown>;
-        const include = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-        return include.includes(id);
-      }
-      if (typeof parsed === 'string') {
-        return parsed
-          .split(',')
-          .map((s) => s.trim())
-          .includes(id);
-      }
-      return false;
-    });
 
     // Compute aggregated metrics
     const totalNewsletters = targetedNewsletters.length;
@@ -7138,6 +7501,79 @@ export const ListsRouter = router({
 
   getMemberCount: authProcedure.input(idSchema).query(({ input, ctx }) => lists.getMemberCount(ctx.auth, input)),
 });
+```
+
+## File: apps/backend/src/app/modules/ms-sync/ms-callback.route.ts
+
+```typescript
+import type { FastifyPluginCallback } from 'fastify';
+import { MsOAuthService } from '../ms-sync/ms-oauth.service';
+import { env } from '../../../env';
+import { BaseRepository } from '../../lib/base.repo';
+import { decodeOAuthState } from '../../lib/oauth-state';
+
+let _oauthSvc: MsOAuthService | null = null;
+
+function getOAuthService() {
+  if (!_oauthSvc) {
+    const db = (BaseRepository as any)['_db'];
+    _oauthSvc = new MsOAuthService(db, {
+      clientId: env.msClientId ?? '',
+      clientSecret: env.msClientSecret ?? '',
+      tenantId: env.msTenantId ?? 'common',
+      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
+    });
+  }
+  return _oauthSvc;
+}
+
+const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
+  fastify.get('/callback', async (req: any, reply) => {
+    const { code, state, error, error_description } = req.query as Record<string, string>;
+
+    const frontendBase = env.apiUrl.replace(':3000', ':4200'); // dev: frontend is on 4200
+
+    // Verify the HMAC-signed state; a forged/expired state yields null and is
+    // rejected so an attacker cannot bind this mailbox to an arbitrary account.
+    const parsedState = decodeOAuthState(state);
+
+    // Only allow a relative path that doesn't start with // (prevents open redirect)
+    const safeReturnTo = parsedState?.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
+    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
+    const sep = (base: string) => (base.includes('?') ? '&' : '?');
+
+    if (error) {
+      return reply.redirect(
+        `${returnBase}${sep(returnBase)}ms_error=${encodeURIComponent(error_description ?? error)}`,
+      );
+    }
+
+    if (!code || !state) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=missing_code`);
+    }
+
+    if (!parsedState) {
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=invalid_state`);
+    }
+
+    const { userId, tenantId } = parsedState;
+
+    try {
+      const oauthSvc = getOAuthService();
+      await oauthSvc.handleCallback(code, userId, tenantId);
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_connected=1`);
+    } catch (err) {
+      // Log the real cause server-side; never reflect internal error text back
+      // into a user-facing redirect URL.
+      fastify.log.error(err, 'Microsoft OAuth callback failed');
+      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=connection_failed`);
+    }
+  });
+
+  done();
+};
+
+export default msSyncCallbackRoute;
 ```
 
 ## File: apps/backend/src/app/modules/ms-sync/trpc.router.ts
@@ -7810,738 +8246,6 @@ export class MapPersonsTagRepo extends BaseRepository<'map_peoples_tags'> {
 }
 ```
 
-## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
-
-```typescript
-import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { HouseholdRepo } from '../../households/repositories/households.repo';
-
-export class PersonsRepo extends BaseRepository<'persons'> {
-  constructor() {
-    super('persons');
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    const rows = await this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id)
-      .execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql`now()`,
-      })
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
-
-  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
-    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
-    if (!ids.length) return [];
-
-    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
-
-    let query = this.getSelect(trx)
-      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
-      .where('persons.tenant_id', '=', input.tenant_id)
-      .where('persons.id', 'in', ids);
-
-    if (tags.length > 0) {
-      query = query
-        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .where(sql`LOWER(tags.name)`, 'in', tags)
-        .distinct();
-    }
-
-    const rows = await query.execute();
-    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
-    for (const row of rows) {
-      const id = row.id != null ? String(row.id) : '';
-      if (!id || map.has(id)) continue;
-      map.set(id, {
-        id,
-        first_name: row.first_name ?? '',
-        last_name: row.last_name ?? '',
-        email: row.email ?? null,
-      });
-    }
-    return Array.from(map.values());
-  }
-
-  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
-    const row = await this.getSelect()
-      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
-      .where('tenant_id', '=', input.tenant_id)
-      .where('createdby_id', '=', input.user_id)
-      .executeTakeFirst();
-
-    return {
-      total: Number(row?.total ?? 0),
-      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
-    };
-  }
-
-  public async moveToNewHousehold(input: {
-    tenant_id: string;
-    person_id: string;
-    user_id: string;
-    campaign_id: string;
-  }) {
-    const households = new HouseholdRepo();
-    return this.transaction().execute(async (trx) => {
-      // Reuse existing blank household if available
-      const existingBlank = await households.getBlankHousehold(
-        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
-        trx,
-      );
-      let targetId = existingBlank?.id as string | undefined;
-
-      if (!targetId) {
-        const newHousehold = await households.add(
-          {
-            row: {
-              tenant_id: input.tenant_id,
-              campaign_id: input.campaign_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            } as OperationDataType<'households', 'insert'>,
-          },
-          trx,
-        );
-        targetId = newHousehold?.id as string | undefined;
-      }
-
-      await this.update(
-        {
-          tenant_id: input.tenant_id,
-          id: input.person_id,
-          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
-        },
-        trx,
-      );
-
-      return { household_id: targetId };
-    });
-  }
-
-  public async getAllWithAddress(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
-      tags?: string[];
-      issues?: string[];
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
-    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
-
-    // Shared where clause builder
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .leftJoin('households', 'persons.household_id', 'households.id')
-        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-        .leftJoin('companies', 'persons.company_id', 'companies.id')
-        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
-        .where('households.tenant_id', '=', tenantId)
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
-        .$if(!!options.listId, (qb) =>
-          qb.where('persons.id', 'in', (eb: any) =>
-            eb
-              .selectFrom('map_lists_persons')
-              .select('person_id')
-              .where('list_id', '=', options.listId ?? '')
-              .where('tenant_id', '=', tenantId),
-          ),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
-          // indexes can serve quick search; normalizeSearch already lowercases,
-          // so the match semantics are identical.
-          return qb.where(
-            sql<boolean>`(
-            persons.first_name ILIKE ${text} OR
-            persons.last_name ILIKE ${text} OR
-            persons.email ILIKE ${text} OR
-            persons.mobile ILIKE ${text} OR
-            households.city ILIKE ${text} OR
-            households.street1 ILIKE ${text} OR
-            companies.name ILIKE ${text} OR
-            tags.name ILIKE ${text}
-          )`,
-          );
-        });
-
-      // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
-      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
-      if (filterModel['tags']?.value && filterModel['issues']?.value) {
-        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
-        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
-        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
-        q = q.where((eb) =>
-          eb.or([
-            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
-          ]),
-        );
-      } else if (filterModel['tags']?.value) {
-        q = q.where('tags.type', '=', 'tag');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      } else if (filterModel['issues']?.value) {
-        q = q.where('tags.type', '=', 'issue');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
-      }
-      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
-
-      // Apply advanced query builder filters if present
-      const columnMapping = {
-        first_name: { col: 'persons.first_name' },
-        last_name: { col: 'persons.last_name' },
-        email: { col: 'persons.email' },
-        mobile: { col: 'persons.mobile' },
-        city: { col: 'households.city' },
-        state: { col: 'households.state' },
-        street1: { col: 'households.street1' },
-        street_num: { col: 'households.street_num::text', isCast: true },
-        zip: { col: 'households.zip' },
-        tag: { col: 'tags.name' },
-        tags: { col: 'tags.name' },
-        issues: { col: 'tags.name' },
-        company_name: { col: 'companies.name' },
-      };
-      const advModel =
-        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
-      q = this.applyAdvancedFilters(q, advModel, columnMapping);
-
-      return q;
-    };
-
-    // Count query
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query
-    const rows = await applyFilters(this.getSelect(trx))
-      .select((eb) => [
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'companies.name as company_name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        eb
-          .case()
-          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
-          .then(true)
-          .else(false)
-          .end()
-          .as('household_is_placeholder'),
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
-          'tags',
-        ),
-        sql<
-          string[]
-        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
-      ])
-      .groupBy([
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.notes',
-        'persons.household_id',
-        'persons.company_id',
-        'persons.created_at',
-        'persons.updated_at',
-        'persons.tenant_id',
-        'persons.createdby_id',
-        'persons.updatedby_id',
-        'companies.name',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.apt',
-        'tenants.placeholder_household_id',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce((acc, sort) => {
-          let col = sort.colId;
-          if (typeof col === 'string' && !col.includes('.')) {
-            const personsCols = [
-              'id',
-              'first_name',
-              'last_name',
-              'email',
-              'mobile',
-              'notes',
-              'household_id',
-              'company_id',
-              'created_at',
-              'updated_at',
-              'tenant_id',
-              'createdby_id',
-              'updatedby_id',
-            ];
-            if (personsCols.includes(col)) {
-              col = `persons.${col}`;
-            } else {
-              const hhCols = [
-                'country',
-                'zip',
-                'state',
-                'home_phone',
-                'city',
-                'street1',
-                'street2',
-                'street_num',
-                'apt',
-              ];
-              if (hhCols.includes(col)) {
-                col = `households.${col}`;
-              } else if (col === 'company_name') {
-                col = `companies.name`;
-              } else if (col === 'address') {
-                col = `households.street1`;
-              }
-            }
-          }
-          return acc.orderBy(col, sort.sort);
-        }, qb),
-      )
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
-      )
-      .execute();
-
-    return { count, rows };
-  }
-
-  public getByHouseholdId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('household_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public getByCompanyId(
-    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
-    trx?: Transaction<Models>,
-  ) {
-    return this.getSelectWithColumns(input.options, trx)
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .execute();
-  }
-
-  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
-    const result = await this.getSelect()
-      .select(({ fn }) => [fn.count<number>('id').as('total')])
-      .where('company_id', '=', input.id)
-      .where('tenant_id', '=', input.tenant_id)
-      .executeTakeFirst();
-    return Number(result?.total ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
-  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
-    let q = this.getSelect()
-      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
-      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
-      .where('persons.id', '=', input.id)
-      .where('persons.tenant_id', '=', input.tenant_id);
-    if (input.type) {
-      q = q.where('tags.type', '=', input.type);
-    }
-    return q.select('tags.name').execute();
-  }
-  public async findByEmail(input: { tenant_id: string; email: string }) {
-    return this.getSelect()
-      .select(['id', 'email'])
-      .where('tenant_id', '=', input.tenant_id)
-      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
-      .executeTakeFirst();
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: unknown[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // NOTE: unscoped by design — tenant_id filtered inside subquery
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'persons.id',
-        'persons.first_name',
-        'persons.last_name',
-        'persons.email',
-        'persons.mobile',
-        'persons.home_phone',
-        'persons.notes',
-        'persons.company_id',
-        'persons.household_id',
-        'persons.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
-          reason: row.reason,
-          persons: [],
-        });
-      }
-      groupsMap.get(groupKey)?.persons.push({
-        ...row,
-        id: String(row.id),
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['persons']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source person not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, unknown> = {};
-      const fields = [
-        'first_name',
-        'middle_names',
-        'last_name',
-        'email',
-        'email2',
-        'mobile',
-        'home_phone',
-        'notes',
-        'company_id',
-        'file_id',
-      ] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Transfer tags (map_peoples_tags)
-      const targetTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select('tag_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
-
-      const sourceTags = await trx
-        .selectFrom('map_peoples_tags')
-        .select(['tag_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTags) {
-        const tagIdStr = String(st.tag_id);
-        if (!targetTagIds.has(tagIdStr)) {
-          await trx
-            .insertInto('map_peoples_tags')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              tag_id: st.tag_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_peoples_tags')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 3. Transfer lists (map_lists_persons)
-      const targetLists = await trx
-        .selectFrom('map_lists_persons')
-        .select('list_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
-
-      const sourceLists = await trx
-        .selectFrom('map_lists_persons')
-        .select(['list_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const sl of sourceLists) {
-        if (!targetListIds.has(String(sl.list_id))) {
-          await trx
-            .insertInto('map_lists_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              list_id: sl.list_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_lists_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 4. Transfer teams (map_teams_persons)
-      const targetTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select('team_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.target_id)
-        .execute();
-      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
-
-      const sourceTeams = await trx
-        .selectFrom('map_teams_persons')
-        .select(['team_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTeams) {
-        if (!targetTeamIds.has(String(st.team_id))) {
-          await trx
-            .insertInto('map_teams_persons')
-            .values({
-              tenant_id: input.tenant_id,
-              person_id: input.target_id,
-              team_id: st.team_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_teams_persons')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('person_id', '=', input.source_id)
-        .execute();
-
-      // 5. Reassign captaincy if source was captain of any team
-      await trx
-        .updateTable('teams')
-        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('team_captain_id', '=', input.source_id)
-        .execute();
-      // 6. Delete source person
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      // 7. Clean up empty household if source's household is now empty
-      const sourceHhId = source.household_id;
-      if (sourceHhId && sourceHhId !== target.household_id) {
-        const remainingHhMembers = await trx
-          .selectFrom('persons')
-          .select('id')
-          .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', '=', sourceHhId)
-          .execute();
-        if (remainingHhMembers.length === 0) {
-          // Clean up orphaned household associations before deletion
-          await trx
-            .deleteFrom('map_households_tags')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('map_lists_households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('household_id', '=', sourceHhId)
-            .execute();
-          await trx
-            .deleteFrom('households')
-            .where('tenant_id', '=', input.tenant_id)
-            .where('id', '=', sourceHhId)
-            .execute();
-        }
-      }
-
-      return { success: true };
-    });
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/persons/routes/persons.schema.ts
 
 ```typescript
@@ -8566,7 +8270,6 @@ const PersonType = {
   state: { type: 'string' },
   zip: { type: 'string' },
   country: { type: 'string' },
-  json: { type: 'string' },
   linkedin: { type: 'string' },
   twitter: { type: 'string' },
   facebook: { type: 'string' },
@@ -10267,6 +9970,7 @@ import type {
 import type { QueryParams } from '../../lib/base.repo';
 import { NotificationsRepo } from '../notifications/repositories/notifications.repo';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
+import { notificationEnabled } from '../../lib/profile-preferences';
 import { ImportsRepo } from '../imports/repositories/imports.repo';
 import { StorageService } from '../../lib/storage.service';
 import { TRPCError } from '@trpc/server';
@@ -10312,24 +10016,11 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           const assignee = await this.getRepo()
             .db.selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
             .where('authusers.id', '=', assignedTo)
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            let optedIn = true;
-            const profileJson = assignee.profile_json;
-            if (profileJson) {
-              try {
-                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-                if (json?.notifications?.task_assigned === false) {
-                  optedIn = false;
-                }
-              } catch (e) {
-                logger.error({ err: e }, 'Failed to parse profile json in addTask');
-              }
-            }
-
-            if (optedIn) {
+            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
               await this.mailService.sendMail({
                 to: assignee.email,
                 subject: `New Task Assigned: ${payload.name}`,
@@ -10378,24 +10069,11 @@ export class TasksController extends BaseController<'tasks', TasksRepo> {
           const assignee = await this.getRepo()
             .db.selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
             .where('authusers.id', '=', assignedTo)
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            let optedIn = true;
-            const profileJson = assignee.profile_json;
-            if (profileJson) {
-              try {
-                const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-                if (json?.notifications?.task_assigned === false) {
-                  optedIn = false;
-                }
-              } catch (e) {
-                logger.error({ err: e }, 'Failed to parse profile json in updateTask');
-              }
-            }
-
-            if (optedIn) {
+            if (notificationEnabled(assignee.profile_preferences, 'task_assigned')) {
               await this.mailService.sendMail({
                 to: assignee.email,
                 subject: `Task Assigned: ${updated.name}`,
@@ -14705,6 +14383,64 @@ export async function down(db: Kysely<any>): Promise<void> {
 }
 ```
 
+## File: apps/backend/src/app/\_migrations/2026-07-27-i5-trigram-index-audit.ts
+
+```typescript
+import type { Kysely } from 'kysely';
+import { sql } from 'kysely';
+
+/**
+ * I-5: Drop unused/unusable GIN trigram indexes (schema review 2026-07-06, §4;
+ * the audit deferred by the I-2/I-6 migration).
+ *
+ * Trigram GINs are the most expensive indexes per write in the schema, and they
+ * only pay off for columns reachable by a grid "contains" filter (ILIKE '%…%' on
+ * the bare column) on a table large enough that the planner would ever prefer
+ * them over the tenant btree. Audited against the grid column definitions and
+ * each repo's filterModel/columnMapping wiring:
+ *
+ * Dropped —
+ * - idx_households_trgm_state: the dominant query is a 2-letter code; a '%tx%'
+ *   pattern extracts zero trigrams, so pg_trgm physically cannot use the index.
+ * - idx_companies_trgm_email / _industry: unreachable. The companies repo wires
+ *   no searchStr/filterModel handling, so no ILIKE ever targets these columns.
+ * - idx_lists_trgm_name / _description, idx_tags_trgm_name,
+ *   idx_volunteer_events_trgm_name / _location: reachable, but these tables are
+ *   dozens-to-hundreds of rows per tenant — the planner always prefers the
+ *   tenant btree + filter at that cardinality. Revisit if any of them
+ *   realistically grows past ~10k rows.
+ *
+ * Kept (persons first_name/last_name/email/mobile; households street1/city/zip;
+ * companies name) — mapped grid filters on voter-file-scale tables, plus the
+ * persons-grid Company filter that reaches companies.name through the join.
+ */
+export async function up(db: Kysely<any>): Promise<void> {
+  await sql`
+    DROP INDEX IF EXISTS public.idx_households_trgm_state;
+    DROP INDEX IF EXISTS public.idx_companies_trgm_email;
+    DROP INDEX IF EXISTS public.idx_companies_trgm_industry;
+    DROP INDEX IF EXISTS public.idx_lists_trgm_name;
+    DROP INDEX IF EXISTS public.idx_lists_trgm_description;
+    DROP INDEX IF EXISTS public.idx_tags_trgm_name;
+    DROP INDEX IF EXISTS public.idx_volunteer_events_trgm_name;
+    DROP INDEX IF EXISTS public.idx_volunteer_events_trgm_location;
+  `.execute(db);
+}
+
+export async function down(db: Kysely<any>): Promise<void> {
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_households_trgm_state ON public.households USING gin (state public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_companies_trgm_email ON public.companies USING gin (email public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_companies_trgm_industry ON public.companies USING gin (industry public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_lists_trgm_name ON public.lists USING gin (name public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_lists_trgm_description ON public.lists USING gin (description public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_tags_trgm_name ON public.tags USING gin (name public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_volunteer_events_trgm_name ON public.volunteer_events USING gin (name public.gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_volunteer_events_trgm_location ON public.volunteer_events USING gin (location_address public.gin_trgm_ops);
+  `.execute(db);
+}
+```
+
 ## File: apps/backend/src/app/errors/to-trpc-errors.ts
 
 ```typescript
@@ -14973,6 +14709,7 @@ import type { Models } from '../../../../../../../libs/common/src/lib/kysely.mod
 import { logger } from '../../../logger';
 import { ExportsRepo } from '../../../modules/exports/repositories/exports.repo';
 import { CsvTransformStream } from '../../csv-stream';
+import { notificationEnabled } from '../../profile-preferences';
 import { StorageService } from '../../storage.service';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import type { JobPayloadOf } from '../job-payloads';
@@ -15124,27 +14861,13 @@ export async function handleExportCsv(payload: JobPayloadOf<'export_csv'>, db: K
         const user = await db
           .selectFrom('authusers')
           .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+          .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
           .where('authusers.id', '=', payload.user_id)
           .executeTakeFirst();
 
         if (user) {
-          let emailOptedIn = true;
-          let inAppOptedIn = true;
-          const profileJson = user.profile_json;
-          if (profileJson) {
-            try {
-              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-              if (json?.notifications?.export_ready === false) {
-                emailOptedIn = false;
-              }
-              if (json?.notifications?.export_ready_in_app === false) {
-                inAppOptedIn = false;
-              }
-            } catch (e) {
-              logger.error({ err: e }, 'Failed to parse profile json for export notifications');
-            }
-          }
+          const emailOptedIn = notificationEnabled(user.profile_preferences, 'export_ready');
+          const inAppOptedIn = notificationEnabled(user.profile_preferences, 'export_ready_in_app');
 
           const entityLabel = table === 'user_activity' ? 'Activity Feed' : table;
           const displayLabel = entityLabel.charAt(0).toUpperCase() + entityLabel.slice(1);
@@ -15231,6 +14954,7 @@ import { ImportsRepo } from '../../../modules/imports/repositories/imports.repo'
 import { PersonsService } from '../../../modules/persons/services/persons.service';
 import { TasksController } from '../../../modules/tasks/controller';
 import { StorageService } from '../../storage.service';
+import { notificationEnabled } from '../../profile-preferences';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import type { LegacyImportJobPayload } from '../job-payloads';
 
@@ -15306,24 +15030,12 @@ export async function handleImportJob(payload: LegacyImportJobPayload, db: Kysel
     const user = await db
       .selectFrom('authusers')
       .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
       .where('authusers.id', '=', payload.user_id)
       .executeTakeFirst();
 
     if (user && user.email) {
-      let optedIn = true;
-      if (user.profile_json) {
-        try {
-          const json = typeof user.profile_json === 'string' ? JSON.parse(user.profile_json) : user.profile_json;
-          if (json?.notifications?.import_summary === false) {
-            optedIn = false;
-          }
-        } catch (e) {
-          logger.error({ err: e }, 'Failed to parse profile json for import summary check');
-        }
-      }
-
-      if (optedIn) {
+      if (notificationEnabled(user.profile_preferences, 'import_summary')) {
         const importRecord = await db
           .selectFrom('data_imports')
           .select(['inserted_count', 'error_count', 'skipped_count'])
@@ -15390,7 +15102,7 @@ export async function handleSendNewsletter(
   // 2. Build the recipient query using NewslettersController
   const { NewslettersController } = await import('../../../modules/newsletters/controller');
   const controller = new NewslettersController();
-  const baseQuery = controller.buildRecipientQuery(tenantId, newsletter);
+  const baseQuery = await controller.buildRecipientQuery(tenantId, newsletter);
 
   // 3. Count total recipients
   let offset = payload.offset ?? 0;
@@ -15755,6 +15467,7 @@ import type { Kysely } from 'kysely';
 import { env } from '../../../../env';
 import type { Models } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { logger } from '../../../logger';
+import { notificationEnabled } from '../../profile-preferences';
 import { TransactionalEmailService } from '../../mail/transactional-mail.service';
 import type { JobPayloadOf } from '../job-payloads';
 import { DAY_MS, scheduleNextRun } from '../reschedule';
@@ -16123,7 +15836,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
         'authusers.id as user_id',
         'authusers.email as user_email',
         'authusers.first_name',
-        'profiles.json as profile_json',
+        'profiles.preferences as profile_preferences',
       ])
       .where('tasks.status', 'not in', ['done', 'canceled', 'archived'])
       .where('tasks.due_at', '<=', now)
@@ -16148,19 +15861,7 @@ export async function checkDueTasks(db: Kysely<Models>): Promise<void> {
       if (!firstRow) continue;
       const userEmail = firstRow.user_email;
       const firstName = firstRow.first_name;
-      const profileJson = firstRow.profile_json;
-
-      let optedIn = true;
-      if (profileJson) {
-        try {
-          const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-          if (json?.notifications?.task_due === false) {
-            optedIn = false;
-          }
-        } catch (e) {
-          logger.error({ err: e }, 'Failed to parse profile json in checkDueTasks');
-        }
-      }
+      const optedIn = notificationEnabled(firstRow.profile_preferences, 'task_due');
 
       if (optedIn && userEmail) {
         let textContent = `Hi ${firstName || 'there'},\n\nHere are your active tasks needing attention today:\n\n`;
@@ -16918,6 +16619,7 @@ export class WebhookEventWorker {
 
 ```typescript
 import { logger } from '../../logger';
+import { notificationEnabled } from '../profile-preferences';
 import { TransactionalEmailService } from './transactional-mail.service';
 
 export async function processMentions(
@@ -16938,7 +16640,12 @@ export async function processMentions(
     const users = await db
       .selectFrom('authusers')
       .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-      .select(['authusers.id', 'authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+      .select([
+        'authusers.id',
+        'authusers.email',
+        'authusers.first_name',
+        'profiles.preferences as profile_preferences',
+      ])
       .where('authusers.tenant_id', '=', tenantId)
       .execute();
 
@@ -16956,20 +16663,7 @@ export async function processMentions(
       const isMentioned = matches.includes(firstNameLower) || matches.includes(emailPrefix);
 
       if (isMentioned && user.email) {
-        let optedIn = true;
-        const profileJson = user.profile_json;
-        if (profileJson) {
-          try {
-            const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-            if (json?.notifications?.mention_in_comment === false) {
-              optedIn = false;
-            }
-          } catch (e) {
-            logger.error({ err: e }, 'Failed to parse profile json in processMentions');
-          }
-        }
-
-        if (optedIn) {
+        if (notificationEnabled(user.profile_preferences, 'mention_in_comment')) {
           await mailService.sendMail({
             to: user.email,
             subject: 'You were mentioned in PplCRM',
@@ -17566,6 +17260,7 @@ import type { ReferenceExpression, Transaction } from 'kysely';
 import type { Models, OperationDataType, TypeTenantId } from '../../../../../libs/common/src/lib/kysely.models';
 import type { BaseRepository, QueryParams } from './base.repo';
 import { rowsToCsv } from './csv';
+import { notificationEnabled } from './profile-preferences';
 import type { UserActivityType } from './user-activity.repo';
 import { UserActivityRepo } from './user-activity.repo';
 import { TransactionalEmailService } from './mail/transactional-mail.service';
@@ -17866,24 +17561,11 @@ export class BaseController<T extends keyof Models, R extends BaseRepository<T>>
         const user = await this.repo.db
           .selectFrom('authusers')
           .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-          .select(['authusers.email', 'profiles.json as profile_json'])
+          .select(['authusers.email', 'profiles.preferences as profile_preferences'])
           .where('authusers.id', '=', auth.user_id)
           .executeTakeFirst();
         if (user && user.email) {
-          let optedIn = true;
-          const profileJson = user.profile_json;
-          if (profileJson) {
-            try {
-              const json = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-              if (json?.notifications?.export_ready === false) {
-                optedIn = false;
-              }
-            } catch (e) {
-              logger.error({ err: e }, 'Failed to parse profile json in exportCsv');
-            }
-          }
-
-          if (optedIn) {
+          if (notificationEnabled(user.profile_preferences, 'export_ready')) {
             const mailService = new TransactionalEmailService();
             await mailService.sendMail({
               to: user.email,
@@ -20403,11 +20085,11 @@ export class CompaniesController extends BaseController<'companies', CompaniesRe
   public override async getOneById(input: { tenant_id: string; id: string }): Promise<any> {
     const company = (await super.getOneById(input)) as any;
     if (company) {
-      let currentJson: any = {};
-      if (company.json) {
-        currentJson = typeof company.json === 'string' ? JSON.parse(company.json) : company.json;
+      let enrichment: any = {};
+      if (company.enrichment) {
+        enrichment = typeof company.enrichment === 'string' ? JSON.parse(company.enrichment) : company.enrichment;
       }
-      if (!currentJson || !currentJson.google_enriched) {
+      if (!enrichment || !enrichment.google_enriched) {
         await this.getRepo()
           .db.insertInto('background_jobs')
           .values({
@@ -20823,78 +20505,6 @@ export const DonationsRouter = router({
 });
 ```
 
-## File: apps/backend/src/app/modules/google-sync/google-callback.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { GoogleOAuthService } from './google-oauth.service';
-import { env } from '../../../env';
-import { BaseRepository } from '../../lib/base.repo';
-import { decodeOAuthState } from '../../lib/oauth-state';
-
-let _oauthSvc: GoogleOAuthService | null = null;
-
-function getOAuthService() {
-  if (!_oauthSvc) {
-    const db = (BaseRepository as any)['_db'];
-    _oauthSvc = new GoogleOAuthService(db, {
-      clientId: env.googleClientId ?? '',
-      clientSecret: env.googleClientSecret ?? '',
-      redirectUri: env.googleRedirectUri ?? `${env.apiUrl}/auth/google/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-const googleSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.get('/callback', async (req: any, reply) => {
-    const { code, state, error, error_description } = req.query as Record<string, string>;
-
-    const frontendBase = env.apiUrl.replace(':3000', ':4200'); // dev: frontend is on 4200
-
-    // Verify the HMAC-signed state; a forged/expired state yields null and is
-    // rejected so an attacker cannot bind this mailbox to an arbitrary account.
-    const parsedState = decodeOAuthState(state);
-
-    // Only allow a relative path that doesn't start with // (prevents open redirect)
-    const safeReturnTo = parsedState?.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
-    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
-    const sep = (base: string) => (base.includes('?') ? '&' : '?');
-
-    if (error) {
-      return reply.redirect(
-        `${returnBase}${sep(returnBase)}google_error=${encodeURIComponent(error_description ?? error)}`,
-      );
-    }
-
-    if (!code || !state) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=missing_code`);
-    }
-
-    if (!parsedState) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=invalid_state`);
-    }
-
-    const { userId, tenantId } = parsedState;
-
-    try {
-      const oauthSvc = getOAuthService();
-      await oauthSvc.handleCallback(code, userId, tenantId);
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_connected=1`);
-    } catch (err) {
-      // Log the real cause server-side; never reflect internal error text back
-      // into a user-facing redirect URL.
-      fastify.log.error(err, 'Google OAuth callback failed');
-      return reply.redirect(`${returnBase}${sep(returnBase)}google_error=connection_failed`);
-    }
-  });
-
-  done();
-};
-
-export default googleSyncCallbackRoute;
-```
-
 ## File: apps/backend/src/app/modules/google-sync/google-oauth.service.ts
 
 ```typescript
@@ -21163,764 +20773,6 @@ export class GoogleOAuthService {
 }
 ```
 
-## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
-
-```typescript
-import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
-import { sql } from 'kysely';
-
-import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
-import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
-import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
-import { BaseRepository } from '../../../lib/base.repo';
-import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
-import { logger } from '../../../logger';
-
-export class HouseholdRepo extends BaseRepository<'households'> {
-  constructor() {
-    super('households');
-  }
-
-  public override async addMany(
-    input: { rows: OperationDataType<'households', 'insert'>[] },
-    trx?: Transaction<Models>,
-  ) {
-    const processedRows = await Promise.all(
-      input.rows.map(async (row) => {
-        const isBlank = isBlankAddress(row);
-        const isIncomplete = isIncompleteAddress(row);
-
-        let geocoding_status = isBlank || isIncomplete ? 'failed' : 'pending';
-        let district = row.district ?? null;
-        let precinct = row.precinct ?? null;
-        let ward = row.ward ?? null;
-
-        if (row.lat && row.lng && Number(row.lat) !== 0 && Number(row.lng) !== 0) {
-          try {
-            const matched = await matchCoordinatesToDistrict(Number(row.lat), Number(row.lng));
-            district = matched.district;
-            precinct = matched.precinct;
-            ward = matched.ward;
-            geocoding_status = 'success';
-          } catch (err) {
-            logger.error({ err }, 'Failed to map coordinates to district during insert');
-          }
-        }
-
-        return {
-          ...row,
-          district,
-          precinct,
-          ward,
-          geocoding_status,
-        };
-      }),
-    );
-
-    const createdRows = await super.addMany({ rows: processedRows }, trx);
-    const db = trx || this.db;
-
-    const jobs = createdRows
-      .filter((row) => row && row.id && row.geocoding_status === 'pending')
-      .map((row) => ({
-        tenant_id: row.tenant_id,
-        queue: 'default',
-        status: 'pending',
-        payload: JSON.stringify({
-          type: 'geocode_household',
-          household_id: String(row.id),
-          tenant_id: row.tenant_id,
-        }),
-        run_at: new Date(),
-        max_attempts: 3,
-      }));
-
-    if (jobs.length > 0) {
-      await db.insertInto('background_jobs').values(jobs).execute();
-    }
-
-    return createdRows;
-  }
-
-  public async getIdsByFileId(
-    input: { tenant_id: string; file_id: string; onlyEmpty?: boolean },
-    trx?: Transaction<Models>,
-  ): Promise<string[]> {
-    if (!input.file_id) return [];
-    let query = this.getSelect(trx)
-      .select('id')
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.file_id);
-
-    if (input.onlyEmpty) {
-      query = query.where((eb) =>
-        eb.not(
-          eb.exists(
-            eb.selectFrom('persons').select('id').whereRef('persons.household_id', '=', 'households.id').limit(1),
-          ),
-        ),
-      );
-    }
-
-    const rows = await query.execute();
-    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
-  }
-
-  public async clearFileIdForImport(
-    input: { tenant_id: string; import_id: string; user_id: string },
-    trx?: Transaction<Models>,
-  ) {
-    await this.getUpdate(trx)
-      .set({
-        file_id: null,
-        updated_at: sql<Date>`now()`,
-      } as unknown as OperationDataType<'households', 'update'>)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('file_id', '=', input.import_id)
-      .executeTakeFirst();
-  }
-
-  public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
-    return this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id)
-      .where('home_phone', 'is', null)
-      .where('apt', 'is', null)
-      .where('street_num', 'is', null)
-      .where('street1', 'is', null)
-      .where('street2', 'is', null)
-      .where('city', 'is', null)
-      .where('state', 'is', null)
-      .where('zip', 'is', null)
-      .where('country', 'is', null)
-      .where('file_id', 'is', null)
-      .where('notes', 'is', null)
-      .where('json', 'is', null)
-      .selectAll()
-      .limit(1)
-      .executeTakeFirst();
-  }
-
-  public async findByFingerprint(
-    input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
-    trx?: Transaction<Models>,
-  ) {
-    const sel = this.getSelect(trx)
-      .where('tenant_id', '=', input.tenant_id)
-      .where('campaign_id', '=', input.campaign_id);
-
-    if (input.fp_full) {
-      const full = await sel.where('address_fp_full', '=', input.fp_full).selectAll().limit(1).executeTakeFirst();
-      if (full) return full;
-    }
-    if (input.fp_street) {
-      return await this.getSelect(trx)
-        .where('tenant_id', '=', input.tenant_id)
-        .where('campaign_id', '=', input.campaign_id)
-        .where('address_fp_street', '=', input.fp_street)
-        .selectAll()
-        .limit(1)
-        .executeTakeFirst();
-    }
-    return undefined;
-  }
-
-  public async getAllWithPeopleCount(
-    input: {
-      tenant_id: string;
-      options?: QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'> & { issues?: string[] };
-      tags?: string[];
-      issues?: string[];
-    },
-    trx?: Transaction<Models>,
-  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
-    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
-    const tenantId = input.tenant_id;
-    const searchStr = this.normalizeSearch(options.searchStr);
-    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
-    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
-    const filterModel = ((options as JoinedQueryParams & { issues?: string[] })?.filterModel ?? {}) as Record<
-      string,
-      { value: unknown } | undefined
-    >;
-
-    // Shared where clause builder (for both queries)
-    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
-      let q = qb
-        .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-        .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-        .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
-        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
-        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
-        .$if(!!options.listId, (qb) =>
-          qb.where('households.id', 'in', (eb: any) =>
-            eb
-              .selectFrom('map_lists_households')
-              .select('household_id')
-              .where('list_id', '=', options.listId ?? '')
-              .where('tenant_id', '=', tenantId),
-          ),
-        )
-        .where('households.tenant_id', '=', tenantId)
-        .where((eb) =>
-          eb.or([
-            eb('tenants.placeholder_household_id', 'is', null),
-            eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
-          ]),
-        )
-        .$if(!!searchStr, (qb) => {
-          const text = searchStr;
-          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
-          // indexes can serve quick search; normalizeSearch already lowercases,
-          // so the match semantics are identical.
-          return qb.where(
-            sql<boolean>`(
-              households.city ILIKE ${text} OR
-              households.street1 ILIKE ${text} OR
-              households.street2 ILIKE ${text} OR
-              households.notes ILIKE ${text} OR
-              tags.name ILIKE ${text}
-            )`,
-          );
-        });
-
-      // Apply dynamic, operator-aware column filters
-      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
-      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
-      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2'] ?? {});
-      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
-      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
-      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone'] ?? {});
-      if (filterModel['tags']?.value && filterModel['issues']?.value) {
-        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
-        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
-        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
-        q = q.where((eb) =>
-          eb.or([
-            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
-            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
-          ]),
-        );
-      } else if (filterModel['tags']?.value) {
-        q = q.where('tags.type', '=', 'tag');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
-      } else if (filterModel['issues']?.value) {
-        q = q.where('tags.type', '=', 'issue');
-        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
-      }
-
-      // Apply advanced query builder filters if present
-      const columnMapping = {
-        city: { col: 'households.city' },
-        state: { col: 'households.state' },
-        street1: { col: 'households.street1' },
-        street2: { col: 'households.street2' },
-        street_num: { col: 'households.street_num::text', isCast: true },
-        zip: { col: 'households.zip' },
-        home_phone: { col: 'households.home_phone' },
-        tag: { col: 'tags.name' },
-        tags: { col: 'tags.name' },
-        issues: { col: 'tags.name' },
-      };
-      const advModel =
-        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
-      q = this.applyAdvancedFilters(q, advModel, columnMapping);
-
-      return q;
-    };
-
-    // Count query
-    const countResult = await applyFilters(this.getSelect(trx))
-      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
-      .execute();
-
-    const count = Number(countResult[0]?.['total'] || 0);
-
-    // Data query
-    const rows = await applyFilters(this.getSelect(trx))
-      .select([
-        'households.id',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.apt',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.notes',
-        'households.district',
-        'households.precinct',
-        'households.ward',
-        'households.geocoding_status',
-      ])
-      .select((eb) => [
-        eb
-          .selectFrom('persons')
-          .whereRef('persons.household_id', '=', 'households.id')
-          .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
-          .as('persons_count'),
-        // is_placeholder: true only for the one household stored on the tenant row
-        eb
-          .case()
-          .when('tenants.placeholder_household_id', '=', eb.ref('households.id'))
-          .then(true)
-          .else(false)
-          .end()
-          .as('is_placeholder'),
-      ])
-      .select(() => [
-        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
-          'tags',
-        ),
-        sql<
-          string[]
-        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
-      ])
-      .groupBy([
-        'households.id',
-        'households.country',
-        'households.zip',
-        'households.state',
-        'households.home_phone',
-        'households.city',
-        'households.apt',
-        'households.street1',
-        'households.street2',
-        'households.street_num',
-        'households.notes',
-        'households.district',
-        'households.precinct',
-        'households.ward',
-        'households.geocoding_status',
-        'households.created_at',
-        'households.updated_at',
-        'households.campaign_id',
-        'households.createdby_id',
-        'households.updatedby_id',
-        'households.file_id',
-        'households.json',
-        'households.address_fp_street',
-        'households.address_fp_full',
-        'households.tenant_id',
-        'tenants.placeholder_household_id',
-      ])
-      .$if(!!options.sortModel?.length, (qb) =>
-        (options.sortModel ?? []).reduce((acc, sort) => {
-          let col = sort.colId;
-          if (typeof col === 'string' && !col.includes('.')) {
-            const hhCols = [
-              'id',
-              'campaign_id',
-              'createdby_id',
-              'file_id',
-              'home_phone',
-              'json',
-              'notes',
-              'address_fp_street',
-              'address_fp_full',
-              'is_placeholder',
-              'district',
-              'precinct',
-              'ward',
-              'geocoding_status',
-              'tenant_id',
-              'updatedby_id',
-              'created_at',
-              'updated_at',
-              'country',
-              'zip',
-              'state',
-              'city',
-              'street1',
-              'street2',
-              'street_num',
-              'apt',
-            ];
-            if (hhCols.includes(col)) {
-              col = `households.${col}`;
-            }
-          }
-          return acc.orderBy(col as ReferenceExpression<Models, 'households'>, sort.sort);
-        }, qb),
-      )
-      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
-        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
-      )
-      .execute();
-
-    return {
-      rows,
-      count,
-    };
-  }
-
-  public async getPlaceholderIds(tenant_id: string, candidates: string[]): Promise<Set<string>> {
-    if (!candidates.length) return new Set();
-    const result = await this.getSelect()
-      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .where('households.id', 'in', candidates)
-      .whereRef('tenants.placeholder_household_id', '=', 'households.id')
-      .select('households.id')
-      .execute();
-    return new Set(result.map((r) => String(r.id)));
-  }
-
-  /**
-   * Deletes households and reassigns their members to the tenant's placeholder
-   * household. persons.household_id is NOT NULL, so members are *moved* rather
-   * than cascade-deleted along with the household. Runs in a single transaction
-   * so persons are never orphaned. Callers must exclude the placeholder household
-   * itself from `ids` (see getPlaceholderIds).
-   */
-  public async deleteManyReassigningPersons(input: {
-    tenant_id: string;
-    ids: string[];
-    user_id: string;
-  }): Promise<boolean> {
-    if (!input.ids.length) return false;
-
-    return this.transaction().execute(async (trx) => {
-      const tenant = await trx
-        .selectFrom('tenants')
-        .select('placeholder_household_id')
-        .where('id', '=', input.tenant_id)
-        .executeTakeFirst();
-
-      const placeholderId = tenant?.placeholder_household_id;
-
-      if (placeholderId != null) {
-        await trx
-          .updateTable('persons')
-          .set({ household_id: placeholderId, updated_at: sql<Date>`now()`, updatedby_id: input.user_id })
-          .where('tenant_id', '=', input.tenant_id)
-          .where('household_id', 'in', input.ids)
-          .execute();
-      }
-
-      return this.deleteMany({ tenant_id: input.tenant_id, ids: input.ids }, trx);
-    });
-  }
-
-  public async getPeopleCount(input: { tenant_id: string; id: string }) {
-    const result = await this.getSelect()
-      .leftJoin('persons', 'persons.household_id', 'households.id')
-      .where('households.id', '=', input.id)
-      .where('households.tenant_id', '=', input.tenant_id)
-      .select(({ fn }) => [fn.count<number>('persons.id').as('count')])
-      .executeTakeFirst();
-
-    return Number((result as { count?: number } | undefined)?.count ?? 0);
-  }
-
-  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
-    return this.getSelect()
-      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-      .where('households.tenant_id', '=', tenant_id)
-      .where('tags.type', '=', type)
-      .select('tags.name')
-      .distinct()
-      .execute();
-  }
-
-  public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
-    let q = this.getSelect()
-      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
-      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
-      .where('households.id', '=', id)
-      .where('households.tenant_id', '=', tenant_id);
-    if (type) {
-      q = q.where('tags.type', '=', type);
-    }
-    return q.select('tags.name').execute();
-  }
-
-  public async getDuplicateCount(tenant_id: string): Promise<number> {
-    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    return Number(countResult?.total ?? 0);
-  }
-
-  public async getPotentialDuplicates(
-    tenant_id: string,
-    options?: { page?: number; pageSize?: number },
-  ): Promise<{ groups: unknown[]; total: number }> {
-    const page = options?.page ?? 1;
-    const pageSize = options?.pageSize ?? 20;
-
-    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
-    // eslint-disable-next-line local/no-unscoped-db-query
-    const countResult = await this.db
-      .selectFrom((qb) =>
-        qb
-          .selectFrom('potential_duplicates')
-          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-          .select('potential_duplicates.group_key')
-          .where('potential_duplicates.tenant_id', '=', tenant_id)
-          .groupBy('potential_duplicates.group_key')
-          .having(sql`count(potential_duplicates.id)`, '>', 1)
-          .as('sub'),
-      )
-      .select([sql<number>`count(group_key)`.as('total')])
-      .executeTakeFirst();
-    const total = Number(countResult?.total ?? 0);
-
-    if (total === 0) {
-      return { groups: [], total: 0 };
-    }
-
-    const keysRows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-      .select('potential_duplicates.group_key')
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .groupBy('potential_duplicates.group_key')
-      .having(sql`count(potential_duplicates.id)`, '>', 1)
-      .orderBy(sql`min(potential_duplicates.id)`)
-      .limit(pageSize)
-      .offset((page - 1) * pageSize)
-      .execute();
-
-    const groupKeys = keysRows.map((r) => r.group_key);
-
-    if (groupKeys.length === 0) {
-      return { groups: [], total };
-    }
-
-    const rows = await this.db
-      .selectFrom('potential_duplicates')
-      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
-      .select([
-        'potential_duplicates.group_key',
-        'potential_duplicates.reason',
-        'households.id',
-        'households.street_num',
-        'households.street1',
-        'households.street2',
-        'households.city',
-        'households.state',
-        'households.zip',
-        'households.country',
-        'households.apt',
-        'households.home_phone',
-        'households.notes',
-        'households.created_at',
-      ])
-      .where('potential_duplicates.tenant_id', '=', tenant_id)
-      .where('potential_duplicates.group_key', 'in', groupKeys)
-      .execute();
-
-    const hhIds = rows.map((r) => String(r.id));
-    if (hhIds.length === 0) {
-      return { groups: [], total };
-    }
-
-    const persons = await this.db
-      .selectFrom('persons')
-      .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
-      .where('tenant_id', '=', tenant_id)
-      .where('household_id', 'in', hhIds)
-      .execute();
-
-    const hhToPersons = new Map<
-      string,
-      Array<{
-        id: unknown;
-        first_name: string | null;
-        last_name: string | null;
-        email: string | null;
-        household_id: unknown;
-      }>
-    >();
-    for (const p of persons) {
-      const hhId = String(p.household_id);
-      if (!hhToPersons.has(hhId)) {
-        hhToPersons.set(hhId, []);
-      }
-      hhToPersons.get(hhId)?.push(p);
-    }
-
-    const groupsMap = new Map<string, { reason: string; households: Record<string, unknown>[] }>();
-    for (const row of rows) {
-      const groupKey = row.group_key;
-      if (!groupsMap.has(groupKey)) {
-        groupsMap.set(groupKey, {
-          reason: row.reason,
-          households: [],
-        });
-      }
-      groupsMap.get(groupKey)?.households.push({
-        ...row,
-        id: String(row.id),
-        persons: hhToPersons.get(String(row.id)) || [],
-      });
-    }
-
-    const sortedGroups = groupKeys
-      .map((key) => groupsMap.get(key))
-      .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
-
-    return { groups: sortedGroups, total };
-  }
-
-  public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
-    return this.transaction().execute(async (trx) => {
-      const target = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.target_id },
-        trx,
-      )) as Selectable<Models['households']>;
-      const source = (await this.getOneBy(
-        'id',
-        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.source_id },
-        trx,
-      )) as Selectable<Models['households']>;
-
-      if (!target || !source) {
-        throw new Error('Target or Source household not found');
-      }
-
-      // 1. Merge fields (copy null/empty fields from source to target)
-      const targetUpdate: Record<string, unknown> = {};
-      const fields = [
-        'apt',
-        'street_num',
-        'street1',
-        'street2',
-        'city',
-        'state',
-        'zip',
-        'country',
-        'home_phone',
-        'notes',
-        'file_id',
-      ] as const;
-
-      for (const field of fields) {
-        const targetVal = target[field];
-        const sourceVal = source[field];
-        if (
-          (targetVal == null || String(targetVal).trim() === '') &&
-          sourceVal != null &&
-          String(sourceVal).trim() !== ''
-        ) {
-          targetUpdate[field] = sourceVal;
-        }
-      }
-
-      if (Object.keys(targetUpdate).length > 0) {
-        targetUpdate['updatedby_id'] = input.user_id;
-        targetUpdate['updated_at'] = sql`now()`;
-        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
-      }
-
-      // 2. Transfer tags (map_households_tags)
-      const targetTags = await trx
-        .selectFrom('map_households_tags')
-        .select('tag_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.target_id)
-        .execute();
-      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
-
-      const sourceTags = await trx
-        .selectFrom('map_households_tags')
-        .select(['tag_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      for (const st of sourceTags) {
-        const tagIdStr = String(st.tag_id);
-        if (!targetTagIds.has(tagIdStr)) {
-          await trx
-            .insertInto('map_households_tags')
-            .values({
-              tenant_id: input.tenant_id,
-              household_id: input.target_id,
-              tag_id: st.tag_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_households_tags')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 3. Transfer lists (map_lists_households)
-      const targetLists = await trx
-        .selectFrom('map_lists_households')
-        .select('list_id')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.target_id)
-        .execute();
-      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
-
-      const sourceLists = await trx
-        .selectFrom('map_lists_households')
-        .select(['list_id'])
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      for (const sl of sourceLists) {
-        if (!targetListIds.has(String(sl.list_id))) {
-          await trx
-            .insertInto('map_lists_households')
-            .values({
-              tenant_id: input.tenant_id,
-              household_id: input.target_id,
-              list_id: sl.list_id,
-              createdby_id: input.user_id,
-              updatedby_id: input.user_id,
-            })
-            .execute();
-        }
-      }
-      await trx
-        .deleteFrom('map_lists_households')
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 4. Reassign people (persons.household_id)
-      await trx
-        .updateTable('persons')
-        .set({ household_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
-        .where('tenant_id', '=', input.tenant_id)
-        .where('household_id', '=', input.source_id)
-        .execute();
-
-      // 5. Delete source household
-      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
-
-      return { success: true };
-    });
-  }
-}
-```
-
 ## File: apps/backend/src/app/modules/imports/repositories/imports.repo.ts
 
 ```typescript
@@ -22122,79 +20974,6 @@ export class ImportsRepo extends BaseRepository<'data_imports'> {
     return new Date(0);
   }
 }
-```
-
-## File: apps/backend/src/app/modules/ms-sync/ms-callback.route.ts
-
-```typescript
-import type { FastifyPluginCallback } from 'fastify';
-import { MsOAuthService } from '../ms-sync/ms-oauth.service';
-import { env } from '../../../env';
-import { BaseRepository } from '../../lib/base.repo';
-import { decodeOAuthState } from '../../lib/oauth-state';
-
-let _oauthSvc: MsOAuthService | null = null;
-
-function getOAuthService() {
-  if (!_oauthSvc) {
-    const db = (BaseRepository as any)['_db'];
-    _oauthSvc = new MsOAuthService(db, {
-      clientId: env.msClientId ?? '',
-      clientSecret: env.msClientSecret ?? '',
-      tenantId: env.msTenantId ?? 'common',
-      redirectUri: env.msRedirectUri ?? `${env.apiUrl}/auth/ms/callback`,
-    });
-  }
-  return _oauthSvc;
-}
-
-const msSyncCallbackRoute: FastifyPluginCallback = (fastify, _opts, done) => {
-  fastify.get('/callback', async (req: any, reply) => {
-    const { code, state, error, error_description } = req.query as Record<string, string>;
-
-    const frontendBase = env.apiUrl.replace(':3000', ':4200'); // dev: frontend is on 4200
-
-    // Verify the HMAC-signed state; a forged/expired state yields null and is
-    // rejected so an attacker cannot bind this mailbox to an arbitrary account.
-    const parsedState = decodeOAuthState(state);
-
-    // Only allow a relative path that doesn't start with // (prevents open redirect)
-    const safeReturnTo = parsedState?.returnTo?.match(/^\/(?!\/)/) ? parsedState.returnTo : null;
-    const returnBase = safeReturnTo ? `${frontendBase}${safeReturnTo}` : `${frontendBase}/settings`;
-    const sep = (base: string) => (base.includes('?') ? '&' : '?');
-
-    if (error) {
-      return reply.redirect(
-        `${returnBase}${sep(returnBase)}ms_error=${encodeURIComponent(error_description ?? error)}`,
-      );
-    }
-
-    if (!code || !state) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=missing_code`);
-    }
-
-    if (!parsedState) {
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=invalid_state`);
-    }
-
-    const { userId, tenantId } = parsedState;
-
-    try {
-      const oauthSvc = getOAuthService();
-      await oauthSvc.handleCallback(code, userId, tenantId);
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_connected=1`);
-    } catch (err) {
-      // Log the real cause server-side; never reflect internal error text back
-      // into a user-facing redirect URL.
-      fastify.log.error(err, 'Microsoft OAuth callback failed');
-      return reply.redirect(`${returnBase}${sep(returnBase)}ms_error=connection_failed`);
-    }
-  });
-
-  done();
-};
-
-export default msSyncCallbackRoute;
 ```
 
 ## File: apps/backend/src/app/modules/ms-sync/ms-oauth.service.ts
@@ -22906,6 +21685,8 @@ export default newslettersWebhookRoute;
 
 ```typescript
 import type { ExportCsvInputType, ExportCsvResponseType, IAuthKeyPayload } from '../../../../../../libs/common/src';
+import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
+import type { Transaction } from 'kysely';
 import { sql } from 'kysely';
 
 import { BaseController } from '../../lib/base.controller';
@@ -22928,6 +21709,119 @@ export interface SendTestEmailInput {
 export class NewslettersController extends BaseController<'newsletters', NewslettersRepo> {
   constructor() {
     super(new NewslettersRepo());
+  }
+
+  /**
+   * map_newsletters_lists is the source of truth for list targeting (the
+   * legacy JSONB target_lists column is still dual-written by callers during
+   * the transition, but nothing reads it for behavior anymore).
+   */
+  public override async add(row: OperationDataType<'newsletters', 'insert'>, trx?: Transaction<Models>) {
+    const result = await super.add(row, trx);
+    const rowObj = row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (resultObj?.['id'] != null && rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        String(rowObj['tenant_id']),
+        String(resultObj['id']),
+        rowObj['target_lists'],
+        String(rowObj['createdby_id'] ?? resultObj['createdby_id']),
+        trx,
+      );
+    }
+    return result;
+  }
+
+  public override async update(input: {
+    tenant_id: string;
+    id: string;
+    row: OperationDataType<'newsletters', 'update'>;
+  }) {
+    const result = await super.update(input);
+    const rowObj = input.row as Record<string, unknown>;
+    const resultObj = result as Record<string, unknown> | undefined;
+    if (rowObj['target_lists'] !== undefined) {
+      await this.syncTargetLists(
+        input.tenant_id,
+        input.id,
+        rowObj['target_lists'],
+        String(rowObj['updatedby_id'] ?? resultObj?.['createdby_id']),
+      );
+    }
+    return result;
+  }
+
+  /** Tolerates every legacy payload shape: {include, exclude}, bare array, JSON string, CSV string. */
+  private parseTargetListSets(value: unknown): { include: string[]; exclude: string[] } {
+    let parsed: unknown = value;
+    if (typeof parsed === 'string') {
+      const raw = parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return {
+          include: raw
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          exclude: [],
+        };
+      }
+    }
+    if (Array.isArray(parsed)) {
+      return { include: parsed.map((v) => String(v)), exclude: [] };
+    }
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, unknown>;
+      const toIds = (v: unknown): string[] => (Array.isArray(v) ? v.map((x) => String(x)) : []);
+      return { include: toIds(obj['include']), exclude: toIds(obj['exclude']) };
+    }
+    return { include: [], exclude: [] };
+  }
+
+  /** Replace the newsletter's map_newsletters_lists rows; ids that don't resolve to a live list in the tenant are dropped. */
+  private async syncTargetLists(
+    tenant_id: string,
+    newsletterId: string,
+    rawTargetLists: unknown,
+    actorId: string,
+    trx?: Transaction<Models>,
+  ): Promise<void> {
+    const db = trx ?? this.getRepo().db;
+    const { include, exclude } = this.parseTargetListSets(rawTargetLists);
+
+    const candidates = [...new Set([...include, ...exclude])].filter((id) => /^\d+$/.test(id));
+    let liveIds = new Set<string>();
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = new Set(rows.map((r) => String(r.id)));
+    }
+
+    await db
+      .deleteFrom('map_newsletters_lists')
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', newsletterId)
+      .execute();
+
+    const values = [
+      ...[...new Set(include)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'include' as const })),
+      ...[...new Set(exclude)].filter((id) => liveIds.has(id)).map((id) => ({ list_id: id, mode: 'exclude' as const })),
+    ].map((v) => ({
+      tenant_id,
+      newsletter_id: newsletterId,
+      list_id: v.list_id,
+      mode: v.mode,
+      createdby_id: actorId,
+      updatedby_id: actorId,
+    }));
+    if (values.length > 0) {
+      await db.insertInto('map_newsletters_lists').values(values).execute();
+    }
   }
 
   public override async exportCsv(
@@ -22960,13 +21854,22 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     return super.exportCsv(input, auth);
   }
 
-  public buildRecipientQuery(tenant_id: string, newsletter: any): any {
-    let includeListIds: string[] = [];
-    let excludeListIds: string[] = [];
+  public async buildRecipientQuery(tenant_id: string, newsletter: any): Promise<any> {
     let includeTags: string[] = [];
     let excludeTags: string[] = [];
 
-    // target_lists is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    // List targeting lives in map_newsletters_lists (FK-backed, so no dangling ids).
+    const listRows = await this.getRepo()
+      .db.selectFrom('map_newsletters_lists')
+      .select(['list_id', 'mode'])
+      .where('tenant_id', '=', tenant_id)
+      .where('newsletter_id', '=', String(newsletter.id))
+      .execute();
+    const includeListIds = listRows.filter((r) => r.mode === 'include').map((r) => String(r.list_id));
+    const excludeListIds = listRows.filter((r) => r.mode === 'exclude').map((r) => String(r.list_id));
+
+    // segments is jsonb (returns pre-parsed object from Kysely) or legacy text string.
+    // It stays JSONB deliberately: it holds tag *names*, not ids.
     const parseJsonField = (value: unknown): unknown => {
       if (value == null) return null;
       if (typeof value === 'string') {
@@ -22978,20 +21881,6 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
       }
       return value; // already parsed object from jsonb column
     };
-
-    const listsObj = parseJsonField(newsletter.target_lists);
-    if (Array.isArray(listsObj)) {
-      includeListIds = listsObj as string[];
-    } else if (listsObj && typeof listsObj === 'object') {
-      const obj = listsObj as Record<string, unknown>;
-      includeListIds = Array.isArray(obj['include']) ? (obj['include'] as string[]) : [];
-      excludeListIds = Array.isArray(obj['exclude']) ? (obj['exclude'] as string[]) : [];
-    } else if (typeof listsObj === 'string' && listsObj) {
-      includeListIds = (listsObj as string)
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
 
     const segmentsObj = parseJsonField(newsletter.segments);
     if (Array.isArray(segmentsObj)) {
@@ -23094,7 +21983,7 @@ export class NewslettersController extends BaseController<'newsletters', Newslet
     }
 
     const db = this.getRepo().db;
-    const baseQuery = this.buildRecipientQuery(tenant_id, newsletter);
+    const baseQuery = await this.buildRecipientQuery(tenant_id, newsletter);
 
     // Get total count of unique recipients using a distinct count query
     const countResult = await baseQuery
@@ -23274,6 +22163,738 @@ export const NewslettersRouter = router({
 });
 ```
 
+## File: apps/backend/src/app/modules/persons/repositories/persons.repo.ts
+
+```typescript
+import type { Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import { HouseholdRepo } from '../../households/repositories/households.repo';
+
+export class PersonsRepo extends BaseRepository<'persons'> {
+  constructor() {
+    super('persons');
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    const rows = await this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id)
+      .execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql`now()`,
+      })
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+
+  public async getByIds(input: { tenant_id: string; ids: string[]; tags?: string[] }, trx?: Transaction<Models>) {
+    const ids = Array.from(new Set((input.ids ?? []).map((id) => String(id)).filter(Boolean)));
+    if (!ids.length) return [];
+
+    const tags = (input.tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean);
+
+    let query = this.getSelect(trx)
+      .select(['persons.id', 'persons.first_name', 'persons.last_name', 'persons.email'])
+      .where('persons.tenant_id', '=', input.tenant_id)
+      .where('persons.id', 'in', ids);
+
+    if (tags.length > 0) {
+      query = query
+        .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .where(sql`LOWER(tags.name)`, 'in', tags)
+        .distinct();
+    }
+
+    const rows = await query.execute();
+    const map = new Map<string, { id: string; first_name: string; last_name: string; email: string | null }>();
+    for (const row of rows) {
+      const id = row.id != null ? String(row.id) : '';
+      if (!id || map.has(id)) continue;
+      map.set(id, {
+        id,
+        first_name: row.first_name ?? '',
+        last_name: row.last_name ?? '',
+        email: row.email ?? null,
+      });
+    }
+    return Array.from(map.values());
+  }
+
+  public async getCreatedStats(input: { tenant_id: string; user_id: string }) {
+    const row = await this.getSelect()
+      .select(() => [sql<number>`count(*)`.as('total'), sql<Date>`max(created_at)`.as('last_created_at')])
+      .where('tenant_id', '=', input.tenant_id)
+      .where('createdby_id', '=', input.user_id)
+      .executeTakeFirst();
+
+    return {
+      total: Number(row?.total ?? 0),
+      last_created_at: row?.last_created_at ? new Date(row.last_created_at) : null,
+    };
+  }
+
+  public async moveToNewHousehold(input: {
+    tenant_id: string;
+    person_id: string;
+    user_id: string;
+    campaign_id: string;
+  }) {
+    const households = new HouseholdRepo();
+    return this.transaction().execute(async (trx) => {
+      // Reuse existing blank household if available
+      const existingBlank = await households.getBlankHousehold(
+        { tenant_id: input.tenant_id, campaign_id: input.campaign_id },
+        trx,
+      );
+      let targetId = existingBlank?.id as string | undefined;
+
+      if (!targetId) {
+        const newHousehold = await households.add(
+          {
+            row: {
+              tenant_id: input.tenant_id,
+              campaign_id: input.campaign_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            } as OperationDataType<'households', 'insert'>,
+          },
+          trx,
+        );
+        targetId = newHousehold?.id as string | undefined;
+      }
+
+      await this.update(
+        {
+          tenant_id: input.tenant_id,
+          id: input.person_id,
+          row: { household_id: targetId, updatedby_id: input.user_id } as OperationDataType<'persons', 'update'>,
+        },
+        trx,
+      );
+
+      return { household_id: targetId };
+    });
+  }
+
+  public async getAllWithAddress(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'persons' | 'households' | 'tags' | 'map_peoples_tags'> & { issues?: string[] };
+      tags?: string[];
+      issues?: string[];
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
+    const filterModel = (options.filterModel ?? {}) as Record<string, { value: unknown } | undefined>;
+
+    // Shared where clause builder
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
+        .leftJoin('households', 'persons.household_id', 'households.id')
+        .leftJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+        .leftJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+        .leftJoin('companies', 'persons.company_id', 'companies.id')
+        .leftJoin('tenants', 'tenants.id', 'persons.tenant_id')
+        .where('households.tenant_id', '=', tenantId)
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('persons.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_persons')
+              .select('person_id')
+              .where('list_id', '=', options.listId ?? '')
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
+          return qb.where(
+            sql<boolean>`(
+            persons.first_name ILIKE ${text} OR
+            persons.last_name ILIKE ${text} OR
+            persons.email ILIKE ${text} OR
+            persons.mobile ILIKE ${text} OR
+            households.city ILIKE ${text} OR
+            households.street1 ILIKE ${text} OR
+            companies.name ILIKE ${text} OR
+            tags.name ILIKE ${text}
+          )`,
+          );
+        });
+
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'persons.first_name', filterModel['first_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.last_name', filterModel['last_name'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.email', filterModel['email'] ?? {});
+      q = this.applyColumnFilter(q, 'persons.mobile', filterModel['mobile'] ?? {});
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
+          ]),
+        );
+      } else if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      } else if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
+      }
+      q = this.applyColumnFilter(q, 'companies.name', filterModel['company_name'] ?? {});
+
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        first_name: { col: 'persons.first_name' },
+        last_name: { col: 'persons.last_name' },
+        email: { col: 'persons.email' },
+        mobile: { col: 'persons.mobile' },
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        tag: { col: 'tags.name' },
+        tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
+        company_name: { col: 'companies.name' },
+      };
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
+
+      return q;
+    };
+
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT persons.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
+      .select((eb) => [
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'companies.name as company_name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('persons.household_id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('household_is_placeholder'),
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+      ])
+      .groupBy([
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.notes',
+        'persons.household_id',
+        'persons.company_id',
+        'persons.created_at',
+        'persons.updated_at',
+        'persons.tenant_id',
+        'persons.createdby_id',
+        'persons.updatedby_id',
+        'companies.name',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.apt',
+        'tenants.placeholder_household_id',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const personsCols = [
+              'id',
+              'first_name',
+              'last_name',
+              'email',
+              'mobile',
+              'notes',
+              'household_id',
+              'company_id',
+              'created_at',
+              'updated_at',
+              'tenant_id',
+              'createdby_id',
+              'updatedby_id',
+            ];
+            if (personsCols.includes(col)) {
+              col = `persons.${col}`;
+            } else {
+              const hhCols = [
+                'country',
+                'zip',
+                'state',
+                'home_phone',
+                'city',
+                'street1',
+                'street2',
+                'street_num',
+                'apt',
+              ];
+              if (hhCols.includes(col)) {
+                col = `households.${col}`;
+              } else if (col === 'company_name') {
+                col = `companies.name`;
+              } else if (col === 'address') {
+                col = `households.street1`;
+              }
+            }
+          }
+          return acc.orderBy(col, sort.sort);
+        }, qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
+      )
+      .execute();
+
+    return { count, rows };
+  }
+
+  public getByHouseholdId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('household_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  public getByCompanyId(
+    input: { id: string; tenant_id: string; options: QueryParams<'persons'> },
+    trx?: Transaction<Models>,
+  ) {
+    return this.getSelectWithColumns(input.options, trx)
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .execute();
+  }
+
+  public async countByCompanyId(input: { id: string; tenant_id: string }): Promise<number> {
+    const result = await this.getSelect()
+      .select(({ fn }) => [fn.count<number>('id').as('total')])
+      .where('company_id', '=', input.id)
+      .where('tenant_id', '=', input.tenant_id)
+      .executeTakeFirst();
+    return Number(result?.total ?? 0);
+  }
+
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
+    return this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  public getTags(input: { id: string; tenant_id: string; type?: 'tag' | 'issue' }) {
+    let q = this.getSelect()
+      .innerJoin('map_peoples_tags', 'map_peoples_tags.person_id', 'persons.id')
+      .innerJoin('tags', 'tags.id', 'map_peoples_tags.tag_id')
+      .where('persons.id', '=', input.id)
+      .where('persons.tenant_id', '=', input.tenant_id);
+    if (input.type) {
+      q = q.where('tags.type', '=', input.type);
+    }
+    return q.select('tags.name').execute();
+  }
+  public async findByEmail(input: { tenant_id: string; email: string }) {
+    return this.getSelect()
+      .select(['id', 'email'])
+      .where('tenant_id', '=', input.tenant_id)
+      .where(sql`lower(email)`, '=', input.email.trim().toLowerCase())
+      .executeTakeFirst();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: unknown[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // NOTE: unscoped by design — tenant_id filtered inside subquery
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('persons', 'potential_duplicates.person_id', 'persons.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'persons.id',
+        'persons.first_name',
+        'persons.last_name',
+        'persons.email',
+        'persons.mobile',
+        'persons.home_phone',
+        'persons.notes',
+        'persons.company_id',
+        'persons.household_id',
+        'persons.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const groupsMap = new Map<string, { reason: string; persons: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          persons: [],
+        });
+      }
+      groupsMap.get(groupKey)?.persons.push({
+        ...row,
+        id: String(row.id),
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.persons.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergePersons(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'persons'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['persons']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source person not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, unknown> = {};
+      const fields = [
+        'first_name',
+        'middle_names',
+        'last_name',
+        'email',
+        'email2',
+        'mobile',
+        'home_phone',
+        'notes',
+        'company_id',
+        'file_id',
+      ] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_peoples_tags)
+      const targetTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx
+        .selectFrom('map_peoples_tags')
+        .select(['tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx
+            .insertInto('map_peoples_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_peoples_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_persons)
+      const targetLists = await trx
+        .selectFrom('map_lists_persons')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx
+        .selectFrom('map_lists_persons')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx
+            .insertInto('map_lists_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              list_id: sl.list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_lists_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 4. Transfer teams (map_teams_persons)
+      const targetTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select('team_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.target_id)
+        .execute();
+      const targetTeamIds = new Set(targetTeams.map((t) => String(t.team_id)));
+
+      const sourceTeams = await trx
+        .selectFrom('map_teams_persons')
+        .select(['team_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTeams) {
+        if (!targetTeamIds.has(String(st.team_id))) {
+          await trx
+            .insertInto('map_teams_persons')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: input.target_id,
+              team_id: st.team_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_teams_persons')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('person_id', '=', input.source_id)
+        .execute();
+
+      // 5. Reassign captaincy if source was captain of any team
+      await trx
+        .updateTable('teams')
+        .set({ team_captain_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('team_captain_id', '=', input.source_id)
+        .execute();
+      // 6. Delete source person
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      // 7. Clean up empty household if source's household is now empty
+      const sourceHhId = source.household_id;
+      if (sourceHhId && sourceHhId !== target.household_id) {
+        const remainingHhMembers = await trx
+          .selectFrom('persons')
+          .select('id')
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', '=', sourceHhId)
+          .execute();
+        if (remainingHhMembers.length === 0) {
+          // Clean up orphaned household associations before deletion
+          await trx
+            .deleteFrom('map_households_tags')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('map_lists_households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('household_id', '=', sourceHhId)
+            .execute();
+          await trx
+            .deleteFrom('households')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('id', '=', sourceHhId)
+            .execute();
+        }
+      }
+
+      return { success: true };
+    });
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/persons/services/persons.service.ts
 
 ```typescript
@@ -23282,6 +22903,7 @@ import type { IAuthKeyPayload, UpdatePersonsType } from '../../../../../../../li
 import { TRPCError } from '@trpc/server';
 
 import { fingerprintFull, fingerprintStreet } from '../../../lib/address-normalize';
+import { notificationEnabled } from '../../../lib/profile-preferences';
 import { HouseholdRepo } from '../../households/repositories/households.repo';
 import { SettingsController } from '../../settings/controller';
 import { TagsRepo } from '../../tags/repositories/tags.repo';
@@ -23383,19 +23005,11 @@ export class PersonsService {
           const assignee = await this.personsRepo.db
             .selectFrom('authusers')
             .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-            .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+            .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
             .where('authusers.id', '=', String(payload.assigned_to))
             .executeTakeFirst();
           if (assignee && assignee.email) {
-            let optedIn = true;
-            if (assignee.profile_json) {
-              const json =
-                typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
-              if (json?.notifications?.person_assigned === false) {
-                optedIn = false;
-              }
-            }
-            if (optedIn) {
+            if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
               const createdPerson = result as Record<string, unknown>;
               const personName =
                 `${createdPerson['first_name'] || ''} ${createdPerson['last_name'] || ''}`.trim() || 'unnamed contact';
@@ -23483,21 +23097,13 @@ export class PersonsService {
             const assignee = await this.personsRepo.db
               .selectFrom('authusers')
               .leftJoin('profiles', 'profiles.auth_id', 'authusers.id')
-              .select(['authusers.email', 'authusers.first_name', 'profiles.json as profile_json'])
+              .select(['authusers.email', 'authusers.first_name', 'profiles.preferences as profile_preferences'])
               // String conversion ensures precision is maintained down to the database driver level
               .where('authusers.id', '=', String(newAssigneeId))
               .executeTakeFirst();
 
             if (assignee && assignee.email) {
-              let optedIn = true;
-              if (assignee.profile_json) {
-                const json =
-                  typeof assignee.profile_json === 'string' ? JSON.parse(assignee.profile_json) : assignee.profile_json;
-                if (json?.notifications?.person_assigned === false) {
-                  optedIn = false;
-                }
-              }
-              if (optedIn) {
+              if (notificationEnabled(assignee.profile_preferences, 'person_assigned')) {
                 const personName =
                   `${updatedPerson['first_name'] || ''} ${updatedPerson['last_name'] || ''}`.trim() ||
                   'unnamed contact';
@@ -24144,7 +23750,6 @@ export class PersonsService {
               address_fp_street: fp_street,
               address_fp_full: fp_full,
               notes: null,
-              json: null,
               file_id: import_id,
             } as OperationDataType<'households', 'insert'>;
             const household = await households.add({ row: hhRow }, trx);
@@ -24168,7 +23773,6 @@ export class PersonsService {
             home_phone: null,
             file_id: import_id,
             notes: sanitized.notes ?? null,
-            json: null,
           }));
           const insertedPersons = await trx
             .insertInto('persons')
@@ -30948,6 +30552,761 @@ const filesRoute: FastifyPluginCallback = (fastify, _, done) => {
 export default filesRoute;
 ```
 
+## File: apps/backend/src/app/modules/households/repositories/households.repo.ts
+
+```typescript
+import type { ReferenceExpression, Selectable, SelectQueryBuilder, Transaction } from 'kysely';
+import { sql } from 'kysely';
+
+import type { Models, OperationDataType, TypeTenantId } from '../../../../../../../libs/common/src/lib/kysely.models';
+import { isBlankAddress, isIncompleteAddress } from '../../../lib/address-normalize';
+import type { JoinedQueryParams, QueryParams } from '../../../lib/base.repo';
+import { BaseRepository } from '../../../lib/base.repo';
+import { matchCoordinatesToDistrict } from '../../../lib/gis/geocoding';
+import { logger } from '../../../logger';
+
+export class HouseholdRepo extends BaseRepository<'households'> {
+  constructor() {
+    super('households');
+  }
+
+  public override async addMany(
+    input: { rows: OperationDataType<'households', 'insert'>[] },
+    trx?: Transaction<Models>,
+  ) {
+    const processedRows = await Promise.all(
+      input.rows.map(async (row) => {
+        const isBlank = isBlankAddress(row);
+        const isIncomplete = isIncompleteAddress(row);
+
+        let geocoding_status = isBlank || isIncomplete ? 'failed' : 'pending';
+        let district = row.district ?? null;
+        let precinct = row.precinct ?? null;
+        let ward = row.ward ?? null;
+
+        if (row.lat && row.lng && Number(row.lat) !== 0 && Number(row.lng) !== 0) {
+          try {
+            const matched = await matchCoordinatesToDistrict(Number(row.lat), Number(row.lng));
+            district = matched.district;
+            precinct = matched.precinct;
+            ward = matched.ward;
+            geocoding_status = 'success';
+          } catch (err) {
+            logger.error({ err }, 'Failed to map coordinates to district during insert');
+          }
+        }
+
+        return {
+          ...row,
+          district,
+          precinct,
+          ward,
+          geocoding_status,
+        };
+      }),
+    );
+
+    const createdRows = await super.addMany({ rows: processedRows }, trx);
+    const db = trx || this.db;
+
+    const jobs = createdRows
+      .filter((row) => row && row.id && row.geocoding_status === 'pending')
+      .map((row) => ({
+        tenant_id: row.tenant_id,
+        queue: 'default',
+        status: 'pending',
+        payload: JSON.stringify({
+          type: 'geocode_household',
+          household_id: String(row.id),
+          tenant_id: row.tenant_id,
+        }),
+        run_at: new Date(),
+        max_attempts: 3,
+      }));
+
+    if (jobs.length > 0) {
+      await db.insertInto('background_jobs').values(jobs).execute();
+    }
+
+    return createdRows;
+  }
+
+  public async getIdsByFileId(
+    input: { tenant_id: string; file_id: string; onlyEmpty?: boolean },
+    trx?: Transaction<Models>,
+  ): Promise<string[]> {
+    if (!input.file_id) return [];
+    let query = this.getSelect(trx)
+      .select('id')
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.file_id);
+
+    if (input.onlyEmpty) {
+      query = query.where((eb) =>
+        eb.not(
+          eb.exists(
+            eb.selectFrom('persons').select('id').whereRef('persons.household_id', '=', 'households.id').limit(1),
+          ),
+        ),
+      );
+    }
+
+    const rows = await query.execute();
+    return rows.map((row) => (row.id != null ? String(row.id) : '')).filter((id) => id.length > 0);
+  }
+
+  public async clearFileIdForImport(
+    input: { tenant_id: string; import_id: string; user_id: string },
+    trx?: Transaction<Models>,
+  ) {
+    await this.getUpdate(trx)
+      .set({
+        file_id: null,
+        updated_at: sql<Date>`now()`,
+      } as unknown as OperationDataType<'households', 'update'>)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('file_id', '=', input.import_id)
+      .executeTakeFirst();
+  }
+
+  public async getBlankHousehold(input: { tenant_id: string; campaign_id: string }, trx?: Transaction<Models>) {
+    return this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id)
+      .where('home_phone', 'is', null)
+      .where('apt', 'is', null)
+      .where('street_num', 'is', null)
+      .where('street1', 'is', null)
+      .where('street2', 'is', null)
+      .where('city', 'is', null)
+      .where('state', 'is', null)
+      .where('zip', 'is', null)
+      .where('country', 'is', null)
+      .where('file_id', 'is', null)
+      .where('notes', 'is', null)
+      .selectAll()
+      .limit(1)
+      .executeTakeFirst();
+  }
+
+  public async findByFingerprint(
+    input: { tenant_id: string; campaign_id: string; fp_street: string | null; fp_full?: string | null },
+    trx?: Transaction<Models>,
+  ) {
+    const sel = this.getSelect(trx)
+      .where('tenant_id', '=', input.tenant_id)
+      .where('campaign_id', '=', input.campaign_id);
+
+    if (input.fp_full) {
+      const full = await sel.where('address_fp_full', '=', input.fp_full).selectAll().limit(1).executeTakeFirst();
+      if (full) return full;
+    }
+    if (input.fp_street) {
+      return await this.getSelect(trx)
+        .where('tenant_id', '=', input.tenant_id)
+        .where('campaign_id', '=', input.campaign_id)
+        .where('address_fp_street', '=', input.fp_street)
+        .selectAll()
+        .limit(1)
+        .executeTakeFirst();
+    }
+    return undefined;
+  }
+
+  public async getAllWithPeopleCount(
+    input: {
+      tenant_id: string;
+      options?: QueryParams<'households' | 'tags' | 'map_households_tags' | 'persons'> & { issues?: string[] };
+      tags?: string[];
+      issues?: string[];
+    },
+    trx?: Transaction<Models>,
+  ): Promise<{ rows: Record<string, unknown>[]; count: number }> {
+    const options: JoinedQueryParams & { issues?: string[]; listId?: string } = input.options || {};
+    const tenantId = input.tenant_id;
+    const searchStr = this.normalizeSearch(options.searchStr);
+    const tags = input.tags?.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    const issues = (input.issues || options.issues)?.map((i) => i.trim().toLowerCase()).filter(Boolean);
+    const filterModel = ((options as JoinedQueryParams & { issues?: string[] })?.filterModel ?? {}) as Record<
+      string,
+      { value: unknown } | undefined
+    >;
+
+    // Shared where clause builder (for both queries)
+    const applyFilters = <QB extends SelectQueryBuilder<any, any, any>>(qb: QB) => {
+      let q = qb
+        .leftJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+        .leftJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+        .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+        .$if(!!tags?.length, (q) => q.where('tags.name', 'in', tags ?? []).where('tags.type', '=', 'tag'))
+        .$if(!!issues?.length, (q) => q.where('tags.name', 'in', issues ?? []).where('tags.type', '=', 'issue'))
+        .$if(!!options.listId, (qb) =>
+          qb.where('households.id', 'in', (eb: any) =>
+            eb
+              .selectFrom('map_lists_households')
+              .select('household_id')
+              .where('list_id', '=', options.listId ?? '')
+              .where('tenant_id', '=', tenantId),
+          ),
+        )
+        .where('households.tenant_id', '=', tenantId)
+        .where((eb) =>
+          eb.or([
+            eb('tenants.placeholder_household_id', 'is', null),
+            eb('tenants.placeholder_household_id', '!=', eb.ref('households.id')),
+          ]),
+        )
+        .$if(!!searchStr, (qb) => {
+          const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
+          return qb.where(
+            sql<boolean>`(
+              households.city ILIKE ${text} OR
+              households.street1 ILIKE ${text} OR
+              households.street2 ILIKE ${text} OR
+              households.notes ILIKE ${text} OR
+              tags.name ILIKE ${text}
+            )`,
+          );
+        });
+
+      // Apply dynamic, operator-aware column filters
+      q = this.applyColumnFilter(q, 'households.city', filterModel['city'] ?? {});
+      q = this.applyColumnFilter(q, 'households.state', filterModel['state'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street1', filterModel['street1'] ?? {});
+      q = this.applyColumnFilter(q, 'households.street2', filterModel['street2'] ?? {});
+      q = this.applyCastColumnFilter(q, sql`households.street_num::text`, filterModel['street_num'] ?? {});
+      q = this.applyColumnFilter(q, 'households.zip', filterModel['zip'] ?? {});
+      q = this.applyColumnFilter(q, 'households.home_phone', filterModel['home_phone'] ?? {});
+      if (filterModel['tags']?.value && filterModel['issues']?.value) {
+        // Both filters present — use OR grouping to avoid contradictory AND on tags.type
+        const tagVal = `%${String(filterModel['tags'].value).replace(/\*/g, '%')}%`;
+        const issueVal = `%${String(filterModel['issues'].value).replace(/\*/g, '%')}%`;
+        q = q.where((eb) =>
+          eb.or([
+            eb.and([eb('tags.type', '=', 'tag'), eb('tags.name', 'ilike', tagVal)]),
+            eb.and([eb('tags.type', '=', 'issue'), eb('tags.name', 'ilike', issueVal)]),
+          ]),
+        );
+      } else if (filterModel['tags']?.value) {
+        q = q.where('tags.type', '=', 'tag');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['tags']);
+      } else if (filterModel['issues']?.value) {
+        q = q.where('tags.type', '=', 'issue');
+        q = this.applyColumnFilter(q, 'tags.name', filterModel['issues']);
+      }
+
+      // Apply advanced query builder filters if present
+      const columnMapping = {
+        city: { col: 'households.city' },
+        state: { col: 'households.state' },
+        street1: { col: 'households.street1' },
+        street2: { col: 'households.street2' },
+        street_num: { col: 'households.street_num::text', isCast: true },
+        zip: { col: 'households.zip' },
+        home_phone: { col: 'households.home_phone' },
+        tag: { col: 'tags.name' },
+        tags: { col: 'tags.name' },
+        issues: { col: 'tags.name' },
+      };
+      const advModel =
+        options.advancedFilterModel || (options.filterModel?.['tags_expression'] as typeof options.advancedFilterModel);
+      q = this.applyAdvancedFilters(q, advModel, columnMapping);
+
+      return q;
+    };
+
+    // Count query
+    const countResult = await applyFilters(this.getSelect(trx))
+      .select(({ fn }) => [fn.count(sql`DISTINCT households.id`).as('total')])
+      .execute();
+
+    const count = Number(countResult[0]?.['total'] || 0);
+
+    // Data query
+    const rows = await applyFilters(this.getSelect(trx))
+      .select([
+        'households.id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.apt',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.notes',
+        'households.district',
+        'households.precinct',
+        'households.ward',
+        'households.geocoding_status',
+      ])
+      .select((eb) => [
+        eb
+          .selectFrom('persons')
+          .whereRef('persons.household_id', '=', 'households.id')
+          .select(({ fn }) => [fn.count<number>('persons.id').as('persons_count')])
+          .as('persons_count'),
+        // is_placeholder: true only for the one household stored on the tenant row
+        eb
+          .case()
+          .when('tenants.placeholder_household_id', '=', eb.ref('households.id'))
+          .then(true)
+          .else(false)
+          .end()
+          .as('is_placeholder'),
+      ])
+      .select(() => [
+        sql<string[]>`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'tag' THEN tags.name END), null), '{}')`.as(
+          'tags',
+        ),
+        sql<
+          string[]
+        >`coalesce(array_remove(array_agg(CASE WHEN tags.type = 'issue' THEN tags.name END), null), '{}')`.as('issues'),
+      ])
+      .groupBy([
+        'households.id',
+        'households.country',
+        'households.zip',
+        'households.state',
+        'households.home_phone',
+        'households.city',
+        'households.apt',
+        'households.street1',
+        'households.street2',
+        'households.street_num',
+        'households.notes',
+        'households.district',
+        'households.precinct',
+        'households.ward',
+        'households.geocoding_status',
+        'households.created_at',
+        'households.updated_at',
+        'households.campaign_id',
+        'households.createdby_id',
+        'households.updatedby_id',
+        'households.file_id',
+        'households.address_fp_street',
+        'households.address_fp_full',
+        'households.tenant_id',
+        'tenants.placeholder_household_id',
+      ])
+      .$if(!!options.sortModel?.length, (qb) =>
+        (options.sortModel ?? []).reduce((acc, sort) => {
+          let col = sort.colId;
+          if (typeof col === 'string' && !col.includes('.')) {
+            const hhCols = [
+              'id',
+              'campaign_id',
+              'createdby_id',
+              'file_id',
+              'home_phone',
+              'notes',
+              'address_fp_street',
+              'address_fp_full',
+              'is_placeholder',
+              'district',
+              'precinct',
+              'ward',
+              'geocoding_status',
+              'tenant_id',
+              'updatedby_id',
+              'created_at',
+              'updated_at',
+              'country',
+              'zip',
+              'state',
+              'city',
+              'street1',
+              'street2',
+              'street_num',
+              'apt',
+            ];
+            if (hhCols.includes(col)) {
+              col = `households.${col}`;
+            }
+          }
+          return acc.orderBy(col as ReferenceExpression<Models, 'households'>, sort.sort);
+        }, qb),
+      )
+      .$if(typeof options.startRow === 'number' && typeof options.endRow === 'number', (qb) =>
+        qb.offset(options.startRow ?? 0).limit((options.endRow ?? 100) - (options.startRow ?? 0)),
+      )
+      .execute();
+
+    return {
+      rows,
+      count,
+    };
+  }
+
+  public async getPlaceholderIds(tenant_id: string, candidates: string[]): Promise<Set<string>> {
+    if (!candidates.length) return new Set();
+    const result = await this.getSelect()
+      .leftJoin('tenants', 'tenants.id', 'households.tenant_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where('households.id', 'in', candidates)
+      .whereRef('tenants.placeholder_household_id', '=', 'households.id')
+      .select('households.id')
+      .execute();
+    return new Set(result.map((r) => String(r.id)));
+  }
+
+  /**
+   * Deletes households and reassigns their members to the tenant's placeholder
+   * household. persons.household_id is NOT NULL, so members are *moved* rather
+   * than cascade-deleted along with the household. Runs in a single transaction
+   * so persons are never orphaned. Callers must exclude the placeholder household
+   * itself from `ids` (see getPlaceholderIds).
+   */
+  public async deleteManyReassigningPersons(input: {
+    tenant_id: string;
+    ids: string[];
+    user_id: string;
+  }): Promise<boolean> {
+    if (!input.ids.length) return false;
+
+    return this.transaction().execute(async (trx) => {
+      const tenant = await trx
+        .selectFrom('tenants')
+        .select('placeholder_household_id')
+        .where('id', '=', input.tenant_id)
+        .executeTakeFirst();
+
+      const placeholderId = tenant?.placeholder_household_id;
+
+      if (placeholderId != null) {
+        await trx
+          .updateTable('persons')
+          .set({ household_id: placeholderId, updated_at: sql<Date>`now()`, updatedby_id: input.user_id })
+          .where('tenant_id', '=', input.tenant_id)
+          .where('household_id', 'in', input.ids)
+          .execute();
+      }
+
+      return this.deleteMany({ tenant_id: input.tenant_id, ids: input.ids }, trx);
+    });
+  }
+
+  public async getPeopleCount(input: { tenant_id: string; id: string }) {
+    const result = await this.getSelect()
+      .leftJoin('persons', 'persons.household_id', 'households.id')
+      .where('households.id', '=', input.id)
+      .where('households.tenant_id', '=', input.tenant_id)
+      .select(({ fn }) => [fn.count<number>('persons.id').as('count')])
+      .executeTakeFirst();
+
+    return Number((result as { count?: number } | undefined)?.count ?? 0);
+  }
+
+  public getDistinctTags(tenant_id: string, type: 'tag' | 'issue' = 'tag') {
+    return this.getSelect()
+      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+      .where('households.tenant_id', '=', tenant_id)
+      .where('tags.type', '=', type)
+      .select('tags.name')
+      .distinct()
+      .execute();
+  }
+
+  public getTags(id: string, tenant_id: string, type?: 'tag' | 'issue') {
+    let q = this.getSelect()
+      .innerJoin('map_households_tags', 'map_households_tags.household_id', 'households.id')
+      .innerJoin('tags', 'tags.id', 'map_households_tags.tag_id')
+      .where('households.id', '=', id)
+      .where('households.tenant_id', '=', tenant_id);
+    if (type) {
+      q = q.where('tags.type', '=', type);
+    }
+    return q.select('tags.name').execute();
+  }
+
+  public async getDuplicateCount(tenant_id: string): Promise<number> {
+    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    return Number(countResult?.total ?? 0);
+  }
+
+  public async getPotentialDuplicates(
+    tenant_id: string,
+    options?: { page?: number; pageSize?: number },
+  ): Promise<{ groups: unknown[]; total: number }> {
+    const page = options?.page ?? 1;
+    const pageSize = options?.pageSize ?? 20;
+
+    // NOTE: unscoped by design — outer selectFrom wraps a pre-scoped subquery; lint cannot infer table name from the callback form
+    // eslint-disable-next-line local/no-unscoped-db-query
+    const countResult = await this.db
+      .selectFrom((qb) =>
+        qb
+          .selectFrom('potential_duplicates')
+          .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+          .select('potential_duplicates.group_key')
+          .where('potential_duplicates.tenant_id', '=', tenant_id)
+          .groupBy('potential_duplicates.group_key')
+          .having(sql`count(potential_duplicates.id)`, '>', 1)
+          .as('sub'),
+      )
+      .select([sql<number>`count(group_key)`.as('total')])
+      .executeTakeFirst();
+    const total = Number(countResult?.total ?? 0);
+
+    if (total === 0) {
+      return { groups: [], total: 0 };
+    }
+
+    const keysRows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+      .select('potential_duplicates.group_key')
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .groupBy('potential_duplicates.group_key')
+      .having(sql`count(potential_duplicates.id)`, '>', 1)
+      .orderBy(sql`min(potential_duplicates.id)`)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .execute();
+
+    const groupKeys = keysRows.map((r) => r.group_key);
+
+    if (groupKeys.length === 0) {
+      return { groups: [], total };
+    }
+
+    const rows = await this.db
+      .selectFrom('potential_duplicates')
+      .innerJoin('households', 'potential_duplicates.household_id', 'households.id')
+      .select([
+        'potential_duplicates.group_key',
+        'potential_duplicates.reason',
+        'households.id',
+        'households.street_num',
+        'households.street1',
+        'households.street2',
+        'households.city',
+        'households.state',
+        'households.zip',
+        'households.country',
+        'households.apt',
+        'households.home_phone',
+        'households.notes',
+        'households.created_at',
+      ])
+      .where('potential_duplicates.tenant_id', '=', tenant_id)
+      .where('potential_duplicates.group_key', 'in', groupKeys)
+      .execute();
+
+    const hhIds = rows.map((r) => String(r.id));
+    if (hhIds.length === 0) {
+      return { groups: [], total };
+    }
+
+    const persons = await this.db
+      .selectFrom('persons')
+      .select(['id', 'first_name', 'last_name', 'email', 'household_id'])
+      .where('tenant_id', '=', tenant_id)
+      .where('household_id', 'in', hhIds)
+      .execute();
+
+    const hhToPersons = new Map<
+      string,
+      Array<{
+        id: unknown;
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+        household_id: unknown;
+      }>
+    >();
+    for (const p of persons) {
+      const hhId = String(p.household_id);
+      if (!hhToPersons.has(hhId)) {
+        hhToPersons.set(hhId, []);
+      }
+      hhToPersons.get(hhId)?.push(p);
+    }
+
+    const groupsMap = new Map<string, { reason: string; households: Record<string, unknown>[] }>();
+    for (const row of rows) {
+      const groupKey = row.group_key;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          reason: row.reason,
+          households: [],
+        });
+      }
+      groupsMap.get(groupKey)?.households.push({
+        ...row,
+        id: String(row.id),
+        persons: hhToPersons.get(String(row.id)) || [],
+      });
+    }
+
+    const sortedGroups = groupKeys
+      .map((key) => groupsMap.get(key))
+      .filter((g): g is NonNullable<typeof g> => !!(g && g.households.length > 1));
+
+    return { groups: sortedGroups, total };
+  }
+
+  public async mergeHouseholds(input: { tenant_id: string; target_id: string; source_id: string; user_id: string }) {
+    return this.transaction().execute(async (trx) => {
+      const target = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.target_id },
+        trx,
+      )) as Selectable<Models['households']>;
+      const source = (await this.getOneBy(
+        'id',
+        { tenant_id: input.tenant_id as TypeTenantId<'households'>, value: input.source_id },
+        trx,
+      )) as Selectable<Models['households']>;
+
+      if (!target || !source) {
+        throw new Error('Target or Source household not found');
+      }
+
+      // 1. Merge fields (copy null/empty fields from source to target)
+      const targetUpdate: Record<string, unknown> = {};
+      const fields = [
+        'apt',
+        'street_num',
+        'street1',
+        'street2',
+        'city',
+        'state',
+        'zip',
+        'country',
+        'home_phone',
+        'notes',
+        'file_id',
+      ] as const;
+
+      for (const field of fields) {
+        const targetVal = target[field];
+        const sourceVal = source[field];
+        if (
+          (targetVal == null || String(targetVal).trim() === '') &&
+          sourceVal != null &&
+          String(sourceVal).trim() !== ''
+        ) {
+          targetUpdate[field] = sourceVal;
+        }
+      }
+
+      if (Object.keys(targetUpdate).length > 0) {
+        targetUpdate['updatedby_id'] = input.user_id;
+        targetUpdate['updated_at'] = sql`now()`;
+        await this.update({ tenant_id: input.tenant_id, id: input.target_id, row: targetUpdate }, trx);
+      }
+
+      // 2. Transfer tags (map_households_tags)
+      const targetTags = await trx
+        .selectFrom('map_households_tags')
+        .select('tag_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.target_id)
+        .execute();
+      const targetTagIds = new Set(targetTags.map((t) => String(t.tag_id)));
+
+      const sourceTags = await trx
+        .selectFrom('map_households_tags')
+        .select(['tag_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      for (const st of sourceTags) {
+        const tagIdStr = String(st.tag_id);
+        if (!targetTagIds.has(tagIdStr)) {
+          await trx
+            .insertInto('map_households_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: input.target_id,
+              tag_id: st.tag_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_households_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 3. Transfer lists (map_lists_households)
+      const targetLists = await trx
+        .selectFrom('map_lists_households')
+        .select('list_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.target_id)
+        .execute();
+      const targetListIds = new Set(targetLists.map((l) => String(l.list_id)));
+
+      const sourceLists = await trx
+        .selectFrom('map_lists_households')
+        .select(['list_id'])
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      for (const sl of sourceLists) {
+        if (!targetListIds.has(String(sl.list_id))) {
+          await trx
+            .insertInto('map_lists_households')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: input.target_id,
+              list_id: sl.list_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_lists_households')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 4. Reassign people (persons.household_id)
+      await trx
+        .updateTable('persons')
+        .set({ household_id: input.target_id, updated_at: sql`now()`, updatedby_id: input.user_id })
+        .where('tenant_id', '=', input.tenant_id)
+        .where('household_id', '=', input.source_id)
+        .execute();
+
+      // 5. Delete source household
+      await this.delete({ tenant_id: input.tenant_id, id: input.source_id }, trx);
+
+      return { success: true };
+    });
+  }
+}
+```
+
 ## File: apps/backend/src/app/modules/zapier/zapier-inbound.route.ts
 
 ```typescript
@@ -34191,7 +34550,12 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     };
-    return this.add(row as any);
+    const created = await this.add(row as any);
+    const createdId = (created as Record<string, unknown> | undefined)?.['id'];
+    if (createdId != null && payload.target_lists?.length) {
+      await this.syncTargetLists(auth, String(createdId), payload.target_lists);
+    }
+    return created;
   }
 
   public async updateForm(id: string, payload: UpdateWebFormType, auth: IAuthKeyPayload) {
@@ -34227,11 +34591,15 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       });
     }
 
-    return this.update({
+    const updated = await this.update({
       tenant_id: auth.tenant_id,
       id,
       row,
     });
+    if (payload.target_lists !== undefined) {
+      await this.syncTargetLists(auth, id, payload.target_lists ?? []);
+    }
+    return updated;
   }
 
   public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
@@ -34669,21 +35037,16 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
           }
         }
 
-        // Add target lists
-        const targetLists: string[] = Array.isArray(form.target_lists)
-          ? form.target_lists
-          : JSON.parse((form.target_lists as any) || '[]');
-        for (const listId of targetLists) {
-          if (!listId) continue;
-          const listExists = await trx
-            .selectFrom('lists')
-            .select('id')
-            .where('tenant_id', '=', tenantId)
-            .where('id', '=', listId)
-            .executeTakeFirst();
-
-          if (!listExists) continue;
-
+        // Add target lists. map_web_forms_lists is the source of truth — its
+        // FKs guarantee every row points at a live list (no dangling-id skip
+        // needed, unlike the legacy JSONB target_lists document).
+        const targetListRows = await trx
+          .selectFrom('map_web_forms_lists')
+          .select('list_id')
+          .where('tenant_id', '=', tenantId)
+          .where('web_form_id', '=', formId)
+          .execute();
+        for (const { list_id: listId } of targetListRows) {
           const inList = await trx
             .selectFrom('map_lists_persons')
             .select('person_id')
@@ -35068,7 +35431,52 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     }
 
     const updated = await this.update({ tenant_id: auth.tenant_id, id, row: row as any });
+    if (patch.target_lists !== undefined) {
+      await this.syncTargetLists(auth, id, patch.target_lists ?? []);
+    }
     return this.normalizeForm(updated);
+  }
+
+  /**
+   * Replace the form's map_web_forms_lists rows (the source of truth for list
+   * targeting — the JSONB target_lists column is still dual-written during
+   * the transition, but nothing reads it for behavior anymore). Ids that
+   * don't resolve to a live list in the tenant are dropped.
+   */
+  private async syncTargetLists(auth: IAuthKeyPayload, formId: string, listIds: string[]): Promise<void> {
+    const db = this.getRepo().db;
+    const candidates = [...new Set(listIds.map((id) => String(id)))].filter((id) => /^\d+$/.test(id));
+    let liveIds: string[] = [];
+    if (candidates.length > 0) {
+      const rows = await db
+        .selectFrom('lists')
+        .select('id')
+        .where('tenant_id', '=', auth.tenant_id)
+        .where('id', 'in', candidates)
+        .execute();
+      liveIds = rows.map((r) => String(r.id));
+    }
+
+    await db
+      .deleteFrom('map_web_forms_lists')
+      .where('tenant_id', '=', auth.tenant_id)
+      .where('web_form_id', '=', formId)
+      .execute();
+
+    if (liveIds.length > 0) {
+      await db
+        .insertInto('map_web_forms_lists')
+        .values(
+          liveIds.map((list_id) => ({
+            tenant_id: auth.tenant_id,
+            web_form_id: formId,
+            list_id,
+            createdby_id: auth.user_id,
+            updatedby_id: auth.user_id,
+          })),
+        )
+        .execute();
+    }
   }
 
   public publishForm(id: string, auth: IAuthKeyPayload) {
@@ -42147,7 +42555,6 @@ export class BaseRepository<T extends keyof Models> {
                 'home_phone',
                 'file_id',
                 'company_id',
-                'json',
                 'notes',
                 'linkedin',
                 'twitter',
@@ -43262,6 +43669,7 @@ import { BaseController } from '../../lib/base.controller';
 import type { QueryParams } from '../../lib/base.repo';
 import { COMMON_PASSWORDS } from '../../lib/common-passwords';
 import { getPwnedCount } from '../../lib/hibp';
+import { parseProfilePreferences } from '../../lib/profile-preferences';
 import { TransactionalEmailService } from '../../lib/mail/transactional-mail.service';
 import { hashPassword, verifyPassword } from '../../lib/password-hash';
 import { StorageService } from '../../lib/storage.service';
@@ -45108,19 +45516,13 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       import_summary_in_app: true,
     };
 
-    const profileJson = (record['profile'] as Record<string, unknown>)?.['json'] ?? record['json'];
-    if (profileJson) {
-      try {
-        const parsed = typeof profileJson === 'string' ? JSON.parse(profileJson) : profileJson;
-        if (parsed && typeof parsed === 'object' && parsed.notifications) {
-          notificationPreferences = {
-            ...notificationPreferences,
-            ...parsed.notifications,
-          };
-        }
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to parse profile json for preferences');
-      }
+    const rawPreferences = (record['profile'] as Record<string, unknown>)?.['preferences'] ?? record['preferences'];
+    const parsedPreferences = parseProfilePreferences(rawPreferences);
+    if (parsedPreferences?.notifications) {
+      notificationPreferences = {
+        ...notificationPreferences,
+        ...parsedPreferences.notifications,
+      };
     }
 
     return {
@@ -45145,20 +45547,15 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     const existingProfile = (await this.profiles.getOneByAuthId(authUserId)) as Models['profiles'] | undefined;
     const profileId = existingProfile?.id != null ? String(existingProfile.id) : authUserId;
 
-    let finalJson: Record<string, unknown> | null = null;
-    if (existingProfile?.json) {
-      try {
-        finalJson = typeof existingProfile.json === 'string' ? JSON.parse(existingProfile.json) : existingProfile.json;
-      } catch (e) {
-        logger.error({ err: e }, 'Failed to parse existing profile json');
-      }
-    }
+    let finalPreferences: Record<string, unknown> | null = existingProfile?.preferences
+      ? ((parseProfilePreferences(existingProfile.preferences) as Record<string, unknown> | null) ?? null)
+      : null;
 
     if (data.notification_preferences) {
-      finalJson = {
-        ...(finalJson || {}),
+      finalPreferences = {
+        ...(finalPreferences || {}),
         notifications: {
-          ...(((finalJson || {})['notifications'] as Record<string, unknown>) || {}),
+          ...(((finalPreferences || {})['notifications'] as Record<string, unknown>) || {}),
           ...data.notification_preferences,
         },
       };
@@ -45172,8 +45569,8 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       if (data.last_name !== undefined) {
         row['last_name'] = data.last_name ?? null;
       }
-      if (finalJson !== null) {
-        row['json'] = JSON.stringify(finalJson);
+      if (finalPreferences !== null) {
+        row['preferences'] = JSON.stringify(finalPreferences);
       }
 
       if (data.last_name !== undefined || data.notification_preferences !== undefined) {
@@ -45187,7 +45584,7 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
       tenant_id: auth.tenant_id,
       auth_id: authUserId,
       last_name: data.last_name ?? null,
-      json: finalJson ? JSON.stringify(finalJson) : null,
+      preferences: finalPreferences ? JSON.stringify(finalPreferences) : null,
       createdby_id: auth.user_id,
       updatedby_id: auth.user_id,
     } as OperationDataType<'profiles', 'insert'>;
