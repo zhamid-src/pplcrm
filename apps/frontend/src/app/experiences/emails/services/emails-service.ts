@@ -8,7 +8,7 @@ import { TRPCService } from '../../../services/api/trpc-service';
 import { ComposePayload, DraftPayload } from '../ui/email-compose/email-compose';
 
 @Service()
-export class EmailsService extends TRPCService<'emails' | 'email_folders' | 'email_list'> {
+export class EmailsService extends TRPCService<'emails' | 'email_list'> {
   public addComment(id: string, author_id: string, comment: string) {
     return this.api.emails.addComment.mutate({ id, author_id, comment });
   }

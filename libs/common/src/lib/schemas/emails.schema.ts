@@ -1,4 +1,16 @@
 import { z } from 'zod';
+import { isRegularFolderId, isSpecialFolderId } from '../emails';
+
+/**
+ * The six storable folder ids (Sent/Spam/Trash/Drafts/Outbox/Inbox). The only
+ * valid write targets for emails.folder_id — enforced here at the tRPC
+ * boundary and by the chk_emails_folder_id CHECK constraint in the DB (there
+ * is no email_folders table; folders are code-defined in EMAIL_FOLDERS).
+ */
+export const regularFolderIdSchema = z.string().refine(isRegularFolderId, 'Unknown folder');
+
+/** Any folder id, including the virtual query-filter folders — valid for reads. */
+export const folderIdSchema = z.string().refine((v) => isRegularFolderId(v) || isSpecialFolderId(v), 'Unknown folder');
 
 export const EmailCommentObj = z.object({
   id: z.string(),

@@ -117,6 +117,8 @@ export {
   uuidSchema,
   addressSchema,
   idSchema,
+  folderIdSchema,
+  regularFolderIdSchema,
   nameSchema,
   descriptionSchema,
   emailSchema,

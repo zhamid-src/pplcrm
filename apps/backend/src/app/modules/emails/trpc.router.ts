@@ -1,4 +1,4 @@
-import { idSchema } from '../../../../../../libs/common/src';
+import { folderIdSchema, idSchema, regularFolderIdSchema } from '../../../../../../libs/common/src';
 import { z } from 'zod';
 
 import { authProcedure, router } from '../../../trpc';
@@ -91,7 +91,7 @@ function getEmails() {
   return authProcedure
     .input(
       z.object({
-        folderId: idSchema,
+        folderId: folderIdSchema,
         limit: z.number().int().min(1).max(100).optional(),
         offset: z.number().int().min(0).optional(),
       }),
@@ -127,7 +127,7 @@ function restoreFromTrash() {
 
 function moveToFolder() {
   return authProcedure
-    .input(z.object({ id: idSchema, folderId: idSchema }))
+    .input(z.object({ id: idSchema, folderId: regularFolderIdSchema }))
     .mutation(({ input, ctx }) => emails.moveToFolder(ctx.auth.tenant_id, input.id, input.folderId, ctx.auth.user_id));
 }
 
