@@ -96,6 +96,9 @@ export interface Models {
   person_connections: PersonConnections;
   passkeys: Passkeys;
   zapier_subscriptions: ZapierSubscriptions;
+  delivery_requests: DeliveryRequests;
+  delivery_routes: DeliveryRoutes;
+  delivery_route_stops: DeliveryRouteStops;
 }
 
 export type AuthUsersType = Omit<AuthUsers, 'id'> & { id: string };
@@ -254,6 +257,45 @@ interface Teams extends RecordType {
 interface MapTeamsPersons extends JunctionRecordType {
   team_id: string;
   person_id: string;
+}
+
+// Deliveries (spec §14). "routed" is intentionally NOT a column on delivery_requests — it is
+// derived from an active (pending) delivery_route_stops row (one source of truth).
+export interface DeliveryRequests extends RecordType {
+  household_id: string;
+  person_id: string | null;
+  web_form_id: string | null;
+  source: Generated<'web_form' | 'manual'>;
+  status: Generated<'new' | 'approved' | 'declined' | 'delivered'>;
+  notes: string | null;
+  skip_reason: string | null;
+}
+
+export interface DeliveryRoutes extends RecordType {
+  name: string;
+  status: Generated<'draft' | 'assigned' | 'in_progress' | 'completed' | 'canceled'>;
+  volunteer_person_id: string | null;
+  start_address: string;
+  start_lat: number;
+  start_lng: number;
+  est_minutes: Generated<number>;
+  est_km: Generated<number>;
+  scheduled_for: Timestamp | null;
+  // Only the sha256 hash of the raw capability token is ever stored; the raw token is returned once.
+  share_token_hash: string | null;
+  share_token_expires_at: Timestamp | null;
+  params: Generated<Json>;
+}
+
+export interface DeliveryRouteStops extends RecordType {
+  route_id: string;
+  request_id: string;
+  seq: number;
+  leg_minutes: Generated<number>;
+  status: Generated<'pending' | 'delivered' | 'skipped'>;
+  reason: string | null;
+  acted_at: Timestamp | null;
+  acted_via: 'volunteer_link' | 'staff' | null;
 }
 
 interface MapTeamsLists extends JunctionRecordType {
