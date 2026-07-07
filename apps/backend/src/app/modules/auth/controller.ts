@@ -1830,6 +1830,12 @@ export class AuthController extends BaseController<'authusers', AuthUsersRepo> {
     return now.getTime() - then.getTime();
   }
 
+  // NOTE (SECURITY-REVIEW 4.7): `authusers.email` is UNIQUE globally, not per-tenant, and this lookup
+  // is intentionally tenant-agnostic (sign-in has no tenant context yet). Consequence: one email
+  // address belongs to exactly one tenant — a person cannot be a member of two organizations under
+  // the same email. This is the current, intended product constraint; making email per-tenant would
+  // be a schema-level change (drop the global unique, add UNIQUE(tenant_id, email), and thread a
+  // tenant selector through sign-in).
   private async getUserByEmail(email: string) {
     const user = (await this.getRepo().getByEmail(email)) as AuthUsersType;
 

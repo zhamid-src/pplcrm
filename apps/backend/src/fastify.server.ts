@@ -18,13 +18,14 @@ export class FastifyServer {
   private readonly server;
 
   constructor(opts: object = {}) {
-    // Create Fastify instance with logging and common config
+    // Create Fastify instance with logging and common config.
+    // pino-pretty is a dev-only formatter and is expensive/blocking under load, so use it only
+    // outside production; production emits plain JSON logs for log shippers (SECURITY-REVIEW 4.6).
+    const isProduction = process.env['NODE_ENV'] === 'production';
     this.server = fastify({
       logger: {
         level: 'info',
-        transport: {
-          target: 'pino-pretty', // Prettified logging output
-        },
+        ...(isProduction ? {} : { transport: { target: 'pino-pretty' } }),
       },
       // Derive req.ip from X-Forwarded-For only for the proxy hops we actually trust
       // (configurable via TRUST_PROXY). Security decisions must use req.ip, never the
