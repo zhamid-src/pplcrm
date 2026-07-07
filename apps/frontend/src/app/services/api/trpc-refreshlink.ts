@@ -6,6 +6,7 @@ import superjson from 'superjson';
 
 import type { TRPCRouter } from '../../../../../backend/src/app/modules/trpc';
 import { environment } from '../../../environments/environment';
+import { isCurrentRoutePublic } from '../../routing/public-routes';
 import type { TokenService } from './token-service';
 
 interface JwtPayload {
@@ -89,7 +90,11 @@ function handleRefreshFailure(
   observer: Observer<unknown, unknown>,
 ): void {
   tokenSvc.clearAll();
-  void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
+  // Don't evict a guest from a legitimately public page (reset link, public form, etc.) just because
+  // a stale token's refresh failed — surface the error instead.
+  if (!isCurrentRoutePublic(router.url)) {
+    void router.navigate(['/signin'], { queryParams: { returnUrl: router.url } });
+  }
   observer.error(err instanceof TRPCClientError ? err : new TRPCClientError(String(err)));
 }
 

@@ -11,7 +11,7 @@ describe('appRoutes', () => {
       'signin',
       'signup',
       'resetpassword',
-      'newpassword',
+      'new-password',
       'verify-sender-email',
       'confirm-subscription',
       'verify-email',
