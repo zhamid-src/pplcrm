@@ -20,6 +20,15 @@
   (nextRecord)="recordNav.goToNext()"
 >
   <li pc-overflow-extra>
+    <button type="button" (click)="mergeIntoAnother()">
+      <pc-icon name="merge" [size]="4"></pc-icon>
+      <ng-container i18n="PersonView|Merge this person into another@@person.overflow.merge"
+        >Merge into another person…</ng-container
+      >
+    </button>
+  </li>
+
+  <li pc-overflow-extra>
     <button type="button" (click)="exportVCard()">
       <pc-icon name="arrow-down-tray" [size]="4"></pc-icon>
       <ng-container i18n="PersonView|Export contact as vCard@@person.overflow.vcard">Export vCard</ng-container>
