@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Sidebar } from './sidebar';
 import { SidebarService } from './sidebar-service';
 import { AuthService } from '../../auth/auth-service';
+import { TasksService } from '@experiences/tasks/services/tasks-service';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { provideRouter } from '@angular/router';
 import { signal } from '@angular/core';
@@ -12,6 +13,7 @@ describe('Sidebar Component', () => {
   let fixture: ComponentFixture<Sidebar>;
   let mockSidebarSvc: any;
   let mockAuthService: any;
+  let mockTasksSvc: any;
 
   beforeEach(async () => {
     Object.defineProperty(window, 'matchMedia', {
@@ -38,11 +40,16 @@ describe('Sidebar Component', () => {
       getUserSignal: vi.fn().mockReturnValue(signal({ role: 'admin' })),
     };
 
+    mockTasksSvc = {
+      countSlaBreaches: vi.fn().mockResolvedValue(0),
+    };
+
     await TestBed.configureTestingModule({
       imports: [Sidebar],
       providers: [
         { provide: SidebarService, useValue: mockSidebarSvc },
         { provide: AuthService, useValue: mockAuthService },
+        { provide: TasksService, useValue: mockTasksSvc },
         provideRouter([]), // needed for RouterLink
       ],
     }).compileComponents();
