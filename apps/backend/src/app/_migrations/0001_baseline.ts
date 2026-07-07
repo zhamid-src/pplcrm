@@ -34,6 +34,16 @@ export async function up(db: Kysely<any>): Promise<void> {
       // unqualified statement on this connection (including Kysely's own INSERT
       // into kysely_migration) fails with "relation does not exist".
       if (/^SELECT\s+pg_catalog\.set_config\(\s*'search_path'/i.test(t)) return false;
+      // pg_dump's `SET row_security = off` leaks forward through Kysely's single
+      // migration session. Combined with a table's FORCE ROW LEVEL SECURITY it
+      // makes Postgres REJECT even policy-permitted writes (SQLSTATE 42501)
+      // instead of applying the policy — so any later migration that backfills
+      // data on an RLS table rolls the whole batch back, and no fresh database
+      // (CI, new dev) can bootstrap. Drop it: the default `row_security = on`
+      // lets the tenant policy apply, and with no `app.tenant_id` GUC set the
+      // policy's `NULLIF(...) IS NULL` escape permits every row, so migration
+      // backfills work without per-migration RLS toggles.
+      if (/^SET\s+row_security\b/i.test(t)) return false;
       const setMatch = t.match(/^SET\s+(\w+)\s*=/i);
       if (setMatch && setMatch[1] && pg17OnlyParams.has(setMatch[1].toLowerCase())) return false;
 

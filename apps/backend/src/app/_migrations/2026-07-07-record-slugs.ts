@@ -30,16 +30,11 @@ export async function up(db: Kysely<any>): Promise<void> {
   for (const { table, fallback, source } of TABLES) {
     await sql`ALTER TABLE ${sql.table(table)} ADD COLUMN IF NOT EXISTS slug text`.execute(db);
 
-    // The backfill below self-joins the table (UPDATE … FROM the same table).
-    // These tables run FORCE ROW LEVEL SECURITY (S-1 tenant backstop), and a
-    // migration sets no tenant GUC, so the policy denies every row (SQLSTATE
-    // 42501) and the whole batch — including 0001_baseline — rolls back,
-    // breaking fresh-DB bootstrap (dev setup, CI). Drop FORCE only for the
-    // backfill and restore it immediately; these tables are designed to run it.
-    await sql`ALTER TABLE ${sql.table(table)} NO FORCE ROW LEVEL SECURITY`.execute(db);
-
     // Backfill: slugify the source, guard all-digit results, dedupe per tenant
-    // with -2, -3… suffixes (deterministic by id).
+    // with -2, -3… suffixes (deterministic by id). This runs under the table's
+    // FORCE ROW LEVEL SECURITY; with no `app.tenant_id` GUC set the tenant
+    // policy's `NULLIF(...) IS NULL` escape permits every row, so the write
+    // reaches all rows (see the row_security strip in 0001_baseline.ts).
     await sql`
       WITH base AS (
         SELECT id, tenant_id,
