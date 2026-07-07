@@ -11,6 +11,28 @@ import type {
 } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { SYSTEM_TAG_SEED_DATA } from '../system-tags';
 
+/** Row shape for the §9.1/§9.2 admin pages (Tags admin / Issues admin). Not paginated —
+ * tag/issue vocabularies are small (dozens, not thousands), so the admin page fetches
+ * the whole list in one round trip and does its own client-side sentence/callout math. */
+export interface TagAdminRow {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  deletable: boolean;
+  type: 'tag' | 'issue';
+  created_at: Date;
+  created_by_name: string | null;
+  use_count_people: number;
+  use_count_households: number;
+  last_applied_at: Date | null;
+  /** New applications (person or household) in the trailing 30 days. Always >= 0 — there is
+   * no removal-history table, so this approximates "trend" as new activity only. See
+   * pplcrm-forms/pplcrm-trpc-backend skills note on `user_activity` if that ever changes. */
+  recent_applications_30d: number;
+  top_ward: string | null;
+}
+
 export class TagsRepo extends BaseRepository<'tags'> {
   constructor() {
     super('tags');
@@ -292,5 +314,338 @@ export class TagsRepo extends BaseRepository<'tags'> {
       .where('type', '=', input.type)
       .limit(3)
       .execute();
+  }
+
+  /**
+   * The full §9.1 (Tags admin) / §9.2 (Issues admin) list: one round trip with counts,
+   * last-applied timestamp, creator name, 30-day new-application count (the "trend" proxy —
+   * see `TagAdminRow.recent_applications_30d`), and the top ward among tagged people's
+   * households. CTEs over raw SQL rather than the query builder because of the window
+   * function (top ward) and multi-table aggregation; every branch is tenant-scoped.
+   */
+  public async getAdminList(input: { tenant_id: string; type: 'tag' | 'issue' }): Promise<TagAdminRow[]> {
+    const rows = await sql<{
+      id: string;
+      name: string;
+      description: string | null;
+      color: string | null;
+      deletable: boolean;
+      type: 'tag' | 'issue';
+      created_at: Date;
+      created_by_name: string | null;
+      use_count_people: string | number;
+      use_count_households: string | number;
+      last_applied_at: Date | null;
+      recent_applications_30d: string | number;
+      top_ward: string | null;
+    }>`
+      WITH base AS (
+        SELECT t.id, t.name, t.description, t.color, t.deletable, t.type, t.created_at,
+               NULLIF(TRIM(CONCAT_WS(' ', au.first_name, au.last_name)), '') AS created_by_name
+        FROM tags t
+        LEFT JOIN authusers au ON au.id = t.createdby_id
+        WHERE t.tenant_id = ${input.tenant_id} AND t.type = ${input.type}
+      ),
+      people_counts AS (
+        SELECT tag_id, count(*) AS cnt, max(created_at) AS last_applied
+        FROM map_peoples_tags WHERE tenant_id = ${input.tenant_id} GROUP BY tag_id
+      ),
+      household_counts AS (
+        SELECT tag_id, count(*) AS cnt, max(created_at) AS last_applied
+        FROM map_households_tags WHERE tenant_id = ${input.tenant_id} GROUP BY tag_id
+      ),
+      recent_30d AS (
+        SELECT tag_id, count(*) AS cnt FROM (
+          SELECT tag_id, created_at FROM map_peoples_tags WHERE tenant_id = ${input.tenant_id}
+          UNION ALL
+          SELECT tag_id, created_at FROM map_households_tags WHERE tenant_id = ${input.tenant_id}
+        ) recent
+        WHERE created_at >= now() - interval '30 days'
+        GROUP BY tag_id
+      ),
+      ranked_ward AS (
+        SELECT mpt.tag_id, h.ward, count(*) AS cnt,
+               row_number() OVER (PARTITION BY mpt.tag_id ORDER BY count(*) DESC, h.ward) AS rn
+        FROM map_peoples_tags mpt
+        JOIN persons p ON p.id = mpt.person_id AND p.tenant_id = mpt.tenant_id
+        JOIN households h ON h.id = p.household_id AND h.tenant_id = p.tenant_id
+        WHERE mpt.tenant_id = ${input.tenant_id} AND h.ward IS NOT NULL AND h.ward <> ''
+        GROUP BY mpt.tag_id, h.ward
+      ),
+      top_ward AS (
+        SELECT tag_id, ward FROM ranked_ward WHERE rn = 1
+      )
+      SELECT
+        base.id, base.name, base.description, base.color, base.deletable, base.type, base.created_at,
+        base.created_by_name,
+        COALESCE(people_counts.cnt, 0) AS use_count_people,
+        COALESCE(household_counts.cnt, 0) AS use_count_households,
+        GREATEST(people_counts.last_applied, household_counts.last_applied) AS last_applied_at,
+        COALESCE(recent_30d.cnt, 0) AS recent_applications_30d,
+        top_ward.ward AS top_ward
+      FROM base
+      LEFT JOIN people_counts ON people_counts.tag_id = base.id
+      LEFT JOIN household_counts ON household_counts.tag_id = base.id
+      LEFT JOIN recent_30d ON recent_30d.tag_id = base.id
+      LEFT JOIN top_ward ON top_ward.tag_id = base.id
+      ORDER BY COALESCE(people_counts.cnt, 0) DESC, base.name ASC
+    `.execute(this.db);
+
+    return rows.rows.map((r) => ({
+      id: String(r.id),
+      name: r.name,
+      description: r.description,
+      color: r.color,
+      deletable: r.deletable,
+      type: r.type,
+      created_at: r.created_at,
+      created_by_name: r.created_by_name,
+      use_count_people: Number(r.use_count_people),
+      use_count_households: Number(r.use_count_households),
+      last_applied_at: r.last_applied_at,
+      recent_applications_30d: Number(r.recent_applications_30d),
+      top_ward: r.top_ward,
+    }));
+  }
+
+  /** §9.2 Issues admin sentence wants unique PEOPLE, not total applications ("2,148 people
+   * shared what they care about" — a person with 3 issues counts once, unlike the Tags admin
+   * sentence's "applications" total which counts every application). */
+  public async countDistinctPeople(input: { tenant_id: string; type: 'tag' | 'issue' }): Promise<number> {
+    const result = await this.db
+      .selectFrom('map_peoples_tags')
+      .innerJoin('tags', (join) =>
+        join
+          .onRef('tags.id', '=', 'map_peoples_tags.tag_id')
+          .onRef('tags.tenant_id', '=', 'map_peoples_tags.tenant_id'),
+      )
+      .select(({ fn }) => [fn.count(sql`DISTINCT map_peoples_tags.person_id`).as('cnt')])
+      .where('map_peoples_tags.tenant_id', '=', input.tenant_id)
+      .where('tags.type', '=', input.type)
+      .executeTakeFirst();
+    return Number(result?.cnt ?? 0);
+  }
+
+  /**
+   * Rename a tag/issue in place and propagate the new name everywhere it's referenced by
+   * value rather than by id: `web_forms.target_tags` (tags only — forms don't target issues)
+   * and `lists.definition` (the dynamic-list query-builder options; tags live under `.tags`,
+   * issues under `.issues`). Footer contract (spec §9.1): "Renames and merges apply everywhere
+   * a tag is referenced — people, lists, automations and forms — in one pass." `map_peoples_tags`
+   * / `map_households_tags` reference tags by id already, so they need no propagation on rename.
+   * Automations (`workflows`/`workflow_steps`) have no tag/issue reference column in the current
+   * schema — nothing to propagate there today; see the Track D report for this deferral.
+   */
+  public async renameTag(input: {
+    tenant_id: string;
+    id: string;
+    new_name: string;
+    user_id: string;
+  }): Promise<Selectable<Models['tags']> | undefined> {
+    return this.transaction().execute(async (trx) => {
+      const existing = await this.getSelect(trx)
+        .selectAll()
+        .where('tenant_id', '=', input.tenant_id)
+        .where('id', '=', input.id)
+        .executeTakeFirst();
+      if (!existing) return undefined;
+
+      const newName = input.new_name.toLowerCase().trim();
+      if (newName === existing.name) return existing;
+
+      const updated = await this.update(
+        {
+          tenant_id: input.tenant_id as TypeTenantId<'tags'>,
+          id: input.id as TypeId<'tags'>,
+          row: { name: newName, updatedby_id: input.user_id } as OperationDataType<'tags', 'update'>,
+        },
+        trx,
+      );
+
+      // `tags.type` is a `text` column (no DB CHECK constraint); every write path (AddTagObj/
+      // UpdateTagObj) restricts it to 'tag' | 'issue', so this narrowing reflects that invariant.
+      await this.propagateNameChange(trx, input.tenant_id, existing.type as 'tag' | 'issue', existing.name, newName);
+
+      // `update()` returns `0` only when the row is empty (base.repo.ts) — never here, since we
+      // always pass `name`/`updatedby_id`. Narrow it away so the return type stays honest.
+      return typeof updated === 'number' ? undefined : updated;
+    });
+  }
+
+  /**
+   * Merge `source_id` into `target_id` (spec §9.1 "Move everyone to"): every person/household
+   * carrying the source tag ends up carrying the target tag instead (fills, never duplicates —
+   * a record that already has both just keeps one row), the source's name is replaced by the
+   * target's name everywhere it was referenced by value, and the source tag row is deleted.
+   * Both tags must be the same `type` and the source must be `deletable` (protects seeded
+   * system tags/issues from being merged away, same guard as delete).
+   */
+  public async mergeTags(input: {
+    tenant_id: string;
+    source_id: string;
+    target_id: string;
+    user_id: string;
+  }): Promise<Selectable<Models['tags']> | undefined> {
+    if (input.source_id === input.target_id) {
+      throw new Error('Cannot merge a tag into itself.');
+    }
+
+    return this.transaction().execute(async (trx) => {
+      const [source, target] = await Promise.all([
+        this.getSelect(trx)
+          .selectAll()
+          .where('tenant_id', '=', input.tenant_id)
+          .where('id', '=', input.source_id)
+          .executeTakeFirst(),
+        this.getSelect(trx)
+          .selectAll()
+          .where('tenant_id', '=', input.tenant_id)
+          .where('id', '=', input.target_id)
+          .executeTakeFirst(),
+      ]);
+
+      if (!source || !target) {
+        throw new Error('Source or target tag not found.');
+      }
+      if (source.type !== target.type) {
+        throw new Error('Cannot merge a tag into an issue (or vice versa).');
+      }
+      if (!source.deletable) {
+        throw new Error('This tag is protected and cannot be merged away.');
+      }
+
+      // Re-point people/households that only have the source tag; the ones that already carry
+      // the target tag just drop the now-redundant source row. Fetch-diff-insert-delete (not a
+      // correlated subquery) to match the `mergePersons` shape in persons.repo.ts.
+      const targetPeopleIds = new Set(
+        (
+          await trx
+            .selectFrom('map_peoples_tags')
+            .select('person_id')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('tag_id', '=', input.target_id)
+            .execute()
+        ).map((r) => String(r.person_id)),
+      );
+      const sourcePeople = await trx
+        .selectFrom('map_peoples_tags')
+        .select('person_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('tag_id', '=', input.source_id)
+        .execute();
+      for (const row of sourcePeople) {
+        if (!targetPeopleIds.has(String(row.person_id))) {
+          await trx
+            .insertInto('map_peoples_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              person_id: row.person_id,
+              tag_id: input.target_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_peoples_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('tag_id', '=', input.source_id)
+        .execute();
+
+      const targetHouseholdIds = new Set(
+        (
+          await trx
+            .selectFrom('map_households_tags')
+            .select('household_id')
+            .where('tenant_id', '=', input.tenant_id)
+            .where('tag_id', '=', input.target_id)
+            .execute()
+        ).map((r) => String(r.household_id)),
+      );
+      const sourceHouseholds = await trx
+        .selectFrom('map_households_tags')
+        .select('household_id')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('tag_id', '=', input.source_id)
+        .execute();
+      for (const row of sourceHouseholds) {
+        if (!targetHouseholdIds.has(String(row.household_id))) {
+          await trx
+            .insertInto('map_households_tags')
+            .values({
+              tenant_id: input.tenant_id,
+              household_id: row.household_id,
+              tag_id: input.target_id,
+              createdby_id: input.user_id,
+              updatedby_id: input.user_id,
+            })
+            .execute();
+        }
+      }
+      await trx
+        .deleteFrom('map_households_tags')
+        .where('tenant_id', '=', input.tenant_id)
+        .where('tag_id', '=', input.source_id)
+        .execute();
+
+      // Historical imports still labeled by the source tag now point at the survivor.
+      await trx
+        .updateTable('data_imports')
+        .set({ tag_id: input.target_id })
+        .where('tag_id', '=', input.source_id)
+        .where('tenant_id', '=', input.tenant_id)
+        .execute();
+
+      // Same invariant as renameTag() above — `type` is enum-shaped by the write paths, not the column.
+      await this.propagateNameChange(trx, input.tenant_id, source.type as 'tag' | 'issue', source.name, target.name);
+
+      await trx.deleteFrom('tags').where('tenant_id', '=', input.tenant_id).where('id', '=', input.source_id).execute();
+
+      return target;
+    });
+  }
+
+  /** Replace `oldName` with `newName` inside the JSON-by-value reference points. De-duplicates
+   * the array in the same pass (a merge can otherwise leave `[donor, donor]` if a record already
+   * had the target name spelled the same way as the renamed source). */
+  private async propagateNameChange(
+    trx: Transaction<Models>,
+    tenant_id: string,
+    type: 'tag' | 'issue',
+    oldName: string,
+    newName: string,
+  ): Promise<void> {
+    if (type === 'tag') {
+      await sql`
+        UPDATE web_forms
+        SET target_tags = (
+          SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
+          FROM (
+            SELECT CASE WHEN value = ${oldName} THEN ${newName} ELSE value END AS elem
+            FROM jsonb_array_elements_text(target_tags)
+          ) sub
+        )
+        WHERE tenant_id = ${tenant_id} AND target_tags @> to_jsonb(${oldName}::text)
+      `.execute(trx);
+    }
+
+    const definitionKey = type === 'tag' ? 'tags' : 'issues';
+    await sql`
+      UPDATE lists
+      SET definition = jsonb_set(
+        definition,
+        ARRAY[${definitionKey}]::text[],
+        (
+          SELECT COALESCE(jsonb_agg(DISTINCT elem), '[]'::jsonb)
+          FROM (
+            SELECT CASE WHEN value = ${oldName} THEN ${newName} ELSE value END AS elem
+            FROM jsonb_array_elements_text(definition -> ${definitionKey})
+          ) sub
+        )
+      )
+      WHERE tenant_id = ${tenant_id}
+        AND definition -> ${definitionKey} @> to_jsonb(${oldName}::text)
+    `.execute(trx);
   }
 }
