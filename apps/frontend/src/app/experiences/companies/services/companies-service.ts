@@ -46,6 +46,11 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.getBySlug.query(slug);
   }
 
+  /** §7 "Enrich" / "Re-check Google" — queues a Google Places lookup background job. */
+  public enrich(id: string, force = false): Promise<RouterOutputs['companies']['enrich']> {
+    return this.api.companies.enrich.mutate({ id, force });
+  }
+
   public getTags(_id: string) {
     return Promise.resolve([]);
   }

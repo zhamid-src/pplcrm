@@ -96,7 +96,20 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
     category: 'contacts',
     title: 'Households',
     summary: 'Group people who live together so mailings, door-knocks, and donation asks treat them as one unit.',
-    keywords: ['household', 'family', 'address', 'members', 'assign household', 'home'],
+    keywords: [
+      'household',
+      'family',
+      'address',
+      'members',
+      'assign household',
+      'home',
+      'map',
+      'ward',
+      'district',
+      'precinct',
+      'geocode',
+      'door notes',
+    ],
     related: ['add-people', 'person-profile', 'duplicates'],
     blocks: [
       {
@@ -122,6 +135,15 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
         title: 'Start from the person',
         text: 'On a profile with no household yet, the household area offers **Assign household** directly — often the fastest route.',
       },
+      { kind: 'h2', id: 'address-map', text: 'The address, the map, and electoral boundaries' },
+      {
+        kind: 'p',
+        text: 'Editing a household, search for an address and pick a suggestion — it fills every field below and geocodes the household, so ward, district, and precinct update automatically. Prefer to type it yourself? Open **Enter address manually**; manual edits save as typed, geocode in the background, and the map pin appears once the address verifies.',
+      },
+      {
+        kind: 'p',
+        text: 'The household page shows a map card — clicking it opens the location in your maps app, with the ward and address labelled on top. A status chip always tells you where geocoding stands: **Located** (the pin is set), **Locating…** (still working in the background), or **Address problem** (the address could not be found — open Edit and fix it). Geocoded households power canvassing turfs and delivery coverage, so a clean address pays off downstream.',
+      },
       { kind: 'h2', id: 'dedupe', text: 'Keep households clean' },
       {
         kind: 'p',
@@ -134,7 +156,17 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
     category: 'contacts',
     title: 'Companies',
     summary: 'Track employers, sponsors, and partner organizations, and connect people to them.',
-    keywords: ['company', 'organization', 'employer', 'business', 'sponsor', 'corporate'],
+    keywords: [
+      'company',
+      'organization',
+      'employer',
+      'business',
+      'sponsor',
+      'corporate',
+      'enrich',
+      'google',
+      'google places',
+    ],
     related: ['person-profile', 'duplicates', 'grid-basics'],
     blocks: [
       {
@@ -153,6 +185,17 @@ export const CONTACTS_ARTICLES: HelpArticle[] = [
           { title: 'Click the + button', detail: 'Fill in the name and any contact details you have.' },
           { title: 'Connect people', detail: 'Link people to the company so both sides show the relationship.' },
         ],
+      },
+      { kind: 'h2', id: 'enrichment', text: 'Fill the gaps with Google' },
+      {
+        kind: 'p',
+        text: 'Press **Enrich** on a company page to look it up on Google Places. A background job finds the business, then fills the website, phone, industry, and description **only where they are blank** — anything you typed is never overwritten. Once a company has been enriched, the button reads **Re-check Google** so you can refresh it later.',
+      },
+      {
+        kind: 'callout',
+        tone: 'tip',
+        title: 'Deleting a company keeps the people',
+        text: 'Companies are grouped from each person’s employer. Deleting a company clears only the grouping — everyone keeps their person record, they just lose the employer link.',
       },
       {
         kind: 'p',

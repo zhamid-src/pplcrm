@@ -18,6 +18,11 @@ export const CompaniesRouter = router({
     .input(z.string().trim().min(1).max(200))
     .query(({ input, ctx }) => companies.getOneBySlug(input, ctx.auth)),
 
+  // §7 "Enrich" / "Re-check Google" — queues a Google Places lookup job.
+  enrich: authProcedure
+    .input(z.object({ id: idSchema, force: z.boolean().optional() }))
+    .mutation(({ input, ctx }) => companies.queueEnrichment(input.id, ctx.auth, input.force ?? false)),
+
   import: authProcedure
     .input(
       z.object({

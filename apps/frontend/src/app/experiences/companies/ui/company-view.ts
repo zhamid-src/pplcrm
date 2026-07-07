@@ -2,6 +2,8 @@ import { Location } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { AlertService } from '@uxcommon/components/alerts/alert-service';
+import { Icon } from '@icons/icon';
+import { StatusBadge } from '@uxcommon/components/status-badge/status-badge';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInCompany } from './people-in-company';
 import { CompaniesService } from '../services/companies-service';
@@ -32,6 +34,8 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
     ProfileCard,
     DetailItem,
     SystemMetadata,
+    Icon,
+    StatusBadge,
   ],
   templateUrl: './company-view.html',
 })
@@ -86,6 +90,8 @@ export class CompanyView {
       .toUpperCase();
   });
 
+  protected readonly enriching = signal(false);
+
   protected readonly isEnriched = computed(() => {
     const rawEnrichment = this.company()?.enrichment;
     if (!rawEnrichment) return false;
@@ -99,6 +105,15 @@ export class CompanyView {
     }
     return !!enrichment.google_enriched;
   });
+
+  /** Header subtitle — people count (§7). */
+  protected readonly subtitle = computed(() => {
+    const n = this.employeeCount();
+    return `${n} ${n === 1 ? 'person' : 'people'}`;
+  });
+
+  /** §7 header button label: "Re-check Google" once enriched, else "Enrich". */
+  protected readonly enrichLabel = computed(() => (this.isEnriched() ? 'Re-check Google' : 'Enrich'));
 
   constructor() {
     effect(() => {
@@ -134,13 +149,28 @@ export class CompanyView {
     void this.router.navigate(['edit'], { relativeTo: this.route });
   }
 
+  /** §7 Enrich / Re-check Google — queues the Places lookup background job. */
+  protected async enrichCompany() {
+    const id = this.id();
+    if (!id || this.enriching()) return;
+    this.enriching.set(true);
+    try {
+      await this.companiesSvc.enrich(id, this.isEnriched());
+      this.alertSvc.showSuccess('Enrichment queued — fields fill in the background.');
+    } catch (err) {
+      this.alertSvc.showError(getUserErrorMessage(err, 'Could not queue enrichment. Please try again.'));
+    } finally {
+      this.enriching.set(false);
+    }
+  }
+
   protected async deleteCompany() {
     if (!this.id()) return;
     const confirmed = await this.dialogs.confirm({
-      title: 'Delete Company',
-      message: 'Are you sure you want to delete this company? This action cannot be undone.',
+      title: 'Delete company',
+      message: 'Employees keep their person records — only the employer grouping clears.',
       variant: 'danger',
-      confirmText: 'Delete',
+      confirmText: 'Delete company',
     });
     if (!confirmed) return;
     const end = this._loading.begin();
