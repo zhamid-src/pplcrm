@@ -19,7 +19,7 @@ import type {
   UpdateQueryBuilder,
   UpdateResult,
 } from 'kysely';
-import { Kysely, PostgresDialect, sql } from 'kysely';
+import { CompiledQuery, Kysely, PostgresDialect, sql } from 'kysely';
 
 import type {
   Models,
@@ -30,7 +30,15 @@ import type {
 } from '../../../../../libs/common/src/lib/kysely.models';
 import { Pool } from 'pg';
 import { env } from '../../env';
+import { currentTenantId } from './tenant-context';
 import Cursor from 'pg-cursor';
+
+// S-1 (schema review 2026-07-06 §6): the tenant id is a bigint stored as a
+// string; only digits are ever a legal value. We build the set_config call with
+// a bound parameter (never string-interpolated), but still validate here so a
+// corrupt context can never smuggle SQL or a non-numeric GUC into the session.
+const TENANT_ID_PATTERN = /^\d+$/;
+
 const dialect = new PostgresDialect({
   // P-4 (schema review 2026-07-06, §5): make the pool explicit instead of pg's
   // silent defaults (max 10, no timeouts). Without a connection timeout, a burst
@@ -44,6 +52,17 @@ const dialect = new PostgresDialect({
     application_name: 'pplcrm-api',
   }),
   cursor: Cursor,
+  // S-1: stamp the current async-context tenant onto every reserved connection
+  // so Postgres RLS policies scope the query. Runs on *every* checkout (standalone
+  // queries and transactions alike). An empty value means "unscoped" — the RLS
+  // policy then allows all rows, which is what pre-auth and background-job paths
+  // need. is_local=false so it survives the whole checkout; the next checkout
+  // always overwrites it, so a pooled connection can never carry a stale tenant.
+  onReserveConnection: async (connection) => {
+    const tenantId = currentTenantId();
+    const safe = TENANT_ID_PATTERN.test(tenantId) ? tenantId : '';
+    await connection.executeQuery(CompiledQuery.raw(`select set_config('app.tenant_id', $1, false)`, [safe]));
+  },
 });
 
 type ColName<TB extends keyof Models> = keyof Models[TB] & string;
