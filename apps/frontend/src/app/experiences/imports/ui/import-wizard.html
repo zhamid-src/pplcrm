@@ -1,0 +1,400 @@
+<div class="p-6 max-w-4xl mx-auto">
+  <!-- Where am I? / Where was I? -->
+  <div class="mb-6">
+    <p class="text-xs font-semibold uppercase tracking-wider text-base-content/45">Import / export</p>
+    <h1 class="text-2xl font-bold tracking-tight text-base-content mt-1">Import people from CSV</h1>
+    <p class="text-sm text-base-content/60 mt-1">
+      Headers in the first row · duplicates are matched by email · nothing is written until the last step
+    </p>
+  </div>
+
+  <!-- Step indicator -->
+  <ul class="steps steps-horizontal w-full mb-8">
+    @for (s of stepOrder; track s; let idx = $index) {
+    <li
+      class="step"
+      [class.step-primary]="idx <= currentStepIndex()"
+      [class.cursor-pointer]="canReachStep(s)"
+      (click)="canReachStep(s) && goToStep(s)"
+    >
+      {{ stepLabels[s] }}
+    </li>
+    }
+  </ul>
+
+  <!-- ============ UPLOAD ============ -->
+  @if (step() === 'upload') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      @if (!fileName()) {
+      <div
+        class="border-2 border-dashed rounded-xl p-10 text-center transition-colors duration-150"
+        [class.border-primary]="dragOver()"
+        [class.bg-primary/5]="dragOver()"
+        [class.border-base-300]="!dragOver()"
+        (dragover)="onDragOver($event)"
+        (dragleave)="onDragLeave()"
+        (drop)="onDrop($event)"
+      >
+        <pc-icon name="cloud-arrow-up" class="text-primary mx-auto mb-3" [size]="10"></pc-icon>
+        <label class="btn btn-primary gap-2 cursor-pointer">
+          <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+          Drop a CSV here, or click to browse
+          <input type="file" accept=".csv,text/csv" class="hidden" (change)="onFileSelected($event)" />
+        </label>
+        @if (parsing()) {
+        <p class="text-sm text-base-content/60 mt-4 flex items-center justify-center gap-2">
+          <pc-icon name="arrow-path" class="animate-spin" [size]="4"></pc-icon>
+          Reading and parsing the file…
+        </p>
+        }
+      </div>
+      <ul class="text-sm text-base-content/60 space-y-1 list-disc list-inside">
+        <li>First row must have column headers — they drive the automatic mapping on the next step.</li>
+        <li>Duplicates are matched by email, so we'll catch them on the review step, not silently.</li>
+        <li>UTF-8 and Excel both work.</li>
+      </ul>
+      } @else {
+      <div class="flex items-center justify-between gap-4 rounded-lg border border-base-300 bg-base-200/40 p-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <pc-icon name="document-text" class="text-primary shrink-0" [size]="6"></pc-icon>
+          <span class="font-mono text-sm text-base-content truncate">
+            {{ fileName() }} · {{ rowCount() }} rows · {{ columnCount() }} columns
+          </span>
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="chooseAnotherFile()">Choose another file</button>
+      </div>
+      <div class="flex justify-end">
+        <button type="button" class="btn btn-primary gap-2" [disabled]="!rowCount()" (click)="goToStep('map')">
+          Continue to column mapping
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+      </div>
+      }
+    </div>
+  </div>
+  }
+
+  <!-- ============ MAP COLUMNS ============ -->
+  @if (step() === 'map') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      <p class="text-sm text-base-content/70">
+        {{ mappedColumnCount() }} of {{ columnCount() }} columns mapped · {{ skippedColumnCount() }} will be skipped ·
+        matching by the header row
+      </p>
+
+      <div class="divide-y divide-base-300 border border-base-300 rounded-lg overflow-hidden">
+        @for (header of headers(); track header; let idx = $index) {
+        <div class="flex flex-col md:flex-row md:items-center gap-3 p-3 bg-base-100">
+          <div class="flex-1 min-w-0">
+            <div class="font-mono text-sm text-base-content truncate">{{ header }}</div>
+            <div class="text-xs text-base-content/50 truncate">{{ sampleValues(idx) || '—' }}</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <select
+              class="select select-bordered select-sm w-56"
+              [value]="mapping()[idx] || ''"
+              (change)="setMapping(idx, $any($event.target).value)"
+            >
+              <option value="">— Skip this column —</option>
+              @for (field of mappableFields; track field) {
+              <option [value]="field">{{ fieldLabels[field] ?? field }}</option>
+              }
+            </select>
+            @if (!mapping()[idx]) {
+            <span class="badge badge-ghost text-xs">Skipped</span>
+            }
+          </div>
+        </div>
+        }
+      </div>
+
+      <div class="flex justify-between">
+        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('upload')">
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          Back
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary gap-2"
+          [disabled]="mappedColumnCount() === 0"
+          (click)="goToReview()"
+        >
+          Continue to review
+          <pc-icon name="chevron-right" [size]="4"></pc-icon>
+        </button>
+      </div>
+    </div>
+  </div>
+  }
+
+  <!-- ============ REVIEW ============ -->
+  @if (step() === 'review') {
+  <div class="flex flex-col gap-4">
+    @if (checkingDuplicates()) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body items-center py-10">
+        <progress class="progress progress-primary w-64"></progress>
+        <p class="text-sm text-base-content/60 mt-2">Checking for people you already have…</p>
+      </div>
+    </div>
+    } @else { @if (reviewIsClean()) {
+    <div class="alert bg-success/10 text-success-content border border-success/30 gap-2">
+      <pc-icon name="check-circle" class="text-success" [size]="5"></pc-icon>
+      <span>No duplicate emails and no email problems found in this file.</span>
+    </div>
+    } @if (duplicateMatches().length > 0) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          {{ duplicateRowCount() }} rows match people you already have
+        </p>
+        <ul class="space-y-1">
+          @for (match of duplicateMatches(); track match.person_id) {
+          <li class="text-sm flex items-center gap-2">
+            <span class="font-mono text-base-content/70">{{ match.email }}</span>
+            <pc-icon name="arrow-right-start-on-rectangle" class="text-base-content/30" [size]="4"></pc-icon>
+            @if (match.slug) {
+            <a [routerLink]="['/people', match.slug]" class="link link-primary underline decoration-primary/40"
+              >{{ match.name }}</a
+            >
+            } @else {
+            <span class="text-base-content">{{ match.name }}</span>
+            }
+          </li>
+          }
+        </ul>
+
+        <div class="form-control gap-2 mt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'merge'"
+              (change)="duplicateDecision.set('merge')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Merge into existing</span>
+              <span class="block text-xs text-base-content/60">
+                Recommended — fills blank fields, never overwrites
+              </span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'skip'"
+              (change)="duplicateDecision.set('skip')"
+            />
+            <span class="text-sm font-medium text-base-content">
+              Skip the {{ duplicateRowCount() }} duplicate rows
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="duplicateDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="duplicateDecision() === 'import_new'"
+              (change)="duplicateDecision.set('import_new')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Import as new anyway</span>
+              <span class="block text-xs text-base-content/60">
+                Creates {{ duplicateRowCount() }} duplicates to resolve later in Duplicates
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    } @if (badEmailRows().length > 0) {
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-3">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/50">
+          {{ badEmailRows().length }} rows have email problems
+        </p>
+        <ul class="space-y-1">
+          @for (row of badEmailRows(); track row.idx) {
+          <li class="text-sm">
+            <span class="text-base-content/60">Row {{ row.idx }}:</span>
+            <span class="font-mono text-base-content">{{ row.email }}</span>
+          </li>
+          }
+        </ul>
+
+        <div class="form-control gap-2 mt-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="badEmailDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="badEmailDecision() === 'skip'"
+              (change)="badEmailDecision.set('skip')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Skip the {{ badEmailRows().length }} rows</span>
+              <span class="block text-xs text-base-content/60">Download them after the import to fix and retry</span>
+            </span>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="badEmailDecision"
+              class="radio radio-primary radio-sm mt-1"
+              [checked]="badEmailDecision() === 'strip'"
+              (change)="badEmailDecision.set('strip')"
+            />
+            <span class="text-sm">
+              <span class="font-medium text-base-content">Import without an email</span>
+              <span class="block text-xs text-base-content/60">
+                They can't receive newsletters until an email is added
+              </span>
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+    }
+
+    <div class="card bg-base-100 border border-base-300 shadow-xl">
+      <div class="card-body gap-4">
+        <label class="form-control gap-1">
+          <span class="text-sm font-medium text-base-content">Tag everyone in this import (optional)</span>
+          <input
+            type="text"
+            class="input input-bordered"
+            placeholder="Comma separated e.g. donor, canvass-2026"
+            [value]="tagsText()"
+            (input)="tagsText.set($any($event.target).value)"
+          />
+        </label>
+        <label class="form-control gap-1">
+          <span class="text-sm font-medium text-base-content">Add everyone to a list (optional)</span>
+          <input
+            type="text"
+            class="input input-bordered"
+            list="existing-static-lists"
+            placeholder="New or existing list name"
+            [value]="listName()"
+            (input)="listName.set($any($event.target).value)"
+          />
+          <datalist id="existing-static-lists">
+            @for (name of existingListNames(); track name) {
+            <option [value]="name"></option>
+            }
+          </datalist>
+        </label>
+      </div>
+    </div>
+
+    <div class="flex justify-between">
+      <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('map')">
+        <pc-icon name="chevron-left" [size]="4"></pc-icon>
+        Back
+      </button>
+      <button type="button" class="btn btn-primary gap-2" (click)="goToStep('confirm')">
+        Continue to import
+        <pc-icon name="chevron-right" [size]="4"></pc-icon>
+      </button>
+    </div>
+    }
+  </div>
+  }
+
+  <!-- ============ CONFIRM & RUN ============ -->
+  @if (step() === 'confirm') {
+  <div class="card bg-base-100 border border-base-300 shadow-xl">
+    <div class="card-body gap-4">
+      @let r = run(); @switch (r.status) { @case ('idle') {
+      <div class="space-y-2 text-sm text-base-content">
+        <p class="font-mono text-base-content/70">
+          {{ fileName() }} · {{ finalRowCount() }} rows · {{ mappedColumnCount() }} columns mapped
+        </p>
+        <ul class="list-disc list-inside text-base-content/70 space-y-1">
+          <li>
+            Duplicates: {{ duplicateDecision() === 'merge' ? 'merge into existing' : duplicateDecision() === 'skip' ?
+            'skip duplicate rows' : 'import as new anyway' }}
+          </li>
+          @if (badEmailRows().length > 0) {
+          <li>Email problems: {{ badEmailDecision() === 'skip' ? 'skip those rows' : 'import without an email' }}</li>
+          } @if (parsedTags().length > 0) {
+          <li>Tags: {{ parsedTags().join(', ') }}</li>
+          } @if (listName().trim()) {
+          <li>Added to list: {{ listName().trim() }}</li>
+          }
+        </ul>
+        <p class="text-base-content/60">The import writes in one pass and lands in the Activity log.</p>
+      </div>
+      <div class="flex justify-between">
+        <button type="button" class="btn btn-ghost gap-2" (click)="goToStep('review')">
+          <pc-icon name="chevron-left" [size]="4"></pc-icon>
+          Back
+        </button>
+        <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
+          <pc-icon name="paper-airplane" [size]="4"></pc-icon>
+          Import {{ finalRowCount() }} people
+        </button>
+      </div>
+      } @case ('running') {
+      <div class="flex flex-col items-center gap-3 py-10">
+        <pc-icon name="arrow-path" class="animate-spin text-primary" [size]="8"></pc-icon>
+        <p class="text-base-content font-medium">Importing {{ finalRowCount() }} rows…</p>
+        <p class="text-sm text-base-content/60">Matching by email, merging duplicates and applying tags</p>
+      </div>
+      } @case ('done') {
+      <div class="flex flex-col gap-4">
+        <div class="flex items-center gap-3">
+          <pc-icon name="check-circle" class="text-success" [size]="8"></pc-icon>
+          <h2 class="text-xl font-bold text-base-content">Imported {{ r.inserted }} people</h2>
+        </div>
+        <ul class="text-sm text-base-content/70 space-y-1">
+          <li>{{ r.inserted }} imported</li>
+          @if (r.merged > 0) {
+          <li>{{ r.merged }} merged into existing people</li>
+          } @if (r.skipped > 0) {
+          <li>{{ r.skipped }} skipped</li>
+          } @if (r.errors > 0) {
+          <li class="text-error">{{ r.errors }} errors</li>
+          } @if (r.tag) {
+          <li>Tagged {{ r.tag }}</li>
+          }
+        </ul>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <button type="button" class="btn btn-primary gap-2" (click)="viewImportedPeople()">
+            <pc-icon name="user-group" [size]="4"></pc-icon>
+            View imported people
+          </button>
+          <button type="button" class="btn btn-outline gap-2" (click)="startOver()">
+            <pc-icon name="arrow-up-tray" [size]="4"></pc-icon>
+            Import another file
+          </button>
+          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">
+            <pc-icon name="clipboard-document-list" [size]="4"></pc-icon>
+            Back to import history
+          </button>
+        </div>
+      </div>
+      } @case ('error') {
+      <div class="flex flex-col gap-4">
+        <div class="alert alert-error gap-2">
+          <pc-icon name="exclamation-triangle" [size]="5"></pc-icon>
+          <span>{{ r.message }}</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="btn btn-primary gap-2" (click)="runImport()">
+            <pc-icon name="arrow-path" [size]="4"></pc-icon>
+            Try again
+          </button>
+          <button type="button" class="btn btn-ghost gap-2" (click)="backToHistory()">Back to import history</button>
+        </div>
+      </div>
+      } }
+    </div>
+  </div>
+  }
+</div>
