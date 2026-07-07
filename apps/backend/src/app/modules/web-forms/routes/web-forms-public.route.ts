@@ -1,30 +1,13 @@
 import type { FastifyPluginCallback } from 'fastify';
 import { WebFormsController } from '../controller';
 import formBody from '@fastify/formbody';
-import { RESERVED_SUBDOMAINS } from '../../../../../../../libs/common/src';
+import { resolveTenantFromRequest } from '../../../lib/public-tenant';
 import { env } from '../../../../env';
 
 const webFormsController = new WebFormsController();
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
-}
-
-/**
- * Extract a tenant subdomain label from a request Host. `riverton.mydomain.com` → `riverton` when the
- * base domain is `mydomain.com`. Returns null for the bare/app host, reserved labels, or a mismatch.
- */
-function tenantSlugFromHost(hostname: string | undefined): string | null {
-  if (!hostname) return null;
-  const host = hostname.split(':')[0]?.toLowerCase();
-  const base = env.publicFormsBaseDomain.toLowerCase();
-  if (!host || host === base) return null;
-  const suffix = `.${base}`;
-  if (!host.endsWith(suffix)) return null;
-  const label = host.slice(0, -suffix.length);
-  // Only a single left-most label maps to a tenant (no nested subdomains).
-  if (!label || label.includes('.') || RESERVED_SUBDOMAINS.has(label)) return null;
-  return label;
 }
 
 function escapeHtml(s: string): string {
@@ -482,15 +465,11 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
   fastify.get('/f/:slug', async (req: any, reply) => {
     const { slug } = req.params;
     try {
-      const tenantSlug = (typeof req.query?.t === 'string' && req.query.t.trim()) || tenantSlugFromHost(req.hostname);
-      if (!tenantSlug) {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
         return reply.status(404).send({ error: 'Form not found.' });
       }
-      const tenantId = await webFormsController.resolveTenantIdBySlug(tenantSlug);
-      if (!tenantId) {
-        return reply.status(404).send({ error: 'Form not found.' });
-      }
-      const result = await webFormsController.getPublicFormBySlug(String(slug), tenantId);
+      const result = await webFormsController.getPublicFormBySlug(String(slug), tenant.id);
       return reply.status(200).send(result);
     } catch (err) {
       const statusCode = isRecord(err) && typeof err['statusCode'] === 'number' ? err['statusCode'] : 404;
@@ -498,11 +477,15 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     }
   });
 
-  fastify.get('/view/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
+  // Server-rendered public donation page. Donation forms deliberately stay off the /f/:slug SPA
+  // page (they carry the amount field + Stripe checkout); the lookup is tenant-scoped by slug like
+  // every other public surface.
+  fastify.get('/d/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
     try {
-      const form = await webFormsController.getFormPublic(formId);
-      if (!form || form.status !== 'published') {
+      const tenant = await resolveTenantFromRequest(req);
+      const form = tenant ? await webFormsController.getDonationFormPublic(tenant.id, String(slug)) : undefined;
+      if (!tenant || !form || form.status !== 'published') {
         reply.status(404).type('text/html');
         return reply.send(errorHtml('Web form not found or inactive.'));
       }
@@ -517,8 +500,9 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
           : JSON.parse(String(form.fields))
         : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
 
+      const submitAction = `/api/forms/submit/${encodeURIComponent(String(slug))}?t=${encodeURIComponent(tenant.slug)}`;
       reply.type('text/html');
-      return reply.send(renderFormHtml(formId, formName, formDescription, fields, form.form_type));
+      return reply.send(renderFormHtml(submitAction, formName, formDescription, fields, form.form_type));
     } catch (err) {
       // Never surface internal error detail to an unauthenticated visitor — log it, show generic
       // copy (SECURITY-REVIEW 5.2, consistent with the tRPC sanitization boundary).
@@ -528,8 +512,8 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
     }
   });
 
-  fastify.post('/submit/:formId', async (req: any, reply) => {
-    const { formId } = req.params;
+  fastify.post('/submit/:slug', async (req: any, reply) => {
+    const { slug } = req.params;
     // req.ip is derived from X-Forwarded-For per the trusted-proxy config; never
     // read the raw header, which a client can spoof to defeat rate limiting.
     const clientIp = req.ip;
@@ -537,8 +521,14 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
       req.headers.accept?.includes('application/json') || req.headers['content-type'] === 'application/json';
 
     try {
+      const tenant = await resolveTenantFromRequest(req);
+      if (!tenant) {
+        if (isJsonExpected) return reply.status(404).send({ error: 'Web form not found or inactive.' });
+        reply.status(404).type('text/html');
+        return reply.send(errorHtml('Web form not found or inactive.'));
+      }
       const body = req.body || {};
-      const result = await webFormsController.submitFormPublic(formId, body, clientIp);
+      const result = await webFormsController.submitFormPublic(tenant, String(slug), body, clientIp);
 
       if (isJsonExpected) {
         return reply.status(200).send({ success: true, redirect_url: result.redirect_url });
@@ -575,7 +565,7 @@ const webFormsPublicRoute: FastifyPluginCallback = (fastify, _, done) => {
 export default webFormsPublicRoute;
 
 const renderFormHtml = (
-  formId: string,
+  submitAction: string,
   formName: string,
   formDescription: string,
   fields: string[],
@@ -842,7 +832,7 @@ const renderFormHtml = (
       <p class="description">${escapeHtml(formDescription)}</p>
     </div>
 
-    <form action="/api/forms/submit/${escapeHtml(formId)}" method="POST">
+    <form action="${escapeHtml(submitAction)}" method="POST">
       <!-- Honeypot Bot Field (leave empty!) -->
       <input type="text" name="_hp" class="hp-field" tabindex="-1" autocomplete="off" />
 

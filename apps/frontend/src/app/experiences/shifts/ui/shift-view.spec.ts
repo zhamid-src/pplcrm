@@ -7,6 +7,7 @@ import { ShiftViewComponent } from './shift-view';
 import { ShiftsService } from '../services/shifts-service';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { ActivityService } from '@experiences/activity/services/activity.service';
+import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 const mockShiftData = {
@@ -17,7 +18,6 @@ const mockShiftData = {
   start_time: '2026-08-01T09:00:00Z',
   end_time: '2026-08-01T12:00:00Z',
   capacity: 5,
-  public_url: '/api/events/view/weekend-canvass',
 };
 
 let component: ShiftViewComponent;
@@ -68,6 +68,7 @@ describe('ShiftViewComponent', () => {
         { provide: ActivatedRoute, useValue: mockActivatedRoute },
         { provide: ActivityService, useValue: mockActivitySvc },
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
+        { provide: AuthService, useValue: { getUser: vi.fn().mockReturnValue({ tenant_slug: 'testorg' }) } },
       ],
     })
       .overrideComponent(ShiftViewComponent, {
@@ -109,18 +110,18 @@ describe('ShiftViewComponent', () => {
     expect(component['remainingCapacity']()).toBe('Unlimited');
   });
 
-  it('should build the public signup url from the environment and event public_url', async () => {
+  it('should build the public signup url on the tenant subdomain from the event slug', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(component['publicUrl']()).toContain('/api/events/view/weekend-canvass');
+    expect(component['publicUrl']()).toBe('https://testorg.localhost/v/weekend-canvass');
   });
 
-  it('should return an empty public url when the event has none', async () => {
+  it('should return an empty public url when the event has no slug', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    component['event'].set({ ...mockShiftData, public_url: null });
+    component['event'].set({ ...mockShiftData, slug: null });
     expect(component['publicUrl']()).toBe('');
   });
 

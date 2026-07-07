@@ -8,6 +8,7 @@ import { EventsFrontendService } from '../services/events-frontend-service';
 import { EventsService } from '../../../services/api/events-service';
 import { PersonsService } from '../../persons/services/persons-service';
 import { ActivityService } from '@experiences/activity/services/activity.service';
+import { AuthService } from '../../../auth/auth-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 
 const mockEventData = {
@@ -81,6 +82,7 @@ describe('EventViewComponent', () => {
         { provide: PersonsService, useValue: mockPersonsSvc },
         { provide: ActivityService, useValue: mockActivitySvc },
         { provide: ConfirmDialogService, useValue: mockDialogSvc },
+        { provide: AuthService, useValue: { getUser: vi.fn().mockReturnValue({ tenant_slug: 'testorg' }) } },
       ],
     })
       .overrideComponent(EventViewComponent, {
@@ -139,11 +141,11 @@ describe('EventViewComponent', () => {
     expect(component['remainingCapacity']()).toBe('Unlimited');
   });
 
-  it('should build the public RSVP url from the event slug', async () => {
+  it('should build the public RSVP url on the tenant subdomain from the event slug', async () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(component['publicUrl']()).toContain('/api/event-pages/view/town-hall');
+    expect(component['publicUrl']()).toBe('https://testorg.localhost/e/town-hall');
   });
 
   it('should detect whether the event has already passed', async () => {

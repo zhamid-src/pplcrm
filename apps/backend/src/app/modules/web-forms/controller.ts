@@ -15,6 +15,7 @@ import { TRPCError } from '@trpc/server';
 import { env } from '../../../env';
 import { createSigner, createVerifier } from 'fast-jwt';
 import { fingerprintFull, fingerprintStreet } from '../../lib/address-normalize';
+import type { PublicTenant } from '../../lib/public-tenant';
 import { HouseholdRepo } from '../households/repositories/households.repo';
 
 import { WorkflowsController } from '../workflows/controller';
@@ -37,13 +38,22 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     return this.resolveCreatorAndUpdater(input.tenant_id, form);
   }
 
-  public async getFormPublic(id: string) {
-    return this.getRepo().getByIdPublic(id);
+  /**
+   * Tenant-scoped lookup for the server-rendered public donation page (/api/forms/d/:slug).
+   * Only donation-type forms resolve here — standard forms live on the /f/:slug SPA page.
+   */
+  public async getDonationFormPublic(tenantId: string, slug: string) {
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
+    if (!form || (form.form_type !== 'donation' && form.form_type !== 'recurring_donation')) {
+      return undefined;
+    }
+    return form;
   }
 
   public async addForm(payload: AddWebFormType, auth: IAuthKeyPayload) {
     const row = {
       tenant_id: auth.tenant_id,
+      slug: await this.uniqueSlug(auth.tenant_id, payload.name),
       name: payload.name,
       description: payload.description ?? null,
       redirect_url: payload.redirect_url ?? null,
@@ -109,7 +119,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     return updated;
   }
 
-  public async submitFormPublic(formId: string, payload: Record<string, string>, clientIp: string) {
+  public async submitFormPublic(tenant: PublicTenant, slug: string, payload: Record<string, string>, clientIp: string) {
     // 1. Rate limiting check
     const now = Date.now();
     let timestamps = ipSubmissionTimestamps.get(clientIp) || [];
@@ -128,16 +138,16 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
       ipSubmissionTimestamps.delete(clientIp);
     }
 
-    // 2. Fetch Form by ID
-    const form = await this.getRepo().getByIdPublic(formId);
+    // 2. Fetch the form — tenant-scoped by slug; the tenant was resolved from the subdomain
+    const tenantId = tenant.id;
+    const form = await this.getRepo().getBySlugPublic(tenantId, slug);
     if (!form || form.status !== 'published') {
       throw new TRPCError({
         code: 'NOT_FOUND',
         message: 'Web form not found or inactive.',
       });
     }
-
-    const tenantId = String(form.tenant_id);
+    const formId = String(form.id);
 
     // 3. Honeypot check
     if (payload['_hp'] && payload['_hp'].trim().length > 0) {
@@ -651,7 +661,7 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
     if (form.form_type === 'donation' || form.form_type === 'recurring_donation') {
       const donationsController = new DonationsController();
       const successUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/success?checkout_session_id={CHECKOUT_SESSION_ID}`;
-      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/view/${formId}?checkout_cancel=true`;
+      const cancelUrl = `${env.apiUrl.replace(/\/$/, '')}/api/forms/d/${form.slug}?t=${encodeURIComponent(tenant.slug)}&checkout_cancel=true`;
 
       if (form.form_type === 'donation') {
         const checkoutSession = await donationsController.createCheckoutSession(
@@ -822,7 +832,9 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
    */
   public async getPublicFormBySlug(slug: string, tenantId: string) {
     const form = await this.getRepo().getBySlugPublic(tenantId, slug);
-    if (!form) {
+    // Donation forms have slugs too (every form does) but render on the separate server-rendered
+    // /api/forms/d/:slug page with the amount field — never on the /f/:slug SPA page.
+    if (!form || form.form_type === 'donation' || form.form_type === 'recurring_donation') {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Form not found.' });
     }
     const orgName = await this.getOrgName(String(form.tenant_id));
@@ -853,11 +865,6 @@ export class WebFormsController extends BaseController<'web_forms', WebFormsRepo
         fields: normalized.fields.filter((f) => f.on),
       },
     };
-  }
-
-  /** Resolve a tenant id from its public subdomain slug (for the /f/:slug page). */
-  public resolveTenantIdBySlug(tenantSlug: string): Promise<string | null> {
-    return this.getRepo().getTenantIdBySlug(tenantSlug);
   }
 
   private async getOrgName(tenantId: string): Promise<string> {

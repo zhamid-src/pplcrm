@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import type { IAuthKeyPayload } from '../../../../../../libs/common/src/lib/auth';
 import type { Models, OperationDataType } from '../../../../../../libs/common/src/lib/kysely.models';
 import { BaseController } from '../../lib/base.controller';
+import { publicOrgName } from '../../lib/public-tenant';
 import { logger } from '../../logger';
 import { WorkflowsController } from '../workflows/controller';
 import { EventsRepo } from './repositories/events.repo';
@@ -72,15 +73,71 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     }
   }
 
-  public async getEventBySlug(slug: string) {
-    // NOTE: unscoped by design — public registration page: tenant is unknown until the event is resolved by slug
-    // eslint-disable-next-line local/no-unscoped-db-query
+  /**
+   * Public registration-page lookup. Tenant-scoped: event slugs are only unique per tenant, and the
+   * tenant is resolved from the subdomain (lib/public-tenant) before any event query runs.
+   */
+  public async getEventBySlug(tenantId: string, slug: string) {
     return this.getRepo()
       .db.selectFrom('events')
       .selectAll()
+      .where('tenant_id', '=', tenantId)
       .where('slug', '=', slug)
       .where('is_published', '=', true)
       .executeTakeFirst();
+  }
+
+  /**
+   * Everything the public /e/:slug SPA page renders, in one payload: the event, its ticket types,
+   * live capacity, and the org name. Unpublished/unknown slugs throw NOT_FOUND.
+   */
+  public async getPublicEventConfig(tenantId: string, slug: string) {
+    const event = await this.getEventBySlug(tenantId, slug);
+    if (!event) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
+    }
+
+    const eventId = String(event.id);
+    const [orgName, tickets, regCount] = await Promise.all([
+      publicOrgName(tenantId),
+      this.getTicketTypesByEventId(eventId, tenantId),
+      this.getRegistrationCountForEvent(eventId, tenantId),
+    ]);
+
+    const now = new Date();
+    const isPast = new Date(event.end_time) < now;
+    const isFull = event.capacity !== null && regCount >= event.capacity;
+    const remaining = event.capacity !== null ? Math.max(0, event.capacity - regCount) : null;
+
+    const fields: string[] = Array.isArray(event.fields)
+      ? event.fields
+      : typeof event.fields === 'string'
+        ? JSON.parse(event.fields)
+        : ['first_name', 'last_name', 'email', 'mobile', 'notes'];
+
+    return {
+      orgName,
+      event: {
+        name: String(event.name),
+        description: event.description ?? null,
+        location_address: event.location_address ?? null,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        capacity: event.capacity ?? null,
+        contact_email: event.contact_email ?? null,
+        contact_phone: event.contact_phone ?? null,
+        fields,
+      },
+      tickets: tickets.map((t) => ({
+        name: String(t.name),
+        description: t.description ?? null,
+        price_cents: t.price_cents ?? null,
+        capacity: t.capacity ?? null,
+      })),
+      isPast,
+      isFull,
+      remaining,
+    };
   }
 
   public async getRegistrationCountForEvent(eventId: string, tenantId: string): Promise<number> {
@@ -505,7 +562,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     return this.getRepo().getEventStats({ tenant_id: auth.tenant_id, person_id });
   }
 
-  public async rsvpPublic(slug: string, payload: Record<string, string>, clientIp: string) {
+  public async rsvpPublic(tenantId: string, slug: string, payload: Record<string, string>, clientIp: string) {
     // Rate limiting
     const now = Date.now();
     let timestamps = ipRsvpTimestamps.get(clientIp) || [];
@@ -516,7 +573,7 @@ export class EventsController extends BaseController<'events', EventsRepo> {
     timestamps.push(now);
     ipRsvpTimestamps.set(clientIp, timestamps);
 
-    const event = await this.getEventBySlug(slug);
+    const event = await this.getEventBySlug(tenantId, slug);
     if (!event) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Event not found.' });
     }
@@ -535,7 +592,6 @@ export class EventsController extends BaseController<'events', EventsRepo> {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'This event has ended and registration is closed.' });
     }
 
-    const tenantId = String(event.tenant_id);
     const firstName = payload['first_name']?.trim() || null;
     const lastName = payload['last_name']?.trim() || null;
     const mobile = payload['mobile']?.trim() || null;

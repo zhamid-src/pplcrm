@@ -40,6 +40,21 @@ export const appRoutes = [
     loadComponent: () => import('./experiences/forms/ui/public-form').then((m) => m.PublicFormComponent),
   },
   {
+    path: 'e/:slug',
+    data: { kind: 'event' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'v/:slug',
+    data: { kind: 'volunteer' },
+    loadComponent: () => import('./experiences/events/ui/public-event').then((m) => m.PublicEventComponent),
+  },
+  {
+    path: 'volunteer',
+    loadComponent: () =>
+      import('./experiences/shifts/ui/public-volunteer-list').then((m) => m.PublicVolunteerListComponent),
+  },
+  {
     path: 'verify-email',
     loadComponent: () => import('./auth/verify-email-page/verify-email-page').then((m) => m.VerifyEmailPage),
   },

@@ -18,6 +18,8 @@ import { DetailLayout } from '@uxcommon/components/detail-layout/detail-layout';
 import type { PcBreadcrumb } from '@uxcommon/components/breadcrumbs/breadcrumbs';
 import { createLoadingGate } from '@uxcommon/loading-gate';
 import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { injectRecordNavigation } from '@frontend/services/record-navigation.service';
 import { getUserErrorMessage } from '@frontend/services/api/user-message';
 
@@ -40,6 +42,7 @@ import { getUserErrorMessage } from '@frontend/services/api/user-message';
 })
 export class FormViewComponent {
   private readonly alertSvc = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly formsSvc = inject(FormsService);
   private readonly listsSvc = inject(ListsService);
   private readonly route = inject(ActivatedRoute);
@@ -153,7 +156,7 @@ export class FormViewComponent {
     const submitLabel = isRecurring ? 'Start Monthly Pledge' : isDonation ? 'Donate Now' : 'Subscribe';
 
     return `<!-- PeopleCRM Embeddable Form -->
-<form action="${apiOrigin}/api/forms/submit/${this.id()}" method="POST" style="max-width: 400px; font-family: sans-serif;">
+<form action="${apiOrigin}/api/forms/submit/${this.formRecord()?.slug ?? ''}?t=${encodeURIComponent(this.auth.getUser()?.tenant_slug ?? '')}" method="POST" style="max-width: 400px; font-family: sans-serif;">
   <input type="text" name="_hp" style="display:none !important" tabindex="-1" autocomplete="off" />
 ${
   fields.includes('first_name') || isAnyDonation
@@ -193,8 +196,15 @@ ${
   });
 
   protected readonly formUrl = computed(() => {
-    if (!this.id()) return '';
-    return environment.apiUrl.replace(/\/$/, '') + `/api/forms/view/${this.id()}`;
+    const record = this.formRecord();
+    if (!record?.slug) return '';
+    const tenantSlug = this.auth.getUser()?.tenant_slug;
+    // Donation forms keep the server-rendered page (Stripe checkout); standard forms live on the
+    // /f/:slug SPA page on the tenant subdomain.
+    if (record.form_type === 'donation' || record.form_type === 'recurring_donation') {
+      return `${environment.apiUrl.replace(/\/$/, '')}/api/forms/d/${record.slug}?t=${encodeURIComponent(tenantSlug ?? '')}`;
+    }
+    return publicPageUrl(tenantSlug, `f/${record.slug}`);
   });
 
   constructor() {

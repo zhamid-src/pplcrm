@@ -165,12 +165,12 @@ describe('VolunteerEventsController', () => {
     });
   });
 
-  it('returns a decorated event with public URLs via getOneById', async () => {
+  it('returns the plain event via getOneById (public URLs are built by the frontend from the slug)', async () => {
     const event = await controller.addEvent(eventPayload(), auth);
 
     const fetched: any = await controller.getOneById({ tenant_id: tenantId, id: String(event.id) });
-    expect(fetched.public_url).toBe(`/api/events/view/${event.slug}`);
-    expect(fetched.tenant_public_url).toContain('/api/events/org/');
+    expect(fetched.slug).toBe(event.slug);
+    expect(fetched.public_url).toBeUndefined();
   });
 
   it('signs up a volunteer for a shift, updates it, and prevents duplicate signups', async () => {
@@ -237,7 +237,7 @@ describe('VolunteerEventsController', () => {
     expect(stats.total_hours).toBeCloseTo(3);
   });
 
-  it('exposes public tenant info, upcoming events, and event-by-slug lookups', async () => {
+  it('exposes public tenant info, upcoming events, and tenant-scoped event-by-slug lookups', async () => {
     const publicEvent = await controller.addEvent(eventPayload({ is_private: false }), auth);
     await controller.addEvent(eventPayload({ is_private: true }), auth);
 
@@ -248,15 +248,20 @@ describe('VolunteerEventsController', () => {
     expect(upcoming).toHaveLength(1);
     expect(String(upcoming[0].id)).toBe(String(publicEvent.id));
 
-    const bySlug = await controller.getEventPublic(publicEvent.slug);
+    const bySlug = await controller.getEventPublic(tenantId, publicEvent.slug);
     expect(bySlug?.id).toBe(publicEvent.id);
 
-    const byId = await controller.getEventPublic(String(publicEvent.id));
-    expect(byId?.id).toBe(publicEvent.id);
+    // Lookups are tenant-scoped: the same slug under another tenant id resolves nothing.
+    const wrongTenant = await controller.getEventPublic('1', publicEvent.slug);
+    expect(wrongTenant).toBeUndefined();
 
-    const slug = controller.getTenantSlug(tenantId);
-    const resolvedTenant = await controller.getTenantFromSlug(slug);
-    expect(resolvedTenant?.id).toBe(tenantId);
+    const config = await controller.getPublicEventConfig(tenantId, publicEvent.slug);
+    expect(config.event.name).toBe(publicEvent.name);
+    expect(config.isPast).toBe(false);
+
+    const listing = await controller.getPublicEventListing(tenantId);
+    expect(listing.events).toHaveLength(1);
+    expect(listing.events[0].slug).toBe(publicEvent.slug);
   });
 
   describe('signupVolunteerPublic', () => {
@@ -266,7 +271,8 @@ describe('VolunteerEventsController', () => {
       const email = `public-${rand()}@example.com`;
 
       const result = await controller.signupVolunteerPublic(
-        String(event.id),
+        tenantId,
+        event.slug,
         { email, first_name: 'Pub', last_name: 'Lic' },
         ip,
       );
@@ -307,16 +313,16 @@ describe('VolunteerEventsController', () => {
 
     it('rejects a signup for a non-existent event', async () => {
       const ip = `10.1.1.${rand().slice(-2)}`;
-      await expect(controller.signupVolunteerPublic('999999999', { email: 'x@example.com' }, ip)).rejects.toMatchObject(
-        { code: 'NOT_FOUND' },
-      );
+      await expect(
+        controller.signupVolunteerPublic(tenantId, 'no-such-event-slug', { email: 'x@example.com' }, ip),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     });
 
     it('rejects a signup missing an email address', async () => {
       const event = await controller.addEvent(eventPayload(), auth);
       const ip = `10.1.2.${rand().slice(-2)}`;
 
-      await expect(controller.signupVolunteerPublic(String(event.id), {}, ip)).rejects.toMatchObject({
+      await expect(controller.signupVolunteerPublic(tenantId, event.slug, {}, ip)).rejects.toMatchObject({
         code: 'BAD_REQUEST',
       });
     });
@@ -326,7 +332,8 @@ describe('VolunteerEventsController', () => {
       const ip = `10.1.3.${rand().slice(-2)}`;
 
       const result = await controller.signupVolunteerPublic(
-        String(event.id),
+        tenantId,
+        event.slug,
         { email: 'bot@example.com', _hp: 'spam' },
         ip,
       );
@@ -346,7 +353,7 @@ describe('VolunteerEventsController', () => {
       const ip = `10.1.4.${rand().slice(-2)}`;
 
       await expect(
-        controller.signupVolunteerPublic(String(event.id), { email: 'full@example.com' }, ip),
+        controller.signupVolunteerPublic(tenantId, event.slug, { email: 'full@example.com' }, ip),
       ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     });
 
@@ -356,14 +363,14 @@ describe('VolunteerEventsController', () => {
 
       for (let i = 0; i < 5; i++) {
         await controller
-          .signupVolunteerPublic(String(event.id), { email: `rl-${i}-${rand()}@example.com` }, ip)
+          .signupVolunteerPublic(tenantId, event.slug, { email: `rl-${i}-${rand()}@example.com` }, ip)
           .catch(() => {
             /* only the 6th call matters for this assertion */
           });
       }
 
       await expect(
-        controller.signupVolunteerPublic(String(event.id), { email: `rl-final-${rand()}@example.com` }, ip),
+        controller.signupVolunteerPublic(tenantId, event.slug, { email: `rl-final-${rand()}@example.com` }, ip),
       ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
     });
   });

@@ -11,12 +11,14 @@ async function createTestSeed(db: any) {
   const campaignId = rand();
   const householdId = rand();
 
-  // 1. Tenant
+  // 1. Tenant (slug is the public subdomain identity — globally unique)
+  const tenantSlug = `test-${tenantId}`;
   await db
     .insertInto('tenants')
     .values({
       id: tenantId,
       name: 'Test Tenant',
+      slug: tenantSlug,
     })
     .execute();
 
@@ -72,7 +74,7 @@ async function createTestSeed(db: any) {
     .where('id', '=', tenantId)
     .execute();
 
-  return { tenantId, userId, campaignId, householdId };
+  return { tenantId, tenantSlug, userId, campaignId, householdId };
 }
 
 async function cleanTenant(db: any, tenantId: string) {
@@ -99,13 +101,17 @@ describe('WebFormsController Integration', () => {
   const controller = new WebFormsController();
   const db = (BaseRepository as any)._db;
   let tenantId: string;
+  let tenantSlug: string;
   let userId: string;
   let campaignId: string;
   let householdId: string;
 
+  const tenant = () => ({ id: tenantId, slug: tenantSlug });
+
   beforeEach(async () => {
     const seed = await createTestSeed(db);
     tenantId = seed.tenantId;
+    tenantSlug = seed.tenantSlug;
     userId = seed.userId;
     campaignId = seed.campaignId;
     householdId = seed.householdId;
@@ -139,6 +145,7 @@ describe('WebFormsController Integration', () => {
         id: formId,
         tenant_id: tenantId,
         name: 'Newsletter Form',
+        slug: 'newsletter-form',
         description: 'Public newsletter signup form',
         redirect_url: 'https://example.com/thankyou',
         target_tags: JSON.stringify(['newsletter', 'public-form']),
@@ -171,7 +178,7 @@ describe('WebFormsController Integration', () => {
       notes: 'I would like to receive updates.',
     };
 
-    const res = await controller.submitFormPublic(formId, payload, '127.0.0.1');
+    const res = await controller.submitFormPublic(tenant(), 'newsletter-form', payload, '127.0.0.1');
     expect(res.redirect_url).toBe('https://example.com/thankyou');
 
     // Verify background job was queued
@@ -252,6 +259,7 @@ describe('WebFormsController Integration', () => {
         id: formId,
         tenant_id: tenantId,
         name: 'Newsletter Form',
+        slug: 'newsletter-merge-form',
         status: 'published',
         createdby_id: userId,
         updatedby_id: userId,
@@ -266,7 +274,7 @@ describe('WebFormsController Integration', () => {
       notes: 'New form signup.',
     };
 
-    await controller.submitFormPublic(formId, payload, '127.0.0.1');
+    await controller.submitFormPublic(tenant(), 'newsletter-merge-form', payload, '127.0.0.1');
 
     // 4. Verify Person fields are merged non-destructively
     const person = await db
@@ -292,6 +300,7 @@ describe('WebFormsController Integration', () => {
         id: formId,
         tenant_id: tenantId,
         name: 'Newsletter Form',
+        slug: 'newsletter-honeypot-form',
         status: 'published',
         createdby_id: userId,
         updatedby_id: userId,
@@ -304,7 +313,7 @@ describe('WebFormsController Integration', () => {
       _hp: 'im-a-bot-123',
     };
 
-    const res = await controller.submitFormPublic(formId, payload, '127.0.0.1');
+    const res = await controller.submitFormPublic(tenant(), 'newsletter-honeypot-form', payload, '127.0.0.1');
     expect(res.redirect_url).toBeNull();
 
     // Verify no person was created
@@ -327,6 +336,7 @@ describe('WebFormsController Integration', () => {
         id: formId,
         tenant_id: tenantId,
         name: 'Donation Form Test',
+        slug: 'donation-form-test',
         status: 'published',
         form_type: 'donation',
         createdby_id: userId,
@@ -348,7 +358,7 @@ describe('WebFormsController Integration', () => {
     };
 
     try {
-      await controller.submitFormPublic(formId, payload, '127.0.0.1');
+      await controller.submitFormPublic(tenant(), 'donation-form-test', payload, '127.0.0.1');
     } catch (_err) {
       // Mock Stripe key redirect or exception is fine
     }
@@ -397,6 +407,7 @@ describe('WebFormsController Integration', () => {
         tenant_id: tenantId,
         form_type: 'standard',
         name: 'Required Fields Test',
+        slug: 'required-fields-test',
         fields: JSON.stringify(['first_name', 'mobile:required']),
         status: 'published',
         createdby_id: userId,
@@ -410,9 +421,9 @@ describe('WebFormsController Integration', () => {
       first_name: 'Jane',
     };
 
-    await expect(controller.submitFormPublic(formId, payloadWithoutMobile, '127.0.0.2')).rejects.toThrow(
-      'Mobile / Phone is required.',
-    );
+    await expect(
+      controller.submitFormPublic(tenant(), 'required-fields-test', payloadWithoutMobile, '127.0.0.2'),
+    ).rejects.toThrow('Mobile / Phone is required.');
 
     // 3. Submit the form with the required mobile field
     const payloadWithMobile = {
@@ -421,7 +432,7 @@ describe('WebFormsController Integration', () => {
       mobile: '555-0000',
     };
 
-    const res = await controller.submitFormPublic(formId, payloadWithMobile, '127.0.0.3');
+    const res = await controller.submitFormPublic(tenant(), 'required-fields-test', payloadWithMobile, '127.0.0.3');
     expect(res).toBeDefined();
 
     // 4. Verify Contact Creation
@@ -440,13 +451,16 @@ describe('WebFormsController lifecycle', () => {
   const controller = new WebFormsController();
   const db = (BaseRepository as any)._db;
   let tenantId: string;
+  let tenantSlug: string;
   let userId: string;
 
   const auth = () => ({ tenant_id: tenantId, user_id: userId, session_id: 'test-session', name: 'Test User' });
+  const tenant = () => ({ id: tenantId, slug: tenantSlug });
 
   beforeEach(async () => {
     const seed = await createTestSeed(db);
     tenantId = seed.tenantId;
+    tenantSlug = seed.tenantSlug;
     userId = seed.userId;
   });
 
@@ -520,7 +534,8 @@ describe('WebFormsController lifecycle', () => {
     await controller.publishForm(form.id, auth() as any);
 
     await controller.submitFormPublic(
-      form.id,
+      tenant(),
+      form.slug,
       { email: 'responder@example.com', full_name: 'Rey Poll', availability: 'Event day' },
       '127.0.0.9',
     );
@@ -584,7 +599,7 @@ describe('WebFormsController lifecycle', () => {
     }
   });
 
-  it('excludes donation forms from listForms', async () => {
+  it('excludes donation forms from listForms and from the public /f/:slug lookup', async () => {
     await controller.createForm({ name: 'Signup A', type: 'signup' }, auth() as any);
     await db
       .insertInto('web_forms')
@@ -592,6 +607,7 @@ describe('WebFormsController lifecycle', () => {
         id: randomUUID(),
         tenant_id: tenantId,
         name: 'Donation page',
+        slug: 'donation-page',
         status: 'published',
         form_type: 'donation',
         createdby_id: userId,
@@ -602,5 +618,11 @@ describe('WebFormsController lifecycle', () => {
     const forms = await controller.listForms(tenantId);
     expect(forms.some((f: any) => f.name === 'Signup A')).toBe(true);
     expect(forms.some((f: any) => f.name === 'Donation page')).toBe(false);
+
+    // Donation forms have slugs like every form, but only resolve on the /d/ donation page —
+    // the /f/ SPA page (no amount field) must 404 them.
+    await expect(controller.getPublicFormBySlug('donation-page', tenantId)).rejects.toThrow();
+    const donation = await controller.getDonationFormPublic(tenantId, 'donation-page');
+    expect(donation?.name).toBe('Donation page');
   });
 });

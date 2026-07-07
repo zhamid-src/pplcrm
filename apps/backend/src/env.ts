@@ -50,9 +50,10 @@ const envSchema = z.object({
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   WEBAUTHN_RP_ID: z.string().optional().default('localhost'),
   WEBAUTHN_RP_NAME: z.string().optional().default('PeopleCRM'),
-  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public form pages resolve
-  // the tenant from the Host header against this. Dev default is 'localhost' so `<slug>.localhost` works.
-  PUBLIC_FORMS_BASE_DOMAIN: z.string().optional().default('localhost'),
+  // Base domain that tenant subdomains hang off of (`<slug>.<baseDomain>`). Public pages (forms,
+  // event RSVP, volunteer signup, donations) resolve the tenant from the Host header against this.
+  // Dev default is 'localhost' so `<slug>.localhost` works.
+  PUBLIC_BASE_DOMAIN: z.string().optional().default('localhost'),
   // Controls how Fastify derives `req.ip` from the X-Forwarded-For chain. Never trust the raw header
   // for security decisions (rate limiting) — a client can spoof it. Set this to your real topology:
   //   'false' (default) — trust nothing; `req.ip` is the socket address (correct for local/dev).
@@ -120,7 +121,7 @@ export const env = {
   migrateOnBoot: parsedEnv.MIGRATE_ON_BOOT,
   apiUrl: parsedEnv.API_URL,
   appUrl: parsedEnv.APP_URL,
-  publicFormsBaseDomain: parsedEnv.PUBLIC_FORMS_BASE_DOMAIN,
+  publicBaseDomain: parsedEnv.PUBLIC_BASE_DOMAIN,
   trustProxy: parseTrustProxy(parsedEnv.TRUST_PROXY),
   workerConcurrency: parsedEnv.WORKER_CONCURRENCY,
   dbPoolMax: parsedEnv.DB_POOL_MAX,

@@ -20,7 +20,8 @@ import {
   AddVolunteerEventType,
   UpdateVolunteerEventType,
 } from '../../../../../../../libs/common/src';
-import { environment } from '../../../../environments/environment';
+import { AuthService } from '../../../auth/auth-service';
+import { publicPageUrl } from '../../../shared/public-pages';
 import { VolunteerService } from '../../../services/api/volunteer-service';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
 import { PersonsService } from '../../persons/services/persons-service';
@@ -49,6 +50,7 @@ import { injectUnsavedChanges } from '@frontend/services/unsaved-changes-guard';
 export class ShiftFormComponent implements OnInit {
   private readonly _loading = createLoadingGate();
   private readonly alerts = inject(AlertService);
+  private readonly auth = inject(AuthService);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly personsSvc = inject(PersonsService);
   private readonly router = inject(Router);
@@ -61,7 +63,7 @@ export class ShiftFormComponent implements OnInit {
   protected readonly publicUrl = computed(() => {
     const slug = this.payload().slug;
     if (!slug || this.isNew()) return '';
-    return `${environment.apiUrl}/api/events/view/${slug}`;
+    return publicPageUrl(this.auth.getUser()?.tenant_slug, `v/${slug}`);
   });
 
   protected readonly allVolunteers = signal<any[]>([]);
@@ -100,7 +102,7 @@ export class ShiftFormComponent implements OnInit {
     if (!start_time || !end_time) return false;
     return new Date(end_time) <= new Date(start_time);
   });
-  protected readonly environment = environment;
+  protected readonly volunteerListUrl = computed(() => publicPageUrl(this.auth.getUser()?.tenant_slug, 'volunteer'));
   protected readonly error = signal<string | null>(null);
   protected readonly eventPassed = computed(() => {
     const end = this.payload().end_time;
@@ -268,7 +270,7 @@ export class ShiftFormComponent implements OnInit {
     }
 
     try {
-      const event = await this.volunteerEventsSvc.getById(this.id()!);
+      const event = (await this.volunteerEventsSvc.getById(this.id()!)) as any;
       this.detail.set(event);
       this.payload.set({
         name: event.name ?? '',
