@@ -286,8 +286,6 @@ export class PersonsGrid implements OnInit {
     return 'user-plus';
   }
 
-  // paging/preview managed by CsvImportComponent
-
   protected confirmOpenEditOnDoubleClick(event: any) {
     this.addressChangeModalId = event?.data?.household_id ?? event?.household_id;
     this.confirmAddressChange();
