@@ -94,22 +94,25 @@ brew services start postgresql
 # Wait briefly in case Postgres isn't ready
 sleep 3
 
-echo "🔐 Setting up PostgreSQL user and database..."
-psql postgres <<EOF
-DO \$\$
-BEGIN
-   IF NOT EXISTS (
-      SELECT FROM pg_catalog.pg_roles WHERE rolname = 'pplcrm'
-   ) THEN
-      CREATE ROLE pplcrm WITH LOGIN PASSWORD '[REDACTED]';
-   END IF;
-END
-\$\$;
-
-CREATE DATABASE pplcrm OWNER pplcrm;
+echo "🔐 Creating database and provisioning least-privilege roles..."
+# Create the database (owned by the local superuser for now), then run the S-2
+# role-split provisioning: it creates pplcrm_owner / pplcrm_app, transfers the
+# database + public-schema ownership to pplcrm_owner, and locks down public.
+# The app then migrates as pplcrm_owner and serves as pplcrm_app — see
+# apps/backend/scripts/setup-db-roles.sql and .claude/skills/pplcrm-migrations.
+psql postgres <<'EOF'
+SELECT 'CREATE DATABASE pplcrm' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'pplcrm')\gexec
 EOF
 
-echo "✅ PostgreSQL user and database created (if not already)"
+# Dev passwords are ignored under local `trust` auth but keep them in sync with
+# .env.development so the same file works if you switch to password auth.
+psql -d pplcrm -v ON_ERROR_STOP=1 \
+  -v owner_pw='dev_owner_pw' \
+  -v app_pw='dev_app_pw' \
+  -v current_owner="$(whoami)" \
+  -f apps/backend/scripts/setup-db-roles.sql
+
+echo "✅ Database created and roles provisioned (pplcrm_owner / pplcrm_app)"
 
 # Install project dependencies
 if [ -f "package.json" ]; then
