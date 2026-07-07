@@ -16,10 +16,21 @@ import { sql } from 'kysely';
  * backfill + constraint swap in one migration is safe.
  */
 export async function up(db: Kysely<any>): Promise<void> {
+  // tasks/task_subtasks run FORCE ROW LEVEL SECURITY (S-1 tenant backstop). A
+  // migration sets no tenant GUC, so these status backfills are rejected
+  // ("query would be affected by row-level security policy") and the whole
+  // batch rolls back, breaking fresh-DB bootstrap. Drop FORCE for the backfill
+  // and restore it; both tables are designed to run it.
+  await sql`ALTER TABLE public.tasks NO FORCE ROW LEVEL SECURITY`.execute(db);
+  await sql`ALTER TABLE public.task_subtasks NO FORCE ROW LEVEL SECURITY`.execute(db);
+
   await sql`UPDATE public.tasks SET status = 'waiting' WHERE status = 'blocked'`.execute(db);
   await sql`UPDATE public.tasks SET status = 'archived' WHERE status = 'canceled'`.execute(db);
   await sql`UPDATE public.task_subtasks SET status = 'waiting' WHERE status = 'blocked'`.execute(db);
   await sql`UPDATE public.task_subtasks SET status = 'archived' WHERE status = 'canceled'`.execute(db);
+
+  await sql`ALTER TABLE public.tasks FORCE ROW LEVEL SECURITY`.execute(db);
+  await sql`ALTER TABLE public.task_subtasks FORCE ROW LEVEL SECURITY`.execute(db);
 
   await sql`ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS chk_tasks_status`.execute(db);
   await sql`
