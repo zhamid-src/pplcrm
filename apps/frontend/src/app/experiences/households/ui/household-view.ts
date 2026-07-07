@@ -10,6 +10,7 @@ import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 import { RecordActivities } from '@experiences/activity/ui/record-activities/record-activities';
 import { PeopleInHousehold } from '../../persons/ui/people-in-household';
 import { UserService } from '../../../services/user.service';
+import type { Selectable } from 'kysely';
 import { HouseholdsService } from '../services/households-service';
 import { Households } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { ConfirmDialogService } from '../../../services/shared-dialog.service';
@@ -65,7 +66,7 @@ export class HouseholdView {
   private readonly _loading = createLoadingGate();
   protected readonly isLoading = this._loading.visible;
   protected readonly initialized = signal(false);
-  protected readonly household = signal<Households | null>(null);
+  protected readonly household = signal<Selectable<Households> | null>(null);
   protected readonly users = signal<IAuthUser[]>([]);
   private usersById = new Map<string, IAuthUser>();
 
@@ -150,7 +151,7 @@ export class HouseholdView {
     const end = this._loading.begin();
     try {
       // 1. Load household details
-      const householdData = (await this.householdsSvc.getById(id)) as Households;
+      const householdData = (await this.householdsSvc.getById(id)) as Selectable<Households>;
       this.household.set(householdData);
       // Spec §1: the address bar shows the record slug, never the internal id.
       // Cosmetic swap only — route param, record-nav pager and breadcrumbs keep the numeric id.

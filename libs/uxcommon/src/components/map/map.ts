@@ -7,7 +7,6 @@ const DEFAULT_ZOOM = 14;
 const DEFAULT_MAP_ID = 'DEMO_MAP_ID';
 const FILL_OPACITY = 0.18;
 const MUTED_OPACITY = 0.55;
-const DASH_REPEAT = '12px';
 
 /**
  * `<pc-map>` — the single Google Maps primitive for the whole app (§13 maps
@@ -184,20 +183,14 @@ export class PcMap {
       map: this.map,
       paths: poly.path,
       strokeColor: color,
-      strokeWeight: 2,
-      strokeOpacity: poly.dashed ? 0 : 0.9,
+      // Polygons can't render a dashed outline (that's a Polyline feature); a
+      // dashed turf uses a thinner, lower-opacity solid stroke for now.
+      // TODO(Wave 2F turf boundaries): overlay a dashed Polyline for `poly.dashed`.
+      strokeWeight: poly.dashed ? 1.5 : 2,
+      strokeOpacity: poly.dashed ? 0.6 : 0.9,
       fillColor: color,
       fillOpacity: FILL_OPACITY,
       clickable: true,
-      icons: poly.dashed
-        ? [
-            {
-              icon: { path: 'M 0,-1 0,1', strokeOpacity: 0.9, scale: 2 },
-              offset: '0',
-              repeat: DASH_REPEAT,
-            },
-          ]
-        : undefined,
     });
     shape.addListener('click', () => this.polygonClicked.emit(poly));
     this.drawnPolygons.push(shape);

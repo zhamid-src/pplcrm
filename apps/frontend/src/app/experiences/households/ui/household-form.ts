@@ -14,6 +14,7 @@ import { EntityOverview as PcEntityOverview } from '@uxcommon/components/entity-
 import { AddressFormGroup as PcAddressFormGroup } from '@uxcommon/components/address-form-group/address-form-group';
 import { GeocodeChip } from '@uxcommon/components/geocode-chip/geocode-chip';
 
+import type { Selectable } from 'kysely';
 import { HouseholdsService } from '../services/households-service';
 import { Households, AddressType } from '../../../../../../../libs/common/src/lib/kysely.models';
 import { TagOptionsService } from '@frontend/shared/components/datagrid/services/tag-options.service';
@@ -46,7 +47,7 @@ export class HouseholdForm implements OnInit {
 
   private _loading = createLoadingGate();
 
-  protected readonly household = signal<Households | null>(null);
+  protected readonly household = signal<Selectable<Households> | null>(null);
 
   protected readonly crumbs = computed<PcBreadcrumb[]>(() => {
     const households: PcBreadcrumb = { label: 'Households', route: '/households' };
@@ -337,7 +338,7 @@ export class HouseholdForm implements OnInit {
     const end = this._loading.begin();
 
     try {
-      this.household.set((await this.householdsSvc.getById(id)) as Households);
+      this.household.set((await this.householdsSvc.getById(id)) as Selectable<Households>);
       await this.getTags();
       this.refreshForm();
     } finally {
