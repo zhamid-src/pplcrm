@@ -166,16 +166,19 @@ export class PersonsRepo extends BaseRepository<'persons'> {
         )
         .$if(!!searchStr, (qb) => {
           const text = searchStr;
+          // ILIKE on the bare column (not LOWER(col) LIKE) so the trigram GIN
+          // indexes can serve quick search; normalizeSearch already lowercases,
+          // so the match semantics are identical.
           return qb.where(
             sql<boolean>`(
-            LOWER(persons.first_name) LIKE ${text} OR
-            LOWER(persons.last_name) LIKE ${text} OR
-            LOWER(persons.email) LIKE ${text} OR
-            LOWER(persons.mobile) LIKE ${text} OR
-            LOWER(households.city) LIKE ${text} OR
-            LOWER(households.street1) LIKE ${text} OR
-            LOWER(companies.name) LIKE ${text} OR
-            LOWER(tags.name) LIKE ${text}
+            persons.first_name ILIKE ${text} OR
+            persons.last_name ILIKE ${text} OR
+            persons.email ILIKE ${text} OR
+            persons.mobile ILIKE ${text} OR
+            households.city ILIKE ${text} OR
+            households.street1 ILIKE ${text} OR
+            companies.name ILIKE ${text} OR
+            tags.name ILIKE ${text}
           )`,
           );
         });
