@@ -8,10 +8,150 @@
   [currentPage]="currentPage()"
   [totalPages]="totalPages()"
   [totalGroups]="totalGroups()"
-  (onNext)="nextPage()"
-  (onPrev)="prevPage()"
+  [sweepSentence]="sweepSentence()"
+  (next)="nextPage()"
+  (prev)="prevPage()"
 >
-  @for (group of groups(); track group; let gIdx = $index) {
+  @for (group of groups(); track group; let gIdx = $index) { @if (group.items.length === 2) {
+  <!-- Spec §9.3 Fig. 12 pair card: confidence chip, why-flagged sentence, side-by-side
+           field grid with highlighted match rows, result preview, quiet/primary actions. -->
+  @let left = group.items[0]!; @let right = group.items[1]!;
+  <div class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden">
+    <div class="bg-base-200/50 px-6 py-4 border-b border-base-300 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span
+          class="badge badge-sm font-semibold"
+          [class]="confidence(group) === 'high' ? 'badge-warning' : 'badge-ghost'"
+        >
+          {{ confidence(group) === 'high' ? 'High confidence' : 'Possible match' }}
+        </span>
+        <span class="text-sm text-base-content/70">{{ whyFlagged(group) }}</span>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button type="button" class="btn btn-ghost btn-sm" (click)="dismissGroup(gIdx)">Not duplicates</button>
+        <button
+          type="button"
+          class="btn btn-primary btn-sm gap-2"
+          [disabled]="!group.selectedTargetId || !group.selectedSourceId"
+          (click)="mergeGroup(gIdx)"
+        >
+          <pc-icon name="merge" [size]="4"></pc-icon> Merge into one
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead>
+          <tr class="text-[10.5px] uppercase tracking-[0.07em] text-base-content/50">
+            <th class="w-28"></th>
+            <th>
+              <a
+                [routerLink]="['/people', left.id]"
+                class="link link-hover normal-case text-sm font-semibold text-base-content underline decoration-base-content/20 underline-offset-[3px] hover:text-primary hover:decoration-primary"
+              >
+                {{ getItemDisplayName(left) }}
+              </a>
+              <div class="text-[10px] font-normal normal-case text-base-content/40">
+                Added {{ left.created_at | date: 'short' }}
+              </div>
+            </th>
+            <th class="font-semibold normal-case text-sm text-base-content">
+              {{ getItemDisplayName(right) }}
+              <div class="text-[10px] font-normal normal-case text-base-content/40">
+                Added {{ right.created_at | date: 'short' }}
+              </div>
+            </th>
+            <th class="w-20"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr [class]="rowHighlighted(group, 'name') ? 'bg-warning/10' : ''">
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Name</td>
+            <td>{{ getItemDisplayName(left) }}</td>
+            <td>{{ getItemDisplayName(right) }}</td>
+            <td></td>
+          </tr>
+          <tr [class]="rowHighlighted(group, 'email') ? 'bg-warning/10' : ''">
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Email</td>
+            <td>{{ left.email || '—' }}</td>
+            <td>{{ right.email || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Mobile</td>
+            <td>{{ left.mobile || '—' }}</td>
+            <td>{{ right.mobile || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Ward</td>
+            <td>{{ left.ward || '—' }}</td>
+            <td>{{ right.ward || '—' }}</td>
+            <td></td>
+          </tr>
+          <tr>
+            <td class="text-xs text-base-content/50 uppercase tracking-wide">Tags</td>
+            <td>{{ left.tags.length ? left.tags.join(', ') : '—' }}</td>
+            <td>{{ right.tags.length ? right.tags.join(', ') : '—' }}</td>
+            <td></td>
+          </tr>
+          <tr class="text-xs">
+            <td class="text-base-content/50 uppercase tracking-wide">Keep as</td>
+            <td>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedTargetId === left.id ? 'btn-success' : 'btn-outline'"
+                (click)="selectRole(gIdx, left.id, 'target')"
+              >
+                Keep primary
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedSourceId === left.id ? 'btn-error' : 'btn-outline'"
+                (click)="selectRole(gIdx, left.id, 'source')"
+              >
+                Merge away
+              </button>
+            </td>
+            <td>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedTargetId === right.id ? 'btn-success' : 'btn-outline'"
+                (click)="selectRole(gIdx, right.id, 'target')"
+              >
+                Keep primary
+              </button>
+              <button
+                type="button"
+                class="btn btn-xs"
+                [class]="group.selectedSourceId === right.id ? 'btn-error' : 'btn-outline'"
+                (click)="selectRole(gIdx, right.id, 'source')"
+              >
+                Merge away
+              </button>
+            </td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    @if (group.selectedTargetId && group.selectedSourceId) {
+    <div class="px-6 py-3 border-t border-base-300 bg-base-200/30 text-xs text-base-content/60">
+      <pc-icon name="information-circle" [size]="4" class="inline align-text-bottom mr-1"></pc-icon>
+      {{ resultPreview(group) }}
+    </div>
+    }
+  </div>
+  } @else {
+  <!-- Fallback for a cluster of 3+ records sharing the same signal (e.g. 3 people with the
+           same email) — the side-by-side pair card doesn't generalize past two records, so this
+           keeps the prior N-way "keep/merge" card grid. Documented gap: no confidence chip / why
+           -flagged sentence / field grid here yet. -->
   <div
     class="card bg-base-100 border border-base-300 shadow-xl overflow-hidden hover:border-primary/30 transition-all duration-200"
   >
@@ -20,7 +160,10 @@
         <span class="badge badge-warning badge-sm">Warning</span>
         <h3 class="font-bold text-base-content">{{ group.reason }}</h3>
       </div>
-      <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-base-content/50">{{ group.items.length }} matching records</span>
+        <button type="button" class="btn btn-ghost btn-xs" (click)="dismissGroup(gIdx)">Not duplicates</button>
+      </div>
     </div>
 
     <div class="card-body p-6">
@@ -28,13 +171,13 @@
         @for (person of group.items; track person.id) {
         <div
           [class]="
-                    'card bg-base-200/40 border transition-all duration-200 ' +
-                    (group.selectedTargetId === person.id
-                      ? 'border-success bg-success/5 shadow'
-                      : group.selectedSourceId === person.id
-                        ? 'border-error bg-error/5 opacity-80'
-                        : 'border-base-300')
-                  "
+                        'card bg-base-200/40 border transition-all duration-200 ' +
+                        (group.selectedTargetId === person.id
+                          ? 'border-success bg-success/5 shadow'
+                          : group.selectedSourceId === person.id
+                            ? 'border-error bg-error/5 opacity-80'
+                            : 'border-base-300')
+                      "
         >
           <div class="card-body p-4 justify-between h-full">
             <div>
@@ -59,16 +202,16 @@
             <div class="flex gap-2 mt-4 pt-3 border-t border-base-300">
               <button
                 [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline')
-                        "
+                              'btn btn-xs flex-1 ' + (group.selectedTargetId === person.id ? 'btn-success' : 'btn-outline')
+                            "
                 (click)="selectRole(gIdx, person.id, 'target')"
               >
                 Keep (Primary)
               </button>
               <button
                 [class]="
-                          'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline')
-                        "
+                              'btn btn-xs flex-1 ' + (group.selectedSourceId === person.id ? 'btn-error' : 'btn-outline')
+                            "
                 (click)="selectRole(gIdx, person.id, 'source')"
               >
                 Delete (Merge)
@@ -83,10 +226,10 @@
           [hasSelections]="!!group.selectedTargetId && !!group.selectedSourceId"
           [targetName]="getDisplayNameForId(group.items, group.selectedTargetId)"
           [sourceName]="getDisplayNameForId(group.items, group.selectedSourceId)"
-          (onMerge)="mergeGroup(gIdx)"
+          (merge)="mergeGroup(gIdx)"
         ></pc-merge-summary>
       </div>
     </div>
   </div>
-  }
+  } }
 </pc-duplicate-page-shell>
