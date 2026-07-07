@@ -59,6 +59,9 @@ export class BackgroundJobWorker {
     this.ensurePruneNewsletterEventsJobScheduled().catch((err) =>
       logger.error({ err }, 'Failed to ensure prune newsletter events job scheduled'),
     );
+    this.ensurePruneRetentionJobScheduled().catch((err) =>
+      logger.error({ err }, 'Failed to ensure retention prune job scheduled'),
+    );
 
     // Run stale job recovery on startup and then every 5 minutes
     this.recoverStaleJobs().catch((err) => logger.error({ err }, 'Failed to recover stale jobs on startup'));
@@ -165,6 +168,36 @@ export class BackgroundJobWorker {
       });
     } catch (err) {
       logger.error({ err }, 'Failed to ensure cleanup job scheduled');
+    }
+  }
+
+  private async ensurePruneRetentionJobScheduled(): Promise<void> {
+    try {
+      await this.db.transaction().execute(async (trx) => {
+        const existing = await trx
+          .selectFrom('background_jobs')
+          .select('id')
+          .where('status', 'in', ['pending', 'processing'])
+          .where(sql`payload->>'type'`, '=', 'prune_retention')
+          .forUpdate()
+          .executeTakeFirst();
+        if (!existing) {
+          logger.info('Scheduling daily retention prune background job…');
+          await trx
+            .insertInto('background_jobs')
+            .values({
+              tenant_id: null,
+              queue: 'default',
+              status: 'pending',
+              payload: JSON.stringify({ type: 'prune_retention' }),
+              run_at: new Date(),
+              max_attempts: 3,
+            })
+            .execute();
+        }
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to ensure retention prune job scheduled');
     }
   }
 
@@ -717,6 +750,8 @@ export class BackgroundJobWorker {
     } else if (type === 'refresh_companies_google') {
       delayMs = 24 * 60 * 60 * 1000;
     } else if (type === 'prune_newsletter_events') {
+      delayMs = 24 * 60 * 60 * 1000;
+    } else if (type === 'prune_retention') {
       delayMs = 24 * 60 * 60 * 1000;
     }
 

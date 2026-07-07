@@ -34,7 +34,17 @@ import { Pool } from 'pg';
 import { env } from '../../env';
 import Cursor from 'pg-cursor';
 const dialect = new PostgresDialect({
-  pool: new Pool(env.db),
+  // P-4 (schema review 2026-07-06, §5): make the pool explicit instead of pg's
+  // silent defaults (max 10, no timeouts). Without a connection timeout, a burst
+  // of traffic plus a batch of jobs queues on the pool forever; without an
+  // application_name, pool traffic is invisible in pg_stat_activity.
+  pool: new Pool({
+    ...env.db,
+    max: env.dbPoolMax,
+    connectionTimeoutMillis: 5_000, // fail fast rather than queue forever
+    idleTimeoutMillis: 30_000,
+    application_name: 'pplcrm-api',
+  }),
   cursor: Cursor,
 });
 

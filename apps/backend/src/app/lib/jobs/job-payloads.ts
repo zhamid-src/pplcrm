@@ -47,6 +47,7 @@ export const jobPayloadSchema = z.discriminatedUnion('type', [
     tenant_id: idSchema.nullish(),
   }),
   z.object({ type: z.literal('cleanup_activities') }),
+  z.object({ type: z.literal('prune_retention') }),
   z.object({ type: z.literal('recompute_all_duplicates') }),
   z.object({
     type: z.literal('recompute_address_fingerprints'),
