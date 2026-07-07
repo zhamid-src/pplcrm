@@ -53,9 +53,9 @@
       <div class="flex items-center gap-3">
         <pc-icon name="queue-list" class="text-primary" [size]="5"></pc-icon>
         <div>
-          <h1 class="text-xl font-bold">New List</h1>
+          <h1 class="text-xl font-bold">New list</h1>
           <p class="text-sm text-base-content/60 mt-0.5">
-            Configure static or dynamic contact lists for outreach campaigns.
+            A smart list that refreshes itself, or a static snapshot you curate once.
           </p>
         </div>
       </div>
@@ -145,26 +145,38 @@
     </div>
     }
 
-    <!-- Step 2: Mode selection -->
+    <!-- Step 2: Mode selection — Smart vs Static (§8) -->
     @if (step() === 2) {
     <div class="grid gap-4 sm:grid-cols-2">
       <button
         type="button"
         class="card border border-base-300 hover:border-primary p-6 text-left"
-        [class.bg-base-200]="!form.get('is_dynamic')?.value"
-        (click)="form.get('is_dynamic')?.setValue(false)"
+        [class.border-primary]="isDynamic()"
+        [class.bg-base-200]="isDynamic()"
+        (click)="form.get('is_dynamic')?.setValue(true)"
       >
-        <div class="font-semibold mb-1">Static List</div>
-        <div class="text-sm text-base-content/70">A fixed snapshot. You select members now.</div>
+        <div class="flex items-center gap-2 mb-1">
+          <pc-icon name="arrow-path" class="text-primary" [size]="5"></pc-icon>
+          <span class="font-semibold">Smart list</span>
+        </div>
+        <div class="text-sm text-base-content/70">
+          Refreshes itself — membership updates automatically as people and households change.
+        </div>
       </button>
       <button
         type="button"
         class="card border border-base-300 hover:border-primary p-6 text-left"
-        [class.bg-base-200]="form.get('is_dynamic')?.value"
-        (click)="form.get('is_dynamic')?.setValue(true)"
+        [class.border-primary]="!isDynamic()"
+        [class.bg-base-200]="!isDynamic()"
+        (click)="form.get('is_dynamic')?.setValue(false)"
       >
-        <div class="font-semibold mb-1">Dynamic List</div>
-        <div class="text-sm text-base-content/70">Auto-updates using saved filters (e.g., Tags).</div>
+        <div class="flex items-center gap-2 mb-1">
+          <pc-icon name="archive-box" class="text-primary" [size]="5"></pc-icon>
+          <span class="font-semibold">Static list</span>
+        </div>
+        <div class="text-sm text-base-content/70">
+          Runs its rules once and saves a fixed snapshot; membership only changes when you edit it by hand.
+        </div>
       </button>
     </div>
     <div class="flex items-center justify-between mt-4">
@@ -201,14 +213,43 @@
     </div>
     }
 
-    <!-- Step 4: Preview -->
+    <!-- Step 4: Preview — the live count does its math in public (§8) -->
     @if (step() === 4) {
     <div class="grid gap-4">
       <div class="grid sm:grid-cols-2 gap-4">
-        <input class="input w-full" placeholder="List Name" aria-label="List Name" formControlName="name" />
-        <input class="input w-full" placeholder="Description" aria-label="Description" formControlName="description" />
+        <div class="flex flex-col gap-1">
+          <input
+            class="input input-bordered w-full"
+            placeholder="List name"
+            aria-label="List name"
+            formControlName="name"
+          />
+          @if (form.get('name')?.invalid && form.get('name')?.touched) {
+          <span class="flex items-center gap-1 text-xs text-error">
+            <pc-icon name="exclamation-circle" [size]="4"></pc-icon>
+            Give the list a name so you can find it later.
+          </span>
+          }
+        </div>
+        <input
+          class="input input-bordered w-full"
+          placeholder="Description (optional)"
+          aria-label="Description"
+          formControlName="description"
+        />
       </div>
-      <div class="text-sm text-base-content/70">Preview (read-only). Go back to adjust filters.</div>
+
+      <!-- Live preview headline + verbatim mode note -->
+      <div class="rounded-lg border border-base-300 bg-base-200/50 p-4">
+        <div class="flex items-center gap-2 text-base font-semibold tabular-nums">
+          @if (counting()) {
+          <span class="loading loading-spinner loading-sm text-primary"></span>
+          }
+          <span>{{ matchSentence() }}</span>
+        </div>
+        <p class="mt-1 text-sm text-base-content/70">{{ modeNote() }}</p>
+      </div>
+
       <div class="h-96 border border-base-300 rounded">
         @if (form.get('object')?.value === 'people') {
         <pc-people-filter-grid
@@ -232,7 +273,7 @@
         <button type="button" class="btn" (click)="back()">Back</button>
         <pc-form-actions
           [isLoading]="isLoading()"
-          [btn1Text]="btnLabel()"
+          [btn1Text]="createLabel()"
           (btn1Clicked)="save($event)"
           buttonsToShow="two"
         ></pc-form-actions>
