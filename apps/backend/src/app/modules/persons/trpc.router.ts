@@ -121,6 +121,13 @@ function getById() {
     .query(({ input, ctx }) => persons.getOneById({ tenant_id: ctx.auth.tenant_id, id: input }));
 }
 
+/** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
+function getBySlug() {
+  return authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => persons.getOneBySlug(input, ctx.auth));
+}
+
 function getActivity() {
   return authProcedure.input(idSchema).query(({ input, ctx }) => personsService.getPersonActivity(input, ctx.auth));
 }
@@ -232,6 +239,7 @@ export const PersonsRouter = router({
   import: importMany(),
   getTags: getTags(),
   getById: getById(),
+  getBySlug: getBySlug(),
   getActivity: getActivity(),
   attachTag: attachTag(),
   detachTag: detachTag(),

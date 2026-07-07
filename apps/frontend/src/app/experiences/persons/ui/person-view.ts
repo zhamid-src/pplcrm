@@ -1,4 +1,4 @@
-import { DatePipe } from '@angular/common';
+import { DatePipe, Location } from '@angular/common';
 import { Component, computed, effect, inject, input, resource, signal, untracked } from '@angular/core';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -70,6 +70,7 @@ export class PersonView {
   protected readonly donationsSvc = inject(DonationsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
   private readonly dialogs = inject(ConfirmDialogService);
   private readonly volunteerSvc = inject(VolunteerService);
   private readonly eventsSvc = inject(EventsService);
@@ -267,12 +268,26 @@ export class PersonView {
     });
   }
 
+  /**
+   * Spec §1: the address bar shows the record slug, never the internal id.
+   * Cosmetic swap only (Location.replaceState) — the route param, record-nav
+   * pager and breadcrumbs keep working on the numeric id.
+   */
+  private showSlugUrl(record: unknown): void {
+    const slug =
+      record != null && typeof record === 'object' && 'slug' in record ? (record as { slug: unknown }).slug : null;
+    if (typeof slug === 'string' && slug.length > 0) {
+      this.location.replaceState(`/people/${slug}`);
+    }
+  }
+
   protected async loadAllData(id: string) {
     const end = this._loading.begin();
     try {
       // 1. Load person details
       const personData = await this.personsSvc.getById(id);
       this.person.set(personData);
+      this.showSlugUrl(personData);
 
       // 2. Load tags and issues
       const tagList = await this.personsSvc.getTags(id, 'tag');

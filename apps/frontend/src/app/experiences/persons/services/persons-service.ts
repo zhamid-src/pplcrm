@@ -34,6 +34,11 @@ export class PersonsService extends AbstractAPIService<DATA_TYPE, UpdatePersonsT
   public countWithCompany(): Promise<number> {
     return this.api.persons.countWithCompany.query();
   }
+
+  /** Tenant-scoped slug resolution for /people/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.persons.getBySlug.query(slug);
+  }
   public override async delete(id: string, force?: boolean, skipAlert = false): Promise<boolean> {
     const opts = skipAlert ? { context: { skipErrorHandler: true } } : undefined;
     if (force !== undefined) {

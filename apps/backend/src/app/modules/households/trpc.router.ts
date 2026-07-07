@@ -63,6 +63,11 @@ export const HouseholdsRouter = router({
 
   countDistinctWards: authProcedure.query(({ ctx }) => households.countDistinctWards(ctx.auth)),
 
+  // Tenant-scoped slug resolution for /households/:slug URLs (spec §1).
+  getBySlug: authProcedure
+    .input(z.string().trim().min(1).max(200))
+    .query(({ input, ctx }) => households.getOneBySlug(input, ctx.auth)),
+
   getPotentialDuplicates: authProcedure
     .input(
       z

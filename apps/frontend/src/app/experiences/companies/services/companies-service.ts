@@ -41,6 +41,11 @@ export class CompaniesService extends AbstractAPIService<'companies', any> {
     return this.api.companies.getById.query(id);
   }
 
+  /** Tenant-scoped slug resolution for /companies/:slug URLs (spec §1). */
+  public getBySlug(slug: string) {
+    return this.api.companies.getBySlug.query(slug);
+  }
+
   public getTags(_id: string) {
     return Promise.resolve([]);
   }
